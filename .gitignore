@@ -28,7 +28,10 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
+MANIFEST.in
+# (deliberately NOT excluding the lowercase `manifest/` directory —
+#  manifest/manifest.json is the source of truth for /manifest, /openapi.yaml,
+#  /llms.txt, /.well-known/*, MCP tools/list. Without it the service 500s.)
 
 # Virtualenv
 venv/

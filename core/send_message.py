@@ -16,6 +16,7 @@ from channels.sms_email.twilio_sms import TwilioSMSAdapter
 from channels.sms_email.sendgrid_email import SendGridEmailAdapter
 from channels.voice_ai.vapi import VapiVoiceAdapter
 from channels.adapter_interface import ChannelRequest
+from telemetry.metrics import increment_messages_sent
 
 
 _SMS_ADAPTER = TwilioSMSAdapter()
@@ -74,6 +75,7 @@ async def handle_send_message(
             if resp.success:
                 cost_amount = _CHANNEL_COSTS.get(channel_name, 0.05)
                 fallback_chain = [f"{c} (skipped)" for c in attempted[:-1]]
+                increment_messages_sent()
                 return OutcomeReceipt(
                     operation_id=operation_id,
                     status=OperationStatus.SUCCESS,

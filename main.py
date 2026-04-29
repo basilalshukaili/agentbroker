@@ -64,6 +64,25 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
+# Telemetry middleware — single source of truth for request/op counters.
+# Increments are O(1) atomic-ish; no DB round-trip. Memory-only on free tier
+# is fine: counters reset on deploy and that's documented on the home page.
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def _telemetry_counter_middleware(request: Request, call_next):
+    path = request.url.path
+    is_op = path.startswith("/ops/") or path == "/mcp"
+    if is_op:
+        from telemetry.metrics import record_agent_request
+        record_agent_request()
+    response = await call_next(request)
+    if is_op and 200 <= response.status_code < 300:
+        from telemetry.metrics import record_operation_completed
+        record_operation_completed()
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Auth helper
 # ---------------------------------------------------------------------------
 
@@ -392,77 +411,81 @@ async def list_webhooks(
 
 
 # ---------------------------------------------------------------------------
-# Web UI — Dashboard, Pricing, Legal Pages
+# Web UI — server-rendered HTML, no client framework
 # ---------------------------------------------------------------------------
+# Caching note: every page is deterministic per deploy. The CDN / browser
+# can hold them for 5 minutes. /api/metrics is a tiny JSON polled every 8 s
+# from the home page; we mark it no-store so the live counters never look stale.
 
-@app.get("/", tags=["Web UI"])
-async def dashboard():
-    """Serve the React dashboard with real-time metrics."""
-    from fastapi.responses import FileResponse
-    import os
-    dashboard_path = os.path.join(
-        os.path.dirname(__file__),
-        "deploy/landing-page/dashboard.html"
-    )
-    return FileResponse(dashboard_path, media_type="text/html")
+from fastapi.responses import HTMLResponse, RedirectResponse
+from web.pages import render_home, render_pricing, render_terms, render_privacy, render_refund
+
+_PAGE_CACHE_HEADERS = {"Cache-Control": "public, max-age=300, s-maxage=300"}
 
 
-@app.get("/dashboard", tags=["Web UI"])
-async def dashboard_redirect():
-    """Redirect to dashboard."""
-    from fastapi.responses import RedirectResponse
+@app.get("/", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_home():
+    return HTMLResponse(content=render_home(), headers=_PAGE_CACHE_HEADERS)
+
+
+@app.get("/pricing", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_pricing():
+    return HTMLResponse(content=render_pricing(), headers=_PAGE_CACHE_HEADERS)
+
+
+@app.get("/terms", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_terms():
+    return HTMLResponse(content=render_terms(), headers=_PAGE_CACHE_HEADERS)
+
+
+@app.get("/privacy", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_privacy():
+    return HTMLResponse(content=render_privacy(), headers=_PAGE_CACHE_HEADERS)
+
+
+@app.get("/refund", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_refund():
+    return HTMLResponse(content=render_refund(), headers=_PAGE_CACHE_HEADERS)
+
+
+# Legacy URL aliases (the old React-SPA hash links). Permanent redirects so
+# any external link or AI-generated citation still resolves.
+@app.get("/dashboard", include_in_schema=False)
+async def web_dashboard_alias():
     return RedirectResponse(url="/", status_code=301)
+
+
+@app.get("/terms-of-service", include_in_schema=False)
+async def web_terms_alias():
+    return RedirectResponse(url="/terms", status_code=301)
+
+
+@app.get("/privacy-policy", include_in_schema=False)
+async def web_privacy_alias():
+    return RedirectResponse(url="/privacy", status_code=301)
+
+
+@app.get("/refund-policy", include_in_schema=False)
+async def web_refund_alias():
+    return RedirectResponse(url="/refund", status_code=301)
 
 
 @app.get("/api/metrics", tags=["Metrics"])
 async def get_metrics():
-    """Get real-time metrics about agent requests and operations."""
+    """Public counters consumed by the home-page live tiles. No PII."""
     from telemetry.metrics import get_telemetry_summary
     try:
-        # Attempt to get telemetry data; fall back to defaults if unavailable
         summary = await get_telemetry_summary()
-        return {
-            "total_agents_requested": summary.get("total_agents_requested", 0),
-            "total_businesses_found": summary.get("total_businesses_found", 0),
-            "total_messages_sent": summary.get("total_messages_sent", 0),
-            "total_operations_completed": summary.get("total_operations_completed", 0),
-        }
     except Exception:
-        # Return default metrics if telemetry is not available
-        return {
-            "total_agents_requested": 0,
-            "total_businesses_found": 0,
-            "total_messages_sent": 0,
-            "total_operations_completed": 0,
-        }
-
-
-@app.get("/pricing", tags=["Web UI"])
-async def pricing_redirect():
-    """Redirect to dashboard pricing section."""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/#pricing", status_code=301)
-
-
-@app.get("/terms-of-service", tags=["Web UI"])
-async def terms_redirect():
-    """Redirect to dashboard terms section."""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/#terms", status_code=301)
-
-
-@app.get("/privacy-policy", tags=["Web UI"])
-async def privacy_redirect():
-    """Redirect to dashboard privacy section."""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/#privacy", status_code=301)
-
-
-@app.get("/refund-policy", tags=["Web UI"])
-async def refund_redirect():
-    """Redirect to dashboard refund section."""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/#refund", status_code=301)
+        summary = {}
+    payload = {
+        "total_agents_requested": summary.get("total_agents_requested", 0),
+        "total_businesses_found": summary.get("total_businesses_found", 0),
+        "total_messages_sent": summary.get("total_messages_sent", 0),
+        "total_operations_completed": summary.get("total_operations_completed", 0),
+        "last_updated": summary.get("last_updated"),
+    }
+    return JSONResponse(content=payload, headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------

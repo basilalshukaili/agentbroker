@@ -1,0 +1,160 @@
+{
+  "tools": [
+    {
+      "name": "find_business",
+      "description": "Find verified SMBs (salons, plumbers, consultants, etc.) in a given area that can execute a requested service. Returns only transactable businesses in our supply network.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["vertical", "location"],
+        "properties": {
+          "vertical": {"type": "string", "enum": ["personal_services", "home_services", "professional_services"]},
+          "location": {"type": "object", "required": ["zip_or_city"], "properties": {"zip_or_city": {"type": "string"}, "radius_miles": {"type": "number"}}},
+          "capability": {"type": "string"},
+          "price_band": {"type": "object", "properties": {"max_usd": {"type": "number"}}},
+          "availability_window": {"type": "object", "properties": {"start_iso": {"type": "string"}, "end_iso": {"type": "string"}}}
+        }
+      }
+    },
+    {
+      "name": "verify_business",
+      "description": "Confirm an SMB is real, currently operating, and capable of a specific service. Use before booking if you have an unverified SMB ID.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["smb_id"],
+        "properties": {
+          "smb_id": {"type": "string"},
+          "capability_to_verify": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Send an outbound message (SMS, email, voice) to an SMB or customer. Channel is auto-selected and falls back automatically. Requires consent records for marketing messages.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["recipient", "message_type", "content"],
+        "properties": {
+          "recipient": {"type": "object", "required": ["id_type", "id_value"], "properties": {"id_type": {"type": "string", "enum": ["phone", "email", "smb_id", "customer_id"]}, "id_value": {"type": "string"}, "country_code": {"type": "string"}}},
+          "message_type": {"type": "string", "enum": ["transactional", "marketing", "reminder", "follow_up", "notification"]},
+          "content": {"type": "object", "required": ["body"], "properties": {"body": {"type": "string"}, "subject": {"type": "string"}}},
+          "preferred_channel": {"type": "string", "enum": ["sms", "email", "voice", "auto"]}
+        }
+      }
+    },
+    {
+      "name": "capture_lead",
+      "description": "Intake a prospect into an SMB's pipeline with deduplication and CRM integration.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["smb_id", "prospect"],
+        "properties": {
+          "smb_id": {"type": "string"},
+          "prospect": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "phone": {"type": "string"}, "email": {"type": "string"}, "service_interest": {"type": "string"}}},
+          "source": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "schedule_appointment",
+      "description": "Book, reschedule, or cancel appointments with an SMB. Async — returns pending_async immediately; final outcome delivered via webhook or pollable via get_status.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["smb_id", "action"],
+        "properties": {
+          "smb_id": {"type": "string"},
+          "action": {"type": "string", "enum": ["book", "reschedule", "cancel", "check_availability"]},
+          "service": {"type": "string"},
+          "customer": {"type": "object", "properties": {"name": {"type": "string"}, "phone": {"type": "string"}, "email": {"type": "string"}}},
+          "requested_time": {"type": "object", "properties": {"preferred_iso": {"type": "string"}, "window_start_iso": {"type": "string"}, "window_end_iso": {"type": "string"}, "duration_minutes": {"type": "integer"}}},
+          "existing_appointment_id": {"type": "string"},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "send_transactional_confirmation",
+      "description": "Send OTPs, booking confirmations, payment receipts, or cancellation notices. Idempotent — safe to retry.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["recipient", "confirmation_type", "data"],
+        "properties": {
+          "recipient": {"type": "object", "required": ["phone_or_email"], "properties": {"phone_or_email": {"type": "string"}, "name": {"type": "string"}}},
+          "confirmation_type": {"type": "string", "enum": ["otp", "booking_confirmation", "payment_receipt", "cancellation_notice", "reminder"]},
+          "data": {"type": "object"},
+          "preferred_channel": {"type": "string", "enum": ["sms", "email", "auto"]}
+        }
+      }
+    },
+    {
+      "name": "handle_inbound",
+      "description": "Classify and route inbound messages (SMS replies, emails, voicemails, contact forms) on behalf of an SMB. Returns classified intent and suggested next action.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["smb_id", "inbound_channel", "raw_message"],
+        "properties": {
+          "smb_id": {"type": "string"},
+          "inbound_channel": {"type": "string", "enum": ["sms", "email", "voice_voicemail", "web_form", "api"]},
+          "sender": {"type": "object", "properties": {"phone": {"type": "string"}, "email": {"type": "string"}, "name": {"type": "string"}}},
+          "raw_message": {"type": "string"},
+          "received_at_iso": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "escalate_to_human",
+      "description": "Hand off a failed or ambiguous task to a human operator with full context bundle. Use only after automated resolution has failed.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["smb_id", "reason", "context"],
+        "properties": {
+          "smb_id": {"type": "string"},
+          "reason": {"type": "string", "enum": ["automation_failed", "customer_requested", "compliance_hold", "ambiguous_intent", "exception_required"]},
+          "context": {"type": "object", "properties": {"original_operation": {"type": "string"}, "operation_id": {"type": "string"}, "transcript": {"type": "array", "items": {"type": "object"}}, "recommended_next_step": {"type": "string"}}},
+          "priority": {"type": "string", "enum": ["normal", "urgent"]}
+        }
+      }
+    },
+    {
+      "name": "get_status",
+      "description": "Check the current state of an async operation. Poll no more than once per 10 seconds; prefer webhook callbacks for real-time updates.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["operation_id"],
+        "properties": {
+          "operation_id": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "get_outcome",
+      "description": "Retrieve the final OutcomeReceipt (with cost and reason codes) for a completed operation.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["operation_id"],
+        "properties": {
+          "operation_id": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "preview_cost",
+      "description": "Get estimated cost, latency, and success probability for a planned operation BEFORE executing it. Actual cost guaranteed within ±5% of preview.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["operation", "params"],
+        "properties": {
+          "operation": {"type": "string"},
+          "params": {"type": "object"}
+        }
+      }
+    },
+    {
+      "name": "self_test",
+      "description": "Verify the service is healthy and all claimed capabilities are working. Call at startup or after unexpected errors. Free — no cost.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

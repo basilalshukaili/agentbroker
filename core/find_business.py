@@ -11,6 +11,7 @@ from core.models import (
     FindBusinessRequest, OutcomeReceipt, OperationStatus, SMBRecord, CostRecord
 )
 from supply.smb_directory import get_directory
+from telemetry.metrics import increment_businesses_found
 
 
 async def handle_find_business(
@@ -58,6 +59,9 @@ async def handle_find_business(
     }
     if coverage_note:
         result["supply_coverage_note"] = coverage_note
+
+    if records:
+        increment_businesses_found(len(records))
 
     return OutcomeReceipt(
         operation_id=str(uuid.uuid4()),

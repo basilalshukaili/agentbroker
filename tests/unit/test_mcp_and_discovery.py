@@ -139,7 +139,7 @@ class TestWellKnownEndpoints:
     def test_ai_plugin_has_required_fields(self):
         m = get_ai_plugin_manifest()
         assert m["schema_version"] == "v1"
-        assert m["name_for_model"] == "smb_broker"
+        assert m["name_for_model"] == "agent_broker"
         assert "description_for_model" in m
         assert m["api"]["type"] == "openapi"
 

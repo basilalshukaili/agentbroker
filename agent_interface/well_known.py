@@ -37,8 +37,8 @@ def get_ai_plugin_manifest() -> dict:
     """OpenAI plugin discovery format. Used by ChatGPT and ChatGPT-compatible agents."""
     return {
         "schema_version": "v1",
-        "name_for_human": "SMB Broker",
-        "name_for_model": "smb_broker",
+        "name_for_human": "Agent Broker",
+        "name_for_model": "agent_broker",
         "description_for_human": (
             "Discover, verify, message, and schedule with millions of small businesses "
             "through a single compliance-aware API."
@@ -89,7 +89,7 @@ def get_openai_tools() -> dict:
         })
     return {
         "version": "1.0",
-        "service": "smb-broker",
+        "service": "agent-broker",
         "tools": tools,
         "endpoint": f"{BASE_URL}/ops/{{tool_name}}",
         "auth_header": "X-Agent-Identity",
@@ -112,7 +112,7 @@ def get_anthropic_tools() -> dict:
         })
     return {
         "version": "1.0",
-        "service": "smb-broker",
+        "service": "agent-broker",
         "tools": tools,
         "endpoint": f"{BASE_URL}/ops/{{tool_name}}",
         "auth_header": "X-Agent-Identity",
@@ -184,7 +184,7 @@ def get_agents_json() -> dict:
 def get_mcp_descriptor() -> dict:
     """Where to connect to our MCP server."""
     return {
-        "name": "smb-broker",
+        "name": "agent-broker",
         "version": "0.1.0",
         "transport": {
             "type": "http",
@@ -224,7 +224,7 @@ def get_llms_txt() -> str:
     operations = manifest.get("operations", [])
 
     lines = [
-        f"# {service.get('name', 'SMB Broker')}",
+        f"# {service.get('name', 'Agent Broker')}",
         "",
         f"> {service.get('description', '')}",
         "",
