@@ -392,6 +392,80 @@ async def list_webhooks(
 
 
 # ---------------------------------------------------------------------------
+# Web UI — Dashboard, Pricing, Legal Pages
+# ---------------------------------------------------------------------------
+
+@app.get("/", tags=["Web UI"])
+async def dashboard():
+    """Serve the React dashboard with real-time metrics."""
+    from fastapi.responses import FileResponse
+    import os
+    dashboard_path = os.path.join(
+        os.path.dirname(__file__),
+        "deploy/landing-page/dashboard.html"
+    )
+    return FileResponse(dashboard_path, media_type="text/html")
+
+
+@app.get("/dashboard", tags=["Web UI"])
+async def dashboard_redirect():
+    """Redirect to dashboard."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=301)
+
+
+@app.get("/api/metrics", tags=["Metrics"])
+async def get_metrics():
+    """Get real-time metrics about agent requests and operations."""
+    from telemetry.metrics import get_telemetry_summary
+    try:
+        # Attempt to get telemetry data; fall back to defaults if unavailable
+        summary = await get_telemetry_summary()
+        return {
+            "total_agents_requested": summary.get("total_agents_requested", 0),
+            "total_businesses_found": summary.get("total_businesses_found", 0),
+            "total_messages_sent": summary.get("total_messages_sent", 0),
+            "total_operations_completed": summary.get("total_operations_completed", 0),
+        }
+    except Exception:
+        # Return default metrics if telemetry is not available
+        return {
+            "total_agents_requested": 0,
+            "total_businesses_found": 0,
+            "total_messages_sent": 0,
+            "total_operations_completed": 0,
+        }
+
+
+@app.get("/pricing", tags=["Web UI"])
+async def pricing_redirect():
+    """Redirect to dashboard pricing section."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/#pricing", status_code=301)
+
+
+@app.get("/terms-of-service", tags=["Web UI"])
+async def terms_redirect():
+    """Redirect to dashboard terms section."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/#terms", status_code=301)
+
+
+@app.get("/privacy-policy", tags=["Web UI"])
+async def privacy_redirect():
+    """Redirect to dashboard privacy section."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/#privacy", status_code=301)
+
+
+@app.get("/refund-policy", tags=["Web UI"])
+async def refund_redirect():
+    """Redirect to dashboard refund section."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/#refund", status_code=301)
+
+
+# ---------------------------------------------------------------------------
 # Exception handlers
 # ---------------------------------------------------------------------------
 
