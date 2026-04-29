@@ -1,0 +1,242 @@
+"""
+SMB supply directory — verified SMBs, their channels, and their capabilities.
+In production: backed by PostgreSQL with geo-search (PostGIS).
+For v0.1: in-memory seeded with 20+ SMBs across the three wedge verticals.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
+
+from core.models import SMBRecord, Vertical
+
+
+@dataclass
+class SMBEntry:
+    smb_id: str
+    name: str
+    vertical: Vertical
+    address: str
+    city: str
+    state: str
+    zip_code: str
+    country: str = "US"
+    capabilities: list[str] = field(default_factory=list)
+    channels_available: list[str] = field(default_factory=list)
+    # channel-specific identifiers
+    calcom_event_type_id: Optional[str] = None
+    square_location_id: Optional[str] = None
+    vapi_assistant_id: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    price_range: Optional[dict] = None
+    verified_at: Optional[datetime] = None
+    active: bool = True
+
+
+def _seed_smbs() -> dict[str, SMBEntry]:
+    now = datetime.now(timezone.utc)
+    smbs = [
+        # --- Personal Services ---
+        SMBEntry("smb_001", "Cuts & Co.", Vertical.PERSONAL_SERVICES,
+                 "123 Main St", "Atlanta", "GA", "30309",
+                 capabilities=["haircut", "blowdry", "color", "highlights"],
+                 channels_available=["direct_api:calcom", "sms", "email"],
+                 calcom_event_type_id="1001",
+                 phone="+14045550101", email="booking@cutsandco.example",
+                 price_range={"min_usd": 35, "max_usd": 75}, verified_at=now),
+        SMBEntry("smb_002", "Nail Studio ATL", Vertical.PERSONAL_SERVICES,
+                 "456 Peachtree St", "Atlanta", "GA", "30308",
+                 capabilities=["manicure", "pedicure", "nail_art", "gel", "acrylics"],
+                 channels_available=["sms", "voice_ai:vapi"],
+                 phone="+14045550102",
+                 price_range={"min_usd": 25, "max_usd": 80}, verified_at=now),
+        SMBEntry("smb_003", "Bliss Massage Midtown", Vertical.PERSONAL_SERVICES,
+                 "789 Spring St", "Atlanta", "GA", "30308",
+                 capabilities=["swedish_massage", "deep_tissue", "hot_stone", "prenatal_massage"],
+                 channels_available=["direct_api:calcom", "sms"],
+                 calcom_event_type_id="1002",
+                 phone="+14045550103",
+                 price_range={"min_usd": 80, "max_usd": 150}, verified_at=now),
+        SMBEntry("smb_004", "FitLife Personal Training", Vertical.PERSONAL_SERVICES,
+                 "321 West Peachtree St", "Atlanta", "GA", "30309",
+                 capabilities=["personal_training", "fitness_assessment", "group_class"],
+                 channels_available=["sms", "email"],
+                 phone="+14045550104",
+                 price_range={"min_usd": 60, "max_usd": 120}, verified_at=now),
+        SMBEntry("smb_005", "The Lash Lounge", Vertical.PERSONAL_SERVICES,
+                 "159 Buckhead Ave", "Atlanta", "GA", "30305",
+                 capabilities=["lash_extensions", "lash_lift", "brow_tint", "waxing"],
+                 channels_available=["direct_api:calcom", "sms"],
+                 calcom_event_type_id="1003",
+                 price_range={"min_usd": 45, "max_usd": 200}, verified_at=now),
+        SMBEntry("smb_006", "Boston Barber Co.", Vertical.PERSONAL_SERVICES,
+                 "22 Newbury St", "Boston", "MA", "02116",
+                 capabilities=["haircut", "beard_trim", "shave", "color"],
+                 channels_available=["sms", "voice_ai:vapi"],
+                 phone="+16175550101",
+                 price_range={"min_usd": 40, "max_usd": 85}, verified_at=now),
+        SMBEntry("smb_007", "Cambridge Yoga Studio", Vertical.PERSONAL_SERVICES,
+                 "88 Mass Ave", "Cambridge", "MA", "02139",
+                 capabilities=["yoga_class", "private_yoga", "meditation"],
+                 channels_available=["direct_api:calcom", "email"],
+                 calcom_event_type_id="1004",
+                 price_range={"min_usd": 20, "max_usd": 90}, verified_at=now),
+
+        # --- Home Services ---
+        SMBEntry("smb_044", "FastFix Plumbing", Vertical.HOME_SERVICES,
+                 "500 Cambridge St", "Cambridge", "MA", "02139",
+                 capabilities=["plumbing", "emergency_plumbing", "drain_cleaning", "water_heater"],
+                 channels_available=["voice_ai:vapi", "sms"],
+                 phone="+16175550102",
+                 price_range={"min_usd": 95, "max_usd": 500}, verified_at=now),
+        SMBEntry("smb_045", "GreenLawn Care", Vertical.HOME_SERVICES,
+                 "200 Comm Ave", "Boston", "MA", "02116",
+                 capabilities=["lawn_mowing", "landscaping", "leaf_removal", "snow_removal"],
+                 channels_available=["sms", "email"],
+                 phone="+16175550103",
+                 price_range={"min_usd": 50, "max_usd": 300}, verified_at=now),
+        SMBEntry("smb_046", "SparkClean Services", Vertical.HOME_SERVICES,
+                 "77 Beacon St", "Boston", "MA", "02108",
+                 capabilities=["house_cleaning", "deep_clean", "move_in_clean", "office_cleaning"],
+                 channels_available=["direct_api:calcom", "sms"],
+                 calcom_event_type_id="1005",
+                 phone="+16175550104",
+                 price_range={"min_usd": 80, "max_usd": 400}, verified_at=now),
+        SMBEntry("smb_047", "BugBusters Pest Control", Vertical.HOME_SERVICES,
+                 "34 Atlantic Ave", "Boston", "MA", "02110",
+                 capabilities=["pest_inspection", "ant_control", "rodent_control", "termite_treatment"],
+                 channels_available=["sms", "voice_ai:vapi"],
+                 phone="+16175550105",
+                 price_range={"min_usd": 120, "max_usd": 800}, verified_at=now),
+        SMBEntry("smb_048", "Atlanta Electric Pro", Vertical.HOME_SERVICES,
+                 "600 Marietta St", "Atlanta", "GA", "30318",
+                 capabilities=["electrical_inspection", "outlet_install", "panel_upgrade", "ev_charger_install"],
+                 channels_available=["sms", "email"],
+                 phone="+14045550108",
+                 price_range={"min_usd": 150, "max_usd": 2000}, verified_at=now),
+        SMBEntry("smb_049", "HandyPro Atlanta", Vertical.HOME_SERVICES,
+                 "800 Lee St", "Atlanta", "GA", "30310",
+                 capabilities=["general_handyman", "drywall_repair", "painting", "furniture_assembly"],
+                 channels_available=["sms", "voice_ai:vapi"],
+                 phone="+14045550109",
+                 price_range={"min_usd": 75, "max_usd": 500}, verified_at=now),
+        SMBEntry("smb_050", "RoofRight Contractors", Vertical.HOME_SERVICES,
+                 "250 Moreland Ave", "Atlanta", "GA", "30307",
+                 capabilities=["roof_inspection", "roof_repair", "gutter_cleaning"],
+                 channels_available=["sms", "email"],
+                 phone="+14045550110",
+                 price_range={"min_usd": 200, "max_usd": 5000}, verified_at=now),
+
+        # --- Professional Services ---
+        SMBEntry("smb_080", "Sullivan & Partners Law", Vertical.PROFESSIONAL_SERVICES,
+                 "1 Center Plaza", "Boston", "MA", "02108",
+                 capabilities=["legal_consultation", "contract_review", "business_formation", "employment_law"],
+                 channels_available=["direct_api:calcom", "email"],
+                 calcom_event_type_id="1006",
+                 price_range={"min_usd": 150, "max_usd": 500}, verified_at=now),
+        SMBEntry("smb_081", "TaxPro Atlanta", Vertical.PROFESSIONAL_SERVICES,
+                 "404 Peachtree Rd", "Atlanta", "GA", "30303",
+                 capabilities=["tax_consultation", "business_accounting", "bookkeeping", "irs_representation"],
+                 channels_available=["direct_api:calcom", "email", "sms"],
+                 calcom_event_type_id="1007",
+                 price_range={"min_usd": 100, "max_usd": 400}, verified_at=now),
+        SMBEntry("smb_082", "WealthPath Financial", Vertical.PROFESSIONAL_SERVICES,
+                 "200 Boylston St", "Boston", "MA", "02116",
+                 capabilities=["financial_planning", "investment_consultation", "retirement_planning", "crypto_planning"],
+                 channels_available=["direct_api:calcom", "email"],
+                 calcom_event_type_id="1008",
+                 price_range={"min_usd": 150, "max_usd": 350}, verified_at=now),
+        SMBEntry("smb_083", "TutorPro Cambridge", Vertical.PROFESSIONAL_SERVICES,
+                 "55 Garden St", "Cambridge", "MA", "02138",
+                 capabilities=["math_tutoring", "sat_prep", "college_essay_coaching", "coding_tutoring"],
+                 channels_available=["sms", "email", "direct_api:calcom"],
+                 calcom_event_type_id="1009",
+                 price_range={"min_usd": 50, "max_usd": 200}, verified_at=now),
+        SMBEntry("smb_084", "ATL Business Coach", Vertical.PROFESSIONAL_SERVICES,
+                 "17 Edgewood Ave", "Atlanta", "GA", "30303",
+                 capabilities=["business_coaching", "startup_consulting", "pitch_prep", "marketing_strategy"],
+                 channels_available=["direct_api:calcom", "email"],
+                 calcom_event_type_id="1010",
+                 price_range={"min_usd": 100, "max_usd": 300}, verified_at=now),
+        SMBEntry("smb_085", "InsureRight Agency", Vertical.PROFESSIONAL_SERVICES,
+                 "1000 Peachtree St NE", "Atlanta", "GA", "30309",
+                 capabilities=["insurance_consultation", "auto_insurance", "home_insurance", "business_insurance"],
+                 channels_available=["sms", "email", "voice_ai:vapi"],
+                 phone="+14045550120",
+                 price_range={"min_usd": 0, "max_usd": 0}, verified_at=now),  # free consultation
+    ]
+    return {smb.smb_id: smb for smb in smbs}
+
+
+def _load_directory() -> dict[str, SMBEntry]:
+    """
+    Load the SMB directory.
+
+    Behavior controlled by env var SUPPLY_SEED_MODE:
+      - "demo"  (default): load 20 hardcoded demo SMBs in Atlanta/Boston for tests + manifest examples.
+      - "empty": start with zero SMBs. Production launch mode — directory grows only via real onboarding / scraping.
+
+    The seed data is NOT meant to be served as real supply in production. It exists so the
+    test corpus, manifest examples, and self-test all have something to operate on.
+    """
+    import os
+    mode = os.getenv("SUPPLY_SEED_MODE", "demo").lower()
+    if mode == "empty":
+        return {}
+    return _seed_smbs()
+
+
+_DIRECTORY: dict[str, SMBEntry] = _load_directory()
+
+
+class SMBDirectory:
+
+    def get(self, smb_id: str) -> SMBEntry | None:
+        return _DIRECTORY.get(smb_id)
+
+    def search(
+        self,
+        vertical: Vertical,
+        zip_or_city: str,
+        capability: str | None = None,
+        max_usd: float | None = None,
+        max_results: int = 5,
+    ) -> list[SMBEntry]:
+        results = [
+            smb for smb in _DIRECTORY.values()
+            if smb.active
+            and smb.vertical == vertical
+            and self._location_matches(smb, zip_or_city)
+        ]
+        if capability:
+            results = [s for s in results if capability.lower() in [c.lower() for c in s.capabilities]]
+        if max_usd is not None:
+            results = [s for s in results if not s.price_range or s.price_range.get("min_usd", 0) <= max_usd]
+        # Sort by number of available channels (more channels = more reliable)
+        results.sort(key=lambda s: len(s.channels_available), reverse=True)
+        return results[:max_results]
+
+    def size(self) -> int:
+        return len([s for s in _DIRECTORY.values() if s.active])
+
+    def upsert(self, entry: SMBEntry) -> None:
+        _DIRECTORY[entry.smb_id] = entry
+
+    @staticmethod
+    def _location_matches(smb: SMBEntry, zip_or_city: str) -> bool:
+        needle = zip_or_city.lower().strip()
+        return (
+            needle in smb.zip_code.lower()
+            or needle in smb.city.lower()
+            or needle in smb.state.lower()
+        )
+
+
+_directory = SMBDirectory()
+
+
+def get_directory() -> SMBDirectory:
+    return _directory

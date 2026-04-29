@@ -1,0 +1,43 @@
+# Render.com deployment — free tier alternative to Fly.io
+# Works in Oman. Sign up at render.com with GitHub.
+# Free tier: 1 web service (sleeps after 15min idle), 750 hours/month.
+#
+# Deploy: push to GitHub, then "New Blueprint Instance" → point at this file.
+
+services:
+  - type: web
+    name: smb-broker
+    runtime: docker
+    dockerfilePath: ./deploy/Dockerfile
+    region: frankfurt
+    plan: free
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: REQUIRE_AUTH
+        value: true
+      - key: COMPLIANCE_DEFAULT_JURISDICTION
+        value: international
+      - key: SUPPLY_SEED_MODE
+        value: empty
+      # Set the rest via Render dashboard → Environment:
+      #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, CALCOM_API_KEY, VAPI_API_KEY,
+      #   RESEND_API_KEY, AGENT_IDENTITY_SIGNING_SECRET, BILLING_RECEIPT_SIGNING_SECRET
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: CALCOM_API_KEY
+        sync: false
+      - key: VAPI_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: AGENT_IDENTITY_SIGNING_SECRET
+        sync: false
+      - key: BILLING_RECEIPT_SIGNING_SECRET
+        sync: false

@@ -1,0 +1,179 @@
+"""
+Unit tests — core operation handlers.
+"""
+import pytest
+import asyncio
+from core.find_business import handle_find_business
+from core.verify_business import handle_verify_business
+from core.capture_lead import handle_capture_lead
+from core.preview_cost import handle_preview_cost
+from core.status_outcome import handle_get_status, handle_get_outcome
+from core.handle_inbound import handle_inbound
+from core.models import (
+    FindBusinessRequest, LocationFilter, Vertical,
+    VerifyBusinessRequest, CaptureLeadRequest, ProspectData,
+    PreviewCostRequest, HandleInboundRequest, InboundChannel, InboundSender,
+    OperationStatus,
+)
+
+
+def run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+class TestFindBusiness:
+    def test_find_hair_salon_atlanta(self):
+        req = FindBusinessRequest(
+            vertical=Vertical.PERSONAL_SERVICES,
+            location=LocationFilter(zip_or_city="30309"),
+            capability="haircut",
+        )
+        receipt = run(handle_find_business(req))
+        assert receipt.status == OperationStatus.SUCCESS
+        assert receipt.result["businesses"]
+        assert all("smb_id" in b for b in receipt.result["businesses"])
+
+    def test_find_no_results_returns_success_empty(self):
+        req = FindBusinessRequest(
+            vertical=Vertical.PERSONAL_SERVICES,
+            location=LocationFilter(zip_or_city="99999"),
+        )
+        receipt = run(handle_find_business(req))
+        assert receipt.status == OperationStatus.SUCCESS
+        assert receipt.result["businesses"] == []
+        assert "supply_coverage_note" in receipt.result
+
+    def test_find_plumber_boston(self):
+        req = FindBusinessRequest(
+            vertical=Vertical.HOME_SERVICES,
+            location=LocationFilter(zip_or_city="02139"),
+            capability="plumbing",
+        )
+        receipt = run(handle_find_business(req))
+        assert receipt.status == OperationStatus.SUCCESS
+        assert any("plumbing" in b["capabilities"] for b in receipt.result["businesses"])
+
+    def test_cost_is_one_cent(self):
+        req = FindBusinessRequest(
+            vertical=Vertical.PROFESSIONAL_SERVICES,
+            location=LocationFilter(zip_or_city="Boston"),
+        )
+        receipt = run(handle_find_business(req))
+        assert receipt.cost.amount == 0.01
+
+    def test_max_results_respected(self):
+        req = FindBusinessRequest(
+            vertical=Vertical.PERSONAL_SERVICES,
+            location=LocationFilter(zip_or_city="Atlanta"),
+            max_results=2,
+        )
+        receipt = run(handle_find_business(req))
+        assert len(receipt.result["businesses"]) <= 2
+
+
+class TestVerifyBusiness:
+    def test_verify_known_smb(self):
+        req = VerifyBusinessRequest(smb_id="smb_001", capability_to_verify="haircut")
+        receipt = run(handle_verify_business(req))
+        assert receipt.status == OperationStatus.SUCCESS
+        assert receipt.result["verified"] is True
+
+    def test_verify_wrong_capability_returns_failure(self):
+        req = VerifyBusinessRequest(smb_id="smb_001", capability_to_verify="emergency_plumbing")
+        receipt = run(handle_verify_business(req))
+        assert receipt.result["verified"] is False
+
+    def test_verify_unknown_smb_returns_failure(self):
+        req = VerifyBusinessRequest(smb_id="smb_UNKNOWN")
+        receipt = run(handle_verify_business(req))
+        assert receipt.status == OperationStatus.FAILURE
+        assert receipt.reason_code == "supply_unreachable"
+
+
+class TestCaptureLead:
+    def test_capture_lead_known_smb(self):
+        req = CaptureLeadRequest(
+            smb_id="smb_001",
+            prospect=ProspectData(name="Jane Doe", phone="+14045559999", service_interest="haircut"),
+            source="agent_test",
+        )
+        receipt = run(handle_capture_lead(req))
+        assert receipt.status == OperationStatus.SUCCESS
+        assert "lead_id" in receipt.result
+
+    def test_capture_lead_unknown_smb_fails(self):
+        req = CaptureLeadRequest(
+            smb_id="smb_GHOST",
+            prospect=ProspectData(name="John"),
+        )
+        receipt = run(handle_capture_lead(req))
+        assert receipt.status == OperationStatus.FAILURE
+
+
+class TestPreviewCost:
+    def test_schedule_appointment_preview(self):
+        req = PreviewCostRequest(operation="schedule_appointment", params={"smb_id": "smb_001"})
+        resp = run(handle_preview_cost(req))
+        assert resp.estimated_cost_usd > 0
+        assert resp.cost_accuracy_slo == "±5%"
+        assert resp.success_probability_estimate > 0
+
+    def test_self_test_is_free(self):
+        req = PreviewCostRequest(operation="self_test", params={})
+        resp = run(handle_preview_cost(req))
+        assert resp.estimated_cost_usd == 0.0
+
+    def test_all_12_operations_have_preview(self):
+        ops = [
+            "find_business", "verify_business", "send_message", "capture_lead",
+            "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
+            "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
+        ]
+        for op in ops:
+            req = PreviewCostRequest(operation=op, params={})
+            resp = run(handle_preview_cost(req))
+            assert resp.estimated_cost_usd >= 0, f"Missing pricing for {op}"
+
+
+class TestHandleInbound:
+    def test_booking_inquiry_classified(self):
+        req = HandleInboundRequest(
+            smb_id="smb_001",
+            inbound_channel=InboundChannel.SMS,
+            sender=InboundSender(phone="+14045551234"),
+            raw_message="Hi, do you have anything Saturday morning?",
+        )
+        receipt = run(handle_inbound(req))
+        assert receipt.status == OperationStatus.SUCCESS
+        assert "booking_inquiry" in receipt.reason_code
+
+    def test_cancellation_classified(self):
+        req = HandleInboundRequest(
+            smb_id="smb_001",
+            inbound_channel=InboundChannel.SMS,
+            sender=InboundSender(phone="+14045551234"),
+            raw_message="I need to cancel my appointment",
+        )
+        receipt = run(handle_inbound(req))
+        assert "cancellation" in receipt.reason_code
+
+    def test_stop_keyword_triggers_opt_out(self):
+        req = HandleInboundRequest(
+            smb_id="smb_001",
+            inbound_channel=InboundChannel.SMS,
+            sender=InboundSender(phone="+14045550001"),
+            raw_message="STOP",
+        )
+        receipt = run(handle_inbound(req))
+        assert receipt.result.get("opt_out_processed") is True
+
+
+class TestGetStatusAndOutcome:
+    def test_get_status_unknown_operation(self):
+        result = run(handle_get_status("op_UNKNOWN"))
+        assert result["status"] == "not_found"
+
+    def test_get_outcome_unknown_returns_failure(self):
+        receipt = run(handle_get_outcome("op_UNKNOWN"))
+        assert receipt.status == OperationStatus.FAILURE
+        assert receipt.reason_code == "not_found"

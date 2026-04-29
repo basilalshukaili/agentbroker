@@ -1,0 +1,228 @@
+name: SMB Broker CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  ENVIRONMENT: testing
+
+jobs:
+
+  # --------------------------------------------------------------------------
+  # Layer 1: Lint + type check
+  # --------------------------------------------------------------------------
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install ruff mypy pydantic==2.7.1
+
+      - name: Ruff lint
+        run: ruff check . --select E,F,W,I --ignore E501
+
+      - name: Mypy type check
+        run: mypy core/ compliance/ reliability/ billing/ telemetry/ --ignore-missing-imports --no-strict-optional
+        continue-on-error: true   # Warn but don't block on mypy in v0.1
+
+  # --------------------------------------------------------------------------
+  # Layer 2: Unit tests
+  # --------------------------------------------------------------------------
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --tb=short --cov=core --cov=compliance \
+            --cov-report=xml:coverage_unit.xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage_unit.xml
+          flags: unit
+
+  # --------------------------------------------------------------------------
+  # Layer 3: Compliance test suite
+  # --------------------------------------------------------------------------
+  compliance-tests:
+    name: Compliance Test Suite
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run compliance tests
+        run: pytest tests/compliance_tests/ -v --tb=short
+
+  # --------------------------------------------------------------------------
+  # Layer 4: Contract tests
+  # --------------------------------------------------------------------------
+  contract-tests:
+    name: Contract Tests (Manifest)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run contract tests
+        run: pytest tests/contract/ -v --tb=short
+
+  # --------------------------------------------------------------------------
+  # Layer 5: Fault injection tests
+  # --------------------------------------------------------------------------
+  fault-injection:
+    name: Fault Injection Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fault injection tests
+        run: pytest tests/fault_injection/ -v --tb=short
+
+  # --------------------------------------------------------------------------
+  # Layer 6: Agent simulation (P10 harness)
+  # --------------------------------------------------------------------------
+  agent-simulation:
+    name: Agent Simulation (WinRate)
+    runs-on: ubuntu-latest
+    needs: [compliance-tests, contract-tests, fault-injection]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run agent simulation
+        run: python -m tests.agent_sim.harness
+
+      - name: Assert WinRate threshold
+        run: |
+          python - <<'EOF'
+          import json, sys
+          with open("reports/agent_sim_report.json") as f:
+              report = json.load(f)
+          wr = report.get("aggregate_win_rate", 0)
+          print(f"Aggregate WinRate: {wr:.2%}")
+          # Fail CI if WinRate drops below 45%
+          if wr < 0.45:
+              print(f"FAIL: WinRate {wr:.2%} below threshold 45%", file=sys.stderr)
+              sys.exit(1)
+          print("PASS: WinRate above threshold.")
+          EOF
+
+      - name: Upload simulation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-sim-report
+          path: reports/agent_sim_report.json
+
+  # --------------------------------------------------------------------------
+  # Layer 7: Docker build + self-test
+  # --------------------------------------------------------------------------
+  docker-build:
+    name: Docker Build & Self-Test
+    runs-on: ubuntu-latest
+    needs: agent-simulation
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        run: |
+          docker build -f deploy/Dockerfile -t smb-broker:ci .
+
+      - name: Run self-test inside container
+        run: |
+          docker run --rm \
+            -e ENVIRONMENT=testing \
+            -e REQUIRE_AUTH=false \
+            smb-broker:ci \
+            python -c "
+          import asyncio
+          from agent_interface.self_test import run_self_test
+          report = asyncio.run(run_self_test())
+          print(f'Self-test: {report.passed_checks}/{report.total_checks} passed')
+          if not report.all_passed:
+              failed = [c.name for c in report.checks if not c.passed]
+              raise SystemExit(f'FAIL: {failed}')
+          print('All self-test checks passed.')
+          "
+
+  # --------------------------------------------------------------------------
+  # Deploy gate (main branch only)
+  # --------------------------------------------------------------------------
+  deploy-gate:
+    name: Deploy Gate
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: All gates passed
+        run: |
+          echo "All CI gates passed. Ready for deployment."
+          echo "Version: $(cat requirements.txt | grep '^# ' | head -1)"
+          echo "Commit: ${{ github.sha }}"

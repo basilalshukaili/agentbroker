@@ -1,0 +1,48 @@
+# Fly.io deployment config — free tier
+# Works in Oman. Sign up at fly.io with GitHub; free allowance = 3 shared-cpu-1x VMs + 3GB volume.
+#
+# Deploy: `flyctl deploy --config deploy/fly.toml`
+# First time: `flyctl launch --no-deploy` to register the app.
+
+app = "agentbroker"
+primary_region = "fra"  # Frankfurt — closest free region to Oman
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENVIRONMENT = "production"
+  LOG_LEVEL = "INFO"
+  PORT = "8000"
+  REQUIRE_AUTH = "true"
+  COMPLIANCE_DEFAULT_JURISDICTION = "international"
+  SUPPLY_SEED_MODE = "empty"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"   # free-tier auto-suspends idle machines
+  auto_start_machines = true
+  min_machines_running = 0      # 0 = free tier; bump to 1 once paid traffic arrives
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+# Set secrets BEFORE deploy:
+#   flyctl secrets set TWILIO_ACCOUNT_SID="..." TWILIO_AUTH_TOKEN="..." \
+#                       CALCOM_API_KEY="..." VAPI_API_KEY="..." \
+#                       RESEND_API_KEY="..." AGENT_IDENTITY_SIGNING_SECRET="..."

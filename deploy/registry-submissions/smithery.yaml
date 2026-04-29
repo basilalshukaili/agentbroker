@@ -1,0 +1,90 @@
+# Smithery MCP server registry entry.
+# Submit this file via PR to https://github.com/smithery-ai/registry
+# Or paste the contents into the Smithery web form: https://smithery.ai/server/new
+
+name: smb-broker
+displayName: "SMB Transaction & Communication Broker"
+description: >
+  Agent-callable horizontal layer for discovering, verifying, scheduling with,
+  and messaging long-tail small/mid-sized businesses worldwide. 12 operations,
+  built-in compliance (TCPA / GDPR / CASL / 10DLC / two-party recording consent),
+  channel fallback (Cal.com → voice AI → SMS → email → web form), idempotent.
+
+vendor: agentbroker.qzz.io
+homepage: https://agentbroker.qzz.io
+repository: https://github.com/YOUR_GITHUB_USERNAME/smb-broker
+license: proprietary
+
+categories:
+  - business
+  - automation
+  - scheduling
+  - messaging
+  - compliance
+
+tags:
+  - mcp
+  - smb
+  - business-automation
+  - scheduling
+  - cal.com
+  - twilio
+  - vapi
+  - voice-ai
+  - sms
+  - compliance
+  - tcpa
+  - gdpr
+
+connection:
+  type: http
+  url: https://agentbroker.qzz.io/mcp
+  authentication:
+    type: bearer
+    header: X-Agent-Identity
+    description: "JWT token issued by /auth/token endpoint"
+
+tools:
+  - name: find_business
+    description: "Search SMBs by vertical + location + capability"
+  - name: verify_business
+    description: "Confirm an SMB has a specific capability"
+  - name: send_message
+    description: "Send SMS / email / voice with full compliance pre-check"
+  - name: capture_lead
+    description: "Hand off a prospect to an SMB with dedup"
+  - name: schedule_appointment
+    description: "Book / reschedule / cancel via Cal.com → voice fallback"
+  - name: send_transactional_confirmation
+    description: "TCPA-exempt transactional confirmations (booking / receipt)"
+  - name: handle_inbound
+    description: "Classify customer messages (booking / cancel / opt-out / question)"
+  - name: escalate_to_human
+    description: "Hand off to a human when the agent is stuck"
+  - name: get_status
+    description: "Poll status of an async operation"
+  - name: get_outcome
+    description: "Retrieve final outcome of an async operation"
+  - name: preview_cost
+    description: "Free cost / latency / success-probability estimate"
+  - name: self_test
+    description: "Free service health check"
+
+screenshots:
+  - url: https://agentbroker.qzz.io/static/screenshot-1.png
+    caption: "MCP tools surface in Claude Desktop"
+  - url: https://agentbroker.qzz.io/static/screenshot-2.png
+    caption: "Live booking via Cal.com integration"
+
+documentation:
+  - url: https://agentbroker.qzz.io/docs
+    type: getting_started
+  - url: https://agentbroker.qzz.io/.well-known/mcp.json
+    type: mcp_descriptor
+  - url: https://agentbroker.qzz.io/llms.txt
+    type: llms_txt
+
+pricing:
+  free_tier: "100 ops/month free for any agent"
+  paid_tiers: "Developer $49/mo, Business $499/mo, Enterprise negotiated"
+  outcome_pricing: "schedule_appointment: $0.15 base + $0.85 success premium"

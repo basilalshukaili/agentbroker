@@ -1,0 +1,121 @@
+version: "3.9"
+
+# SMB Transaction & Communication Broker — local development stack
+# Services: api, worker (Celery), postgres, redis
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.yml up
+#   docker compose -f deploy/docker-compose.yml run api pytest
+
+services:
+
+  # --------------------------------------------------------------------------
+  # API server
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: runtime
+    image: smb-broker:latest
+    container_name: smb-broker-api
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql://smb_broker:smb_broker@postgres:5432/smb_broker
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      AGENT_IDENTITY_SIGNING_SECRET: ${AGENT_IDENTITY_SIGNING_SECRET:-dev-secret-local}
+      BILLING_RECEIPT_SIGNING_SECRET: ${BILLING_RECEIPT_SIGNING_SECRET:-billing-secret-local}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      VAPI_API_KEY: ${VAPI_API_KEY:-}
+      CALCOM_API_KEY: ${CALCOM_API_KEY:-}
+      REQUIRE_AUTH: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../reports:/app/reports
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --------------------------------------------------------------------------
+  # Celery worker — processes async booking/webhook jobs
+  # --------------------------------------------------------------------------
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: runtime
+    image: smb-broker:latest
+    container_name: smb-broker-worker
+    command: ["celery", "-A", "reliability.async_runner", "worker", "--loglevel=info", "--concurrency=4"]
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql://smb_broker:smb_broker@postgres:5432/smb_broker
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      VAPI_API_KEY: ${VAPI_API_KEY:-}
+      CALCOM_API_KEY: ${CALCOM_API_KEY:-}
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL — idempotency fallback, outcome store, audit log persistence
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: smb-broker-postgres
+    environment:
+      POSTGRES_USER: smb_broker
+      POSTGRES_PASSWORD: smb_broker
+      POSTGRES_DB: smb_broker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smb_broker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Redis — Celery broker + idempotency primary store
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: smb-broker-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

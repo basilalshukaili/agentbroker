@@ -43,7 +43,7 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 {
   "mcpServers": {
     "smb-broker": {
-      "url": "https://smb-broker.example.com/mcp",
+      "url": "https://agentbroker.qzz.io/mcp",
       "headers": { "X-Agent-Identity": "$SMB_BROKER_TOKEN" }
     }
   }
@@ -54,7 +54,7 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 
 ```python
 import httpx, openai
-tools = httpx.get("https://smb-broker.example.com/.well-known/openai-tools.json").json()["tools"]
+tools = httpx.get("https://agentbroker.qzz.io/.well-known/openai-tools.json").json()["tools"]
 client = openai.OpenAI()
 resp = client.chat.completions.create(
     model="gpt-4",
@@ -67,7 +67,7 @@ resp = client.chat.completions.create(
 
 ```python
 import httpx, anthropic
-tools = httpx.get("https://smb-broker.example.com/.well-known/anthropic-tools.json").json()["tools"]
+tools = httpx.get("https://agentbroker.qzz.io/.well-known/anthropic-tools.json").json()["tools"]
 client = anthropic.Anthropic()
 msg = client.messages.create(
     model="claude-opus-4-5",
@@ -80,7 +80,7 @@ msg = client.messages.create(
 ### Option 4: Plain REST
 
 ```bash
-curl -X POST https://smb-broker.example.com/ops/find_business \
+curl -X POST https://agentbroker.qzz.io/ops/find_business \
   -H "X-Agent-Identity: $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -96,16 +96,16 @@ We're discoverable through every protocol agents currently use:
 
 | Protocol | URL |
 |----------|-----|
-| MCP | `https://smb-broker.example.com/mcp` |
-| MCP descriptor | `https://smb-broker.example.com/.well-known/mcp.json` |
-| OpenAI ChatGPT plugin | `https://smb-broker.example.com/.well-known/ai-plugin.json` |
-| OpenAI function tools | `https://smb-broker.example.com/.well-known/openai-tools.json` |
-| Anthropic tool_use | `https://smb-broker.example.com/.well-known/anthropic-tools.json` |
-| A2A (Agent-to-Agent) | `https://smb-broker.example.com/.well-known/agents.json` |
-| llms.txt | `https://smb-broker.example.com/llms.txt` |
-| OpenAPI 3.1 | `https://smb-broker.example.com/openapi.yaml` |
-| Capability manifest | `https://smb-broker.example.com/manifest` |
-| Service discovery card | `https://smb-broker.example.com/.well-known/agent-service` |
+| MCP | `https://agentbroker.qzz.io/mcp` |
+| MCP descriptor | `https://agentbroker.qzz.io/.well-known/mcp.json` |
+| OpenAI ChatGPT plugin | `https://agentbroker.qzz.io/.well-known/ai-plugin.json` |
+| OpenAI function tools | `https://agentbroker.qzz.io/.well-known/openai-tools.json` |
+| Anthropic tool_use | `https://agentbroker.qzz.io/.well-known/anthropic-tools.json` |
+| A2A (Agent-to-Agent) | `https://agentbroker.qzz.io/.well-known/agents.json` |
+| llms.txt | `https://agentbroker.qzz.io/llms.txt` |
+| OpenAPI 3.1 | `https://agentbroker.qzz.io/openapi.yaml` |
+| Capability manifest | `https://agentbroker.qzz.io/manifest` |
+| Service discovery card | `https://agentbroker.qzz.io/.well-known/agent-service` |
 
 ## Why agents pick us (measured, not assumed)
 
