@@ -122,6 +122,25 @@ async def health():
     return health_check()
 
 
+@app.get("/healthz/external", tags=["Discovery"])
+async def health_external():
+    """
+    Deep health check — pings every upstream we depend on (Twilio, Cal.com,
+    Vapi, Resend, Paddle) plus internal discovery surfaces (manifest, MCP,
+    llms.txt). Returns per-service status with latency and any low-balance
+    warnings. Cheap (~ 5 s parallel) and safe to expose publicly: no key
+    or sensitive data leaks into the response.
+    """
+    from agent_interface.health_external import run_external_health
+    report = await run_external_health()
+    status_code = 200 if report["status"] == "ok" else (200 if report["status"] == "degraded" else 503)
+    return JSONResponse(
+        content=report,
+        status_code=status_code,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # MCP server — JSON-RPC 2.0 endpoint
 # ---------------------------------------------------------------------------
