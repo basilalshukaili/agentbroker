@@ -24,6 +24,10 @@ services:
         value: international
       - key: SUPPLY_SEED_MODE
         value: empty
+      - key: PUBLIC_BASE_URL
+        value: https://smb-broker.onrender.com
+      - key: BILLING_PROVIDER
+        value: paddle
       # Set the rest via Render dashboard → Environment:
       #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, CALCOM_API_KEY, VAPI_API_KEY,
       #   RESEND_API_KEY, AGENT_IDENTITY_SIGNING_SECRET, BILLING_RECEIPT_SIGNING_SECRET

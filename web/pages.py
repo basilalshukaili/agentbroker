@@ -95,7 +95,7 @@ def render_home() -> str:
       <pre><code>{
   "mcpServers": {
     "agent-broker": {
-      "url": "https://agentbroker.qzz.io/mcp",
+      "url": "https://smb-broker.onrender.com/mcp",
       "headers": {
         "X-Agent-Identity": "$TOKEN"
       }
@@ -106,14 +106,14 @@ def render_home() -> str:
     <div class="card">
       <h3>OpenAI function calling</h3>
       <pre><code>tools = httpx.get(
-  "https://agentbroker.qzz.io"
+  "https://smb-broker.onrender.com"
   "/.well-known/openai-tools.json"
 ).json()["tools"]</code></pre>
     </div>
     <div class="card">
       <h3>Anthropic tool_use</h3>
       <pre><code>tools = httpx.get(
-  "https://agentbroker.qzz.io"
+  "https://smb-broker.onrender.com"
   "/.well-known/anthropic-tools.json"
 ).json()["tools"]</code></pre>
     </div>

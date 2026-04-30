@@ -13,10 +13,10 @@
 
 | Channel | Status | What's needed from you |
 |---|---|---|
-| **Smithery** registry | **LIVE** ✅ deployment 23b7e706… | nothing — listing at https://smithery.ai/server/lordbasil147/agent-broker |
+| **Smithery** registry | **LIVE** ✅ pointing at smb-broker.onrender.com | nothing — listing at https://smithery.ai/server/lordbasil147/agent-broker |
 | **GitHub topics** (11 set) | **LIVE** ✅ | nothing — Glama crawls within ~3 days |
-| `modelcontextprotocol/servers` PR | needs one-click fork | open https://github.com/modelcontextprotocol/servers/fork → "Create fork" → re-run script |
-| `punkpeye/awesome-mcp-servers` PR | needs one-click fork | open https://github.com/punkpeye/awesome-mcp-servers/fork → "Create fork" → re-run script |
+| `modelcontextprotocol/servers` PR | forks ✅, PAT scope ❌ | extend the PAT (see STEP 1 below) and re-run script |
+| `punkpeye/awesome-mcp-servers` PR | forks ✅, PAT scope ❌ | same — same script handles both |
 | **Glama** | crawls GitHub topic — auto-indexed in 1-3 days | nothing |
 | **MCP Hub** (mcphub.io) | crawls GitHub topic | nothing |
 | **apis.guru** OpenAPI catalog | manual PR — see below | one PR (5 min) |
@@ -33,25 +33,37 @@
 
 ## STEP 1 — finish the two GitHub PRs (5 minutes total)
 
-Open these two URLs in a browser, click **"Create fork"** on each, then
-re-run the registry script:
+> ✅ The forks already exist — confirmed `basilalshukaili/servers` and
+> `basilalshukaili/awesome-mcp-servers` are reachable via the API.
+> Only thing blocking the PRs is **PAT scope**: your fine-grained
+> token is scoped to `agentbroker` only, so it can't write to the
+> two new fork repos. One 30-second fix:
 
-1. <https://github.com/modelcontextprotocol/servers/fork>
-2. <https://github.com/punkpeye/awesome-mcp-servers/fork>
+**Option A — extend the existing PAT (recommended)**
 
-Then:
+1. Go to <https://github.com/settings/personal-access-tokens>
+2. Click the `agentbroker` token to edit it.
+3. **Repository access → Only select repositories** → add the two new
+   forks:
+   - `basilalshukaili/servers`
+   - `basilalshukaili/awesome-mcp-servers`
+4. **Repository permissions** → ensure these are **Read and write**:
+   - `Contents`
+   - `Pull requests`
+5. Click **Update**.
 
-```bash
-python scripts/submit_to_registries.py
-```
+Then re-run `python scripts/submit_to_registries.py` — it will splice
+our entry into both upstream READMEs, commit on the `add-agent-broker`
+branch in each fork, and open both PRs upstream programmatically.
 
-The script is idempotent. Once your fork exists, it will:
-- splice our entry into the right section of the upstream README
-- commit on a `add-agent-broker` branch in your fork
-- open the PR upstream programmatically
-- if the PR is already open, return the URL instead of re-creating it
+**Option B — issue a classic PAT** (if Option A is fiddly)
 
-Both PRs typically merge within 5-10 days.
+1. <https://github.com/settings/tokens/new> → `Tokens (classic)` → `Generate new token`.
+2. Scope: **`public_repo`** (only this one).
+3. Paste the new token into `.env` over the existing `GITHUB_PAT=…` line.
+4. Re-run the script.
+
+Either way, both PRs typically merge within 5-10 days.
 
 ---
 
@@ -64,12 +76,12 @@ JSON index. Submission flow:
 1. Open <https://github.com/APIs-guru/openapi-directory> in a browser.
    Click **"Fork"** (top-right).
 2. In your fork, navigate to `APIs/` and create the path:
-   `APIs/agentbroker.qzz.io/1.0.0/openapi.yaml`.
+   `APIs/smb-broker.onrender.com/1.0.0/openapi.yaml`.
 3. Paste the contents of our live OpenAPI:
-   `https://agentbroker.qzz.io/openapi.yaml` (curl it, save as that file).
-4. Open `APIs/agentbroker.qzz.io/1.0.0/openapi.yaml` in your fork's web
+   `https://smb-broker.onrender.com/openapi.yaml` (curl it, save as that file).
+4. Open `APIs/smb-broker.onrender.com/1.0.0/openapi.yaml` in your fork's web
    editor and ensure the top-level `info` block has `x-providerName:
-   agentbroker.qzz.io` and `x-origin` referencing the URL.
+   smb-broker.onrender.com` and `x-origin` referencing the URL.
 5. Commit on a branch named `add-agentbroker`, then **"Compare & pull
    request"** against `APIs-guru/openapi-directory` `main`.
 6. Their bot validates within ~10 minutes; a maintainer merges within a week.
@@ -98,17 +110,17 @@ message, and schedule appointments with small businesses worldwide.
 Live, free for any agent up to 100 ops/month, full TCPA / GDPR / CASL
 compliance gate built in.
 
-Live MCP endpoint:    https://agentbroker.qzz.io/mcp
+Live MCP endpoint:    https://smb-broker.onrender.com/mcp
 Repo (open code):     https://github.com/basilalshukaili/agentbroker
 Smithery listing:     https://smithery.ai/server/lordbasil147/agent-broker
-Anthropic-tools JSON: https://agentbroker.qzz.io/.well-known/anthropic-tools.json
+Anthropic-tools JSON: https://smb-broker.onrender.com/.well-known/anthropic-tools.json
 
 Test it in 30 seconds — drop this into Claude Desktop's claude_desktop_config.json:
 
   {
     "mcpServers": {
       "agent-broker": {
-        "url": "https://agentbroker.qzz.io/mcp"
+        "url": "https://smb-broker.onrender.com/mcp"
       }
     }
   }
@@ -129,7 +141,7 @@ Hi,
 
 Submitting Agent Broker for the Cursor MCP catalog.
 
-Endpoint:        https://agentbroker.qzz.io/mcp
+Endpoint:        https://smb-broker.onrender.com/mcp
 Repo:            https://github.com/basilalshukaili/agentbroker
 12 tools: find/verify/message/schedule across small businesses worldwide.
 Free tier 100 ops/month. No auth required for read-only ops.
@@ -138,7 +150,7 @@ Connection JSON:
   {
     "mcpServers": {
       "agent-broker": {
-        "url": "https://agentbroker.qzz.io/mcp"
+        "url": "https://smb-broker.onrender.com/mcp"
       }
     }
   }
@@ -166,7 +178,7 @@ Hi,
 
 Submitting Agent Broker for the Cline recommended-MCP-servers list:
 
-  Endpoint: https://agentbroker.qzz.io/mcp
+  Endpoint: https://smb-broker.onrender.com/mcp
   Repo:     https://github.com/basilalshukaili/agentbroker
   Tools:    12 (find_business, verify_business, send_message,
              capture_lead, schedule_appointment, send_transactional_confirmation,
@@ -191,8 +203,8 @@ Hi,
 
 Submitting Agent Broker as a tool target for Perplexity's tool-use API.
 
-Endpoint:               https://agentbroker.qzz.io/mcp
-OpenAI-tools format:    https://agentbroker.qzz.io/.well-known/openai-tools.json
+Endpoint:               https://smb-broker.onrender.com/mcp
+OpenAI-tools format:    https://smb-broker.onrender.com/.well-known/openai-tools.json
 12 tools, free tier 100 ops/month, MoR billing via Paddle for paid traffic.
 
 If Perplexity has a tools-marketplace, please point me to the submission
@@ -223,7 +235,7 @@ These are forms, not emails. Submit once, leave for years.
 | MCP Hub | https://mcphub.io/submit | MCP-specific catalogue |
 | Awesome AI Tools | <https://github.com/mahseema/awesome-ai-tools> README PR | community-maintained list |
 
-For each: submit `https://agentbroker.qzz.io`, category "Developer
+For each: submit `https://smb-broker.onrender.com`, category "Developer
 Tools" or "Productivity / Scheduling", description "12-tool MCP server
 for AI agents to interact with small businesses worldwide. Free tier."
 
@@ -249,7 +261,7 @@ Total writing time: 90 minutes once. Crawlers fetch within ~7 days.
 
 Now exposed at:
 
-> **<https://agentbroker.qzz.io/healthz/external>**
+> **<https://smb-broker.onrender.com/healthz/external>**
 
 It pings every upstream (Twilio, Cal.com, Vapi, Resend, Paddle) plus
 internal discovery surfaces, in parallel. Returns:
@@ -273,7 +285,7 @@ You can also have Render's free **uptime alerts** ping it once a minute
 
 | Pending | Time | Critical? |
 |---|---|---|
-| Map `agentbroker.qzz.io` CNAME → `smb-broker.onrender.com` | 5 min in DigitalPlat web UI | **Yes — many of the URLs above don't resolve until this is done** |
+| Map `smb-broker.onrender.com` CNAME → `smb-broker.onrender.com` | 5 min in DigitalPlat web UI | **Yes — many of the URLs above don't resolve until this is done** |
 | Open the two pre-fork URLs above and re-run the registry script | 3 min | High — these are the most valuable PRs |
 | Paddle business verification | 2-5 days, hands-off | Only matters when you make a sale |
 | Send the six emails | 15 min, all at once | Low (most won't reply) but free leverage |

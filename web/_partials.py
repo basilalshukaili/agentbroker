@@ -15,9 +15,13 @@ visually identical without a build step.
 from __future__ import annotations
 
 BRAND = "Agent Broker"
-DOMAIN = "agentbroker.qzz.io"
-SUPPORT_EMAIL = "support@agentbroker.qzz.io"
-PRIVACY_EMAIL = "privacy@agentbroker.qzz.io"
+# Single-source-of-truth for the public hostname. Env-overridable so the
+# domain can be swapped at any time without code changes (e.g., when we
+# point a real domain at Render via CNAME).
+import os as _os
+DOMAIN = _os.environ.get("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").replace("https://", "").replace("http://", "").rstrip("/")
+SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "support@smb-broker.onrender.com")
+PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "privacy@smb-broker.onrender.com")
 LEGAL_ENTITY = "Agent Broker (sole proprietor: Basil Mubarak Ali Al Shukaili, Sultanate of Oman)"
 
 

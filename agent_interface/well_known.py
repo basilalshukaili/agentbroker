@@ -26,7 +26,7 @@ from agent_interface.manifest_server import get_full_manifest
 # ---------------------------------------------------------------------------
 
 import os
-BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://agentbroker.qzz.io")
+BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://smb-broker.onrender.com")
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def get_ai_plugin_manifest() -> dict:
             "is_user_authenticated": True,
         },
         "logo_url": f"{BASE_URL}/static/logo.png",
-        "contact_email": "support@agentbroker.qzz.io",
+        "contact_email": "support@smb-broker.onrender.com",
         "legal_info_url": f"{BASE_URL}/legal",
     }
 
@@ -291,7 +291,7 @@ def get_llms_txt() -> str:
         "",
         "## Contact",
         "",
-        "support@agentbroker.qzz.io",
+        "support@smb-broker.onrender.com",
     ]
     return "\n".join(lines) + "\n"
 
