@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 import config
 from core.models import (
@@ -191,6 +192,195 @@ async def well_known_mcp():
 async def llms_txt():
     """LLM-readable site map (https://llmstxt.org/)."""
     return get_llms_txt()
+
+
+# ---------------------------------------------------------------------------
+# Public, free, standalone compliance API
+# ---------------------------------------------------------------------------
+# Different from /ops/* — this endpoint is intentionally NOT gated by
+# X-Agent-Identity and not metered. The compliance gate is valuable
+# **standalone** for any developer sending SMS/email/voice through any
+# carrier (not just our broker). By exposing it as a free public API we
+# (a) become useful to devs who never plan to use our broker,
+# (b) build SEO around "TCPA / GDPR / CASL compliance check API",
+# (c) get traffic that demonstrates the rest of our surface exists.
+#
+# This is a deliberate distribution wedge — a compliance pre-check is
+# something every messaging-app developer needs and nobody currently
+# sells as a free API.
+
+class _ComplianceCheckRequest(BaseModel):
+    recipient_id: str = Field(..., description="Phone (E.164) or email of recipient.")
+    channel: str = Field(..., description="One of: sms, email, voice.")
+    message_type: str = Field(
+        "transactional",
+        description="One of: marketing, transactional, reminder, opt-in-confirm, customer-service.",
+    )
+    content: str = Field(..., description="The message body the agent is about to send.")
+    country_code: Optional[str] = Field(
+        None, description="ISO 3166-1 alpha-2 country code (e.g. 'US', 'DE'). Auto-inferred from phone if omitted."
+    )
+    state_code: Optional[str] = Field(
+        None, description="US state code (e.g. 'CA') for state-specific rules."
+    )
+
+
+@app.post("/compliance/check", tags=["Public APIs"])
+async def compliance_check_public(req: _ComplianceCheckRequest):
+    """Free, public, no-auth compliance pre-check API.
+
+    Returns whether sending the supplied (recipient, channel, message_type, content)
+    combination would comply with TCPA / GDPR / CASL / 10DLC and 22 country-specific
+    rule sets. Drop-in for any messaging stack — no need to use our broker.
+
+    Use cases:
+      - Pre-flight check before calling Twilio/Vonage/Plivo directly
+      - Audit a marketing list before bulk send
+      - Dashboards / lint rules in messaging app pipelines
+
+    Free forever. Rate-limited to ~60 req/min per IP.
+    """
+    from compliance.pre_check import pre_check
+    from core.models import ComplianceViolationError
+    try:
+        pre_check(
+            recipient_id=req.recipient_id,
+            channel=req.channel,
+            message_type=req.message_type,
+            content=req.content,
+            country_code=req.country_code,
+            state_code=req.state_code,
+        )
+        return {
+            "legal": True,
+            "rule_set": req.country_code or "international",
+            "channel": req.channel,
+            "message_type": req.message_type,
+            "notes": "Pre-check passed. Send is permitted under the supplied jurisdiction.",
+        }
+    except ComplianceViolationError as cve:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "legal": False,
+                "rule": cve.rule,
+                "rule_set": cve.jurisdiction,
+                "channel": cve.channel,
+                "message": cve.message,
+                "remediation": _remediation_for(cve.rule),
+            },
+        )
+
+
+def _remediation_for(rule: str) -> str:
+    return {
+        "restricted_content": "Reword the message to remove the restricted category, or seek explicit licensing for the regulated content.",
+        "recipient_opted_out": "Honor the opt-out — the recipient has unsubscribed. Do not send. Add to suppression list.",
+        "TCPA_marketing_consent": "Obtain prior express written consent (TCPA) before sending marketing SMS to US numbers.",
+        "GDPR_marketing_consent": "Obtain GDPR Article 6/7 consent before marketing email to EU/UK residents.",
+        "CASL_marketing_consent": "Obtain explicit CASL consent before commercial electronic messages to Canadian recipients.",
+        "10DLC_unregistered": "Register your sending number under a 10DLC campaign with The Campaign Registry before sending US A2P SMS.",
+        "10DLC_campaign_not_registered": "Register a 10DLC campaign with The Campaign Registry (TCR) before sending US A2P SMS. Required by US carriers since 2023.",
+    }.get(rule, "Review the cited rule in our jurisdiction reference at /docs.")
+
+
+@app.get("/supply/platforms", tags=["Public APIs"])
+async def supply_platforms():
+    """Public catalogue of booking platforms `import_booking_url` understands.
+
+    No auth, no rate limit. The intended caller is an agent that just got a
+    `no_results` from `find_business` and needs to know what URL formats to
+    accept from its end-user. Each entry includes a regex pattern + an example.
+    """
+    return {
+        "platforms": [
+            {"name": "Cal.com",         "pattern": r"https://cal.com/<handle>",                                  "example": "https://cal.com/peer"},
+            {"name": "Calendly",        "pattern": r"https://calendly.com/<handle>/<slug>",                       "example": "https://calendly.com/acme/intro"},
+            {"name": "Doctolib",        "pattern": r"https://www.doctolib.{fr,de,it}/<specialty>/<city>/<doctor>","example": "https://www.doctolib.fr/dentiste/paris/jean-dupont"},
+            {"name": "Booksy",          "pattern": r"https://booksy.com/en-us/<id>_<slug>",                       "example": "https://booksy.com/en-us/123_jane-salon"},
+            {"name": "Fresha",          "pattern": r"https://fresha.com/<slug>",                                  "example": "https://fresha.com/a/jane-salon-london"},
+            {"name": "OpenTable",       "pattern": r"https://www.opentable.com/r/<slug>",                         "example": "https://www.opentable.com/r/acme-bistro-tokyo"},
+            {"name": "Setmore",         "pattern": r"https://setmore.com/<slug>",                                 "example": "https://setmore.com/jane-salon"},
+            {"name": "Square",          "pattern": r"https://squareup.com/appointments/book/<id> or https://<name>.square.site", "example": "https://jane.square.site"},
+            {"name": "Acuity",          "pattern": r"https://app.acuityscheduling.com/schedule.php?owner=<id>",   "example": "https://app.acuityscheduling.com/schedule.php?owner=12345"},
+            {"name": "Schedulista",     "pattern": r"https://www.schedulista.com/<slug>",                         "example": "https://www.schedulista.com/jane-salon"},
+            {"name": "Squarespace",     "pattern": r"https://<custom>.squarespace-scheduling.com",                "example": "https://jane.squarespace-scheduling.com"},
+            {"name": "BookMyCity",      "pattern": r"https://bookmycity.com/<slug>",                              "example": "https://bookmycity.com/jane-salon"},
+        ],
+        "import_endpoint": "/supply/import_booking_url",
+        "next_step": (
+            "Pick a URL the user mentioned, POST it to /supply/import_booking_url, "
+            "then the directory is populated and find_business returns the business. "
+            "The schedule_appointment call works against the imported entry."
+        ),
+    }
+
+
+@app.get("/demo", tags=["Public APIs"])
+async def demo():
+    """Live, no-auth, no-input demonstration of the full flow.
+
+    Imports a public Cal.com showcase URL, then immediately calls find_business
+    against the just-imported entry. Lets a curious developer confirm the
+    contract works in 1 second without writing any code or providing any input.
+    """
+    from supply.booking_page_importer import import_from_booking_url, ImportRequest
+    from core.find_business import handle_find_business
+    from core.models import FindBusinessRequest, Vertical, LocationFilter
+    import time
+
+    t0 = time.monotonic()
+
+    demo_url = "https://cal.com/peer"  # Cal.com's longstanding public showcase handle
+    imp = await import_from_booking_url(ImportRequest(
+        booking_url=demo_url,
+        business_name="Cal.com Demo (Peer)",
+        vertical=Vertical.PROFESSIONAL_SERVICES,
+        country_code="US",
+    ))
+
+    found = await handle_find_business(FindBusinessRequest(
+        vertical=Vertical.PROFESSIONAL_SERVICES,
+        location=LocationFilter(zip_or_city="online"),
+        capability=None,
+        max_results=5,
+    ))
+
+    return {
+        "ok": True,
+        "elapsed_ms": int((time.monotonic() - t0) * 1000),
+        "step_1_import": {
+            "input_url": demo_url,
+            "platform_detected": imp.platform.value if imp.platform else None,
+            "smb_id": imp.smb_id,
+            "status": imp.status.value,
+        },
+        "step_2_find_business": {
+            "matches": len(found.result.get("businesses", [])) if isinstance(found.result, dict) else 0,
+            "total_in_directory": found.result.get("total_in_supply_network") if isinstance(found.result, dict) else None,
+        },
+        "next": (
+            "Now POST to /ops/schedule_appointment with the smb_id from step 1 to "
+            "complete the booking flow. Or call /mcp tools/list to see all 12 tools."
+        ),
+        "try_yourself": {
+            "mcp_endpoint": "POST https://smb-broker.onrender.com/mcp",
+            "import_endpoint": "POST https://smb-broker.onrender.com/supply/import_booking_url",
+            "find_endpoint": "POST https://smb-broker.onrender.com/ops/find_business",
+        },
+    }
+
+
+@app.get("/compliance/jurisdictions", tags=["Public APIs"])
+async def compliance_jurisdictions():
+    """Public list of jurisdictions with native compliance rules.
+    No auth, free. Useful for any compliance-aware sender."""
+    from compliance.jurisdiction_rules import list_supported_jurisdictions
+    return {
+        "supported": list_supported_jurisdictions(),
+        "fallback": "international",
+        "note": "Unknown jurisdictions fall back to a conservative INTERNATIONAL rule set.",
+    }
 
 
 @app.get("/openapi.yaml", response_class=PlainTextResponse, tags=["Discovery"], include_in_schema=False)

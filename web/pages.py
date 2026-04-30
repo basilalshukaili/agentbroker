@@ -47,17 +47,24 @@ _HOME_LIVE_JS = """
 def render_home() -> str:
     body = """
 <header class="hero">
-  <h1>The agent-to-business layer.</h1>
+  <h1>Give Claude any booking URL. Claude books it.</h1>
   <p class="lead">
-    Horizontal MCP server. 12 tools your AI agent can call to find, verify,
-    message, and schedule with small businesses worldwide. TCPA, GDPR, CASL,
-    and recording-consent compliance built in. Free for any agent up to 100 ops/month.
+    MCP server that turns any Cal.com / Calendly / Doctolib / Booksy / Fresha / OpenTable /
+    Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity link into a
+    Claude-bookable appointment &mdash; with TCPA, GDPR, and CASL compliance built in.
+    Free for any agent up to 100 ops/month.
   </p>
   <div class="cta">
-    <a class="btn btn-primary" href="/mcp">Connect via MCP &rarr;</a>
+    <a class="btn btn-primary" href="/demo">Try the live demo &rarr;</a>
+    <a class="btn btn-secondary" href="#how">Connect to Claude</a>
     <a class="btn btn-secondary" href="/docs">API docs</a>
-    <a class="btn btn-secondary" href="/.well-known/openai-tools.json">OpenAI tools JSON</a>
   </div>
+  <p style="margin-top:36px; font-size:14px; color:var(--text-muted);">
+    Example prompt for any MCP-aware agent:<br>
+    <code style="display:inline-block; margin-top:8px; padding:8px 14px; background:var(--surface-2); border-radius:6px; color:var(--text);">
+      "Book me a haircut at https://cal.com/jane-salon"
+    </code>
+  </p>
 </header>
 
 <section class="section" id="live">
