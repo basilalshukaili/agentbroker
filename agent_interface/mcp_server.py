@@ -71,12 +71,35 @@ def _build_tool_list() -> list[dict]:
 
 
 def _format_description_for_llm(op: dict) -> str:
-    """Build an LLM-optimized description that combines all selection signals."""
-    parts = [
-        op["description"],
-        "",
-        f"WHEN TO USE: {op['when_to_use']}",
+    """Build an LLM-optimized description that combines all selection signals.
+
+    The order matters: the LLM is most likely to act on the first 200 tokens.
+    Lead with WHEN-TO-USE patterns and example user queries because that's
+    what the LLM matches against when picking a tool from `tools/list`.
+    """
+    parts = [op["description"], ""]
+
+    # User-query examples block first — LLMs are massively few-shot driven and
+    # match against natural-language user phrases when picking a tool.
+    user_examples = op.get("user_query_examples") or [
+        ex for ex in (op.get("examples") or []) if ex.get("user_says")
     ]
+    if user_examples:
+        parts.append("EXAMPLE USER QUERIES THAT MATCH THIS TOOL:")
+        for ex in user_examples[:4]:
+            user_says = ex.get("user_says")
+            if not user_says:
+                continue
+            parts.append(f"  user: \"{user_says}\"")
+            call = ex.get("agent_call") or {}
+            if call.get("tool"):
+                parts.append(f"  -> call {call['tool']}({json.dumps(call.get('arguments', {}))})")
+            if ex.get("then_call"):
+                nxt = ex["then_call"]
+                parts.append(f"  -> then {nxt.get('tool')}({json.dumps(nxt.get('arguments', {}))})")
+        parts.append("")
+
+    parts.append(f"WHEN TO USE: {op['when_to_use']}")
     if op.get("when_not_to_use"):
         parts.append(f"WHEN NOT TO USE: {op['when_not_to_use']}")
 
@@ -304,6 +327,64 @@ async def _dispatch_operation(name: str, args: dict) -> dict:
         from core.status_outcome import handle_get_outcome
         receipt = await handle_get_outcome(args["operation_id"])
 
+    elif name == "send_message":
+        from core.send_message import handle_send_message
+        from core.models import SendMessageRequest, ChannelPreference, MessageContent, RecipientType
+        req = SendMessageRequest(
+            recipient_id=args["recipient_id"],
+            recipient_type=RecipientType(args.get("recipient_type", "smb")),
+            channel_preference=ChannelPreference(args.get("channel_preference", "auto")),
+            message=MessageContent(**args["message"]),
+            country_code=args.get("country_code"),
+        )
+        receipt = await handle_send_message(req)
+
+    elif name == "send_transactional_confirmation":
+        from core.send_transactional_confirmation import handle_send_transactional_confirmation
+        from core.models import SendTransactionalConfirmationRequest
+        req = SendTransactionalConfirmationRequest(**args)
+        receipt = await handle_send_transactional_confirmation(req)
+
+    elif name == "handle_inbound":
+        from core.handle_inbound import handle_inbound as _handle_inbound
+        from core.models import HandleInboundRequest
+        req = HandleInboundRequest(**args)
+        receipt = await _handle_inbound(req)
+
+    elif name == "escalate_to_human":
+        from core.escalate_to_human import handle_escalate_to_human
+        from core.models import EscalateToHumanRequest
+        req = EscalateToHumanRequest(**args)
+        receipt = await handle_escalate_to_human(req)
+
+    elif name == "import_booking_url":
+        # The differentiator. Turns any public booking URL into a callable smb_id.
+        from supply.booking_page_importer import import_from_booking_url, ImportRequest
+        from core.models import Vertical
+        vertical = None
+        if args.get("vertical"):
+            try:
+                vertical = Vertical(args["vertical"])
+            except Exception:
+                vertical = None
+        req = ImportRequest(
+            booking_url=args["booking_url"],
+            business_name=args.get("business_name"),
+            vertical=vertical,
+            country_code=args.get("country_code"),
+            contact_phone=args.get("contact_phone"),
+            contact_email=args.get("contact_email"),
+            capabilities=args.get("capabilities", []),
+        )
+        result = await import_from_booking_url(req)
+        return {
+            "status": result.status.value,
+            "smb_id": result.smb_id,
+            "platform": result.platform.value if result.platform else None,
+            "message": result.message,
+            "next_steps": result.next_steps,
+        }
+
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")
 
@@ -321,22 +402,34 @@ async def _h_resources_list(params: dict) -> dict:
     return {
         "resources": [
             {
-                "uri": "smb-broker://manifest",
+                "uri": "agent-broker://manifest",
                 "name": "Capability Manifest",
-                "description": "Full manifest with all 12 operations and their schemas.",
+                "description": "Full manifest with all 13 operations and their schemas.",
                 "mimeType": "application/json",
             },
             {
-                "uri": "smb-broker://errors",
+                "uri": "agent-broker://booking_platforms",
+                "name": "Supported Booking Platforms",
+                "description": "12 booking platforms import_booking_url accepts (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) with regex patterns and example URLs. Use this resource to teach end-users which URL formats are acceptable.",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "agent-broker://errors",
                 "name": "Error Code Catalog",
                 "description": "All 16 error codes with retry semantics.",
                 "mimeType": "text/markdown",
             },
             {
-                "uri": "smb-broker://compliance/jurisdictions",
+                "uri": "agent-broker://compliance/jurisdictions",
                 "name": "Jurisdiction Rules",
-                "description": "Compliance rules by country/state — TCPA, GDPR, CASL, recording consent.",
+                "description": "Compliance rules by country/state — TCPA, GDPR, CASL, recording consent. 26 jurisdictions + INTERNATIONAL fallback.",
                 "mimeType": "application/json",
+            },
+            {
+                "uri": "agent-broker://cookbook",
+                "name": "Tool-chain cookbook",
+                "description": "Common multi-tool flows: 'book-from-url', 'find-then-book', 'compliant-outbound', 'async-poll'. Read this if you are unsure which tool to call first.",
+                "mimeType": "text/markdown",
             },
         ]
     }
@@ -344,7 +437,10 @@ async def _h_resources_list(params: dict) -> dict:
 
 async def _h_resources_read(params: dict) -> dict:
     uri = params.get("uri")
-    if uri == "smb-broker://manifest":
+    # Accept both legacy `smb-broker://` and canonical `agent-broker://` schemes
+    norm = uri.replace("smb-broker://", "agent-broker://", 1) if isinstance(uri, str) else uri
+
+    if norm == "agent-broker://manifest":
         return {
             "contents": [{
                 "uri": uri,
@@ -352,13 +448,38 @@ async def _h_resources_read(params: dict) -> dict:
                 "text": json.dumps(get_full_manifest(), indent=2),
             }]
         }
-    if uri == "smb-broker://errors":
+    if norm == "agent-broker://booking_platforms":
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": json.dumps({
+                    "platforms": [
+                        {"name": "Cal.com",     "example": "https://cal.com/peer"},
+                        {"name": "Calendly",    "example": "https://calendly.com/acme/intro"},
+                        {"name": "Doctolib",    "example": "https://www.doctolib.fr/dentiste/paris/jean-dupont"},
+                        {"name": "Booksy",      "example": "https://booksy.com/en-us/123_jane-salon"},
+                        {"name": "Fresha",      "example": "https://fresha.com/a/jane-salon"},
+                        {"name": "OpenTable",   "example": "https://www.opentable.com/r/acme-bistro"},
+                        {"name": "Setmore",     "example": "https://setmore.com/jane-salon"},
+                        {"name": "Square",      "example": "https://jane.square.site"},
+                        {"name": "Acuity",      "example": "https://app.acuityscheduling.com/schedule.php?owner=12345"},
+                        {"name": "Schedulista", "example": "https://www.schedulista.com/jane-salon"},
+                        {"name": "Squarespace", "example": "https://jane.squarespace-scheduling.com"},
+                        {"name": "BookMyCity",  "example": "https://bookmycity.com/jane-salon"},
+                    ],
+                    "import_tool": "import_booking_url",
+                    "next_tool": "schedule_appointment",
+                }, indent=2),
+            }]
+        }
+    if norm == "agent-broker://errors":
         from pathlib import Path
         path = Path(__file__).parent.parent / "api" / "errors.md"
         if path.exists():
             return {"contents": [{"uri": uri, "mimeType": "text/markdown",
                                   "text": path.read_text()}]}
-    if uri == "smb-broker://compliance/jurisdictions":
+    if norm == "agent-broker://compliance/jurisdictions":
         from compliance.jurisdiction_rules import _RULES
         return {
             "contents": [{
@@ -366,6 +487,32 @@ async def _h_resources_read(params: dict) -> dict:
                 "mimeType": "application/json",
                 "text": json.dumps({k: vars(v) for k, v in _RULES.items()},
                                    indent=2, default=str),
+            }]
+        }
+    if norm == "agent-broker://cookbook":
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "text/markdown",
+                "text": (
+                    "# Agent Broker tool-chain cookbook\n\n"
+                    "## When the user provides a booking URL\n"
+                    "1. `import_booking_url(booking_url=<url>)` -> returns `smb_id`\n"
+                    "2. `schedule_appointment(smb_id=<above>, action='book', preferred_time=...)`\n"
+                    "3. (optional) `send_transactional_confirmation(...)` to email the receipt\n\n"
+                    "## When the user describes a business by category + city\n"
+                    "1. `find_business(vertical, location, capability, max_results=5)`\n"
+                    "2. If `result.businesses` is non-empty, pick one and `schedule_appointment(smb_id=...)`\n"
+                    "3. If empty AND the user can supply a URL, fall through to `import_booking_url`\n\n"
+                    "## When sending an outbound SMS / email\n"
+                    "1. (optional) `POST /compliance/check` to preview legality\n"
+                    "2. `send_message(...)` — gate runs again at send time\n"
+                    "3. Treat ComplianceViolationError as a stop signal, not retry\n\n"
+                    "## Async polling\n"
+                    "Long ops return `OperationStatus.PENDING`. Poll `get_status(operation_id)` "
+                    "every 1-3 seconds, then fetch `get_outcome(operation_id)` once status is "
+                    "`success` or `failure`.\n"
+                ),
             }]
         }
     raise _ParamError(f"Unknown resource URI: {uri}")
@@ -379,29 +526,107 @@ async def _h_prompts_list(params: dict) -> dict:
     return {
         "prompts": [
             {
-                "name": "book_appointment_workflow",
-                "description": "Multi-step workflow: find_business → verify_business → preview_cost → schedule_appointment.",
+                "name": "book_from_any_url",
+                "description": (
+                    "PRIMARY FLOW. The user gave you a Cal.com / Calendly / "
+                    "Doctolib / Booksy / Fresha / OpenTable / Setmore / Square / "
+                    "Acuity / Schedulista / Squarespace / BookMyCity URL. Do this: "
+                    "1) call import_booking_url with the URL. "
+                    "2) call schedule_appointment with the returned smb_id. "
+                    "3) (optional) call send_transactional_confirmation. "
+                    "Total: 2 tool calls for a complete booking. Use this whenever "
+                    "the user mentions a booking URL — it is faster and more reliable "
+                    "than find_business + manual lookup."
+                ),
                 "arguments": [
-                    {"name": "vertical", "description": "personal_services | home_services | professional_services", "required": True},
-                    {"name": "location", "description": "ZIP or city", "required": True},
-                    {"name": "capability", "description": "Service needed (e.g. haircut, plumbing)", "required": True},
+                    {"name": "booking_url", "description": "Any URL on a supported booking platform.", "required": True},
+                    {"name": "preferred_time", "description": "When the user wants to be booked (free-form, e.g. 'next Tuesday at 3pm PT').", "required": False},
                 ],
             },
             {
-                "name": "outbound_message_with_compliance",
-                "description": "Send an outbound SMS/email with full compliance pre-check.",
+                "name": "find_then_book",
+                "description": (
+                    "Use when the user describes a business by category + location but does not provide a URL. "
+                    "1) call find_business(vertical, location, capability). "
+                    "2) if results exist, call schedule_appointment with the chosen smb_id. "
+                    "3) if NO results, call import_booking_url with any URL the user CAN provide, then schedule_appointment. "
+                    "Total: 2-3 tool calls."
+                ),
                 "arguments": [
-                    {"name": "recipient", "description": "Phone or email", "required": True},
-                    {"name": "message_type", "description": "transactional | marketing", "required": True},
+                    {"name": "vertical", "description": "personal_services | home_services | professional_services | restaurants | healthcare | fitness", "required": True},
+                    {"name": "location", "description": "ZIP or city or country.", "required": True},
+                    {"name": "capability", "description": "Service needed (e.g. haircut, plumbing, dental cleaning).", "required": True},
+                ],
+            },
+            {
+                "name": "compliant_outbound_message",
+                "description": (
+                    "Send an outbound SMS / email / voice with full TCPA / GDPR / CASL pre-check. "
+                    "1) (optional) call /compliance/check first to preview legality. "
+                    "2) call send_message — the gate runs again at send time and blocks non-compliant sends. "
+                    "Use country_code so the right jurisdiction rules apply."
+                ),
+                "arguments": [
+                    {"name": "recipient", "description": "Phone (E.164) or email.", "required": True},
+                    {"name": "message_type", "description": "transactional | marketing | reminder | opt-in-confirm", "required": True},
+                    {"name": "country_code", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE'). Auto-inferred from phone if omitted.", "required": False},
                 ],
             },
             {
                 "name": "cost_estimation",
-                "description": "Get a cost estimate before committing to an operation.",
+                "description": "Get a cost estimate before committing to a paid operation. Free.",
                 "arguments": [
-                    {"name": "operation", "description": "Operation name", "required": True},
+                    {"name": "operation", "description": "Operation name (one of the 13 tools).", "required": True},
                 ],
             },
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
+# Method: prompts/get — return the actual prompt body for a given name
+# ---------------------------------------------------------------------------
+
+async def _h_prompts_get(params: dict) -> dict:
+    name = params.get("name")
+    args = params.get("arguments", {}) or {}
+    if name == "book_from_any_url":
+        url = args.get("booking_url", "<URL>")
+        time = args.get("preferred_time", "the user's preferred time")
+        text = (
+            f"Step 1: call import_booking_url with booking_url={url}. "
+            f"Step 2: take the returned smb_id and call schedule_appointment "
+            f"with that smb_id, action=book, and the user's preferred time ({time}). "
+            f"Step 3: if booking succeeds, optionally call send_transactional_confirmation "
+            f"to email the receipt. Total: 2-3 tool calls."
+        )
+    elif name == "find_then_book":
+        text = (
+            "Step 1: call find_business(vertical, location, capability). "
+            "Step 2: if result.businesses is non-empty, pick one and call "
+            "schedule_appointment(smb_id, action='book', preferred_time=...). "
+            "Step 3: if result.businesses is empty AND the user provided a URL, "
+            "call import_booking_url first, then schedule_appointment with the "
+            "newly-imported smb_id."
+        )
+    elif name == "compliant_outbound_message":
+        text = (
+            "Step 1 (optional preview): POST /compliance/check with the recipient + "
+            "message_type + content + country_code. Returns {legal: bool, rule, remediation}. "
+            "Step 2: call send_message with the same args. The compliance gate runs again "
+            "at send time, so a non-compliant send raises ComplianceViolationError "
+            "instead of leaking. Treat any non-200 from the gate as a stop signal."
+        )
+    elif name == "cost_estimation":
+        text = (
+            "Call preview_cost(operation=<name>, params=<the args you would pass>). "
+            "Returns {estimated_amount_usd, currency, basis}. Free, idempotent."
+        )
+    else:
+        raise _ParamError(f"Unknown prompt name: {name}")
+    return {
+        "messages": [
+            {"role": "user", "content": {"type": "text", "text": text}},
         ]
     }
 
@@ -423,6 +648,7 @@ _METHOD_HANDLERS = {
     "ping": _h_ping,
     "tools/list": _h_tools_list,
     "tools/call": _h_tools_call,
+    "prompts/get": _h_prompts_get,
     "resources/list": _h_resources_list,
     "resources/read": _h_resources_read,
     "prompts/list": _h_prompts_list,

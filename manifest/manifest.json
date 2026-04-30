@@ -19,14 +19,65 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["vertical", "location"],
+        "required": [
+          "vertical",
+          "location"
+        ],
         "properties": {
-          "vertical": {"type": "string", "enum": ["personal_services", "home_services", "professional_services"], "description": "Service vertical to search within"},
-          "location": {"type": "object", "required": ["zip_or_city"], "properties": {"zip_or_city": {"type": "string"}, "radius_miles": {"type": "number", "default": 10}}},
-          "capability": {"type": "string", "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"},
-          "price_band": {"type": "object", "properties": {"max_usd": {"type": "number"}}},
-          "availability_window": {"type": "object", "properties": {"start_iso": {"type": "string", "format": "date-time"}, "end_iso": {"type": "string", "format": "date-time"}}},
-          "max_results": {"type": "integer", "default": 5, "maximum": 20}
+          "vertical": {
+            "type": "string",
+            "enum": [
+              "personal_services",
+              "home_services",
+              "professional_services"
+            ],
+            "description": "Service vertical to search within"
+          },
+          "location": {
+            "type": "object",
+            "required": [
+              "zip_or_city"
+            ],
+            "properties": {
+              "zip_or_city": {
+                "type": "string"
+              },
+              "radius_miles": {
+                "type": "number",
+                "default": 10
+              }
+            }
+          },
+          "capability": {
+            "type": "string",
+            "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"
+          },
+          "price_band": {
+            "type": "object",
+            "properties": {
+              "max_usd": {
+                "type": "number"
+              }
+            }
+          },
+          "availability_window": {
+            "type": "object",
+            "properties": {
+              "start_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_iso": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "max_results": {
+            "type": "integer",
+            "default": 5,
+            "maximum": 20
+          }
         }
       },
       "output_schema": {
@@ -37,41 +88,208 @@
             "items": {
               "type": "object",
               "properties": {
-                "smb_id": {"type": "string"},
-                "name": {"type": "string"},
-                "vertical": {"type": "string"},
-                "address": {"type": "string"},
-                "capabilities": {"type": "array", "items": {"type": "string"}},
-                "channels_available": {"type": "array", "items": {"type": "string"}},
-                "price_range": {"type": "object"},
-                "verified_at": {"type": "string", "format": "date-time"},
-                "rank_score": {"type": "number"}
+                "smb_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "vertical": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "capabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "channels_available": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "price_range": {
+                  "type": "object"
+                },
+                "verified_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "rank_score": {
+                  "type": "number"
+                }
               }
             }
           },
-          "total_in_supply_network": {"type": "integer"},
-          "supply_coverage_note": {"type": "string"}
+          "total_in_supply_network": {
+            "type": "integer"
+          },
+          "supply_coverage_note": {
+            "type": "string"
+          }
         }
       },
-      "cost_model": {"basis": "per_call", "unit_price_usd": 0.01, "tiers": [{"calls_per_month": 0, "price_usd": 0.01}, {"calls_per_month": 10000, "price_usd": 0.005}]},
-      "slo": {"p50_ms": 200, "p95_ms": 800, "success_rate_30d": null, "availability_30d": null, "supply_network_coverage_by_vertical": null},
+      "cost_model": {
+        "basis": "per_call",
+        "unit_price_usd": 0.01,
+        "tiers": [
+          {
+            "calls_per_month": 0,
+            "price_usd": 0.01
+          },
+          {
+            "calls_per_month": 10000,
+            "price_usd": 0.005
+          }
+        ]
+      },
+      "slo": {
+        "p50_ms": 200,
+        "p95_ms": 800,
+        "success_rate_30d": null,
+        "availability_30d": null,
+        "supply_network_coverage_by_vertical": null
+      },
       "idempotency": "read-only — idempotency key not required",
-      "failure_modes": ["bad_input", "missing_capability", "rate_limited", "out_of_supply_network", "transient", "internal"],
+      "failure_modes": [
+        "bad_input",
+        "missing_capability",
+        "rate_limited",
+        "out_of_supply_network",
+        "transient",
+        "internal"
+      ],
       "examples": [
         {
           "label": "Happy path — find hair salon near Atlanta",
-          "input": {"vertical": "personal_services", "location": {"zip_or_city": "30309"}, "capability": "haircut", "price_band": {"max_usd": 50}, "availability_window": {"start_iso": "2026-04-29T09:00:00Z", "end_iso": "2026-04-29T12:00:00Z"}},
-          "output": {"status": "success", "businesses": [{"smb_id": "smb_001", "name": "Cuts & Co.", "vertical": "personal_services", "address": "123 Main St, Atlanta, GA 30309", "capabilities": ["haircut", "blowdry"], "channels_available": ["direct_api:square", "sms"], "price_range": {"min_usd": 35, "max_usd": 55}, "verified_at": "2026-04-20T00:00:00Z", "rank_score": 0.92}]}
+          "input": {
+            "vertical": "personal_services",
+            "location": {
+              "zip_or_city": "30309"
+            },
+            "capability": "haircut",
+            "price_band": {
+              "max_usd": 50
+            },
+            "availability_window": {
+              "start_iso": "2026-04-29T09:00:00Z",
+              "end_iso": "2026-04-29T12:00:00Z"
+            }
+          },
+          "output": {
+            "status": "success",
+            "businesses": [
+              {
+                "smb_id": "smb_001",
+                "name": "Cuts & Co.",
+                "vertical": "personal_services",
+                "address": "123 Main St, Atlanta, GA 30309",
+                "capabilities": [
+                  "haircut",
+                  "blowdry"
+                ],
+                "channels_available": [
+                  "direct_api:square",
+                  "sms"
+                ],
+                "price_range": {
+                  "min_usd": 35,
+                  "max_usd": 55
+                },
+                "verified_at": "2026-04-20T00:00:00Z",
+                "rank_score": 0.92
+              }
+            ]
+          }
         },
         {
           "label": "No results in supply network",
-          "input": {"vertical": "professional_services", "location": {"zip_or_city": "99999"}, "capability": "tax_consultation"},
-          "output": {"status": "success", "businesses": [], "total_in_supply_network": 0, "supply_coverage_note": "No verified businesses in this area for this capability. Consider expanding radius_miles."}
+          "input": {
+            "vertical": "professional_services",
+            "location": {
+              "zip_or_city": "99999"
+            },
+            "capability": "tax_consultation"
+          },
+          "output": {
+            "status": "success",
+            "businesses": [],
+            "total_in_supply_network": 0,
+            "supply_coverage_note": "No verified businesses in this area for this capability. Consider expanding radius_miles."
+          }
         },
         {
           "label": "Channel fallback note in result",
-          "input": {"vertical": "home_services", "location": {"zip_or_city": "02139"}, "capability": "plumbing"},
-          "output": {"status": "success", "businesses": [{"smb_id": "smb_044", "name": "FastFix Plumbing", "channels_available": ["voice_ai", "sms"], "capabilities": ["plumbing", "emergency_plumbing"]}], "supply_coverage_note": "This business is reachable via voice AI or SMS only — no direct scheduling API."}
+          "input": {
+            "vertical": "home_services",
+            "location": {
+              "zip_or_city": "02139"
+            },
+            "capability": "plumbing"
+          },
+          "output": {
+            "status": "success",
+            "businesses": [
+              {
+                "smb_id": "smb_044",
+                "name": "FastFix Plumbing",
+                "channels_available": [
+                  "voice_ai",
+                  "sms"
+                ],
+                "capabilities": [
+                  "plumbing",
+                  "emergency_plumbing"
+                ]
+              }
+            ],
+            "supply_coverage_note": "This business is reachable via voice AI or SMS only — no direct scheduling API."
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Find me a salon in Tokyo that does color",
+          "agent_call": {
+            "tool": "find_business",
+            "arguments": {
+              "vertical": "personal_services",
+              "location": {
+                "zip_or_city": "Tokyo"
+              },
+              "capability": "color"
+            }
+          }
+        },
+        {
+          "user_says": "I need a plumber near 30309",
+          "agent_call": {
+            "tool": "find_business",
+            "arguments": {
+              "vertical": "home_services",
+              "location": {
+                "zip_or_city": "30309"
+              },
+              "capability": "plumbing"
+            }
+          }
+        },
+        {
+          "user_says": "Show me dentists in London",
+          "agent_call": {
+            "tool": "find_business",
+            "arguments": {
+              "vertical": "professional_services",
+              "location": {
+                "zip_or_city": "London"
+              },
+              "capability": "dentist"
+            }
+          }
         }
       ]
     },
@@ -84,31 +302,93 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["smb_id"],
+        "required": [
+          "smb_id"
+        ],
         "properties": {
-          "smb_id": {"type": "string"},
-          "capability_to_verify": {"type": "string"}
+          "smb_id": {
+            "type": "string"
+          },
+          "capability_to_verify": {
+            "type": "string"
+          }
         }
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "verified": {"type": "boolean"},
-          "capabilities_confirmed": {"type": "array", "items": {"type": "string"}},
-          "channels_reachable": {"type": "array", "items": {"type": "string"}},
-          "last_verified_at": {"type": "string", "format": "date-time"},
-          "verification_method": {"type": "string"}
+          "verified": {
+            "type": "boolean"
+          },
+          "capabilities_confirmed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "channels_reachable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verified_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verification_method": {
+            "type": "string"
+          }
         }
       },
-      "cost_model": {"basis": "per_call", "unit_price_usd": 0.02},
-      "slo": {"p50_ms": 500, "p95_ms": 2000},
+      "cost_model": {
+        "basis": "per_call",
+        "unit_price_usd": 0.02
+      },
+      "slo": {
+        "p50_ms": 500,
+        "p95_ms": 2000
+      },
       "idempotency": "read-only — idempotency key not required",
-      "failure_modes": ["bad_input", "supply_unreachable", "supply_unverified", "transient"],
+      "failure_modes": [
+        "bad_input",
+        "supply_unreachable",
+        "supply_unverified",
+        "transient"
+      ],
       "examples": [
         {
           "label": "Verified with direct API",
-          "input": {"smb_id": "smb_001", "capability_to_verify": "haircut"},
-          "output": {"status": "success", "result": {"verified": true, "capabilities_confirmed": ["haircut", "blowdry"], "channels_reachable": ["direct_api:square"], "verification_method": "direct_api_probe"}}
+          "input": {
+            "smb_id": "smb_001",
+            "capability_to_verify": "haircut"
+          },
+          "output": {
+            "status": "success",
+            "result": {
+              "verified": true,
+              "capabilities_confirmed": [
+                "haircut",
+                "blowdry"
+              ],
+              "channels_reachable": [
+                "direct_api:square"
+              ],
+              "verification_method": "direct_api_probe"
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Confirm smb_imp_abc actually does emergency plumbing",
+          "agent_call": {
+            "tool": "verify_business",
+            "arguments": {
+              "smb_id": "smb_imp_abc",
+              "capability_to_verify": "emergency_plumbing"
+            }
+          }
         }
       ]
     },
@@ -127,52 +407,205 @@
       ],
       "input_schema": {
         "type": "object",
-        "required": ["recipient", "message_type", "content"],
+        "required": [
+          "recipient",
+          "message_type",
+          "content"
+        ],
         "properties": {
           "recipient": {
             "type": "object",
-            "required": ["id_type", "id_value"],
+            "required": [
+              "id_type",
+              "id_value"
+            ],
             "properties": {
-              "id_type": {"type": "string", "enum": ["phone", "email", "smb_id", "customer_id"]},
-              "id_value": {"type": "string"},
-              "country_code": {"type": "string", "description": "ISO 3166-1 alpha-2, required for compliance routing"}
+              "id_type": {
+                "type": "string",
+                "enum": [
+                  "phone",
+                  "email",
+                  "smb_id",
+                  "customer_id"
+                ]
+              },
+              "id_value": {
+                "type": "string"
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2, required for compliance routing"
+              }
             }
           },
-          "message_type": {"type": "string", "enum": ["transactional", "marketing", "reminder", "follow_up", "notification"]},
+          "message_type": {
+            "type": "string",
+            "enum": [
+              "transactional",
+              "marketing",
+              "reminder",
+              "follow_up",
+              "notification"
+            ]
+          },
           "content": {
             "type": "object",
-            "required": ["body"],
+            "required": [
+              "body"
+            ],
             "properties": {
-              "body": {"type": "string"},
-              "subject": {"type": "string", "description": "For email channel"},
-              "template_id": {"type": "string"},
-              "template_vars": {"type": "object"}
+              "body": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string",
+                "description": "For email channel"
+              },
+              "template_id": {
+                "type": "string"
+              },
+              "template_vars": {
+                "type": "object"
+              }
             }
           },
-          "preferred_channel": {"type": "string", "enum": ["sms", "email", "voice", "auto"], "default": "auto"},
-          "send_at_iso": {"type": "string", "format": "date-time", "description": "Schedule for future delivery; omit for immediate"}
+          "preferred_channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "voice",
+              "auto"
+            ],
+            "default": "auto"
+          },
+          "send_at_iso": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Schedule for future delivery; omit for immediate"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_message", "unit_price_usd": 0.05, "voice_premium_usd": 0.25},
-      "slo": {"p50_ms": 800, "p95_ms": 4000},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_message",
+        "unit_price_usd": 0.05,
+        "voice_premium_usd": 0.25
+      },
+      "slo": {
+        "p50_ms": 800,
+        "p95_ms": 4000
+      },
       "idempotency": "required — use Idempotency-Key header to prevent duplicate sends",
-      "failure_modes": ["bad_input", "compliance_violation", "consent_missing", "supply_unreachable", "upstream_failure", "rate_limited", "budget_exceeded"],
+      "failure_modes": [
+        "bad_input",
+        "compliance_violation",
+        "consent_missing",
+        "supply_unreachable",
+        "upstream_failure",
+        "rate_limited",
+        "budget_exceeded"
+      ],
       "examples": [
         {
           "label": "SMS appointment reminder — happy path",
-          "input": {"recipient": {"id_type": "phone", "id_value": "+14045550100", "country_code": "US"}, "message_type": "reminder", "content": {"body": "Reminder: your appointment at Cuts & Co. is tomorrow at 10am. Reply STOP to unsubscribe."}, "preferred_channel": "sms"},
-          "output": {"status": "success", "channel_used": "sms:twilio", "cost": {"amount": 0.05, "currency": "USD"}}
+          "input": {
+            "recipient": {
+              "id_type": "phone",
+              "id_value": "+14045550100",
+              "country_code": "US"
+            },
+            "message_type": "reminder",
+            "content": {
+              "body": "Reminder: your appointment at Cuts & Co. is tomorrow at 10am. Reply STOP to unsubscribe."
+            },
+            "preferred_channel": "sms"
+          },
+          "output": {
+            "status": "success",
+            "channel_used": "sms:twilio",
+            "cost": {
+              "amount": 0.05,
+              "currency": "USD"
+            }
+          }
         },
         {
           "label": "Marketing SMS blocked — no consent",
-          "input": {"recipient": {"id_type": "phone", "id_value": "+14045550200", "country_code": "US"}, "message_type": "marketing", "content": {"body": "20% off this week only!"}},
-          "output": {"status": "failure", "reason_code": "compliance_violation", "human_message": "Recipient has not opted in to marketing SMS. Obtain TCPA-compliant consent before sending marketing messages to this number.", "retriable": false}
+          "input": {
+            "recipient": {
+              "id_type": "phone",
+              "id_value": "+14045550200",
+              "country_code": "US"
+            },
+            "message_type": "marketing",
+            "content": {
+              "body": "20% off this week only!"
+            }
+          },
+          "output": {
+            "status": "failure",
+            "reason_code": "compliance_violation",
+            "human_message": "Recipient has not opted in to marketing SMS. Obtain TCPA-compliant consent before sending marketing messages to this number.",
+            "retriable": false
+          }
         },
         {
           "label": "Voice fallback when SMS unreachable",
-          "input": {"recipient": {"id_type": "phone", "id_value": "+12125550300", "country_code": "US"}, "message_type": "reminder", "content": {"body": "Your appointment is tomorrow at 2pm."}},
-          "output": {"status": "success", "channel_used": "voice_ai:vapi", "channel_fallback_chain": ["sms:twilio (carrier_filter)", "voice_ai:vapi (success)"], "cost": {"amount": 0.30, "currency": "USD"}}
+          "input": {
+            "recipient": {
+              "id_type": "phone",
+              "id_value": "+12125550300",
+              "country_code": "US"
+            },
+            "message_type": "reminder",
+            "content": {
+              "body": "Your appointment is tomorrow at 2pm."
+            }
+          },
+          "output": {
+            "status": "success",
+            "channel_used": "voice_ai:vapi",
+            "channel_fallback_chain": [
+              "sms:twilio (carrier_filter)",
+              "voice_ai:vapi (success)"
+            ],
+            "cost": {
+              "amount": 0.3,
+              "currency": "USD"
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Text the salon I'll be 10 minutes late",
+          "agent_call": {
+            "tool": "send_message",
+            "arguments": {
+              "recipient_id": "smb_xyz",
+              "channel_preference": "sms",
+              "message": {
+                "body": "Will be 10 minutes late."
+              },
+              "country_code": "US"
+            }
+          }
+        },
+        {
+          "user_says": "Email the dentist about insurance",
+          "agent_call": {
+            "tool": "send_message",
+            "arguments": {
+              "recipient_id": "smb_xyz",
+              "channel_preference": "email",
+              "message": {
+                "body": "Do you accept Cigna?"
+              }
+            }
+          }
         }
       ]
     },
@@ -189,34 +622,103 @@
       ],
       "input_schema": {
         "type": "object",
-        "required": ["smb_id", "prospect"],
+        "required": [
+          "smb_id",
+          "prospect"
+        ],
         "properties": {
-          "smb_id": {"type": "string"},
+          "smb_id": {
+            "type": "string"
+          },
           "prospect": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "properties": {
-              "name": {"type": "string"},
-              "phone": {"type": "string"},
-              "email": {"type": "string", "format": "email"},
-              "service_interest": {"type": "string"},
-              "notes": {"type": "string"},
-              "consent_record_id": {"type": "string", "description": "ID of consent record if marketing opt-in obtained"}
+              "name": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              },
+              "service_interest": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "consent_record_id": {
+                "type": "string",
+                "description": "ID of consent record if marketing opt-in obtained"
+              }
             }
           },
-          "source": {"type": "string", "description": "Channel or campaign that sourced this lead"}
+          "source": {
+            "type": "string",
+            "description": "Channel or campaign that sourced this lead"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_lead", "unit_price_usd": 0.10},
-      "slo": {"p50_ms": 600, "p95_ms": 3000},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_lead",
+        "unit_price_usd": 0.1
+      },
+      "slo": {
+        "p50_ms": 600,
+        "p95_ms": 3000
+      },
       "idempotency": "required — dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
-      "failure_modes": ["bad_input", "idempotency_conflict", "upstream_failure", "compliance_violation"],
+      "failure_modes": [
+        "bad_input",
+        "idempotency_conflict",
+        "upstream_failure",
+        "compliance_violation"
+      ],
       "examples": [
         {
           "label": "Happy path — lead captured into Square CRM",
-          "input": {"smb_id": "smb_001", "prospect": {"name": "Jane Smith", "phone": "+14045551234", "email": "jane@example.com", "service_interest": "haircut"}, "source": "agent_referral"},
-          "output": {"status": "success", "result": {"lead_id": "lead_abc123", "channel_used": "direct_api:square"}}
+          "input": {
+            "smb_id": "smb_001",
+            "prospect": {
+              "name": "Jane Smith",
+              "phone": "+14045551234",
+              "email": "jane@example.com",
+              "service_interest": "haircut"
+            },
+            "source": "agent_referral"
+          },
+          "output": {
+            "status": "success",
+            "result": {
+              "lead_id": "lead_abc123",
+              "channel_used": "direct_api:square"
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Tell smb_xyz I'm interested and want a callback",
+          "agent_call": {
+            "tool": "capture_lead",
+            "arguments": {
+              "smb_id": "smb_xyz",
+              "prospect": {
+                "name": "Jane",
+                "phone": "+15551234567",
+                "email": "jane@example.com"
+              },
+              "source": "agent"
+            }
+          }
         }
       ]
     },
@@ -232,52 +734,184 @@
       ],
       "input_schema": {
         "type": "object",
-        "required": ["smb_id", "action"],
+        "required": [
+          "smb_id",
+          "action"
+        ],
         "properties": {
-          "smb_id": {"type": "string"},
-          "action": {"type": "string", "enum": ["book", "reschedule", "cancel", "check_availability"]},
-          "service": {"type": "string"},
+          "smb_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "book",
+              "reschedule",
+              "cancel",
+              "check_availability"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
           "customer": {
             "type": "object",
             "properties": {
-              "name": {"type": "string"},
-              "phone": {"type": "string"},
-              "email": {"type": "string"}
+              "name": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
             }
           },
           "requested_time": {
             "type": "object",
             "properties": {
-              "preferred_iso": {"type": "string", "format": "date-time"},
-              "window_start_iso": {"type": "string", "format": "date-time"},
-              "window_end_iso": {"type": "string", "format": "date-time"},
-              "duration_minutes": {"type": "integer"}
+              "preferred_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "window_start_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "window_end_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "duration_minutes": {
+                "type": "integer"
+              }
             }
           },
-          "existing_appointment_id": {"type": "string", "description": "Required for reschedule/cancel"},
-          "notes": {"type": "string"}
+          "existing_appointment_id": {
+            "type": "string",
+            "description": "Required for reschedule/cancel"
+          },
+          "notes": {
+            "type": "string"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_booking_attempt", "unit_price_usd": 0.25, "success_bonus_usd": 0.75},
-      "slo": {"p50_ms": 5000, "p95_ms": 60000, "note": "async — p50/p95 reflect time to terminal outcome, not HTTP response"},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_booking_attempt",
+        "unit_price_usd": 0.25,
+        "success_bonus_usd": 0.75
+      },
+      "slo": {
+        "p50_ms": 5000,
+        "p95_ms": 60000,
+        "note": "async — p50/p95 reflect time to terminal outcome, not HTTP response"
+      },
       "idempotency": "required — prevents double-booking on network retry",
-      "failure_modes": ["bad_input", "supply_unreachable", "upstream_failure", "compliance_violation", "recording_consent_missing", "outcome_rejected"],
+      "failure_modes": [
+        "bad_input",
+        "supply_unreachable",
+        "upstream_failure",
+        "compliance_violation",
+        "recording_consent_missing",
+        "outcome_rejected"
+      ],
       "examples": [
         {
           "label": "Book haircut — direct API path",
-          "input": {"smb_id": "smb_001", "action": "book", "service": "haircut", "customer": {"name": "Alex Johnson", "phone": "+14045559999"}, "requested_time": {"window_start_iso": "2026-04-29T09:00:00Z", "window_end_iso": "2026-04-29T12:00:00Z"}},
-          "output": {"status": "pending_async", "operation_id": "op_xyz789", "estimated_completion_time": "2026-04-27T10:01:00Z", "next_actions": ["poll get_status with operation_id op_xyz789", "or await webhook callback"]}
+          "input": {
+            "smb_id": "smb_001",
+            "action": "book",
+            "service": "haircut",
+            "customer": {
+              "name": "Alex Johnson",
+              "phone": "+14045559999"
+            },
+            "requested_time": {
+              "window_start_iso": "2026-04-29T09:00:00Z",
+              "window_end_iso": "2026-04-29T12:00:00Z"
+            }
+          },
+          "output": {
+            "status": "pending_async",
+            "operation_id": "op_xyz789",
+            "estimated_completion_time": "2026-04-27T10:01:00Z",
+            "next_actions": [
+              "poll get_status with operation_id op_xyz789",
+              "or await webhook callback"
+            ]
+          }
         },
         {
           "label": "Book plumber — voice AI fallback",
-          "input": {"smb_id": "smb_044", "action": "book", "service": "emergency_plumbing", "requested_time": {"preferred_iso": "2026-04-28T08:00:00Z"}},
-          "output": {"status": "pending_async", "channel_fallback_chain": ["direct_api:none", "voice_ai:vapi (dispatched)"], "operation_id": "op_abc001"}
+          "input": {
+            "smb_id": "smb_044",
+            "action": "book",
+            "service": "emergency_plumbing",
+            "requested_time": {
+              "preferred_iso": "2026-04-28T08:00:00Z"
+            }
+          },
+          "output": {
+            "status": "pending_async",
+            "channel_fallback_chain": [
+              "direct_api:none",
+              "voice_ai:vapi (dispatched)"
+            ],
+            "operation_id": "op_abc001"
+          }
         },
         {
           "label": "Cancel appointment",
-          "input": {"smb_id": "smb_001", "action": "cancel", "existing_appointment_id": "appt_cal_4455"},
-          "output": {"status": "success", "reason_code": "cancelled", "result": {"refund_status": "pending", "confirmation_number": "CANCEL-789"}}
+          "input": {
+            "smb_id": "smb_001",
+            "action": "cancel",
+            "existing_appointment_id": "appt_cal_4455"
+          },
+          "output": {
+            "status": "success",
+            "reason_code": "cancelled",
+            "result": {
+              "refund_status": "pending",
+              "confirmation_number": "CANCEL-789"
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Book the haircut for next Tuesday at 3pm",
+          "agent_call": {
+            "tool": "schedule_appointment",
+            "arguments": {
+              "smb_id": "smb_imp_abc",
+              "action": "book",
+              "service": "haircut"
+            }
+          }
+        },
+        {
+          "user_says": "Cancel my Friday appointment at smb_xyz",
+          "agent_call": {
+            "tool": "schedule_appointment",
+            "arguments": {
+              "smb_id": "smb_xyz",
+              "action": "cancel"
+            }
+          }
+        },
+        {
+          "user_says": "Reschedule my dental cleaning to next week",
+          "agent_call": {
+            "tool": "schedule_appointment",
+            "arguments": {
+              "smb_id": "smb_imp_xyz",
+              "action": "reschedule"
+            }
+          }
         }
       ]
     },
@@ -292,24 +926,100 @@
       ],
       "input_schema": {
         "type": "object",
-        "required": ["recipient", "confirmation_type", "data"],
+        "required": [
+          "recipient",
+          "confirmation_type",
+          "data"
+        ],
         "properties": {
-          "recipient": {"type": "object", "required": ["phone_or_email"], "properties": {"phone_or_email": {"type": "string"}, "name": {"type": "string"}}},
-          "confirmation_type": {"type": "string", "enum": ["otp", "booking_confirmation", "payment_receipt", "cancellation_notice", "reminder"]},
-          "data": {"type": "object", "description": "Type-specific payload; e.g., {otp_code} for otp, {appointment_time, smb_name} for booking_confirmation"},
-          "preferred_channel": {"type": "string", "enum": ["sms", "email", "auto"], "default": "sms"}
+          "recipient": {
+            "type": "object",
+            "required": [
+              "phone_or_email"
+            ],
+            "properties": {
+              "phone_or_email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "confirmation_type": {
+            "type": "string",
+            "enum": [
+              "otp",
+              "booking_confirmation",
+              "payment_receipt",
+              "cancellation_notice",
+              "reminder"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "description": "Type-specific payload; e.g., {otp_code} for otp, {appointment_time, smb_name} for booking_confirmation"
+          },
+          "preferred_channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "auto"
+            ],
+            "default": "sms"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_message", "unit_price_usd": 0.03},
-      "slo": {"p50_ms": 500, "p95_ms": 2000},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_message",
+        "unit_price_usd": 0.03
+      },
+      "slo": {
+        "p50_ms": 500,
+        "p95_ms": 2000
+      },
       "idempotency": "required — Idempotency-Key prevents double-sends of OTPs and confirmations",
-      "failure_modes": ["bad_input", "upstream_failure", "supply_unreachable"],
+      "failure_modes": [
+        "bad_input",
+        "upstream_failure",
+        "supply_unreachable"
+      ],
       "examples": [
         {
           "label": "Booking confirmation SMS",
-          "input": {"recipient": {"phone_or_email": "+14045551234", "name": "Alex"}, "confirmation_type": "booking_confirmation", "data": {"appointment_time": "Tuesday April 29 at 10:30am", "smb_name": "Cuts & Co.", "address": "123 Main St, Atlanta"}},
-          "output": {"status": "success", "channel_used": "sms:twilio"}
+          "input": {
+            "recipient": {
+              "phone_or_email": "+14045551234",
+              "name": "Alex"
+            },
+            "confirmation_type": "booking_confirmation",
+            "data": {
+              "appointment_time": "Tuesday April 29 at 10:30am",
+              "smb_name": "Cuts & Co.",
+              "address": "123 Main St, Atlanta"
+            }
+          },
+          "output": {
+            "status": "success",
+            "channel_used": "sms:twilio"
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Send the booking confirmation receipt to my email",
+          "agent_call": {
+            "tool": "send_transactional_confirmation",
+            "arguments": {
+              "recipient_id": "user@example.com",
+              "channel_preference": "email",
+              "confirmation_type": "booking"
+            }
+          }
         }
       ]
     },
@@ -325,26 +1035,105 @@
       ],
       "input_schema": {
         "type": "object",
-        "required": ["smb_id", "inbound_channel", "raw_message"],
+        "required": [
+          "smb_id",
+          "inbound_channel",
+          "raw_message"
+        ],
         "properties": {
-          "smb_id": {"type": "string"},
-          "inbound_channel": {"type": "string", "enum": ["sms", "email", "voice_voicemail", "web_form", "api"]},
-          "sender": {"type": "object", "properties": {"phone": {"type": "string"}, "email": {"type": "string"}, "name": {"type": "string"}}},
-          "raw_message": {"type": "string"},
-          "received_at_iso": {"type": "string", "format": "date-time"},
-          "routing_rules": {"type": "object", "description": "Optional override routing policy for this SMB"}
+          "smb_id": {
+            "type": "string"
+          },
+          "inbound_channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "voice_voicemail",
+              "web_form",
+              "api"
+            ]
+          },
+          "sender": {
+            "type": "object",
+            "properties": {
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "raw_message": {
+            "type": "string"
+          },
+          "received_at_iso": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "routing_rules": {
+            "type": "object",
+            "description": "Optional override routing policy for this SMB"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_inbound", "unit_price_usd": 0.08},
-      "slo": {"p50_ms": 3000, "p95_ms": 15000},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_inbound",
+        "unit_price_usd": 0.08
+      },
+      "slo": {
+        "p50_ms": 3000,
+        "p95_ms": 15000
+      },
       "idempotency": "required",
-      "failure_modes": ["bad_input", "upstream_failure", "transient"],
+      "failure_modes": [
+        "bad_input",
+        "upstream_failure",
+        "transient"
+      ],
       "examples": [
         {
           "label": "Inbound SMS booking request triaged",
-          "input": {"smb_id": "smb_001", "inbound_channel": "sms", "sender": {"phone": "+14045551234"}, "raw_message": "Hi, do you have anything Saturday morning?", "received_at_iso": "2026-04-27T14:00:00Z"},
-          "output": {"status": "success", "result": {"classified_intent": "booking_inquiry", "suggested_action": "check_availability", "routed_to": "schedule_appointment_flow", "enriched_sender": {"known_customer": true, "last_booking": "2026-03-15"}}}
+          "input": {
+            "smb_id": "smb_001",
+            "inbound_channel": "sms",
+            "sender": {
+              "phone": "+14045551234"
+            },
+            "raw_message": "Hi, do you have anything Saturday morning?",
+            "received_at_iso": "2026-04-27T14:00:00Z"
+          },
+          "output": {
+            "status": "success",
+            "result": {
+              "classified_intent": "booking_inquiry",
+              "suggested_action": "check_availability",
+              "routed_to": "schedule_appointment_flow",
+              "enriched_sender": {
+                "known_customer": true,
+                "last_booking": "2026-03-15"
+              }
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Process this customer reply for me: 'Yes I want to book Tuesday'",
+          "agent_call": {
+            "tool": "handle_inbound",
+            "arguments": {
+              "raw_message": "Yes I want to book Tuesday",
+              "channel": "sms"
+            }
+          }
         }
       ]
     },
@@ -360,33 +1149,110 @@
       ],
       "input_schema": {
         "type": "object",
-        "required": ["smb_id", "reason", "context"],
+        "required": [
+          "smb_id",
+          "reason",
+          "context"
+        ],
         "properties": {
-          "smb_id": {"type": "string"},
-          "reason": {"type": "string", "enum": ["automation_failed", "customer_requested", "compliance_hold", "ambiguous_intent", "exception_required"]},
+          "smb_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "automation_failed",
+              "customer_requested",
+              "compliance_hold",
+              "ambiguous_intent",
+              "exception_required"
+            ]
+          },
           "context": {
             "type": "object",
             "properties": {
-              "original_operation": {"type": "string"},
-              "operation_id": {"type": "string"},
-              "transcript": {"type": "array", "items": {"type": "object"}},
-              "prior_actions": {"type": "array", "items": {"type": "object"}},
-              "recommended_next_step": {"type": "string"}
+              "original_operation": {
+                "type": "string"
+              },
+              "operation_id": {
+                "type": "string"
+              },
+              "transcript": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "prior_actions": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "recommended_next_step": {
+                "type": "string"
+              }
             }
           },
-          "priority": {"type": "string", "enum": ["normal", "urgent"], "default": "normal"}
+          "priority": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "urgent"
+            ],
+            "default": "normal"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_escalation", "unit_price_usd": 0.50},
-      "slo": {"p50_ms": 2000, "p95_ms": 10000},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_escalation",
+        "unit_price_usd": 0.5
+      },
+      "slo": {
+        "p50_ms": 2000,
+        "p95_ms": 10000
+      },
       "idempotency": "required",
-      "failure_modes": ["bad_input", "supply_unreachable", "upstream_failure"],
+      "failure_modes": [
+        "bad_input",
+        "supply_unreachable",
+        "upstream_failure"
+      ],
       "examples": [
         {
           "label": "Escalation after voice AI booking failure",
-          "input": {"smb_id": "smb_044", "reason": "automation_failed", "context": {"original_operation": "schedule_appointment", "operation_id": "op_fail_001", "recommended_next_step": "Call the business directly at their listed number to confirm the emergency plumbing slot"}},
-          "output": {"status": "success", "result": {"escalation_ticket_id": "esc_777", "assigned_queue": "smb_support"}}
+          "input": {
+            "smb_id": "smb_044",
+            "reason": "automation_failed",
+            "context": {
+              "original_operation": "schedule_appointment",
+              "operation_id": "op_fail_001",
+              "recommended_next_step": "Call the business directly at their listed number to confirm the emergency plumbing slot"
+            }
+          },
+          "output": {
+            "status": "success",
+            "result": {
+              "escalation_ticket_id": "esc_777",
+              "assigned_queue": "smb_support"
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "I'm stuck — get a human at smb_xyz to call me back",
+          "agent_call": {
+            "tool": "escalate_to_human",
+            "arguments": {
+              "smb_id": "smb_xyz",
+              "reason": "agent_blocked",
+              "summary": "Cannot resolve via automated channels"
+            }
+          }
         }
       ]
     },
@@ -399,30 +1265,67 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["operation_id"],
+        "required": [
+          "operation_id"
+        ],
         "properties": {
-          "operation_id": {"type": "string"}
+          "operation_id": {
+            "type": "string"
+          }
         }
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "operation_id": {"type": "string"},
-          "status": {"type": "string", "enum": ["pending", "executing", "success", "failure", "partial"]},
-          "estimated_completion_time": {"type": "string", "format": "date-time"},
-          "last_updated_at": {"type": "string", "format": "date-time"},
-          "partial_result": {"type": "object"}
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "executing",
+              "success",
+              "failure",
+              "partial"
+            ]
+          },
+          "estimated_completion_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "partial_result": {
+            "type": "object"
+          }
         }
       },
-      "cost_model": {"basis": "per_call", "unit_price_usd": 0.001},
-      "slo": {"p50_ms": 50, "p95_ms": 200},
+      "cost_model": {
+        "basis": "per_call",
+        "unit_price_usd": 0.001
+      },
+      "slo": {
+        "p50_ms": 50,
+        "p95_ms": 200
+      },
       "idempotency": "read-only",
-      "failure_modes": ["bad_input", "transient"],
+      "failure_modes": [
+        "bad_input",
+        "transient"
+      ],
       "examples": [
         {
           "label": "Booking still in progress",
-          "input": {"operation_id": "op_xyz789"},
-          "output": {"status": "executing", "estimated_completion_time": "2026-04-27T10:01:30Z"}
+          "input": {
+            "operation_id": "op_xyz789"
+          },
+          "output": {
+            "status": "executing",
+            "estimated_completion_time": "2026-04-27T10:01:30Z"
+          }
         }
       ]
     },
@@ -435,21 +1338,52 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["operation_id"],
+        "required": [
+          "operation_id"
+        ],
         "properties": {
-          "operation_id": {"type": "string"}
+          "operation_id": {
+            "type": "string"
+          }
         }
       },
-      "output_schema": {"$ref": "#/components/OutcomeReceipt"},
-      "cost_model": {"basis": "per_call", "unit_price_usd": 0.001},
-      "slo": {"p50_ms": 50, "p95_ms": 200},
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_call",
+        "unit_price_usd": 0.001
+      },
+      "slo": {
+        "p50_ms": 50,
+        "p95_ms": 200
+      },
       "idempotency": "read-only",
-      "failure_modes": ["bad_input", "transient"],
+      "failure_modes": [
+        "bad_input",
+        "transient"
+      ],
       "examples": [
         {
           "label": "Retrieve booking outcome",
-          "input": {"operation_id": "op_xyz789"},
-          "output": {"status": "success", "reason_code": "appointment_confirmed", "result": {"appointment_id": "appt_cal_9001", "confirmed_time": "2026-04-29T10:30:00Z", "smb_name": "Cuts & Co."}, "cost": {"amount": 1.00, "currency": "USD", "basis": "per_booking_attempt+success_bonus"}, "channel_used": "direct_api:square"}
+          "input": {
+            "operation_id": "op_xyz789"
+          },
+          "output": {
+            "status": "success",
+            "reason_code": "appointment_confirmed",
+            "result": {
+              "appointment_id": "appt_cal_9001",
+              "confirmed_time": "2026-04-29T10:30:00Z",
+              "smb_name": "Cuts & Co."
+            },
+            "cost": {
+              "amount": 1.0,
+              "currency": "USD",
+              "basis": "per_booking_attempt+success_bonus"
+            },
+            "channel_used": "direct_api:square"
+          }
         }
       ]
     },
@@ -462,33 +1396,115 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["operation", "params"],
+        "required": [
+          "operation",
+          "params"
+        ],
         "properties": {
-          "operation": {"type": "string"},
-          "params": {"type": "object", "description": "The same request body you would pass to the operation"}
+          "operation": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "description": "The same request body you would pass to the operation"
+          }
         }
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "estimated_cost_usd": {"type": "number"},
-          "cost_range": {"type": "object", "properties": {"min_usd": {"type": "number"}, "max_usd": {"type": "number"}}},
-          "estimated_latency_p50_ms": {"type": "integer"},
-          "estimated_latency_p95_ms": {"type": "integer"},
-          "success_probability_estimate": {"type": "number", "minimum": 0, "maximum": 1},
-          "channel_likely": {"type": "string"},
-          "cost_accuracy_slo": {"type": "string", "const": "±5%"}
+          "estimated_cost_usd": {
+            "type": "number"
+          },
+          "cost_range": {
+            "type": "object",
+            "properties": {
+              "min_usd": {
+                "type": "number"
+              },
+              "max_usd": {
+                "type": "number"
+              }
+            }
+          },
+          "estimated_latency_p50_ms": {
+            "type": "integer"
+          },
+          "estimated_latency_p95_ms": {
+            "type": "integer"
+          },
+          "success_probability_estimate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "channel_likely": {
+            "type": "string"
+          },
+          "cost_accuracy_slo": {
+            "type": "string",
+            "const": "±5%"
+          }
         }
       },
-      "cost_model": {"basis": "per_call", "unit_price_usd": 0.001},
-      "slo": {"p50_ms": 100, "p95_ms": 500},
+      "cost_model": {
+        "basis": "per_call",
+        "unit_price_usd": 0.001
+      },
+      "slo": {
+        "p50_ms": 100,
+        "p95_ms": 500
+      },
       "idempotency": "read-only",
-      "failure_modes": ["bad_input", "transient"],
+      "failure_modes": [
+        "bad_input",
+        "transient"
+      ],
       "examples": [
         {
           "label": "Preview appointment booking cost",
-          "input": {"operation": "schedule_appointment", "params": {"smb_id": "smb_001", "action": "book", "service": "haircut"}},
-          "output": {"estimated_cost_usd": 1.00, "cost_range": {"min_usd": 0.25, "max_usd": 1.00}, "estimated_latency_p50_ms": 5000, "success_probability_estimate": 0.88, "channel_likely": "direct_api:square", "cost_accuracy_slo": "±5%"}
+          "input": {
+            "operation": "schedule_appointment",
+            "params": {
+              "smb_id": "smb_001",
+              "action": "book",
+              "service": "haircut"
+            }
+          },
+          "output": {
+            "estimated_cost_usd": 1.0,
+            "cost_range": {
+              "min_usd": 0.25,
+              "max_usd": 1.0
+            },
+            "estimated_latency_p50_ms": 5000,
+            "success_probability_estimate": 0.88,
+            "channel_likely": "direct_api:square",
+            "cost_accuracy_slo": "±5%"
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "How much will this SMS cost me?",
+          "agent_call": {
+            "tool": "preview_cost",
+            "arguments": {
+              "operation": "send_message",
+              "params": {
+                "channel_preference": "sms"
+              }
+            }
+          }
+        },
+        {
+          "user_says": "Estimate the cost of booking via voice fallback",
+          "agent_call": {
+            "tool": "preview_cost",
+            "arguments": {
+              "operation": "schedule_appointment"
+            }
+          }
         }
       ]
     },
@@ -499,27 +1515,271 @@
       "when_not_to_use": "Do not call more than once per minute in production.",
       "execution_profile": "sync",
       "compliance_constraints": [],
-      "input_schema": {"type": "object", "properties": {}},
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "output_schema": {
         "type": "object",
         "properties": {
-          "healthy": {"type": "boolean"},
-          "capabilities_verified": {"type": "array", "items": {"type": "string"}},
-          "version": {"type": "string"},
-          "supply_network_size": {"type": "integer"},
-          "channel_status": {"type": "object"},
-          "degraded_channels": {"type": "array", "items": {"type": "string"}}
+          "healthy": {
+            "type": "boolean"
+          },
+          "capabilities_verified": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string"
+          },
+          "supply_network_size": {
+            "type": "integer"
+          },
+          "channel_status": {
+            "type": "object"
+          },
+          "degraded_channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
-      "cost_model": {"basis": "free"},
-      "slo": {"p50_ms": 200, "p95_ms": 1000},
+      "cost_model": {
+        "basis": "free"
+      },
+      "slo": {
+        "p50_ms": 200,
+        "p95_ms": 1000
+      },
       "idempotency": "read-only",
-      "failure_modes": ["transient", "internal"],
+      "failure_modes": [
+        "transient",
+        "internal"
+      ],
       "examples": [
         {
           "label": "Healthy service response",
           "input": {},
-          "output": {"healthy": true, "capabilities_verified": ["find_business", "schedule_appointment", "send_message", "preview_cost"], "version": "0.1.0", "supply_network_size": 47, "channel_status": {"sms": "operational", "voice_ai": "operational", "direct_api": "operational"}, "degraded_channels": []}
+          "output": {
+            "healthy": true,
+            "capabilities_verified": [
+              "find_business",
+              "schedule_appointment",
+              "send_message",
+              "preview_cost"
+            ],
+            "version": "0.1.0",
+            "supply_network_size": 47,
+            "channel_status": {
+              "sms": "operational",
+              "voice_ai": "operational",
+              "direct_api": "operational"
+            },
+            "degraded_channels": []
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Run a health check before I send the broadcast",
+          "agent_call": {
+            "tool": "self_test",
+            "arguments": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "import_booking_url",
+      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
+      "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.",
+      "when_not_to_use": "Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "booking_url"
+        ],
+        "properties": {
+          "booking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Full URL the user supplied. Must point at one of the 12 supported booking platforms; auto-detected from the host."
+          },
+          "business_name": {
+            "type": "string",
+            "description": "Optional override. If omitted, the business name is auto-extracted from the page's <title> or og:title."
+          },
+          "vertical": {
+            "type": "string",
+            "enum": [
+              "personal_services",
+              "home_services",
+              "professional_services",
+              "restaurants",
+              "retail",
+              "healthcare",
+              "fitness"
+            ],
+            "description": "Best-guess vertical. If omitted, inferred from the platform (e.g., Doctolib -> healthcare, OpenTable -> restaurants)."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."
+          },
+          "contact_phone": {
+            "type": "string",
+            "description": "Optional. If omitted, the platform integration handles outreach."
+          },
+          "contact_email": {
+            "type": "string",
+            "description": "Optional."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form capability tags (e.g., ['haircut','color','blowdry'])."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "smb_id"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "duplicate",
+              "fail"
+            ]
+          },
+          "smb_id": {
+            "type": "string",
+            "description": "Stable identifier — pass to schedule_appointment, send_message, or capture_lead next."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Detected platform name."
+          },
+          "message": {
+            "type": "string"
+          },
+          "next_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "per_call",
+        "amount_usd": 0.005
+      },
+      "slo": {
+        "p50_latency_ms": 600,
+        "max_latency_ms": 3000
+      },
+      "examples": [
+        {
+          "user_says": "Book me a haircut at https://cal.com/jane-salon",
+          "agent_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://cal.com/jane-salon",
+              "vertical": "personal_services"
+            }
+          },
+          "then_call": {
+            "tool": "schedule_appointment",
+            "arguments": {
+              "smb_id": "<from_above>",
+              "preferred_time": "user-specified"
+            }
+          }
+        },
+        {
+          "user_says": "I want to see Dr. Dupont — https://www.doctolib.fr/dentiste/paris/jean-dupont",
+          "agent_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://www.doctolib.fr/dentiste/paris/jean-dupont"
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Book me a haircut at https://cal.com/jane-salon",
+          "agent_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://cal.com/jane-salon",
+              "vertical": "personal_services"
+            }
+          },
+          "then_call": {
+            "tool": "schedule_appointment",
+            "arguments": {
+              "smb_id": "<from_above>",
+              "action": "book"
+            }
+          }
+        },
+        {
+          "user_says": "Schedule with this dentist: https://www.doctolib.fr/dentiste/paris/jean-dupont",
+          "agent_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://www.doctolib.fr/dentiste/paris/jean-dupont"
+            }
+          }
+        },
+        {
+          "user_says": "Reserve a table at https://www.opentable.com/r/acme-bistro",
+          "agent_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://www.opentable.com/r/acme-bistro",
+              "vertical": "restaurants"
+            }
+          }
+        }
+      ],
+      "idempotency": {
+        "key_scope": [
+          "agent_id",
+          "booking_url"
+        ],
+        "ttl_seconds": 86400,
+        "behavior": "Calling import_booking_url twice with the same URL returns the same smb_id (no duplicate). Safe to retry."
+      },
+      "failure_modes": [
+        {
+          "reason_code": "platform_not_supported",
+          "retriable": false,
+          "description": "Host did not match any of the 12 supported booking platforms."
+        },
+        {
+          "reason_code": "url_not_reachable",
+          "retriable": true,
+          "description": "The page returned 404 / 403 / timeout. Retry after fixing the URL."
+        },
+        {
+          "reason_code": "page_metadata_extraction_failed",
+          "retriable": false,
+          "description": "Page exists but we could not extract a usable business name. Pass `business_name` explicitly."
         }
       ]
     }
@@ -528,19 +1788,69 @@
     "OutcomeReceipt": {
       "type": "object",
       "properties": {
-        "operation_id": {"type": "string"},
-        "status": {"type": "string", "enum": ["success", "partial", "failure", "pending_async"]},
-        "reason_code": {"type": "string"},
-        "human_message": {"type": "string"},
-        "result": {"type": "object"},
-        "cost": {"type": "object", "properties": {"amount": {"type": "number"}, "currency": {"type": "string"}, "basis": {"type": "string"}}},
-        "latency_ms": {"type": "integer"},
-        "channel_used": {"type": "string"},
-        "channel_fallback_chain": {"type": "array", "items": {"type": "string"}},
-        "estimated_completion_time": {"type": "string", "format": "date-time"},
-        "next_actions": {"type": "array", "items": {"type": "string"}},
-        "retriable": {"type": "boolean"},
-        "trace_id": {"type": "string"}
+        "operation_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "success",
+            "partial",
+            "failure",
+            "pending_async"
+          ]
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "human_message": {
+          "type": "string"
+        },
+        "result": {
+          "type": "object"
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": "number"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "basis": {
+              "type": "string"
+            }
+          }
+        },
+        "latency_ms": {
+          "type": "integer"
+        },
+        "channel_used": {
+          "type": "string"
+        },
+        "channel_fallback_chain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "estimated_completion_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retriable": {
+          "type": "boolean"
+        },
+        "trace_id": {
+          "type": "string"
+        }
       }
     }
   },

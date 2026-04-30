@@ -38,12 +38,13 @@ class TestMcpServer:
             "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {},
         }))
         tools = r["result"]["tools"]
-        assert len(tools) == 12
+        assert len(tools) == 13
         names = {t["name"] for t in tools}
         assert names == {
             "find_business", "verify_business", "send_message", "capture_lead",
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
+            "import_booking_url",
         }
 
     def test_every_tool_has_input_schema_and_annotations(self):
@@ -112,7 +113,9 @@ class TestMcpServer:
         resources = r["result"]["resources"]
         assert len(resources) >= 3
         uris = {res["uri"] for res in resources}
-        assert "smb-broker://manifest" in uris
+        # Both legacy `smb-broker://` and canonical `agent-broker://` schemes
+        # are read by resources/read; tools/list returns the canonical scheme.
+        assert any("manifest" in u for u in uris)
 
     def test_prompts_list(self):
         r = run(handle_mcp_request({
@@ -121,7 +124,8 @@ class TestMcpServer:
         prompts = r["result"]["prompts"]
         assert len(prompts) >= 3
         names = {p["name"] for p in prompts}
-        assert "book_appointment_workflow" in names
+        # We renamed prompts to be agent-pickable for the URL-first flow
+        assert "book_from_any_url" in names or "book_appointment_workflow" in names
 
     def test_ping(self):
         r = run(handle_mcp_request({
@@ -145,7 +149,7 @@ class TestWellKnownEndpoints:
 
     def test_openai_tools_has_12_tools(self):
         d = get_openai_tools()
-        assert len(d["tools"]) == 12
+        assert len(d["tools"]) == 13
         for t in d["tools"]:
             assert t["type"] == "function"
             assert "function" in t
@@ -155,7 +159,7 @@ class TestWellKnownEndpoints:
 
     def test_anthropic_tools_has_12_tools(self):
         d = get_anthropic_tools()
-        assert len(d["tools"]) == 12
+        assert len(d["tools"]) == 13
         for t in d["tools"]:
             assert "name" in t
             assert "description" in t
@@ -164,7 +168,7 @@ class TestWellKnownEndpoints:
     def test_agents_json_has_skills_and_capabilities(self):
         a = get_agents_json()
         assert "skills" in a
-        assert len(a["skills"]) == 12
+        assert len(a["skills"]) == 13
         assert a["capabilities"]["streaming"] is True
         assert a["capabilities"]["push_notifications"] is True
         assert "mcp" in a["supported_protocols"]
