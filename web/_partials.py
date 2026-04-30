@@ -20,8 +20,8 @@ BRAND = "Agent Broker"
 # point a real domain at Render via CNAME).
 import os as _os
 DOMAIN = _os.environ.get("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").replace("https://", "").replace("http://", "").rstrip("/")
-SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "support@smb-broker.onrender.com")
-PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "privacy@smb-broker.onrender.com")
+SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "basilalshukaili@gmail.com")
+PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "basilalshukaili@gmail.com")
 LEGAL_ENTITY = "Agent Broker (sole proprietor: Basil Mubarak Ali Al Shukaili, Sultanate of Oman)"
 
 

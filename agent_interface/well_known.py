@@ -65,7 +65,7 @@ def get_ai_plugin_manifest() -> dict:
             "is_user_authenticated": True,
         },
         "logo_url": f"{BASE_URL}/static/logo.png",
-        "contact_email": "support@smb-broker.onrender.com",
+        "contact_email": "basilalshukaili@gmail.com",
         "legal_info_url": f"{BASE_URL}/legal",
     }
 
@@ -291,7 +291,7 @@ def get_llms_txt() -> str:
         "",
         "## Contact",
         "",
-        "support@smb-broker.onrender.com",
+        "basilalshukaili@gmail.com",
     ]
     return "\n".join(lines) + "\n"
 
