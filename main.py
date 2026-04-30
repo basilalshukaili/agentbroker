@@ -193,6 +193,19 @@ async def llms_txt():
     return get_llms_txt()
 
 
+@app.get("/openapi.yaml", response_class=PlainTextResponse, tags=["Discovery"], include_in_schema=False)
+async def openapi_yaml():
+    """Hand-curated OpenAPI 3.1 spec served as YAML.
+
+    apis.guru's bot, RapidAPI, and several MCP-discovery crawlers prefer
+    `application/x-yaml` over the auto-generated `/openapi.json`. We host
+    both side-by-side; the YAML is the "marketing" copy with examples.
+    """
+    from pathlib import Path
+    spec_path = Path(__file__).parent / "manifest" / "openapi.yaml"
+    return PlainTextResponse(content=spec_path.read_text(encoding="utf-8"), media_type="application/x-yaml")
+
+
 @app.get("/llms-full.txt", response_class=PlainTextResponse, tags=["Discovery"])
 async def llms_full_txt():
     """Full content dump for LLM training crawlers."""
