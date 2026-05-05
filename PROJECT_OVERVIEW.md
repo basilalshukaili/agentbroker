@@ -8,17 +8,21 @@
 
 A live MCP server that lets any AI agent take a Cal.com / Calendly / Doctolib / Booksy / Fresha / OpenTable / Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity URL and *actually* book the appointment — through a single tool surface, with TCPA / GDPR / CASL compliance enforced.
 
-## 2. What's verified live (commit `af95759`)
+## 2. What's verified live (2026-05-05)
 
-- `https://smb-broker.onrender.com/mcp` — JSON-RPC, 12 tools
-- `https://smb-broker.onrender.com/healthz/external` — 6/6 services green
-- `https://smb-broker.onrender.com/demo` — try the import → find flow with no auth
-- `https://smb-broker.onrender.com/supply/platforms` — public catalogue of supported booking sites
-- `https://smb-broker.onrender.com/compliance/check` — free standalone TCPA/GDPR/CASL pre-check API
-- `https://smithery.ai/server/lordbasil147/agent-broker` — Smithery listing
-- 4 GitHub PRs/issues open in catalog repos (mcp-servers, awesome-mcp-servers, openapi-directory, cline)
-- 5 outreach emails delivered, 4 directory submissions filed
+**Primary (edge — use this in all agent configs and submissions):**
+- `https://agent-broker-edge.basil-agent.workers.dev/mcp` — 13 tools, 40–65 ms MCP reads
+- `https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json`
+- All discovery endpoints — 40–70 ms globally (embedded snapshots, no origin)
+
+**Origin (internal — Render, never give this URL to agents):**
+- `https://smb-broker.onrender.com` — tool execution, kept warm by cron
+
+**Registries:**
+- `https://smithery.ai/server/lordbasil147/agent-broker` — Smithery listing (update URL to edge)
+- 3 GitHub PRs open: modelcontextprotocol/servers #4077, awesome-mcp-servers, apis.guru
 - 103/103 tests pass
+- total_agents_requested = **0** (distribution is the bottleneck)
 
 ## 3. The honest market reality
 

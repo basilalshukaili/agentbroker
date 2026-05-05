@@ -1,5 +1,29 @@
 # Launch Status — Agent Broker
 
+> Last updated: **2026-05-05** (edge deployment)
+
+## 2026-05-05 Update — Edge-first architecture deployed
+
+| Item | Status |
+|------|--------|
+| Cloudflare Worker edge | ✅ Live — `agent-broker-edge.basil-agent.workers.dev` |
+| Discovery endpoints | ✅ 40–70 ms globally (embedded snapshots, no origin) |
+| MCP read methods | ✅ 40–65 ms (edge-served) |
+| tools/call proxy | ✅ 170–190 ms (origin warm via cron */2) |
+| agent-broker-edge.basil-agent.workers.dev | ❌ NXDOMAIN — not in use; workers.dev is primary |
+| Custom domain (agentbrokers.app etc.) | ⏳ Deferred until real traffic arrives |
+| total_agents_requested | **0** — distribution is next priority |
+
+The **primary public URL is the Cloudflare Worker**. All docs, registry submissions,
+and MCP configs must use `https://agent-broker-edge.basil-agent.workers.dev`.
+The Render origin (`smb-broker.onrender.com`) is an internal implementation detail.
+
+See [docs/NEXT_STEPS.md](./docs/NEXT_STEPS.md) for current priorities.
+
+---
+
+> Original 2026-04-29 status below (historical):
+
 > **Read this from top to bottom once.** It answers every question you asked
 > and replaces all earlier "what's next" docs. Last updated: **2026-04-29**.
 
@@ -16,9 +40,9 @@
    agents find us — was broken in production. I fixed the rule; you just
    need to commit & push.
 2. **Map the custom domain** in DigitalPlat → Render (5 min, click-through).
-   Right now `agentbroker.qzz.io` does not resolve. The Render-default
+   Right now `agent-broker-edge.basil-agent.workers.dev` does not resolve. The Render-default
    `smb-broker.onrender.com` does, but every doc, manifest, and registry
-   submission points at `agentbroker.qzz.io`.
+   submission points at `agent-broker-edge.basil-agent.workers.dev`.
 
 After those two: yes. The architecture is designed so it can sit untouched
 for **6–12 months** until you choose to engage. See the "expiry calendar"
@@ -33,7 +57,7 @@ section for the long tail.
 | **Web UI** | One 33 KB HTML file shipping React + ReactDOM + Babel-standalone (~3 MB on the wire) **and recompiling JSX in the browser on every page load** | Five server-rendered HTML pages (≤ 14 KB each), zero JS framework, vanilla-JS metric polling | A free-tier Render dyno on cold-start can render the new pages in <100 ms; the old build stalled for 2-3 s while Babel compiled in the browser. Also: indexable by LLM crawlers, works without JS. |
 | **Telemetry** | `record_*` functions existed but **nothing called them** — dashboard always showed 0 | Single FastAPI middleware counts `/ops/*` and `/mcp` requests + completions; `find_business` and `send_message` add the two domain-specific counters | The home-page "live activity" tiles now reflect reality. |
 | **Routing** | `/pricing /terms /privacy /refund` were 301-redirects to `/#pricing` etc, but the SPA never read URL hashes — those links were broken | All four are real, separately-rendered, deep-linkable pages | Search engines, LLM crawlers, and link-shortener previews now work. |
-| **Branding** | `support@smb-broker.onrender.com`, "Status" link to `smb-broker.onrender.com/health`, `name_for_human: "SMB Broker"` in the OpenAI plugin manifest | `support@agentbroker.qzz.io`, `Agent Broker` everywhere, mailto links to real addresses | Anthropic / OpenAI plugin reviews care about consistent brand + working contact info. |
+| **Branding** | `support@smb-broker.onrender.com`, "Status" link to `smb-broker.onrender.com/health`, `name_for_human: "SMB Broker"` in the OpenAI plugin manifest | `support@agent-broker-edge.basil-agent.workers.dev`, `Agent Broker` everywhere, mailto links to real addresses | Anthropic / OpenAI plugin reviews care about consistent brand + working contact info. |
 | **`manifest/` dir** | `.gitignore` line 31 was a bare `MANIFEST` — on Windows / case-insensitive matching this excluded the entire `manifest/` directory from git. Production never had `manifest.json` and 500-ed on every discovery endpoint. | Replaced with `MANIFEST.in` + comment so it can never re-recur | This was the silent killer. Anthropic / Cursor / Smithery would have crawled the discovery endpoints, gotten 500s, and silently dropped you. |
 
 ---
@@ -115,9 +139,9 @@ Here's the realistic decomposition:
 > worldwide. Fully compliance-aware (TCPA, GDPR, CASL across 22 jurisdictions).
 > Free tier 100 ops/month for any agent.
 >
-> Live: https://agentbroker.qzz.io/mcp
+> Live: https://agent-broker-edge.basil-agent.workers.dev/mcp
 > Source: https://github.com/basilalshukaili/agentbroker
-> Discovery: https://agentbroker.qzz.io/.well-known/anthropic-tools.json
+> Discovery: https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json
 >
 > If a Claude user ever asks "book me an appointment at a salon in Tokyo",
 > we're the path. Happy to demo or hand over a test agent identity.
@@ -147,7 +171,7 @@ machine-readable, not human-readable:
 3. **Glama** — same script submits there. Smaller, but it's where
    developers building Cursor + Continue extensions go.
 4. **`llms.txt` crawlers** — OpenAI, Anthropic, Perplexity, You.com all
-   crawl `/llms.txt` and `/llms-full.txt`. Once `agentbroker.qzz.io` resolves,
+   crawl `/llms.txt` and `/llms-full.txt`. Once `agent-broker-edge.basil-agent.workers.dev` resolves,
    they'll find you organically within 2-4 weeks.
 5. **GitHub topics** — your repo's topics (`mcp`, `mcp-server`,
    `ai-agents`, `model-context-protocol`) are searchable. Set them once via
@@ -247,7 +271,7 @@ break is Vapi credit if voice is over-used; everything else is good for
 - [ ] **Map the custom domain.** Open <https://dash.domain.digitalplat.org>,
       add a CNAME for `agentbroker` → `smb-broker.onrender.com`.
       Then in Render dashboard → service `smb-broker` → Settings → Custom
-      Domains → Add `agentbroker.qzz.io`. Wait 5-30 min. Verify.
+      Domains → Add `agent-broker-edge.basil-agent.workers.dev`. Wait 5-30 min. Verify.
 - [ ] **Complete Paddle business verification.** <https://vendors.paddle.com>
       → Verification. Bank info above. 2-5 business days.
 - [ ] **Send the Anthropic email** (template above). 5 minutes. Don't expect
@@ -257,7 +281,7 @@ break is Vapi credit if voice is over-used; everything else is good for
 - [ ] **Submit the registry PR.** `python scripts/submit_to_registries.py`
       handles Smithery + Glama via API. The script also prints exact `git`
       commands for the modelcontextprotocol/servers GitHub PR — run those.
-- [ ] **Set the renewal reminder.** Calendar: "Renew agentbroker.qzz.io
+- [ ] **Set the renewal reminder.** Calendar: "Renew agent-broker-edge.basil-agent.workers.dev
       via DigitalPlat" on 2027-04-22 (one week early).
 
 **Already done by me in this session** (commit + push and it goes live):

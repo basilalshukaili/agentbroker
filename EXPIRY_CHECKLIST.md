@@ -4,7 +4,7 @@
 > When one runs out, switch to the listed free alternative — never pay
 > until traffic justifies it.
 
-Last updated: 2026-04-29.
+Last updated: 2026-05-05.
 
 ---
 
@@ -12,8 +12,12 @@ Last updated: 2026-04-29.
 
 | Service | What it does | Free limit | Hard expiry | Watch this |
 |---------|--------------|-----------|-------------|------------|
-| **Fly.io** | Hosts the app | 3 shared VMs · 3GB volume | none (forever-free if usage stays under) | $5 credit/mo absorbs minor overages |
-| **DigitalPlat (qzz.io)** | Domain `agentbroker.qzz.io` | unlimited | annual renewal (free) | Renew yearly via dashboard |
+| **UptimeRobot** | Uptime monitoring + public status page | 50 monitors, 5 min interval | none (free tier stable 10+ years) | Dashboard — no action needed |
+| **Cloudflare Workers** | Edge layer — serves discovery + MCP reads globally | 100k req/day, 10ms CPU | none | `agent-broker-edge.basil-agent.workers.dev/edge/health` |
+| **Cloudflare KV** | Live overlay for discovery payloads | 100k reads/day, 1k writes/day | none | Dashboard → KV namespace |
+| **Render** | Origin — Python FastAPI, tool execution | free web service, 512 MB RAM | none (free until deleted or suspended) | service dashboard + `smb-broker.onrender.com` |
+| **Render domain** | Origin URL (internal use only) | `smb-broker.onrender.com` | none (free, managed by Render) | onrender dashboard + service health |
+| **DigitalPlat (qzz.io)** | `agent-broker-edge.basil-agent.workers.dev` — currently NXDOMAIN, not in use | unlimited | annual renewal (free) | Not used — workers.dev is primary |
 | **GitHub** | Repo + Actions | unlimited public repos · 2,000 Action min/mo | none | Action minutes only |
 | **Twilio** | SMS + voice | $15.50 trial credit | depleted on first 200 SMS | When credit hits $0 |
 | **Cal.com** | Booking direct API | unlimited on free plan | none | None |
@@ -65,18 +69,21 @@ Last updated: 2026-04-29.
 
 **Switch by:** running a feature flag — alternate adapters per request based on which quota has remaining headroom.
 
-### Fly.io free tier ($5 credit covers ~3GB egress + always-on machine)
+### Render free web service (`smb-broker.onrender.com`)
 
-**Symptom:** Bill shows up. Free credit was used up.
+**Note:** Render is now the **origin** behind the Cloudflare Worker edge. Agents never hit it
+directly. Cold starts are prevented by the edge cron (`*/2`).
 
-**Free alternatives:**
-1. **Render free web service** — already configured in `deploy/render.yaml`. Switch in 10 min.
-2. **Railway** — has a $5 trial credit. `deploy/railway.json` ready.
-3. **Cloudflare Workers** — free tier includes 100k req/day, but requires a small refactor (different runtime).
-4. **Koyeb** — generous free tier. Docker-compatible.
-5. **GCP Cloud Run** — 2M req/month free.
+**Symptom if Render has a problem:** `tools/call` and `/ops/*` start returning 5xx or timing out.
+Discovery endpoints (well-known, manifest, llms.txt, tools/list) still work from the edge.
 
-**Monitoring:** Fly emails when you cross 80% of free allowance. Don't ignore that email.
+**Free details:**
+1. **Render free web service** — live at `smb-broker.onrender.com`. 512 MB RAM. No hard expiry.
+2. **Cold start eliminated** — the Cloudflare Worker cron pings `/health` every 2 min so the dyno never reaches the 15 min idle threshold.
+3. **If Render goes down permanently** — discovery still works from embedded edge snapshots indefinitely. Only tool execution breaks. Migrate to Workers + D1 when traffic justifies it (see Phase 2 in `edge/README.md`).
+4. **Alternative backup** — `deploy/railway.json` for quick migration if needed.
+
+**Monitoring:** use the Render dashboard and the live URL health check. Add a weekly reminder to confirm `https://smb-broker.onrender.com/health` returns 200 and the service is `Live` in Render.
 
 ### DigitalPlat domain — annual renewal
 
@@ -140,10 +147,10 @@ The order in which costs would arrive — and how to push each one back:
    - Sending one combined daily summary instead of N transactional emails per day.
    - Setting `RESEND_DAILY_LIMIT=80` (10% safety margin) in env.
 
-4. **Fly.io overage** — only matters above ~3GB egress/month. **Push back by:**
-   - Setting `min_machines_running = 0` in `fly.toml` (DONE).
-   - Caching the manifest endpoint at the CDN edge (Cloudflare in front of Fly).
-   - Compressing responses (FastAPI `gzip` middleware).
+4. **Koyeb RAM pressure** — only matters when the in-memory directory grows >50k SMBs. **Push back by:**
+   - Keeping `SUPPLY_SEED_MODE=empty` (DONE — directory only fills via real ingest).
+   - Add Cloudflare in front for CDN caching of `/manifest`, `/llms.txt`, `/.well-known/*`.
+   - Add `gzip` middleware to FastAPI for /openapi.yaml + /llms-full.txt.
 
 If you do all four, **first $0 in cost** likely lasts **3-6 months** at 100 ops/day pace.
 
@@ -165,7 +172,7 @@ If you do all four, **first $0 in cost** likely lasts **3-6 months** at 100 ops/
 | 2 | Twilio paid ($20 starter) | Once SMS exceeds 2,000/month | ~$15/month base |
 | 3 | Postgres (Neon free → paid) | Once in-memory data loss bites | $0 → $19/mo |
 | 4 | Sentry / observability | Once first paying customer files a real bug | $0 (free tier) → $26/mo |
-| 5 | Fly.io paid plan | Once free credits exhausted | $5-15/month |
+| 5 | Koyeb starter plan | Once nano runs out of RAM | $7/month for next-tier instance |
 | 6 | Resend paid | Once you exceed 3,000 emails/month | $20/mo for 50k |
 
 **Keep this list. Tick items as they trigger.** Don't pre-pay any of them.

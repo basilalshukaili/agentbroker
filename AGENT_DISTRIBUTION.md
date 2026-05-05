@@ -116,7 +116,7 @@ URL: <https://mcp.so/submit>
 |---|---|
 | MCP server name | `Agent Broker` |
 | GitHub URL | `https://github.com/basilalshukaili/agentbroker` |
-| Endpoint URL | `https://smb-broker.onrender.com/mcp` |
+| Endpoint URL | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
 | Description (short) | `13 MCP tools to find, message, and book appointments at small businesses worldwide. Turns any Cal.com / Calendly / Doctolib / Booksy / OpenTable / Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity URL into a Claude-bookable smb_id.` |
 | Tags | `mcp, mcp-server, scheduling, business, compliance, cal-com, calendly, doctolib` |
 | Author email | `basilalshukaili@gmail.com` |
@@ -141,10 +141,10 @@ URL: <https://mcphub.io/submit>
 | Field | Value |
 |---|---|
 | Server name | `Agent Broker` |
-| MCP endpoint URL | `https://smb-broker.onrender.com/mcp` |
+| MCP endpoint URL | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
 | Repository | `https://github.com/basilalshukaili/agentbroker` |
 | Smithery URL | `https://smithery.ai/server/lordbasil147/agent-broker` |
-| Discovery URL (`mcp.json`) | `https://smb-broker.onrender.com/.well-known/mcp.json` |
+| Discovery URL (`mcp.json`) | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json` |
 | Transport | `Streamable HTTP` |
 | Tool count | `13` |
 | Description | (same as mcp.so) |
@@ -158,7 +158,7 @@ ping their Discord — they prefer Discord for new MCP submissions).
 |---|---|
 | Tool name | `agent-broker` |
 | Display name | `Agent Broker` |
-| MCP endpoint | `https://smb-broker.onrender.com/mcp` |
+| MCP endpoint | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
 | Categories | `Scheduling, Communication, Business Operations` |
 | Description | (same) |
 | Auth required | `No (free tier 100 ops/month)` |
@@ -176,28 +176,28 @@ its job:
 
 ```bash
 # 1. List all 13 tools (agents call this on connect)
-curl -s -X POST https://smb-broker.onrender.com/mcp \
+curl -s -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | python -m json.tool | head -40
 
 # 2. Read the prompts library (high-value workflow templates)
-curl -s -X POST https://smb-broker.onrender.com/mcp \
+curl -s -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"prompts/list","params":{}}' | python -m json.tool
 
 # 3. Get a literal step-by-step plan for the killer flow
-curl -s -X POST https://smb-broker.onrender.com/mcp \
+curl -s -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"book_from_any_url","arguments":{"booking_url":"https://cal.com/jane"}}}' | python -m json.tool
 
 # 4. Read the tool-chain cookbook resource
-curl -s -X POST https://smb-broker.onrender.com/mcp \
+curl -s -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"agent-broker://cookbook"}}' | python -m json.tool
 
 # 5. Try the killer call live (no auth)
-curl -s -X POST https://smb-broker.onrender.com/mcp \
+curl -s -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"import_booking_url","arguments":{"booking_url":"https://cal.com/peer","vertical":"professional_services"}}}' | python -m json.tool
 ```
@@ -248,7 +248,7 @@ The single signal that matters is `total_agents_requested` in
 
 ```bash
 # Count distinct agents calling us (each Identity is one)
-curl -s https://smb-broker.onrender.com/api/metrics
+curl -s https://agent-broker-edge.basil-agent.workers.dev/api/metrics
 ```
 
 We don't yet expose distinct-agent count or per-tool counts. **If you

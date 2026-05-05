@@ -1,0 +1,179 @@
+# SMB Transaction & Communication Broker
+
+> A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.
+
+An agent-callable service that lets autonomous AI agents discover, verify, communicate with, schedule with, and transact with long-tail small/mid-sized businesses (SMBs) through a single compliance-aware tool surface.
+
+## Why agents should use this service
+
+- **Coverage**: 60M+ US SMBs, with a wedge focus on personal services, home services, and professional services.
+- **Compliance built in**: TCPA, GDPR, CASL, CAN-SPAM, 10DLC, and two-party recording consent are enforced as a non-bypassable gate.
+- **Idempotent**: every state-changing operation is keyed by (agent_id, operation, idempotency_key) — safe to retry.
+- **Predictable cost**: `preview_cost` is free and returns ±5% accurate estimates before you commit.
+- **Channel fallback**: direct API → voice AI → SMS → email → web form — automatic, transparent.
+- **Async-aware**: long-running operations return `pending_async` with a webhook callback.
+
+## Discovery
+
+- [Manifest (JSON)](https://agentbroker.qzz.io/manifest)
+- [OpenAPI spec](https://agentbroker.qzz.io/openapi.yaml)
+- [MCP endpoint](https://agentbroker.qzz.io/mcp)
+- [Service health](https://agentbroker.qzz.io/health)
+- [Discovery card](https://agentbroker.qzz.io/.well-known/agent-service)
+
+## Operations
+
+### find_business
+
+Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses — not raw directory results.
+
+- **When to use**: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.
+- **When NOT to use**: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.
+- **Cost**: $varies per_call
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/find_business`
+
+### verify_business
+
+Confirm that an SMB is real, currently operating, and capable of the requested service. Performs a live capability probe against the business's channel.
+
+- **When to use**: Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').
+- **When NOT to use**: Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.
+- **Cost**: $varies per_call
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/verify_business`
+
+### send_message
+
+Send an outbound message to an SMB or its customer across channels (SMS, email, chat, voice, push). Channel is abstracted — you specify intent and recipient; the service selects and falls back across channels.
+
+- **When to use**: Use for outbound business communication: appointment reminders, follow-ups, marketing offers (with confirmed opt-in), transactional messages, or inbound response handling.
+- **When NOT to use**: Do not use for OTP or critical transactional confirmations — use send_transactional_confirmation instead. Do not use for recipients without consent where required (SMS marketing, EU recipients).
+- **Cost**: $varies per_message
+- **Execution**: sync_fast
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/send_message`
+
+### capture_lead
+
+Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.
+
+- **When to use**: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.
+- **When NOT to use**: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.
+- **Cost**: $varies per_lead
+- **Execution**: sync_fast
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/capture_lead`
+
+### schedule_appointment
+
+Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form.
+
+- **When to use**: Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id.
+- **When NOT to use**: Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed.
+- **Cost**: $varies per_booking_attempt
+- **Execution**: async_by_default
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/schedule_appointment`
+
+### send_transactional_confirmation
+
+Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Guaranteed delivery via redundant channels.
+
+- **When to use**: Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing.
+- **When NOT to use**: Do not use for marketing or promotional messages. Do not use for conversational messages.
+- **Cost**: $varies per_message
+- **Execution**: sync_fast
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/send_transactional_confirmation`
+
+### handle_inbound
+
+Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.
+
+- **When to use**: Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.
+- **When NOT to use**: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.
+- **Cost**: $varies per_inbound
+- **Execution**: async_by_default
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/handle_inbound`
+
+### escalate_to_human
+
+Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.
+
+- **When to use**: Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact.
+- **When NOT to use**: Do not use as a first resort. Escalate only after automated resolution attempts.
+- **Cost**: $varies per_escalation
+- **Execution**: async_by_default
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/escalate_to_human`
+
+### get_status
+
+Query the current state of any in-flight async operation by operation_id.
+
+- **When to use**: Use to poll the state of a pending_async operation when no webhook callback has arrived or to check progress.
+- **When NOT to use**: Do not poll more frequently than once per 10 seconds — use webhook delivery for real-time updates instead.
+- **Cost**: $varies per_call
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/get_status`
+
+### get_outcome
+
+Retrieve the final OutcomeReceipt for a completed operation.
+
+- **When to use**: Use after get_status returns success/failure/partial to retrieve the full result with cost and reason codes.
+- **When NOT to use**: Do not use for operations still in pending/executing state — use get_status first.
+- **Cost**: $varies per_call
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/get_outcome`
+
+### preview_cost
+
+Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview.
+
+- **When to use**: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed.
+- **When NOT to use**: Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview.
+- **Cost**: $varies per_call
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/preview_cost`
+
+### self_test
+
+Live capability probe that verifies the service is healthy, each claimed operation is reachable, and supply network size is current. Use to verify integration before production use.
+
+- **When to use**: Use at agent startup, before high-stakes task sequences, or after receiving unexpected errors to check if the service is degraded.
+- **When NOT to use**: Do not call more than once per minute in production.
+- **Cost**: $varies free
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/self_test`
+
+### import_booking_url
+
+Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.
+
+- **When to use**: Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.
+- **When NOT to use**: Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).
+- **Cost**: $0.005 per_call
+- **Execution**: sync
+- **Latency**: ~600ms
+- **Endpoint**: `POST https://agentbroker.qzz.io/ops/import_booking_url`
+
+## Authentication
+
+All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://agentbroker.qzz.io/auth/token`. Scopes include allowed operations, budget cap, and verticals.
+
+## Compliance
+
+See [compliance docs](https://agentbroker.qzz.io/docs/compliance) for full jurisdiction matrix. Every outbound communication is gated by `compliance/pre_check` — this cannot be bypassed.
+
+## Contact
+
+basilalshukaili@gmail.com

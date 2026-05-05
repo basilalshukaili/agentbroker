@@ -11,7 +11,7 @@ Show HN: SMB Broker – Horizontal MCP server, agents call businesses worldwide
 
 ## URL
 ```
-https://agentbroker.qzz.io
+https://agent-broker-edge.basil-agent.workers.dev
 ```
 
 ## Text (use sparingly — HN prefers links; only add if it helps reviewers)
@@ -21,7 +21,7 @@ of small businesses — barbers, plumbers, accountants, dentists — who
 have no API.
 
 What's there:
-- 12 MCP tools (find / verify / message / schedule / capture lead / ...)
+- 13 MCP tools (find / verify / message / schedule / import_booking_url / ...)
 - Compliance pre-check that fires per jurisdiction (TCPA, GDPR, CASL,
   10DLC, two-party recording consent for 10 US states)
 - Channel fallback: Cal.com direct API → voice AI (Vapi) → SMS (Twilio) →

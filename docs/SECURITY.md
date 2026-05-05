@@ -114,7 +114,7 @@ Every item is either **DONE** (already implemented in this repo) or **TODO** (mu
 ## Incident response
 
 - [ ] **TODO** — On-call rotation with PagerDuty / Opsgenie integration.
-- [ ] **TODO** — Public status page (`status.agentbroker.qzz.io`).
+- [ ] **TODO** — Public status page (UptimeRobot free tier, or `status.agent-broker-edge.basil-agent.workers.dev` once custom domain is set).
 - [ ] **TODO** — Post-incident review template + 5-business-day commitment.
 - [ ] **TODO** — Notify-affected-agents pipeline gated on compliance officer approval.
 

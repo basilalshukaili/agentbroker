@@ -2,10 +2,10 @@
 
 > An agent-callable service that lets autonomous AI agents discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-sized businesses (SMBs) — through a single compliance-aware tool surface.
 
-[![Tests](https://img.shields.io/badge/tests-81%2F81%20passing-brightgreen)](./tests)
-[![WinRate](https://img.shields.io/badge/WinRate-81.75%25-blue)](./reports/agent_sim_report.json)
+[![Tests](https://img.shields.io/badge/tests-103%2F103%20passing-brightgreen)](./tests)
 [![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Edge](https://img.shields.io/badge/edge-cloudflare%20workers-orange)](./edge)
 
 ---
 
@@ -17,7 +17,7 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 
 ## What you can do with it
 
-12 operations, all callable via REST, MCP, OpenAI tools, Anthropic tools, or A2A protocol:
+13 operations, all callable via REST, MCP, OpenAI tools, Anthropic tools, or A2A protocol:
 
 | Operation | What it does | Cost | Latency |
 |-----------|--------------|------|---------|
@@ -33,6 +33,7 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 | `get_outcome` | Retrieve final outcome of an async operation | $0.001 | <1s |
 | `preview_cost` | Estimate cost / latency / success probability — **free** | $0.00 | <500ms |
 | `self_test` | Service health check — **free** | $0.00 | <2s |
+| `import_booking_url` | Parse any Cal.com / Calendly / Doctolib / Booksy / OpenTable / 7 more URLs into a bookable SMB | $0.01 | <2s |
 
 ## Quick start (for AI agents)
 
@@ -42,9 +43,9 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 // Add to your MCP client config
 {
   "mcpServers": {
-    "smb-broker": {
-      "url": "https://agentbroker.qzz.io/mcp",
-      "headers": { "X-Agent-Identity": "$SMB_BROKER_TOKEN" }
+    "agent-broker": {
+      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp",
+      "headers": { "X-Agent-Identity": "$AGENT_BROKER_TOKEN" }
     }
   }
 }
@@ -54,7 +55,7 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 
 ```python
 import httpx, openai
-tools = httpx.get("https://agentbroker.qzz.io/.well-known/openai-tools.json").json()["tools"]
+tools = httpx.get("https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json").json()["tools"]
 client = openai.OpenAI()
 resp = client.chat.completions.create(
     model="gpt-4",
@@ -67,7 +68,7 @@ resp = client.chat.completions.create(
 
 ```python
 import httpx, anthropic
-tools = httpx.get("https://agentbroker.qzz.io/.well-known/anthropic-tools.json").json()["tools"]
+tools = httpx.get("https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json").json()["tools"]
 client = anthropic.Anthropic()
 msg = client.messages.create(
     model="claude-opus-4-5",
@@ -80,7 +81,7 @@ msg = client.messages.create(
 ### Option 4: Plain REST
 
 ```bash
-curl -X POST https://agentbroker.qzz.io/ops/find_business \
+curl -X POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business \
   -H "X-Agent-Identity: $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -96,16 +97,16 @@ We're discoverable through every protocol agents currently use:
 
 | Protocol | URL |
 |----------|-----|
-| MCP | `https://agentbroker.qzz.io/mcp` |
-| MCP descriptor | `https://agentbroker.qzz.io/.well-known/mcp.json` |
-| OpenAI ChatGPT plugin | `https://agentbroker.qzz.io/.well-known/ai-plugin.json` |
-| OpenAI function tools | `https://agentbroker.qzz.io/.well-known/openai-tools.json` |
-| Anthropic tool_use | `https://agentbroker.qzz.io/.well-known/anthropic-tools.json` |
-| A2A (Agent-to-Agent) | `https://agentbroker.qzz.io/.well-known/agents.json` |
-| llms.txt | `https://agentbroker.qzz.io/llms.txt` |
-| OpenAPI 3.1 | `https://agentbroker.qzz.io/openapi.yaml` |
-| Capability manifest | `https://agentbroker.qzz.io/manifest` |
-| Service discovery card | `https://agentbroker.qzz.io/.well-known/agent-service` |
+| MCP | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
+| MCP descriptor | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json` |
+| OpenAI ChatGPT plugin | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/ai-plugin.json` |
+| OpenAI function tools | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json` |
+| Anthropic tool_use | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json` |
+| A2A (Agent-to-Agent) | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/agents.json` |
+| llms.txt | `https://agent-broker-edge.basil-agent.workers.dev/llms.txt` |
+| OpenAPI 3.1 | `https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml` |
+| Capability manifest | `https://agent-broker-edge.basil-agent.workers.dev/manifest` |
+| Service discovery card | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/agent-service` |
 
 ## Why agents pick us (measured, not assumed)
 
@@ -133,11 +134,20 @@ Every outbound communication passes through `compliance/pre_check()`:
 
 Compliance violations surface as `ComplianceViolationError` → `compliance_violation` API error. **Never silently dropped, never bypassed by middleware.**
 
-## Architecture (one paragraph)
+## Architecture
 
-FastAPI app exposes 12 operations over REST + MCP + .well-known surfaces. Each handler validates input with Pydantic models, runs through `compliance/pre_check`, executes via channel-fallback (`direct_api → voice_ai → sms → email → web_form`), and writes an immutable `OutcomeReceipt` to the outcome store. Async operations enqueue Celery tasks and return `pending_async`. Idempotency is keyed by `(agent_id, operation, idempotency_key)` with 24h TTL in Redis (PostgreSQL fallback). Circuit breakers wrap every external channel. Observability spans cover all §2.7 attributes.
+```
+AI agent → Cloudflare Worker edge (agent-broker-edge.basil-agent.workers.dev)
+               ├── Discovery + MCP read → embedded snapshots  40–70 ms
+               └── tools/call + /ops/*  → proxy to origin    170–190 ms
+                              ↓
+           Python FastAPI on Render (smb-broker.onrender.com)
+               Cron */2 keeps Render warm — cold starts eliminated
+```
 
-Full architecture: [docs/architecture.md](./docs/architecture.md).
+The Python service exposes 13 operations over REST + MCP + .well-known surfaces. Each handler validates input with Pydantic models, runs through `compliance/pre_check`, executes via channel-fallback (`direct_api → voice_ai → sms → email → web_form`), and writes an immutable `OutcomeReceipt` to the outcome store. Async operations return `pending_async`. Idempotency is keyed by `(agent_id, operation, idempotency_key)` with 24h TTL.
+
+Full architecture: [docs/architecture.md](./docs/architecture.md) · Edge layer: [edge/README.md](./edge/README.md)
 
 ## Repo layout
 
@@ -207,7 +217,7 @@ docker compose -f deploy/docker-compose.yml up
 - [Pricing](./docs/PRICING.md) — 5 revenue streams with year-1 / year-2 forecasts
 - [Security](./docs/SECURITY.md) — production hardening checklist
 - [Release notes v0.1](./RELEASE_NOTES.md)
-- [Next steps](./docs/NEXT_STEPS.md) — what's left before going live
+- [Next steps](./docs/NEXT_STEPS.md) — current priorities (edge live; bottleneck is distribution)
 - [ADRs](./docs/adr/) — architecture decision records
 
 ## License

@@ -1,0 +1,31 @@
+name = "agent-broker-edge"
+main = "src/index.ts"
+compatibility_date = "2025-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Public-facing settings (non-secret) live in vars
+[vars]
+ORIGIN_URL = "https://smb-broker.onrender.com"
+EDGE_VERSION = "0.1.0"
+SERVICE_NAME = "agent-broker"
+
+# KV cache for discovery payloads
+[[kv_namespaces]]
+binding = "CACHE"
+id = "f45691e20cdd4937ae88ccb64159d928"
+
+# Observability (free)
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Cron trigger to keep manifest cache warm and Render dyno awake.
+# Every 2 min: aggressive but well within free tier (1000 cron triggers/day).
+[triggers]
+crons = ["*/2 * * * *"]
+
+# Allow importing .txt and .yaml as raw strings (snapshots embedded in bundle).
+[[rules]]
+type = "Text"
+globs = ["**/*.txt", "**/*.yaml"]
+fallthrough = true

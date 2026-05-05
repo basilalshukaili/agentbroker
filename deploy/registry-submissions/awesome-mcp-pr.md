@@ -6,28 +6,32 @@ Section to insert into: `### 💼 Business & Productivity` (alphabetical).
 ## Entry
 
 ```markdown
-- [smb-broker](https://github.com/YOUR_GITHUB_USERNAME/smb-broker) —
-  Horizontal agent-to-business action layer. 12 tools for finding,
-  scheduling, messaging SMBs worldwide; built-in TCPA/GDPR/CASL compliance.
+- [agent-broker](https://github.com/basilalshukaili/agentbroker) —
+  Horizontal agent-to-business action layer. 13 tools for finding,
+  scheduling, messaging SMBs worldwide; `import_booking_url` turns any
+  Cal.com / Calendly / Doctolib / Booksy / OpenTable URL into a bookable SMB.
+  Built-in TCPA/GDPR/CASL compliance.
 ```
 
 ## PR title
 
 ```
-Add smb-broker (agent-to-business horizontal layer)
+Add agent-broker (agent-to-business horizontal layer, 13 tools)
 ```
 
 ## PR body
 
 ```
-Adding smb-broker — the first horizontal MCP server for agent-to-business
-actions. Most existing servers are single-vertical (Cal.com, Twilio, etc.);
-this one stitches them together with compliance + channel fallback.
+Adding agent-broker — horizontal MCP server for agent-to-business actions.
+Most existing servers are single-vertical (Cal.com, Twilio, etc.); this one
+stitches them together with compliance + channel fallback.
 
-- 12 tools: find_business, schedule_appointment, send_message, ...
-- Worldwide coverage (jurisdiction-detected compliance)
+- 13 tools including import_booking_url (the differentiator)
+- Worldwide coverage (22 jurisdictions with native compliance rules)
 - Free tier: 100 ops/month
+- Edge: Cloudflare Worker (40–70 ms globally)
 - Discovery: MCP + OpenAI tools + Anthropic tools + A2A + llms.txt
 
-Repo: <https://github.com/YOUR_GITHUB_USERNAME/smb-broker>
+MCP endpoint: <https://agent-broker-edge.basil-agent.workers.dev/mcp>
+Repo: <https://github.com/basilalshukaili/agentbroker>
 ```

@@ -1,9 +1,13 @@
 # HANDOFF — Production Launch
 
-> **Read this first. Everything else is reference.**
+> **2026-05-05 update:** Service is live. Cloudflare Worker edge deployed.
+> Primary URL: `https://agent-broker-edge.basil-agent.workers.dev`
+> All Fly.io, Koyeb, and `agent-broker-edge.basil-agent.workers.dev` references in this doc are historical — ignore them.
+> See [docs/NEXT_STEPS.md](./docs/NEXT_STEPS.md) for current priorities.
 
-This is the single source of truth: what we built, what's measured, what works,
-what's left for you (and only you), and how to ship.
+---
+
+This is the original handoff from 2026-04-28. Content below is preserved for reference.
 
 ---
 
@@ -95,7 +99,7 @@ Free tier: 3,000 emails/month, 100/day. Plenty for the first 6 months.
 
 ### 4.2 Buy a domain (15 minutes — ~$10/year)
 
-We've used `agentbroker.qzz.io` as a placeholder everywhere. Replace it
+We've used `agent-broker-edge.basil-agent.workers.dev` as a placeholder everywhere. Replace it
 with your real domain. Recommended:
 
 - **Namecheap** (works in Oman, accepts crypto) — fastest, $9-15/year
@@ -109,7 +113,7 @@ Suggested names that aren't taken (check first):
 
 After you buy:
 1. In `.env` and in `deploy/fly.toml` and in `deploy/landing-page/index.html`,
-   replace every `agentbroker.qzz.io` with your actual domain.
+   replace every `agent-broker-edge.basil-agent.workers.dev` with your actual domain.
    ```bash
    # PowerShell command (Windows)
    Get-ChildItem -Recurse -Include *.py,*.md,*.toml,*.yaml,*.yml,*.html,*.json | `

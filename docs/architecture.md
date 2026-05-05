@@ -1,6 +1,40 @@
 # Architecture — SMB Transaction & Communication Broker
 
-**Phase P1 Artifact | ArchitectAgent | v3**
+**Last updated: 2026-05-05**
+
+---
+
+## 0. Deployment Topology
+
+```
+AI agent
+   │
+   ▼
+agent-broker-edge.basil-agent.workers.dev   ← Cloudflare Worker (300+ PoPs)
+   │
+   ├── GET  /.well-known/*                  → embedded snapshot  (40–70 ms)
+   ├── GET  /manifest*, /llms.txt, /openapi.yaml, /supply/platforms, /compliance/jurisdictions
+   │                                        → embedded snapshot  (40–70 ms)
+   ├── POST /mcp  initialize / tools/list / ping / prompts/* / resources/*
+   │                                        → embedded snapshot  (40–65 ms)
+   ├── POST /mcp  tools/call               → proxy to origin     (170–190 ms)
+   └── POST /ops/*, everything else        → proxy to origin
+            │
+            ▼
+   smb-broker.onrender.com                 ← Python FastAPI on Render free tier
+            │
+            ├── 13 operation handlers (core/)
+            ├── Compliance gate (compliance/pre_check)
+            ├── Channel adapters (channels/)
+            ├── Billing + outcome store
+            └── All .well-known / MCP endpoints (also served from origin, but
+                agents should never hit origin directly)
+
+Cron: */2 * * * *  — edge pings origin /health every 2 min (prevents 15 min idle sleep)
+```
+
+**The public URL is the edge worker.** The Render origin URL (`smb-broker.onrender.com`)
+is an implementation detail; agents should never be given it directly.
 
 ---
 

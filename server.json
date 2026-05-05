@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.basilalshukaili/agent-broker",
+  "description": "AI agents find and book with SMBs. 13 MCP tools, TCPA/GDPR/CASL compliance.",
+  "repository": {
+    "url": "https://github.com/basilalshukaili/agentbroker",
+    "source": "github"
+  },
+  "version": "1.0.1",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+    }
+  ]
+}
