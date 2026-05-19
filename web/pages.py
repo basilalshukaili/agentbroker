@@ -257,19 +257,20 @@ def render_pricing() -> str:
 
 <section class="section">
   <h2>Per-operation cost</h2>
-  <p class="lead">All prices in USD. <code class="inline">preview_cost</code> returns the same numbers programmatically (free).</p>
+  <p class="lead">All prices in USD. <code class="inline">preview_cost</code> returns the same numbers programmatically (free) and is the authoritative source: any drift between this page and <code class="inline">preview_cost</code> is a bug.</p>
   <div class="grid grid-3">
-    <div class="card"><h3>find_business</h3><p>~$0.01 per call.</p></div>
-    <div class="card"><h3>verify_business</h3><p>~$0.01 per call.</p></div>
-    <div class="card"><h3>send_message</h3><p>~$0.05 per send (SMS/email/voice).</p></div>
-    <div class="card"><h3>capture_lead</h3><p>~$0.02 per dedup&#8209;handoff.</p></div>
-    <div class="card"><h3>schedule_appointment</h3><p>$0.15 attempt + $0.85 on confirmed booking.</p></div>
-    <div class="card"><h3>send_transactional_confirmation</h3><p>~$0.04 per send.</p></div>
-    <div class="card"><h3>handle_inbound</h3><p>~$0.03 per classify.</p></div>
-    <div class="card"><h3>escalate_to_human</h3><p>$0.10 attempt + $0.40 on completed handoff.</p></div>
-    <div class="card"><h3>get_status / get_outcome</h3><p>~$0.001 per poll.</p></div>
-    <div class="card"><h3>preview_cost</h3><p><strong>Free.</strong> Read-only.</p></div>
-    <div class="card"><h3>self_test</h3><p><strong>Free.</strong> Read-only.</p></div>
+    <div class="card"><h3>find_business</h3><p>~$0.01 per call (drops to $0.005 above 10k/mo).</p></div>
+    <div class="card"><h3>verify_business</h3><p>~$0.02 per call.</p></div>
+    <div class="card"><h3>send_message</h3><p>~$0.05 base; +$0.25 voice premium when fallback hits voice channel.</p></div>
+    <div class="card"><h3>capture_lead</h3><p>~$0.10 per dedup&#8209;handoff into the SMB&rsquo;s pipeline.</p></div>
+    <div class="card"><h3>schedule_appointment</h3><p>$0.25 attempt + $0.75 only on a confirmed booking. Cost-per-success bounded.</p></div>
+    <div class="card"><h3>send_transactional_confirmation</h3><p>~$0.03 per send (OTP / booking confirmation / receipt).</p></div>
+    <div class="card"><h3>handle_inbound</h3><p>~$0.08 per classified inbound message.</p></div>
+    <div class="card"><h3>escalate_to_human</h3><p>~$0.50 per escalation (full context bundle handoff).</p></div>
+    <div class="card"><h3>get_status / get_outcome</h3><p>~$0.001 per poll. Free under the 100 ops/month tier allowance.</p></div>
+    <div class="card"><h3>import_booking_url</h3><p>~$0.005 per supported booking URL imported.</p></div>
+    <div class="card"><h3>preview_cost</h3><p><strong>Free.</strong> Read-only quote, ±5% accurate.</p></div>
+    <div class="card"><h3>self_test</h3><p><strong>Free.</strong> Live capability probe / health check.</p></div>
   </div>
 </section>
 
