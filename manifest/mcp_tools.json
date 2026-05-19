@@ -29,13 +29,13 @@
     },
     {
       "name": "send_message",
-      "description": "Send an outbound message (SMS, email, voice) to an SMB or customer. Channel is auto-selected and falls back automatically. Requires consent records for marketing messages.",
+      "description": "Send a transactional message that completes a consumer-initiated request — booking confirmation, reschedule, or follow-up the end-user explicitly asked the agent to handle. SMS, email, or voice. Marketing, promotional, and unsolicited outbound communication are out of scope and rejected by the compliance gate.",
       "inputSchema": {
         "type": "object",
         "required": ["recipient", "message_type", "content"],
         "properties": {
           "recipient": {"type": "object", "required": ["id_type", "id_value"], "properties": {"id_type": {"type": "string", "enum": ["phone", "email", "smb_id", "customer_id"]}, "id_value": {"type": "string"}, "country_code": {"type": "string"}}},
-          "message_type": {"type": "string", "enum": ["transactional", "marketing", "reminder", "follow_up", "notification"]},
+          "message_type": {"type": "string", "enum": ["transactional", "reminder", "follow_up", "notification"], "description": "'marketing' is not a permitted value; tagged-marketing messages are rejected."},
           "content": {"type": "object", "required": ["body"], "properties": {"body": {"type": "string"}, "subject": {"type": "string"}}},
           "preferred_channel": {"type": "string", "enum": ["sms", "email", "voice", "auto"]}
         }

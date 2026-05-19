@@ -47,12 +47,14 @@ _HOME_LIVE_JS = """
 def render_home() -> str:
     body = """
 <header class="hero">
-  <h1>Give Claude any booking URL. Claude books it.</h1>
+  <h1>Your AI agent books appointments on your behalf.</h1>
   <p class="lead">
-    MCP server that turns any Cal.com / Calendly / Doctolib / Booksy / Fresha / OpenTable /
-    Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity link into a
-    Claude-bookable appointment &mdash; with TCPA, GDPR, and CASL compliance built in.
-    Free for any agent up to 100 ops/month.
+    Agent Broker is a consumer-side booking tool. <strong>You</strong> ask your AI agent
+    (Claude, Cursor, Continue, or any MCP-aware client) to book or follow up on an
+    appointment with a specific business you named &mdash; using a booking URL you gave it
+    (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity,
+    Schedulista, Squarespace, BookMyCity). The agent completes the transaction. The
+    service is <strong>not</strong> a marketing, prospecting, or outbound-campaign platform.
   </p>
   <div class="cta">
     <a class="btn btn-primary" href="/demo">Try the live demo &rarr;</a>
@@ -60,12 +62,44 @@ def render_home() -> str:
     <a class="btn btn-secondary" href="/docs">API docs</a>
   </div>
   <p style="margin-top:36px; font-size:14px; color:var(--text-muted);">
-    Example prompt for any MCP-aware agent:<br>
+    Example: a consumer types into their AI agent &mdash;<br>
     <code style="display:inline-block; margin-top:8px; padding:8px 14px; background:var(--surface-2); border-radius:6px; color:var(--text);">
-      "Book me a haircut at https://cal.com/jane-salon"
-    </code>
+      "Book me a haircut at https://cal.com/jane-salon next Tuesday at 3pm"
+    </code><br>
+    <span style="display:inline-block; margin-top:14px;">
+      The agent uses Agent Broker to import the URL and complete the booking. The
+      consumer is the originator; the SMB is the consumer's named target.
+    </span>
   </p>
 </header>
+
+<section class="section" id="scope">
+  <h2>What this service is, and what it is not.</h2>
+  <div class="grid grid-3">
+    <div class="card">
+      <h3 style="color:var(--accent);">&#10003; In scope</h3>
+      <p>Consumer-initiated booking, rescheduling, cancellation, and follow-up
+         on a transaction the consumer named. Booking confirmations to the
+         consumer. Replies to messages the SMB sent the consumer first.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:#fca5a5;">&#10007; Out of scope</h3>
+      <p>Marketing messages, promotional offers, cold outreach, sales prospecting,
+         drip campaigns, list-based messaging, A/B test sends, lead-gen blasts.
+         The compliance gate rejects these at the API layer; the public schema
+         does not even permit a <code class="inline">marketing</code> message
+         type.</p>
+    </div>
+    <div class="card">
+      <h3>How enforcement works</h3>
+      <p><a href="/compliance/check">/compliance/check</a> runs before every
+         outbound channel call. TCPA, GDPR, CASL, PDPL rules across 22
+         jurisdictions. A request that violates the gate returns a structured
+         <code class="inline">compliance_violation</code> receipt and never
+         reaches a carrier.</p>
+    </div>
+  </div>
+</section>
 
 <section class="section" id="live">
   <h2>Live activity</h2>
@@ -185,11 +219,19 @@ def render_home() -> str:
 def render_pricing() -> str:
     body = """
 <header class="hero">
-  <h1>Pricing aligned with value.</h1>
+  <h1>Pricing for consumer-initiated bookings.</h1>
   <p class="lead">
-    Free tier covers the curious. Paid tiers cover the productive.
-    Outcome-based premiums on bookings &mdash; you only pay full price when value lands.
+    You pay per operation an AI agent completes <strong>on behalf of a named
+    consumer</strong> &mdash; finding a business the consumer asked about,
+    confirming a booking they requested, following up on a quote they
+    solicited. Free tier covers low-volume consumer use. Paid tiers fit
+    agent platforms serving many users. Marketing, promotional, and
+    unsolicited outbound use cases are not sold here at any price.
   </p>
+  <div class="cta" style="margin-top:8px;">
+    <a class="btn btn-primary" href="/checkout?plan=developer">Get started &mdash; Developer $49/mo</a>
+    <a class="btn btn-secondary" href="mailto:""" + SUPPORT_EMAIL + """?subject=Enterprise%20plan%20inquiry">Talk to us &mdash; Enterprise</a>
+  </div>
 </header>
 
 <section class="section">
@@ -261,6 +303,108 @@ def render_pricing() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Checkout — Paddle Merchant-of-Record subscription start
+# ---------------------------------------------------------------------------
+
+_PLAN_PRICES = {
+    "developer": {"label": "Developer", "monthly_usd": 49, "ops": "10,000"},
+    "business":  {"label": "Business",  "monthly_usd": 499, "ops": "100,000"},
+}
+
+
+def render_checkout(plan: str | None) -> str:
+    plan_key = (plan or "developer").lower()
+    if plan_key not in _PLAN_PRICES:
+        plan_key = "developer"
+    p = _PLAN_PRICES[plan_key]
+    body = f"""
+<header class="hero">
+  <h1>Subscribe — {p['label']} plan</h1>
+  <p class="lead">
+    ${p['monthly_usd']} per month. Includes {p['ops']} agent operations. Billed by
+    <strong>Paddle</strong> as Merchant of Record &mdash; Paddle handles VAT, sales tax,
+    and chargebacks on our behalf. Cancel anytime from the customer portal.
+  </p>
+</header>
+
+<section class="section">
+  <h2>What you are buying</h2>
+  <p style="color:var(--text-muted);">
+    A monthly subscription to {BRAND} for AI agents acting on behalf of consumers
+    who explicitly request a booking, reschedule, or follow-up with a specific
+    business. <strong>This is a consumer-side booking tool</strong> &mdash; it is
+    not sold for marketing, prospecting, or unsolicited outreach. See our
+    <a href="/terms">Terms</a> §6 for the full list of prohibited uses.
+  </p>
+
+  <h2 style="margin-top:32px;">How payment works</h2>
+  <ol style="color:var(--text-muted);">
+    <li>Click <em>Continue to Paddle</em>. The Paddle Checkout overlay opens
+        directly from this page.</li>
+    <li>Paddle collects payment details on its own PCI-DSS Level 1 infrastructure.
+        We never see your card number.</li>
+    <li>On success, Paddle returns a signed receipt and provisions your API
+        key. The key arrives by email within 60 seconds.</li>
+    <li>Recurring charges run monthly until you cancel. Refunds follow our
+        <a href="/refund">Refund Policy</a>.</li>
+  </ol>
+
+  <div class="cta" style="margin-top:28px;">
+    <button class="btn btn-primary" id="paddle-checkout-btn" disabled>
+      Continue to Paddle &rarr;
+    </button>
+    <a class="btn btn-secondary" href="mailto:{SUPPORT_EMAIL}?subject=Subscribe%20to%20{p['label']}%20plan">
+      Email {SUPPORT_EMAIL} to subscribe
+    </a>
+  </div>
+
+  <p style="margin-top:18px;font-size:13px;color:var(--text-muted);">
+    The Paddle Checkout button activates after our Paddle Vendor account
+    completes review. While review is pending, email
+    <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> with the plan name and
+    we will issue a manual invoice + activate your account within one business
+    day.
+  </p>
+</section>
+
+<section class="section">
+  <h2>Your rights</h2>
+  <ul style="color:var(--text-muted);">
+    <li><strong>14-day refund</strong> on the initial subscription if you have
+        used fewer than 100 paid operations. See <a href="/refund">Refund Policy</a>.</li>
+    <li><strong>Cancel anytime</strong> from the customer portal Paddle emails
+        you after first charge.</li>
+    <li><strong>Privacy.</strong> We never store your card number. Paddle does;
+        we only receive a redacted token. See <a href="/privacy">Privacy Policy</a>.</li>
+    <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer
+        statutory rights are preserved. See <a href="/terms">Terms</a>.</li>
+  </ul>
+</section>
+
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+<script>
+  // Paddle Checkout will be enabled once the Paddle Vendor account is approved
+  // and a price_id is configured. Until then the button is disabled and the
+  // mailto fallback is the live subscription path.
+  (function () {{
+    var vendorId = ""; // set after Paddle approval
+    var priceId  = ""; // set per plan after Paddle product is created
+    if (!window.Paddle || !vendorId || !priceId) return;
+    Paddle.Setup({{ token: vendorId }});
+    var btn = document.getElementById("paddle-checkout-btn");
+    if (!btn) return;
+    btn.disabled = false;
+    btn.addEventListener("click", function () {{
+      Paddle.Checkout.open({{ items: [{{ priceId: priceId, quantity: 1 }}] }});
+    }});
+  }})();
+</script>
+"""
+    return page(f"Subscribe — {p['label']}", body, active="pricing",
+                description=f"Subscribe to the {p['label']} plan. Paid by Paddle as Merchant of Record. Consumer-initiated booking transactions only.")
+
+
+# ---------------------------------------------------------------------------
 # Terms of Service
 # ---------------------------------------------------------------------------
 
@@ -274,11 +418,20 @@ def render_terms() -> str:
   <p>By using {BRAND} (the &ldquo;Service&rdquo;), you agree to these Terms.
   If you do not agree, do not use the Service.</p>
 
-  <h2>2. Service description</h2>
-  <p>The Service is a Model Context Protocol (MCP) server providing AI agents
-  with tools to find, verify, message, and schedule appointments with small
-  and mid-sized businesses. The Service is offered on an &ldquo;as-is&rdquo;
-  basis with no implied warranties.</p>
+  <h2>2. Service description &amp; scope</h2>
+  <p>The Service is a Model Context Protocol (MCP) server that lets an
+  AI agent complete <strong>consumer-initiated</strong> booking and
+  transactional tasks with small and mid-sized businesses on behalf of
+  an identifiable end-user (the &ldquo;Consumer&rdquo;). Every operation
+  the Service performs must trace back to a specific Consumer request
+  naming a specific business.</p>
+  <p>The Service is <strong>not</strong> a marketing platform, lead-list
+  vendor, prospecting tool, cold-outreach service, sequencer, autoresponder,
+  campaign sender, A/B testing tool, or any other form of unsolicited
+  communication infrastructure. It may not be used to contact recipients
+  who have not initiated or pre-authorized the communication.</p>
+  <p>The Service is offered on an &ldquo;as-is&rdquo; basis with no
+  implied warranties.</p>
 
   <h2>3. Eligibility</h2>
   <p>You must be at least 18 years old. By using the Service you represent
@@ -301,12 +454,34 @@ def render_terms() -> str:
   attempt to circumvent this gate.</p>
 
   <h2>6. Prohibited uses</h2>
+  <p>The following uses are <strong>strictly prohibited</strong> and will result
+  in immediate suspension of your account:</p>
   <ul>
-    <li>Sending unsolicited bulk communications (&ldquo;spam&rdquo;).</li>
+    <li><strong>Marketing or promotional messaging</strong> &mdash; advertising
+        a product, service, offer, discount, or event to a recipient. The
+        Service's compliance gate rejects messages tagged
+        <code>marketing</code> and the public API schema does not even permit
+        that value.</li>
+    <li><strong>Unsolicited outbound communication of any kind</strong>
+        &mdash; cold SMS, cold email, cold voice calls, mass outreach, drip
+        sequences, cadenced follow-ups not requested by the recipient,
+        list-based campaigns, A/B test sends, or contacting any recipient
+        the Consumer has not specifically named in their request.</li>
+    <li><strong>Sales prospecting or lead generation</strong> &mdash; using
+        the Service to find businesses or individuals for the purpose of
+        pitching them, regardless of the channel used to make the pitch.</li>
+    <li><strong>Acting on behalf of a third party rather than an end-Consumer</strong>
+        &mdash; for example, an SMB cannot use the Service to message its own
+        prospects; only a Consumer who has independently chosen to engage that
+        SMB may direct the agent to communicate.</li>
+    <li>Bulk communications (&ldquo;spam&rdquo;) by any definition.</li>
     <li>Harassing, threatening, or defrauding any person or business.</li>
-    <li>Impersonating another person or entity.</li>
+    <li>Impersonating another person or entity, including misrepresenting the
+        identity of the Consumer on whose behalf the agent acts.</li>
     <li>Reverse-engineering, scraping, or rate-abusing the Service.</li>
-    <li>Any use that violates applicable law.</li>
+    <li>Circumventing or attempting to circumvent the compliance pre-check.</li>
+    <li>Any use that violates applicable telecommunications, privacy, or
+        consumer-protection law (including TCPA, CAN-SPAM, GDPR, CASL, PDPL).</li>
   </ul>
 
   <h2>7. Intellectual property</h2>

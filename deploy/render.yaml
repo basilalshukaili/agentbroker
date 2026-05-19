@@ -22,14 +22,19 @@ services:
         value: true
       - key: COMPLIANCE_DEFAULT_JURISDICTION
         value: international
-      # Demo mode loads seeded SMBs with [DEMO] name prefix and is_demo=true
-      # so find_business returns a non-empty directory for probing agents and
-      # catalog scorers. Booking handlers short-circuit on is_demo entries.
-      # Flip to "empty" once enough real supply has been imported.
+      # Production stays empty so the directory only grows from real supply
+      # imported by agents via /supply/import_booking_url — matches the
+      # PROJECT_OVERVIEW §7 "do not pre-seed" decision. Demo seed data with
+      # [DEMO] labels is still available for non-prod environments by setting
+      # SUPPLY_SEED_MODE=demo (see supply/smb_directory.py).
       - key: SUPPLY_SEED_MODE
-        value: demo
+        value: empty
+      # PUBLIC_BASE_URL is the canonical user-facing domain — keyed to the
+      # Cloudflare edge worker (Paddle's checkout-domain approval is registered
+      # against this hostname). Render origin renders all og:url / canonical
+      # tags using this value so reviewers see a consistent identity.
       - key: PUBLIC_BASE_URL
-        value: https://smb-broker.onrender.com
+        value: https://agent-broker-edge.basil-agent.workers.dev
       - key: BILLING_PROVIDER
         value: paddle
       # Set the rest via Render dashboard → Environment:

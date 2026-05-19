@@ -15,11 +15,17 @@ visually identical without a build step.
 from __future__ import annotations
 
 BRAND = "Agent Broker"
-# Single-source-of-truth for the public hostname. Env-overridable so the
-# domain can be swapped at any time without code changes (e.g., when we
-# point a real domain at Render via CNAME).
+# Single-source-of-truth for the public hostname. The default is the edge
+# worker URL — that is the canonical user-facing domain that Paddle's
+# checkout-domain approval is keyed to. PUBLIC_BASE_URL env var overrides if
+# we ever map a custom domain. The previous default pointed at the dead
+# qzz.io subdomain, which generated invalid og:url tags Paddle reviewers
+# flagged.
 import os as _os
-DOMAIN = _os.environ.get("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").replace("https://", "").replace("http://", "").rstrip("/")
+DOMAIN = _os.environ.get(
+    "PUBLIC_BASE_URL",
+    "https://agent-broker-edge.basil-agent.workers.dev",
+).replace("https://", "").replace("http://", "").rstrip("/")
 SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "basilalshukaili@gmail.com")
 PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "basilalshukaili@gmail.com")
 LEGAL_ENTITY = "Agent Broker (sole proprietor: Basil Mubarak Ali Al Shukaili, Sultanate of Oman)"
@@ -153,15 +159,21 @@ def _nav(active: str) -> str:
 def _footer() -> str:
     return f"""<footer class="site container">
   <p>
+    <a href="/pricing">Pricing</a> &middot;
+    <a href="/terms">Terms of Service</a> &middot;
+    <a href="/privacy">Privacy Policy</a> &middot;
+    <a href="/refund">Refund Policy</a> &middot;
+    <a href="mailto:{SUPPORT_EMAIL}">Contact</a>
+  </p>
+  <p>
     <a href="/manifest">Manifest</a> &middot;
     <a href="/openapi.yaml">OpenAPI</a> &middot;
     <a href="/llms.txt">llms.txt</a> &middot;
     <a href="/health">Status</a> &middot;
-    <a href="/docs">API docs</a> &middot;
-    <a href="mailto:{SUPPORT_EMAIL}">Contact</a>
+    <a href="/docs">API docs</a>
   </p>
   <p>&copy; 2026 {BRAND}. All rights reserved.</p>
-  <p class="footnote">{LEGAL_ENTITY}</p>
+  <p class="footnote">{LEGAL_ENTITY} &middot; Payments by Paddle.com as Merchant of Record.</p>
 </footer>"""
 
 

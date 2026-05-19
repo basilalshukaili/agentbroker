@@ -136,8 +136,12 @@ class Vertical(str, Enum):
 
 
 class MessageType(str, Enum):
+    # Public API surface intentionally excludes "marketing". This service only
+    # facilitates consumer-initiated transactional flows; unsolicited outbound
+    # campaigns are out of scope and rejected at schema-validation time.
+    # compliance/pre_check.py still inspects the string "marketing" as a
+    # belt-and-braces guard against any internal caller mis-tagging a message.
     TRANSACTIONAL = "transactional"
-    MARKETING = "marketing"
     REMINDER = "reminder"
     FOLLOW_UP = "follow_up"
     NOTIFICATION = "notification"

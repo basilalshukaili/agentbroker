@@ -640,7 +640,10 @@ async def list_webhooks(
 # from the home page; we mark it no-store so the live counters never look stale.
 
 from fastapi.responses import HTMLResponse, RedirectResponse
-from web.pages import render_home, render_pricing, render_terms, render_privacy, render_refund
+from web.pages import (
+    render_home, render_pricing, render_terms, render_privacy,
+    render_refund, render_checkout,
+)
 
 _PAGE_CACHE_HEADERS = {"Cache-Control": "public, max-age=300, s-maxage=300"}
 
@@ -668,6 +671,11 @@ async def web_privacy():
 @app.get("/refund", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
 async def web_refund():
     return HTMLResponse(content=render_refund(), headers=_PAGE_CACHE_HEADERS)
+
+
+@app.get("/checkout", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_checkout(plan: str | None = None):
+    return HTMLResponse(content=render_checkout(plan), headers=_PAGE_CACHE_HEADERS)
 
 
 # Legacy URL aliases (the old React-SPA hash links). Permanent redirects so
