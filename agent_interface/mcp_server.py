@@ -277,11 +277,16 @@ async def _dispatch_operation(name: str, args: dict) -> dict:
     """Route an operation call to the underlying handler. Returns dict, not OutcomeReceipt."""
     if name == "find_business":
         from core.find_business import handle_find_business
-        from core.models import FindBusinessRequest, LocationFilter, Vertical
-        loc = args.get("location", {})
+        from core.models import FindBusinessRequest
+        # Pass the raw vertical string through to FindBusinessRequest so its
+        # model_validator(mode="before") can alias natural terms (plumbing,
+        # dentist, haircut, ...) into the three macro buckets before enum
+        # coercion happens. The previous code called Vertical(args[...])
+        # directly, which 500'd on every fine-grained input the validator was
+        # designed to fix.
         req = FindBusinessRequest(
-            vertical=Vertical(args["vertical"]),
-            location=LocationFilter(zip_or_city=loc.get("zip_or_city", "Atlanta")),
+            vertical=args["vertical"],
+            location=args.get("location", {"zip_or_city": "Atlanta"}),
             capability=args.get("capability"),
             max_results=args.get("max_results", 5),
         )
