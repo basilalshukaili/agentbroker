@@ -86,6 +86,102 @@ async def _telemetry_counter_middleware(request: Request, call_next):
 
 
 # ---------------------------------------------------------------------------
+# Per-IP token-bucket rate limiter (middleware)
+# ---------------------------------------------------------------------------
+# Defends Twilio / Cal.com / Resend trial credits from a single noisy caller.
+# In-memory only — fine on a single Render worker; a malicious actor that
+# rotates IPs will still be rate-limited per-IP, and a coordinated DDoS is
+# Cloudflare's job at the edge.
+#
+# Bucket size: 60 tokens. Refill: 1 token/sec. So a burst of 60, then 1/sec.
+# Applies to /mcp and /ops/*. Discovery, webhooks, web pages, /auth/token,
+# and Paddle webhook all bypass — those are reads, Paddle traffic, or
+# already gated by their own secret.
+
+_RL_BUCKET_SIZE = 60.0
+_RL_REFILL_RATE = 1.0  # tokens per second
+_RL_EVICT_AFTER_S = 600  # drop entries unseen for 10 min
+_RL_EVICT_EVERY_N = 100  # run eviction every Nth request
+
+_rl_buckets: dict[str, dict] = {}
+_rl_request_counter: int = 0
+
+
+def _rl_client_ip(request: Request) -> str:
+    """Identify the caller. First X-Forwarded-For hop wins; else direct peer."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        # Take the leftmost (original) IP, strip whitespace.
+        first = xff.split(",", 1)[0].strip()
+        if first:
+            return first
+    client = request.client
+    if client and client.host:
+        return client.host
+    return "unknown"
+
+
+def _rl_evict_stale(now: float) -> None:
+    cutoff = now - _RL_EVICT_AFTER_S
+    stale = [k for k, v in _rl_buckets.items() if v.get("last_touch", 0) < cutoff]
+    for k in stale:
+        _rl_buckets.pop(k, None)
+
+
+def _rl_consume(client_ip: str, now: float) -> bool:
+    """Try to take a token from the per-IP bucket. Returns True on allow."""
+    bucket = _rl_buckets.get(client_ip)
+    if bucket is None:
+        bucket = {
+            "tokens": _RL_BUCKET_SIZE - 1.0,  # consume one immediately
+            "last_refill": now,
+            "last_touch": now,
+        }
+        _rl_buckets[client_ip] = bucket
+        return True
+    elapsed = max(0.0, now - bucket["last_refill"])
+    bucket["tokens"] = min(_RL_BUCKET_SIZE, bucket["tokens"] + elapsed * _RL_REFILL_RATE)
+    bucket["last_refill"] = now
+    bucket["last_touch"] = now
+    if bucket["tokens"] >= 1.0:
+        bucket["tokens"] -= 1.0
+        return True
+    return False
+
+
+def _rl_path_should_limit(path: str) -> bool:
+    """Apply only to caller-facing op surfaces. Webhooks + admin route bypass."""
+    if path == "/mcp":
+        return True
+    if path.startswith("/ops/"):
+        return True
+    return False
+
+
+@app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    global _rl_request_counter
+    path = request.url.path
+    if not _rl_path_should_limit(path):
+        return await call_next(request)
+
+    now = time.monotonic()
+    _rl_request_counter += 1
+    if _rl_request_counter % _RL_EVICT_EVERY_N == 0:
+        _rl_evict_stale(now)
+
+    client_ip = _rl_client_ip(request)
+    allowed = _rl_consume(client_ip, now)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "rate_limited", "retry_after_seconds": 1},
+            headers={"Retry-After": "1"},
+        )
+    return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
 # Auth helper
 # ---------------------------------------------------------------------------
 
@@ -152,7 +248,9 @@ async def health_external():
 async def mcp_endpoint(request: Request):
     """Model Context Protocol JSON-RPC 2.0 endpoint."""
     payload = await request.json()
-    response = await handle_mcp_request(payload)
+    # Pass headers down so the per-tool auth gate inside `tools/call` can
+    # read x-agent-identity and enforce the same scope rules /ops/* enforces.
+    response = await handle_mcp_request(payload, headers=dict(request.headers))
     return response
 
 

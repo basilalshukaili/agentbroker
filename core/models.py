@@ -4,12 +4,16 @@ All /api/schemas/*.json files are exported from these models, not hand-authored.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Strict E.164: leading "+", first digit non-zero, total 8-16 digits.
+_E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
 
 
 # Common fine-grained terms agents reach for, mapped to the three macro
@@ -381,6 +385,20 @@ class Recipient(BaseModel):
     id_type: RecipientIdType
     id_value: str
     country_code: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_phone_e164(self) -> "Recipient":
+        # Reject malformed phone numbers at schema validation time so callers
+        # get a clear "id_value must be E.164" error instead of a confusing
+        # compliance-layer rejection downstream. Only phones are validated
+        # here — emails / smb_id / customer_id have their own validators or
+        # are opaque identifiers.
+        if self.id_type == RecipientIdType.PHONE:
+            if not _E164_RE.match(self.id_value or ""):
+                raise ValueError(
+                    "id_value must be E.164 (e.g., +14045550100)"
+                )
+        return self
 
 
 class MessageContent(BaseModel):

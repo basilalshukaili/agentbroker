@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import re
+import socket
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -37,6 +39,113 @@ from urllib.parse import urlparse
 
 from core.models import OperationStatus, Vertical
 from supply.smb_directory import SMBDirectory, SMBEntry
+
+
+# ---------------------------------------------------------------------------
+# SSRF guard — allowlist of supported booking-platform hostname suffixes
+# ---------------------------------------------------------------------------
+# Any URL whose registrable domain does not suffix-match one of these is
+# rejected outright. The exact suffix list is hand-maintained from the 12
+# supported platforms (kept in sync with _PLATFORM_PATTERNS below).
+#
+# Even when a hostname matches the allowlist, we still resolve it to an IP
+# and reject private / loopback / link-local / multicast / reserved ranges
+# so an attacker can't hijack a supported domain via DNS rebinding or by
+# registering a subdomain that resolves to 169.254.169.254.
+
+_ALLOWED_HOST_SUFFIXES: tuple[str, ...] = (
+    "cal.com",
+    "calendly.com",
+    "doctolib.fr",
+    "doctolib.de",
+    "doctolib.it",
+    "booksy.com",
+    "fresha.com",
+    "opentable.com",
+    "setmore.com",
+    "squareup.com",
+    "square.site",
+    "acuityscheduling.com",
+    "schedulista.com",
+    "squarespace-scheduling.com",
+    "squarespace.com",
+    "bookmycity.com",
+    "bookmycity.in",
+)
+
+
+def _host_in_allowlist(host: str) -> bool:
+    """Suffix-match host against the supported-platform allowlist."""
+    host = (host or "").lower().strip()
+    # Strip any leading "www." to match Cal.com's edge variants.
+    if host.startswith("www."):
+        host = host[4:]
+    for suffix in _ALLOWED_HOST_SUFFIXES:
+        if host == suffix or host.endswith("." + suffix):
+            return True
+    return False
+
+
+def _ip_is_disallowed(ip_str: str) -> bool:
+    """Return True if the resolved IP is in a non-routable / sensitive range."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True
+    if (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    ):
+        return True
+    # 169.254.0.0/16 — AWS / GCP / Azure instance-metadata service. Already
+    # covered by is_link_local for IPv4, but we re-check explicitly because
+    # this is the single most-exploited SSRF target on cloud hosts.
+    try:
+        if ip in ipaddress.ip_network("169.254.0.0/16"):
+            return True
+    except (ValueError, TypeError):
+        pass
+    return False
+
+
+def _resolve_and_check(host: str) -> tuple[bool, str]:
+    """Resolve `host` to its IPs and return (ok, reason)."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return False, f"dns_resolution_failed: {e}"
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        ip_str = sockaddr[0]
+        if _ip_is_disallowed(ip_str):
+            return False, f"ip_in_disallowed_range: {ip_str}"
+    return True, ""
+
+
+def _url_passes_ssrf_guard(url: str) -> tuple[bool, str]:
+    """Return (passed, human_reason). Caller turns the reason into a receipt."""
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError) as e:
+        return False, f"unparseable_url: {e}"
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return False, "scheme_not_http"
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False, "missing_hostname"
+    if not _host_in_allowlist(host):
+        return False, "host_not_on_supported_platform_allowlist"
+    ok, reason = _resolve_and_check(host)
+    if not ok:
+        return False, reason
+    return True, ""
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +326,21 @@ async def import_from_booking_url(req: ImportRequest) -> ImportResult:
             message="booking_url must be a full http(s) URL.",
         )
 
+    # SSRF guard — reject URLs whose hostname is not on the supported-platform
+    # allowlist, or whose resolved IP is in a private / loopback / link-local /
+    # multicast / reserved range (e.g. 169.254.169.254 cloud metadata).
+    ok, reason = _url_passes_ssrf_guard(req.booking_url)
+    if not ok:
+        return ImportResult(
+            status=OperationStatus.FAILURE,
+            message="Booking URL must be on a supported public platform",
+            next_steps=[
+                "Use a URL from one of the 12 supported platforms (Cal.com, Calendly, "
+                "Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, "
+                "Schedulista, Squarespace, BookMyCity).",
+            ],
+        )
+
     platform = detect_platform(req.booking_url)
     smb_id = _smb_id_for_url(req.booking_url)
 
@@ -290,21 +414,44 @@ async def import_from_booking_url(req: ImportRequest) -> ImportResult:
 
 
 async def _extract_title(url: str) -> Optional[str]:
-    """Best-effort title extraction. Returns None on any failure (offline, blocked, etc.)."""
+    """Best-effort title extraction. Returns None on any failure (offline, blocked, etc.).
+
+    SSRF-hardened: we follow up to 3 redirects manually and re-validate each
+    hop against the platform allowlist + private-IP guard. Cal.com legitimately
+    issues a 308 to its app subdomain, so we cannot simply disable redirects.
+    """
     try:
         import httpx
-        async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
-            resp = await client.get(url, headers={"User-Agent": "smb-broker-importer/0.1"})
-            if resp.status_code != 200:
+        async with httpx.AsyncClient(follow_redirects=False, timeout=5.0) as client:
+            current = url
+            for _ in range(4):  # original + up to 3 redirects
+                ok, _reason = _url_passes_ssrf_guard(current)
+                if not ok:
+                    return None
+                resp = await client.get(
+                    current,
+                    headers={"User-Agent": "smb-broker-importer/0.1"},
+                )
+                if 300 <= resp.status_code < 400:
+                    next_loc = resp.headers.get("location")
+                    if not next_loc:
+                        return None
+                    # Resolve relative redirects against the current URL.
+                    if next_loc.startswith("/"):
+                        parsed = urlparse(current)
+                        next_loc = f"{parsed.scheme}://{parsed.netloc}{next_loc}"
+                    current = next_loc
+                    continue
+                if resp.status_code != 200:
+                    return None
+                html = resp.text
+                og_match = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', html, re.I)
+                if og_match:
+                    return og_match.group(1).strip()[:120]
+                title_match = re.search(r"<title>([^<]+)</title>", html, re.I)
+                if title_match:
+                    return title_match.group(1).strip()[:120]
                 return None
-            html = resp.text
-            # og:title first, then <title>
-            og_match = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', html, re.I)
-            if og_match:
-                return og_match.group(1).strip()[:120]
-            title_match = re.search(r"<title>([^<]+)</title>", html, re.I)
-            if title_match:
-                return title_match.group(1).strip()[:120]
     except Exception:
         return None
     return None

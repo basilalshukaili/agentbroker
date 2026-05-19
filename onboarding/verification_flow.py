@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from compliance.log_redactor import mask_phone
 from core.models import OperationStatus
 from supply.smb_directory import SMBDirectory
 
@@ -99,8 +100,9 @@ def initiate_phone_verification(smb_id: str) -> VerificationResult:
     )
     _store[smb_id] = record
 
-    # Stub: log pin rather than sending (real: TwilioSMSAdapter.send())
-    print(f"[STUB] Verification PIN for {smb_id} ({entry.phone}): {pin}")
+    # Stub: log pin rather than sending (real: TwilioSMSAdapter.send()).
+    # Phone is masked so this dev-mode log line stays safe to share.
+    print(f"[STUB] Verification PIN for {smb_id} ({mask_phone(entry.phone)}): {pin}")
 
     return VerificationResult(
         smb_id=smb_id,

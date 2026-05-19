@@ -174,14 +174,24 @@ ERR_INVALID_PARAMS = -32602
 ERR_INTERNAL = -32603
 
 
-async def handle_mcp_request(payload: dict) -> dict:
+async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> dict:
     """
     Main JSON-RPC dispatcher. Returns a dict suitable to be JSON-encoded
     and sent back to the client.
+
+    `headers` (case-insensitive dict) carries the HTTP request headers so the
+    auth guard inside `tools/call` can pull `x-agent-identity` and gate
+    write-tool dispatch when REQUIRE_AUTH=true. Optional for backwards-compat
+    with any caller still invoking us with the single-arg signature.
     """
     rpc_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params", {}) or {}
+    # Normalize header keys to lower-case so callers don't have to.
+    norm_headers: dict = {}
+    if headers:
+        for k, v in dict(headers).items():
+            norm_headers[k.lower()] = v
 
     if not method:
         return JsonRpcResponse(
@@ -197,7 +207,12 @@ async def handle_mcp_request(payload: dict) -> dict:
         ).to_dict()
 
     try:
-        result = await handler(params)
+        # Only `tools/call` needs to see headers (for the per-tool auth gate);
+        # every other method's signature stays `(params) -> dict`.
+        if method == "tools/call":
+            result = await handler(params, norm_headers)
+        else:
+            result = await handler(params)
         return JsonRpcResponse(id=rpc_id, result=result).to_dict()
     except _ParamError as pe:
         return JsonRpcResponse(
@@ -254,7 +269,7 @@ async def _h_tools_list(params: dict) -> dict:
 # Method: tools/call
 # ---------------------------------------------------------------------------
 
-async def _h_tools_call(params: dict) -> dict:
+async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     name = params.get("name")
     arguments = params.get("arguments", {}) or {}
     if not name:
@@ -264,7 +279,7 @@ async def _h_tools_call(params: dict) -> dict:
     if not op:
         raise _ParamError(f"Unknown tool: '{name}'")
 
-    receipt = await _dispatch_operation(name, arguments)
+    receipt = await _dispatch_operation(name, arguments, headers or {})
     return {
         "content": [
             {"type": "text", "text": json.dumps(receipt, indent=2, default=str)}
@@ -273,7 +288,53 @@ async def _h_tools_call(params: dict) -> dict:
     }
 
 
-async def _dispatch_operation(name: str, args: dict) -> dict:
+# Tools that mutate state or charge upstream credits. The MCP dispatcher must
+# gate these the same way /ops/* gates them — otherwise a developer-tier
+# customer can bypass scope-checks by tunneling write calls through /mcp.
+# Read-only tools (find_business, verify_business, get_status, get_outcome,
+# preview_cost, self_test) stay anonymous-accessible per the manifest's
+# readOnlyHint annotation.
+_WRITE_TOOLS_REQUIRING_AUTH = frozenset({
+    "send_message",
+    "schedule_appointment",
+    "send_transactional_confirmation",
+    "capture_lead",
+    "handle_inbound",
+    "escalate_to_human",
+    "import_booking_url",
+})
+
+
+def _mcp_gate_identity(name: str, headers: dict) -> None:
+    """
+    Apply the same auth gate /ops/* applies, expressed as a JSON-RPC -32602.
+
+    When REQUIRE_AUTH=false (current production state), `_get_identity` returns
+    None and this is a no-op. When REQUIRE_AUTH=true, missing / invalid /
+    out-of-scope tokens raise HTTPException(401|403), which we translate to
+    _ParamError so the JSON-RPC layer surfaces it as code -32602.
+    """
+    if name not in _WRITE_TOOLS_REQUIRING_AUTH:
+        return
+    # Late import to avoid a hard cycle between main.py and mcp_server.py.
+    from main import _get_identity
+    from fastapi import HTTPException
+
+    token = headers.get("x-agent-identity") if headers else None
+    try:
+        _get_identity(token, name)
+    except HTTPException as he:
+        # 401 unauthenticated or 403 insufficient scope — surface as a clear,
+        # actionable JSON-RPC params error rather than a generic -32603.
+        raise _ParamError(
+            f"auth_required for tool '{name}' (status={he.status_code}): {he.detail}"
+        )
+
+
+async def _dispatch_operation(name: str, args: dict, headers: Optional[dict] = None) -> dict:
+    # Auth gate — runs before any side-effecting handler. Read-only tools
+    # bypass the gate by virtue of not being in _WRITE_TOOLS_REQUIRING_AUTH.
+    _mcp_gate_identity(name, headers or {})
     """Route an operation call to the underlying handler. Returns dict, not OutcomeReceipt."""
     if name == "find_business":
         from core.find_business import handle_find_business

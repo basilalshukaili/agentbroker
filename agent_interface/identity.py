@@ -110,10 +110,16 @@ _NINETY_DAYS = 90 * _ONE_DAY
 _ONE_YEAR = 365 * _ONE_DAY
 
 # (allowed_operations, budget_cap_usd, allowed_verticals, ttl_seconds)
+# Budget caps are a per-30-day soft guard against runaway bills, sized to
+# match the op counts the /pricing page advertises (10k / 100k / negotiated)
+# at an ~$0.05 blended cost per op, with headroom for premium ops like
+# schedule_appointment and escalate_to_human. They are NOT a billing
+# enforcement mechanism — Paddle handles that — the broker only soft-
+# throttles agents that blow past the cap.
 _PLAN_SCOPES: dict[str, tuple[list[str], float, list[str], int]] = {
-    "developer":  (["*"],  50.0, ["*"], _NINETY_DAYS),
-    "business":   (["*"], 500.0, ["*"], _NINETY_DAYS),
-    "enterprise": (["*"], 500.0, ["*"], _ONE_YEAR),
+    "developer":  (["*"],    500.0, ["*"], _NINETY_DAYS),
+    "business":   (["*"],   5000.0, ["*"], _NINETY_DAYS),
+    "enterprise": (["*"],  25000.0, ["*"], _ONE_YEAR),
 }
 
 

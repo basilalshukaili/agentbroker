@@ -57,9 +57,9 @@ def render_home() -> str:
     service is <strong>not</strong> a marketing, prospecting, or outbound-campaign platform.
   </p>
   <div class="cta">
-    <a class="btn btn-primary" href="/demo">Try the live demo &rarr;</a>
+    <a class="btn btn-primary" href="/docs">Browse the live API &rarr;</a>
     <a class="btn btn-secondary" href="#how">Connect to Claude</a>
-    <a class="btn btn-secondary" href="/docs">API docs</a>
+    <a class="btn btn-secondary" href="/pricing">Pricing</a>
   </div>
   <p style="margin-top:36px; font-size:14px; color:var(--text-muted);">
     Example: a consumer types into their AI agent &mdash;<br>
@@ -168,17 +168,18 @@ def render_home() -> str:
     Same idempotency contract. No surprises.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>find_business</h3><p>Search SMBs by vertical + location + capability. <code>~$0.01</code></p></div>
-    <div class="card"><h3>verify_business</h3><p>Confirm capabilities before you commit. <code>~$0.01</code></p></div>
-    <div class="card"><h3>send_message</h3><p>SMS / email / voice with full compliance pre-check. <code>~$0.05</code></p></div>
-    <div class="card"><h3>capture_lead</h3><p>Hand a prospect to an SMB with dedup. <code>~$0.02</code></p></div>
-    <div class="card"><h3>schedule_appointment</h3><p>Cal.com &rarr; voice fallback. <code>$0.15 + $0.85 success</code></p></div>
-    <div class="card"><h3>send_transactional_confirmation</h3><p>Booking / receipt / reminder. <code>~$0.04</code></p></div>
-    <div class="card"><h3>handle_inbound</h3><p>Classify customer messages. <code>~$0.03</code></p></div>
-    <div class="card"><h3>escalate_to_human</h3><p>Hand off when stuck. <code>$0.10 + $0.40 success</code></p></div>
-    <div class="card"><h3>get_status / get_outcome</h3><p>Async polling / final result. <code>~$0.001</code></p></div>
-    <div class="card"><h3>preview_cost</h3><p>&plusmn;5% accurate cost estimate. <strong>Free</strong></p></div>
-    <div class="card"><h3>self_test</h3><p>Service health check. <strong>Free</strong></p></div>
+    <div class="card"><h3>find_business</h3><p>Search verified SMBs by vertical + location + capability. <code>~$0.01</code></p></div>
+    <div class="card"><h3>verify_business</h3><p>Confirm an SMB's capabilities before committing. <code>~$0.02</code></p></div>
+    <div class="card"><h3>send_message</h3><p>Consumer-initiated transactional message (SMS / email / voice premium). <code>~$0.05</code> base</p></div>
+    <div class="card"><h3>capture_lead</h3><p>Structured intake when a consumer asks to be contacted by an SMB. <code>~$0.10</code></p></div>
+    <div class="card"><h3>schedule_appointment</h3><p>Direct API or voice fallback. <code>$0.25 attempt + $0.75 on confirmed booking</code></p></div>
+    <div class="card"><h3>send_transactional_confirmation</h3><p>Booking / receipt / reminder — reliable delivery, OTP-grade. <code>~$0.03</code></p></div>
+    <div class="card"><h3>handle_inbound</h3><p>Classify and route inbound messages an SMB received. <code>~$0.08</code></p></div>
+    <div class="card"><h3>escalate_to_human</h3><p>Hand a stuck operation to a human operator. <code>~$0.50</code></p></div>
+    <div class="card"><h3>get_status / get_outcome</h3><p>Async polling and final result retrieval. <code>~$0.001</code></p></div>
+    <div class="card"><h3>preview_cost</h3><p>&plusmn;5% accurate cost estimate before committing. <strong>Free</strong></p></div>
+    <div class="card"><h3>self_test</h3><p>Live capability probe / health check. <strong>Free</strong></p></div>
+    <div class="card"><h3>import_booking_url</h3><p>Turn any supported booking URL into a callable SMB. <code>~$0.005</code></p></div>
   </div>
 </section>
 

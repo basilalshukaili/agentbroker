@@ -12,8 +12,23 @@ from datetime import datetime, timedelta, timezone
 from core.models import (
     ScheduleAppointmentRequest, OutcomeReceipt, OperationStatus, CostRecord
 )
+from storage.outcome_store import get_outcome_store
 from supply.smb_directory import get_directory
 from channels.direct_api.calcom import CalComAdapter
+
+
+def _store_terminal(receipt: OutcomeReceipt) -> OutcomeReceipt:
+    """Persist a terminal OutcomeReceipt to the outcome store keyed by operation_id.
+
+    Mirrors the storage contract used by reliability/async_runner.py so a
+    subsequent get_status / get_outcome call can resolve the same id.
+    """
+    try:
+        get_outcome_store().set_complete(receipt.operation_id, receipt.model_dump(mode="json"))
+    except Exception:
+        # Storage must never break the user-facing return path.
+        pass
+    return receipt
 
 
 async def handle_schedule_appointment(
@@ -25,6 +40,9 @@ async def handle_schedule_appointment(
     Web-tier handler. Validates, enqueues Celery task, returns pending_async.
     For direct_api SMBs with Cal.com: attempts sync booking and returns immediately.
     For voice_ai channel: always async.
+
+    Every return path persists its receipt to outcome_store keyed by
+    operation_id so get_status / get_outcome can resolve it later.
     """
     t0 = time.monotonic()
     operation_id = str(uuid.uuid4())
@@ -32,7 +50,7 @@ async def handle_schedule_appointment(
     smb = directory.get(request.smb_id)
 
     if not smb:
-        return OutcomeReceipt(
+        return _store_terminal(OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
             reason_code="supply_unreachable",
@@ -41,7 +59,7 @@ async def handle_schedule_appointment(
             latency_ms=int((time.monotonic() - t0) * 1000),
             retriable=False,
             trace_id=trace_id,
-        )
+        ))
 
     # Fast path: direct_api:calcom
     if "direct_api:calcom" in smb.channels_available and smb.calcom_event_type_id:
@@ -71,7 +89,7 @@ async def handle_schedule_appointment(
                         email=request.customer.email if request.customer and request.customer.email else "noreply@example.com",
                         notes=request.notes,
                     )
-                    return OutcomeReceipt(
+                    return _store_terminal(OutcomeReceipt(
                         operation_id=operation_id,
                         status=OperationStatus.SUCCESS,
                         reason_code="appointment_confirmed",
@@ -87,11 +105,11 @@ async def handle_schedule_appointment(
                         channel_used="direct_api:calcom",
                         retriable=False,
                         trace_id=trace_id,
-                    )
+                    ))
 
             elif request.action.value == "cancel":
                 if not request.existing_appointment_id:
-                    return OutcomeReceipt(
+                    return _store_terminal(OutcomeReceipt(
                         operation_id=operation_id,
                         status=OperationStatus.FAILURE,
                         reason_code="bad_input",
@@ -99,9 +117,9 @@ async def handle_schedule_appointment(
                         cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
                         retriable=False,
                         trace_id=trace_id,
-                    )
+                    ))
                 result = await adapter.cancel_booking(request.existing_appointment_id)
-                return OutcomeReceipt(
+                return _store_terminal(OutcomeReceipt(
                     operation_id=operation_id,
                     status=OperationStatus.SUCCESS,
                     reason_code="cancelled",
@@ -112,11 +130,17 @@ async def handle_schedule_appointment(
                     channel_used="direct_api:calcom",
                     retriable=False,
                     trace_id=trace_id,
-                )
+                ))
         except Exception:
             pass  # fall through to async voice path
 
-    # Async path: voice_ai or web_form — enqueue Celery task
+    # Async path: voice_ai or web_form — enqueue Celery task.
+    # ALWAYS register the operation_id as pending in the outcome store first so
+    # GET /ops/get_status/<id> resolves immediately, regardless of whether
+    # Celery is running or not. Celery (when available) will later overwrite
+    # this with set_executing -> set_complete.
+    get_outcome_store().set_pending(operation_id, "schedule_appointment")
+
     estimated = datetime.now(timezone.utc) + timedelta(seconds=90)
     _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id)
 
@@ -145,12 +169,28 @@ async def handle_schedule_appointment(
 def _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id):
     """
     Enqueue a Celery task for async booking execution.
-    In test/stub mode (no Celery broker): immediately writes a stub pending record.
+    The caller already wrote a 'pending' record to outcome_store, so even if
+    Celery is unavailable the operation_id remains queryable via get_status.
     """
     try:
         from reliability.async_runner import enqueue_booking  # type: ignore
         enqueue_booking.delay(operation_id, request.model_dump(), smb.smb_id, agent_id, trace_id)
     except Exception:
-        # Celery not available in test mode — store as pending for get_status
-        from storage.outcome_store import get_outcome_store
-        get_outcome_store().set_pending(operation_id, "schedule_appointment")
+        # Celery not available — pending record is already in the store from
+        # the handler; nothing further to do here.
+        pass
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # Smoke check: write-then-read round trip for the async pending path.
+    # Skips the full handler (which needs supply directory + adapters) and
+    # exercises just the storage contract this fix relies on.
+    import asyncio
+    from storage.outcome_store import get_outcome_store
+    from core.status_outcome import handle_get_status
+
+    op_id = str(uuid.uuid4())
+    get_outcome_store().set_pending(op_id, "schedule_appointment")
+    status = asyncio.run(handle_get_status(op_id))
+    assert status["status"] == "pending", f"expected pending, got {status}"
+    print(f"smoke check passed: operation_id={op_id} resolved to status={status['status']}")

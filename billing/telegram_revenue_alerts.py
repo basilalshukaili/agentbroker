@@ -27,6 +27,8 @@ from typing import Any
 
 import httpx
 
+from compliance.log_redactor import mask_email
+
 logger = logging.getLogger("smb_broker.paddle_webhook")
 
 _TELEGRAM_TIMEOUT_S = 6.0
@@ -196,7 +198,7 @@ async def send_api_key_email(
             trace_id=None,
         ))
         if getattr(resp, "success", False):
-            logger.info("api_key_email_sent via=adapter email=%s plan=%s", email, plan)
+            logger.info("api_key_email_sent via=adapter email=%s plan=%s", mask_email(email), plan)
             return True
         logger.warning(
             "api_key_email_adapter_failed err=%s plan=%s",
@@ -229,7 +231,7 @@ async def send_api_key_email(
                 },
             )
         if 200 <= r.status_code < 300:
-            logger.info("api_key_email_sent via=httpx email=%s plan=%s", email, plan)
+            logger.info("api_key_email_sent via=httpx email=%s plan=%s", mask_email(email), plan)
             return True
         logger.warning(
             "api_key_email_failed status=%s body=%s",
@@ -332,13 +334,14 @@ async def handle_paddle_event(event: dict[str, Any]) -> None:
                 customer_id, plan,
             )
 
-        # 3. Telegram audit alert — last-12 of token only, never the full key.
+        # 3. Telegram audit alert — last-12 of token only, masked email,
+        #    never the full key.
         text = (
             "*Agent Broker* — first-revenue / new subscription!\n"
             f"Subscription: `{sub_id}`\n"
             f"Customer: `{customer_id}`\n"
             f"Plan: `{plan}`\n"
-            f"Email: `{customer_email or 'unknown'}`\n"
+            f"Email: `{mask_email(customer_email) if customer_email else 'unknown'}`\n"
             f"Token suffix: `...{token_suffix}`\n"
             f"Token expires: `{expires_at_iso}`\n"
             f"Event: `{event_id}`"

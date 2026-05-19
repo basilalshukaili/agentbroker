@@ -7,7 +7,32 @@ from __future__ import annotations
 
 import time
 
-from core.models import PreviewCostRequest, PreviewCostResponse
+from core.models import (
+    OperationStatus,
+    OutcomeReceipt,
+    PreviewCostRequest,
+    PreviewCostResponse,
+)
+
+# Authoritative list of every operation the broker exposes. preview_cost
+# refuses to invent a quote for anything outside this set so the ±5% SLO
+# advertised in the response can be honored — a fabricated midpoint for an
+# unknown op would violate it on the first real call.
+_KNOWN_OPERATIONS = frozenset({
+    "find_business",
+    "verify_business",
+    "send_message",
+    "capture_lead",
+    "schedule_appointment",
+    "send_transactional_confirmation",
+    "handle_inbound",
+    "escalate_to_human",
+    "get_status",
+    "get_outcome",
+    "preview_cost",
+    "self_test",
+    "import_booking_url",
+})
 
 # Pricing table — must stay in sync with billing/pricer.py
 _PRICING = {
@@ -68,8 +93,19 @@ async def handle_preview_cost(
     request: PreviewCostRequest,
     agent_id: str | None = None,
     trace_id: str | None = None,
-) -> PreviewCostResponse:
+) -> PreviewCostResponse | OutcomeReceipt:
     op = request.operation
+    if op not in _KNOWN_OPERATIONS:
+        valid = sorted(_KNOWN_OPERATIONS)
+        return OutcomeReceipt(
+            status=OperationStatus.FAILURE,
+            reason_code="bad_input",
+            human_message=(
+                f"Unknown operation '{op}'. Valid operations: {valid}"
+            ),
+            trace_id=trace_id,
+        )
+
     pricing = _PRICING.get(op, {"min": 0.01, "max": 1.00, "basis": "per_call"})
     latency = _LATENCY.get(op, {"p50": 1000, "p95": 5000})
 
