@@ -140,12 +140,16 @@ class Vertical(str, Enum):
 
 
 class MessageType(str, Enum):
-    # Public API surface intentionally excludes "marketing". This service only
-    # facilitates consumer-initiated transactional flows; unsolicited outbound
-    # campaigns are out of scope and rejected at schema-validation time.
-    # compliance/pre_check.py still inspects the string "marketing" as a
-    # belt-and-braces guard against any internal caller mis-tagging a message.
+    # Five permitted message types. MARKETING is allowed in the schema BUT
+    # the compliance gate (compliance/pre_check.py) requires verifiable
+    # opt-in consent per jurisdiction (TCPA in US, GDPR in EU, CASL in
+    # Canada, PDPL in GCC). A marketing send without recorded consent is
+    # rejected at runtime with a structured compliance_violation receipt.
+    # The gate, not the schema, is the safety mechanism — this lets agents
+    # legitimately help SMBs send marketing messages to opted-in customers
+    # while never allowing spam to non-consenting recipients.
     TRANSACTIONAL = "transactional"
+    MARKETING = "marketing"
     REMINDER = "reminder"
     FOLLOW_UP = "follow_up"
     NOTIFICATION = "notification"

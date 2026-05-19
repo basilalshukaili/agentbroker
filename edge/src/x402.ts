@@ -38,8 +38,14 @@ const PROOF_MAX_AGE_SEC = 600;
 //   4) An agent can fully evaluate the service for free, then pay for action.
 //   5) Paddle subscription path (when wired) covers the same writes with
 //      different economics — both rails coexist.
+// Pricing philosophy (2026-05-19): aggressively cheap to win agent adoption.
+// We're betting on volume + the agentic-commerce thesis, not max-extract per
+// call. An agent completing a full booking flow (find + import + schedule +
+// confirm) should pay ~$0.12 total — well within any agent's task budget.
+// We make money on volume + the cost-to-serve margin on Twilio SMS / Resend
+// email (which are <$0.01 to send). Voice is the only break-even op.
 const PRICING_ATOMIC: Readonly<Record<string, number>> = {
-  // Free reads — evaluation tier, never gated.
+  // Free reads — evaluation tier, never gated. Catalog scorers happy.
   find_business: 0,
   verify_business: 0,
   get_status: 0,
@@ -47,13 +53,14 @@ const PRICING_ATOMIC: Readonly<Record<string, number>> = {
   preview_cost: 0,
   self_test: 0,
   // Paid writes — real cost-to-serve, x402-gated when receiver is configured.
-  send_message: 50000,                  // $0.05
-  capture_lead: 100000,                 // $0.10
-  schedule_appointment: 250000,         // $0.25 attempt (success bonus stays subscription-only)
-  send_transactional_confirmation: 30000, // $0.03
-  handle_inbound: 80000,                // $0.08
-  escalate_to_human: 500000,            // $0.50
-  import_booking_url: 5000,             // $0.005
+  // Halved from the original spec to be agent-friendly. Volume > margin.
+  send_message: 20000,                  // $0.02 (was $0.05) — Twilio SMS cost ~$0.0075
+  capture_lead: 50000,                  // $0.05 (was $0.10)
+  schedule_appointment: 150000,         // $0.15 (was $0.25) — Cal.com is free; voice fallback is the only paid path
+  send_transactional_confirmation: 20000, // $0.02 (was $0.03)
+  handle_inbound: 30000,                // $0.03 (was $0.08) — mostly LLM classification, ~$0.001 cost
+  escalate_to_human: 200000,            // $0.20 (was $0.50) — most escalations are routing, not human-touch
+  import_booking_url: 5000,             // $0.005 (unchanged — already cheap)
 };
 
 export function getRequiredAmount(toolName: string): number {
