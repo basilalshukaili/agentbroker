@@ -9,6 +9,14 @@ ORIGIN_URL = "https://smb-broker.onrender.com"
 EDGE_VERSION = "0.1.0"
 SERVICE_NAME = "agent-broker"
 
+# Secrets (NOT declared here — set via `wrangler secret put`):
+#   TELEGRAM_BOT_TOKEN  → Telegram bot token from @BotFather. When unset the
+#                         cron alert subsystem (src/alerts.ts) silently
+#                         no-ops, so the worker still runs without it.
+#   TELEGRAM_CHAT_ID    → Numeric chat id (or @channel handle) that receives
+#                         Basil's alerts: first-revenue, low Twilio/Vapi
+#                         balance, and traffic milestones.
+
 # KV cache for discovery payloads
 [[kv_namespaces]]
 binding = "CACHE"

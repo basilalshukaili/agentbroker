@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { proxyToOrigin } from "./proxy";
 import { tryServeDiscovery, refreshKvFromOrigin } from "./discovery";
 import { handleMcpRequest } from "./mcp-edge";
+import { runAlertChecks } from "./alerts";
 
 type Env = {
   CACHE: KVNamespace;
@@ -23,6 +24,10 @@ type Env = {
   EDGE_VERSION: string;
   SERVICE_NAME: string;
   PUBLIC_BASE_URL?: string;
+  // Optional secrets (set via `wrangler secret put`). When unset, the alert
+  // subsystem silently no-ops — see src/alerts.ts.
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -290,12 +295,22 @@ async function scheduledHandler(event: ScheduledController, env: Env, ctx: Execu
           const r = await fetch(env.ORIGIN_URL + "/api/metrics", {
             headers: { "x-edge-probe": "cron-metrics" },
           });
-          if (!r.ok) return;
-          const body = await r.text();
-          await env.CACHE.put("live:metrics", body, { expirationTtl: 60 });
-          await env.CACHE.put("live:metrics:ts", String(Date.now()), { expirationTtl: 60 });
+          if (r.ok) {
+            const body = await r.text();
+            await env.CACHE.put("live:metrics", body, { expirationTtl: 60 });
+            await env.CACHE.put("live:metrics:ts", String(Date.now()), { expirationTtl: 60 });
+          }
         } catch (e) {
           console.warn("cron metrics refresh failed:", (e as Error).message);
+        }
+
+        // Alert checks read fresh metrics from KV — keep this AFTER the
+        // refresh above (still safe to run even if the refresh failed; the
+        // checks just see stale data, and never throw).
+        try {
+          await runAlertChecks(env, env.CACHE);
+        } catch (e) {
+          console.warn("cron alerts failed:", (e as Error).message);
         }
       })(),
     );

@@ -51,7 +51,7 @@ jobs:
         continue-on-error: true   # don't fail the workflow if domain not yet propagated
         run: |
           for i in 1 2 3 4 5; do
-            if curl -fsS https://agentbroker.qzz.io/health; then echo; exit 0; fi
+            if curl -fsS https://agent-broker-edge.basil-agent.workers.dev/health; then echo; exit 0; fi
             echo "retry $i..."; sleep 30
           done
           echo "Health check did not pass — verify Koyeb dashboard manually."
@@ -59,7 +59,7 @@ jobs:
       - name: Hit MCP tools/list
         continue-on-error: true
         run: |
-          curl -fsS -X POST https://agentbroker.qzz.io/mcp \
+          curl -fsS -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
             -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | grep -q "find_business" \
           && echo "MCP responding correctly" \

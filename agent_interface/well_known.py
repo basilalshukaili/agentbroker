@@ -286,8 +286,9 @@ def get_llms_txt() -> str:
         "## Compliance",
         "",
         f"See [compliance docs]({BASE_URL}/docs/compliance) for full jurisdiction matrix. "
-        "Every outbound communication is gated by `compliance/pre_check` — "
-        "this cannot be bypassed.",
+        "This service only completes consumer-initiated transactional flows; "
+        "marketing, promotional, and unsolicited outbound communication are out of "
+        "scope and rejected by `compliance/pre_check`. The gate cannot be bypassed.",
         "",
         "## Contact",
         "",

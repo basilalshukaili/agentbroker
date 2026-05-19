@@ -7,7 +7,7 @@
 #   2. Initializes git, commits, pushes to your GitHub repo
 #   3. Sets all Fly.io secrets
 #   4. Deploys to Fly.io
-#   5. Maps your domain agentbroker.qzz.io
+#   5. Maps your domain agent-broker-edge.basil-agent.workers.dev
 #   6. Submits to MCP registries via API (Smithery, Glama)
 #   7. Prints next steps
 #

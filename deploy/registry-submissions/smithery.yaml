@@ -10,8 +10,8 @@ description: >
   built-in compliance (TCPA / GDPR / CASL / 10DLC / two-party recording consent),
   channel fallback (Cal.com → voice AI → SMS → email → web form), idempotent.
 
-vendor: agentbroker.qzz.io
-homepage: https://agentbroker.qzz.io
+vendor: agent-broker-edge.basil-agent.workers.dev
+homepage: https://agent-broker-edge.basil-agent.workers.dev
 repository: https://github.com/YOUR_GITHUB_USERNAME/smb-broker
 license: proprietary
 
@@ -38,7 +38,7 @@ tags:
 
 connection:
   type: http
-  url: https://agentbroker.qzz.io/mcp
+  url: https://agent-broker-edge.basil-agent.workers.dev/mcp
   authentication:
     type: bearer
     header: X-Agent-Identity
@@ -71,17 +71,17 @@ tools:
     description: "Free service health check"
 
 screenshots:
-  - url: https://agentbroker.qzz.io/static/screenshot-1.png
+  - url: https://agent-broker-edge.basil-agent.workers.dev/static/screenshot-1.png
     caption: "MCP tools surface in Claude Desktop"
-  - url: https://agentbroker.qzz.io/static/screenshot-2.png
+  - url: https://agent-broker-edge.basil-agent.workers.dev/static/screenshot-2.png
     caption: "Live booking via Cal.com integration"
 
 documentation:
-  - url: https://agentbroker.qzz.io/docs
+  - url: https://agent-broker-edge.basil-agent.workers.dev/docs
     type: getting_started
-  - url: https://agentbroker.qzz.io/.well-known/mcp.json
+  - url: https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json
     type: mcp_descriptor
-  - url: https://agentbroker.qzz.io/llms.txt
+  - url: https://agent-broker-edge.basil-agent.workers.dev/llms.txt
     type: llms_txt
 
 pricing:

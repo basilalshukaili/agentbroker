@@ -22,10 +22,10 @@ _SERVICE_DESCRIPTION = (
 )
 
 _CONTACT = {
-    "support_email": "support@agentbroker.qzz.io",
-    "docs_url": "https://agentbroker.qzz.io/docs",
-    "openapi_url": "https://agentbroker.qzz.io/openapi.yaml",
-    "mcp_tools_url": "https://agentbroker.qzz.io/manifest/mcp_tools.json",
+    "support_email": "support@agent-broker-edge.basil-agent.workers.dev",
+    "docs_url": "https://agent-broker-edge.basil-agent.workers.dev/docs",
+    "openapi_url": "https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml",
+    "mcp_tools_url": "https://agent-broker-edge.basil-agent.workers.dev/manifest/mcp_tools.json",
 }
 
 

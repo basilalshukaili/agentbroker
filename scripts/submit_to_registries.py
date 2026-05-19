@@ -57,7 +57,7 @@ def _load_dotenv():
 # ---------------------------------------------------------------------------
 
 def _public_url() -> str:
-    return os.getenv("PUBLIC_BASE_URL", "https://agentbroker.qzz.io").rstrip("/")
+    return os.getenv("PUBLIC_BASE_URL", "https://agent-broker-edge.basil-agent.workers.dev").rstrip("/")
 
 
 def _repo_url() -> str:
@@ -591,7 +591,7 @@ async def main(dry_run: bool = False):
     print()
     print("Manual follow-ups (no API):")
     print(" - apis.guru: open PR at https://github.com/APIs-guru/openapi-directory/")
-    print("     add an entry under  APIs/agentbroker.qzz.io/1.0.0/openapi.yaml")
+    print("     add an entry under  APIs/agent-broker-edge.basil-agent.workers.dev/1.0.0/openapi.yaml")
     print("     Their bot validates the OpenAPI spec; merge is usually within a week.")
     print(" - Anthropic / Cursor / Continue: see OUTREACH_KIT.md for email templates.")
 

@@ -428,7 +428,7 @@ async def _h_resources_list(params: dict) -> dict:
             {
                 "uri": "agent-broker://cookbook",
                 "name": "Tool-chain cookbook",
-                "description": "Common multi-tool flows: 'book-from-url', 'find-then-book', 'compliant-outbound', 'async-poll'. Read this if you are unsure which tool to call first.",
+                "description": "Common multi-tool flows: 'book-from-url', 'find-then-book', 'compliant-transactional-message', 'async-poll'. Read this if you are unsure which tool to call first.",
                 "mimeType": "text/markdown",
             },
         ]
@@ -504,8 +504,13 @@ async def _h_resources_read(params: dict) -> dict:
                     "1. `find_business(vertical, location, capability, max_results=5)`\n"
                     "2. If `result.businesses` is non-empty, pick one and `schedule_appointment(smb_id=...)`\n"
                     "3. If empty AND the user can supply a URL, fall through to `import_booking_url`\n\n"
-                    "## When sending an outbound SMS / email\n"
-                    "1. (optional) `POST /compliance/check` to preview legality\n"
+                    "## When completing a consumer-initiated message\n"
+                    "Only call `send_message` when the end-user explicitly asked the agent to "
+                    "communicate with a named SMB on their behalf — confirming a booking they "
+                    "requested, replying to a quote they solicited, following up on an inbound "
+                    "the SMB sent them. Cold outreach, marketing, drips, and prospecting are out "
+                    "of scope; the public schema does not even permit `message_type='marketing'`.\n"
+                    "1. (optional) `POST /compliance/check` to preview legality for the jurisdiction\n"
                     "2. `send_message(...)` — gate runs again at send time\n"
                     "3. Treat ComplianceViolationError as a stop signal, not retry\n\n"
                     "## Async polling\n"
@@ -559,16 +564,21 @@ async def _h_prompts_list(params: dict) -> dict:
                 ],
             },
             {
-                "name": "compliant_outbound_message",
+                "name": "compliant_transactional_message",
                 "description": (
-                    "Send an outbound SMS / email / voice with full TCPA / GDPR / CASL pre-check. "
+                    "Send a consumer-initiated transactional SMS / email / voice with full "
+                    "TCPA / GDPR / CASL pre-check. ONLY use when the end-user explicitly "
+                    "asked the agent to communicate with a named SMB on their behalf — "
+                    "confirming a booking, replying to a quote, following up on an inbound "
+                    "the SMB sent first. This flow is NOT for marketing, cold outreach, or "
+                    "prospecting; those are rejected at schema validation. "
                     "1) (optional) call /compliance/check first to preview legality. "
-                    "2) call send_message — the gate runs again at send time and blocks non-compliant sends. "
-                    "Use country_code so the right jurisdiction rules apply."
+                    "2) call send_message — the gate runs again at send time and blocks any "
+                    "non-compliant send. Use country_code so the right jurisdiction rules apply."
                 ),
                 "arguments": [
-                    {"name": "recipient", "description": "Phone (E.164) or email.", "required": True},
-                    {"name": "message_type", "description": "transactional | marketing | reminder | opt-in-confirm", "required": True},
+                    {"name": "recipient", "description": "Phone (E.164) or email of the SMB the consumer named, or the consumer themselves for a transactional confirmation.", "required": True},
+                    {"name": "message_type", "description": "transactional | reminder | follow_up | notification. 'marketing' is not accepted.", "required": True},
                     {"name": "country_code", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE'). Auto-inferred from phone if omitted.", "required": False},
                 ],
             },
@@ -609,10 +619,14 @@ async def _h_prompts_get(params: dict) -> dict:
             "call import_booking_url first, then schedule_appointment with the "
             "newly-imported smb_id."
         )
-    elif name == "compliant_outbound_message":
+    elif name == "compliant_transactional_message":
         text = (
+            "ONLY use this for consumer-initiated transactional flows — the end-user explicitly "
+            "asked the agent to message a named business on their behalf. Cold outreach, "
+            "marketing, and prospecting are out of scope and rejected at schema validation. "
             "Step 1 (optional preview): POST /compliance/check with the recipient + "
-            "message_type + content + country_code. Returns {legal: bool, rule, remediation}. "
+            "message_type (transactional | reminder | follow_up | notification) + content + "
+            "country_code. Returns {legal: bool, rule, remediation}. "
             "Step 2: call send_message with the same args. The compliance gate runs again "
             "at send time, so a non-compliant send raises ComplianceViolationError "
             "instead of leaking. Treat any non-200 from the gate as a stop signal."

@@ -130,7 +130,7 @@ export async function refreshKvFromOrigin(
     // Apply the same URL rewrite the snapshots get.
     let rewritten = body;
     for (const orig of [
-      "https://agentbroker.qzz.io",
+      "https://agent-broker-edge.basil-agent.workers.dev",
       "https://smb-broker.onrender.com",
       "https://api.smb-broker.example/v1",
       "https://api.smb-broker.example",

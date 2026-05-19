@@ -78,7 +78,7 @@ TWILIO_AUTH_TOKEN = _env("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = _env("TWILIO_FROM_NUMBER", "")
 
 SENDGRID_API_KEY = _env("SENDGRID_API_KEY", "")
-SENDGRID_FROM_EMAIL = _env("SENDGRID_FROM_EMAIL", "noreply@agentbroker.qzz.io")
+SENDGRID_FROM_EMAIL = _env("SENDGRID_FROM_EMAIL", "noreply@agent-broker-edge.basil-agent.workers.dev")
 
 VAPI_API_KEY = _env("VAPI_API_KEY", "")
 BLAND_API_KEY = _env("BLAND_API_KEY", "")
