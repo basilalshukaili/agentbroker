@@ -24,21 +24,36 @@ const ERC20_TRANSFER_TOPIC =
 const PROOF_MAX_AGE_SEC = 600;
 
 // Pricing table — USD cents converted to USDC atomic units (USDC has 6 decimals,
-// so $0.01 = 10000 atomic). Free tools intentionally map to 0 and short-circuit.
+// so $0.01 = 10000 atomic). Zero = free, short-circuits the gate.
+//
+// Design decision (2026-05-19): only write/cost-incurring operations require
+// payment. Read tools (find_business, verify_business, get_status,
+// get_outcome) and free probes (preview_cost, self_test) stay free even when
+// X402_RECEIVER_ADDRESS is set. Rationale:
+//   1) Catalog scorers (MCPScoringEngine, mcp.so indexer) probe tools/call on
+//      read tools — gating them would drop us from listings.
+//   2) Reads are near-zero cost for us to serve (CPU + cached snapshot).
+//   3) Writes (send_message $0.05 SMS via Twilio, schedule_appointment $0.25
+//      Cal.com booking, etc.) are where real cost-to-serve lives — gate those.
+//   4) An agent can fully evaluate the service for free, then pay for action.
+//   5) Paddle subscription path (when wired) covers the same writes with
+//      different economics — both rails coexist.
 const PRICING_ATOMIC: Readonly<Record<string, number>> = {
-  find_business: 10000,
-  verify_business: 20000,
-  send_message: 50000,
-  capture_lead: 100000,
-  schedule_appointment: 250000,
-  send_transactional_confirmation: 30000,
-  handle_inbound: 80000,
-  escalate_to_human: 500000,
-  get_status: 1000,
-  get_outcome: 1000,
-  import_booking_url: 5000,
+  // Free reads — evaluation tier, never gated.
+  find_business: 0,
+  verify_business: 0,
+  get_status: 0,
+  get_outcome: 0,
   preview_cost: 0,
   self_test: 0,
+  // Paid writes — real cost-to-serve, x402-gated when receiver is configured.
+  send_message: 50000,                  // $0.05
+  capture_lead: 100000,                 // $0.10
+  schedule_appointment: 250000,         // $0.25 attempt (success bonus stays subscription-only)
+  send_transactional_confirmation: 30000, // $0.03
+  handle_inbound: 80000,                // $0.08
+  escalate_to_human: 500000,            // $0.50
+  import_booking_url: 5000,             // $0.005
 };
 
 export function getRequiredAmount(toolName: string): number {
