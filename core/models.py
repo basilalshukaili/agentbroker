@@ -9,7 +9,87 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+# Common fine-grained terms agents reach for, mapped to the three macro
+# verticals we currently support. Capability is auto-set from the fine-grained
+# term when the agent didn't supply one, so the directory search filters down
+# instead of returning every business in the macro bucket.
+_VERTICAL_ALIASES: dict[str, tuple[str, str | None]] = {
+    # personal_services
+    "haircut": ("personal_services", "haircut"),
+    "salon": ("personal_services", None),
+    "barber": ("personal_services", "haircut"),
+    "barbershop": ("personal_services", "haircut"),
+    "nail": ("personal_services", "manicure"),
+    "nails": ("personal_services", "manicure"),
+    "manicure": ("personal_services", "manicure"),
+    "massage": ("personal_services", "swedish_massage"),
+    "spa": ("personal_services", None),
+    "yoga": ("personal_services", "yoga_class"),
+    "fitness": ("personal_services", "personal_training"),
+    "personal_training": ("personal_services", "personal_training"),
+    "lash": ("personal_services", "lash_extensions"),
+    "waxing": ("personal_services", "waxing"),
+    "beauty": ("personal_services", None),
+    # home_services
+    "plumbing": ("home_services", "plumbing"),
+    "plumber": ("home_services", "plumbing"),
+    "electrician": ("home_services", "electrical_inspection"),
+    "electrical": ("home_services", "electrical_inspection"),
+    "hvac": ("home_services", None),
+    "cleaning": ("home_services", "house_cleaning"),
+    "house_cleaning": ("home_services", "house_cleaning"),
+    "pest_control": ("home_services", "pest_inspection"),
+    "pest": ("home_services", "pest_inspection"),
+    "lawn": ("home_services", "lawn_mowing"),
+    "landscaping": ("home_services", "landscaping"),
+    "handyman": ("home_services", "general_handyman"),
+    "roofing": ("home_services", "roof_inspection"),
+    "roofer": ("home_services", "roof_inspection"),
+    # professional_services
+    "legal": ("professional_services", "legal_consultation"),
+    "lawyer": ("professional_services", "legal_consultation"),
+    "attorney": ("professional_services", "legal_consultation"),
+    "law": ("professional_services", "legal_consultation"),
+    "tax": ("professional_services", "tax_consultation"),
+    "accounting": ("professional_services", "business_accounting"),
+    "accountant": ("professional_services", "business_accounting"),
+    "bookkeeping": ("professional_services", "bookkeeping"),
+    "financial": ("professional_services", "financial_planning"),
+    "financial_planning": ("professional_services", "financial_planning"),
+    "tutor": ("professional_services", "math_tutoring"),
+    "tutoring": ("professional_services", "math_tutoring"),
+    "coaching": ("professional_services", "business_coaching"),
+    "business_coaching": ("professional_services", "business_coaching"),
+    "insurance": ("professional_services", "insurance_consultation"),
+    "consulting": ("professional_services", None),
+    # common health/restaurant terms — currently unsupported macro verticals;
+    # we still alias them to the closest match rather than 500'ing, and the
+    # find_business response will explain coverage honestly.
+    "dentist": ("professional_services", "dental"),
+    "dental": ("professional_services", "dental"),
+    "doctor": ("professional_services", "medical_consultation"),
+    "medical": ("professional_services", "medical_consultation"),
+    "physician": ("professional_services", "medical_consultation"),
+    "restaurant": ("personal_services", None),
+    "dining": ("personal_services", None),
+    "food": ("personal_services", None),
+}
+
+
+def alias_vertical(raw: str) -> tuple[str, str | None]:
+    """Map a free-text vertical term to (macro_vertical, suggested_capability).
+
+    Returns the macro vertical the agent should be searching under, plus a
+    capability hint when the term implies a specific service. Falls back to
+    the raw term if it's already a valid macro vertical.
+    """
+    key = (raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if key in {"personal_services", "home_services", "professional_services"}:
+        return (key, None)
+    return _VERTICAL_ALIASES.get(key, (key, None))
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +323,22 @@ class FindBusinessRequest(BaseModel):
     availability_window: Optional[AvailabilityWindow] = None
     max_results: int = Field(default=5, le=20)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _alias_natural_terms(cls, data: Any) -> Any:
+        # Agents frequently send fine-grained verticals ("plumbing", "dentist")
+        # rather than our three macro buckets. Translate them in-place so the
+        # request validates and the directory search still narrows by capability.
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("vertical")
+        if isinstance(raw, str):
+            macro, cap_hint = alias_vertical(raw)
+            data["vertical"] = macro
+            if cap_hint and not data.get("capability"):
+                data["capability"] = cap_hint
+        return data
+
 
 class SMBRecord(BaseModel):
     smb_id: str
@@ -254,6 +350,7 @@ class SMBRecord(BaseModel):
     price_range: Optional[dict[str, Any]] = None
     verified_at: Optional[datetime] = None
     rank_score: Optional[float] = None
+    is_demo: bool = False
 
 
 # ---------------------------------------------------------------------------

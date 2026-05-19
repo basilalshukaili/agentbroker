@@ -244,7 +244,7 @@ async def check_internal_services() -> list[CheckResult]:
     try:
         from agent_interface.manifest_server import get_full_manifest
         ops = get_full_manifest().get("operations", [])
-        results.append(CheckResult("Manifest", len(ops) == 12, f"{len(ops)} operations defined."))
+        results.append(CheckResult("Manifest", len(ops) >= 12, f"{len(ops)} operations defined."))
     except Exception as e:
         results.append(CheckResult("Manifest", False, f"Failed to load: {e}"))
 
@@ -255,7 +255,7 @@ async def check_internal_services() -> list[CheckResult]:
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         )
         tools = r.get("result", {}).get("tools", [])
-        results.append(CheckResult("MCP server", len(tools) == 12, f"{len(tools)} tools listed via JSON-RPC."))
+        results.append(CheckResult("MCP server", len(tools) >= 12, f"{len(tools)} tools listed via JSON-RPC."))
     except Exception as e:
         results.append(CheckResult("MCP server", False, f"MCP error: {e}"))
 
@@ -283,9 +283,9 @@ async def check_internal_services() -> list[CheckResult]:
         )
         ok = (
             get_ai_plugin_manifest().get("name_for_model") == "smb_broker"
-            and len(get_openai_tools()["tools"]) == 12
-            and len(get_anthropic_tools()["tools"]) == 12
-            and len(get_agents_json()["skills"]) == 12
+            and len(get_openai_tools()["tools"]) >= 12
+            and len(get_anthropic_tools()["tools"]) >= 12
+            and len(get_agents_json()["skills"]) >= 12
             and bool(get_mcp_descriptor()["transport"]["endpoint"])
             and len(get_llms_txt()) > 1000
         )

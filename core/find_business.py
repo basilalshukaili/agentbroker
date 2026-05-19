@@ -81,14 +81,23 @@ async def handle_find_business(
             price_range=smb.price_range,
             verified_at=smb.verified_at,
             rank_score=round(len(smb.channels_available) / 3, 2),
+            is_demo=getattr(smb, "is_demo", False),
         )
         for smb in smbs
     ]
+    any_demo = any(r.is_demo for r in records)
 
     result: dict = {
         "businesses": [r.model_dump() for r in records],
         "total_in_supply_network": directory.size(),
     }
+    if any_demo:
+        result["sandbox_notice"] = (
+            "Some results are sandbox entries (is_demo=true, names prefixed "
+            "with [DEMO]). Booking calls on these short-circuit with a "
+            "demo_smb_no_live_booking receipt instead of contacting real "
+            "businesses. Use import_booking_url to add a real business."
+        )
     if coverage_note:
         result["supply_coverage_note"] = coverage_note
     if recovery_payload:

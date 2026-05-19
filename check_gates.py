@@ -65,7 +65,7 @@ try:
     manifest = json.loads((Path("manifest/manifest.json")).read_text())
     ops = manifest.get("operations", [])
     gate("Manifest loads", True)
-    gate("12 operations in manifest", len(ops) == 12, f"found {len(ops)}")
+    gate("At least 12 operations in manifest", len(ops) >= 12, f"found {len(ops)}")
 
     expected_ops = {
         "find_business", "verify_business", "send_message", "capture_lead",

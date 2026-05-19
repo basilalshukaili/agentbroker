@@ -164,7 +164,14 @@ async def _check_internal_discovery() -> dict:
         tool_count = len(r.get("result", {}).get("tools", []))
         llms = get_llms_txt()
         latency = int((time.monotonic() - t0) * 1000)
-        ok = op_count == 12 and tool_count == 12 and "find_business" in llms
+        # Manifest and MCP tool list must agree (drift = bug) and we must have
+        # at least our 12 core operations; new tools are allowed to push the
+        # count higher without flipping the gauge to fail.
+        ok = (
+            op_count == tool_count
+            and op_count >= 12
+            and "find_business" in llms
+        )
         return _bucket(
             ok, latency,
             extra={"operations": op_count, "mcp_tools": tool_count, "llms_txt_bytes": len(llms)},

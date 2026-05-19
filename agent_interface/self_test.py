@@ -123,9 +123,11 @@ async def _check_manifest_loads() -> TestCheck:
         from agent_interface.manifest_server import get_full_manifest
         manifest = get_full_manifest()
         ops = manifest.get("operations", [])
-        ok = len(ops) == 12
+        # Operations count is allowed to grow as we add tools; assert the
+        # manifest loaded a sensible number, not an exact frozen count.
+        ok = len(ops) >= 12
         return TestCheck("manifest_loads", ok, round((time.time() - start) * 1000, 2),
-                         "" if ok else f"Expected 12 operations, got {len(ops)}.")
+                         "" if ok else f"Expected >=12 operations, got {len(ops)}.")
     except Exception as e:
         return TestCheck("manifest_loads", False, round((time.time() - start) * 1000, 2), str(e))
 

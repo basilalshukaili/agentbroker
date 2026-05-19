@@ -34,6 +34,11 @@ class SMBEntry:
     price_range: Optional[dict] = None
     verified_at: Optional[datetime] = None
     active: bool = True
+    # Sandbox entries — agents see is_demo=true and "[DEMO]" name prefix so
+    # they can choose whether to attempt a real booking. Bookings against
+    # demo SMBs short-circuit with reason_code="demo_smb_no_live_booking"
+    # rather than calling fake 555 numbers.
+    is_demo: bool = False
 
 
 def _seed_smbs() -> dict[str, SMBEntry]:
@@ -176,17 +181,29 @@ def _load_directory() -> dict[str, SMBEntry]:
     Load the SMB directory.
 
     Behavior controlled by env var SUPPLY_SEED_MODE:
-      - "demo"  (default): load 20 hardcoded demo SMBs in Atlanta/Boston for tests + manifest examples.
-      - "empty": start with zero SMBs. Production launch mode — directory grows only via real onboarding / scraping.
+      - "demo"  (default): seeded demo SMBs are loaded, each marked with
+        is_demo=True and a "[DEMO]" name prefix so callers know the entry
+        is sandbox-only.
+      - "labeled" (alias for "demo")
+      - "empty":  start with zero SMBs. Strict production — directory grows
+        only via real onboarding / scraping. Use this only once enough real
+        supply has been imported that an empty fallback is acceptable.
 
-    The seed data is NOT meant to be served as real supply in production. It exists so the
-    test corpus, manifest examples, and self-test all have something to operate on.
+    Demo data is intentionally served in production so probing agents and
+    catalog scorers see a non-empty supply network; bookings against demo
+    SMBs short-circuit (see schedule_appointment handler) instead of dialing
+    fake numbers.
     """
     import os
     mode = os.getenv("SUPPLY_SEED_MODE", "demo").lower()
     if mode == "empty":
         return {}
-    return _seed_smbs()
+    seeds = _seed_smbs()
+    for smb in seeds.values():
+        smb.is_demo = True
+        if not smb.name.startswith("[DEMO]"):
+            smb.name = f"[DEMO] {smb.name}"
+    return seeds
 
 
 _DIRECTORY: dict[str, SMBEntry] = _load_directory()

@@ -22,8 +22,12 @@ services:
         value: true
       - key: COMPLIANCE_DEFAULT_JURISDICTION
         value: international
+      # Demo mode loads seeded SMBs with [DEMO] name prefix and is_demo=true
+      # so find_business returns a non-empty directory for probing agents and
+      # catalog scorers. Booking handlers short-circuit on is_demo entries.
+      # Flip to "empty" once enough real supply has been imported.
       - key: SUPPLY_SEED_MODE
-        value: empty
+        value: demo
       - key: PUBLIC_BASE_URL
         value: https://smb-broker.onrender.com
       - key: BILLING_PROVIDER

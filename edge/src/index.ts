@@ -126,10 +126,89 @@ app.get("/api/metrics", async (c) => {
   const { response } = await proxyToOrigin(c.req.raw, c.env.ORIGIN_URL);
   if (response.ok) {
     const body = await response.clone().text();
-    await c.env.CACHE.put("live:metrics", body, { expirationTtl: 60 });
-    await c.env.CACHE.put("live:metrics:ts", String(Date.now()), { expirationTtl: 60 });
+    // KV free-tier caps daily writes at 1k. Swallow quota failures so the
+    // response still reaches the caller even when the cache write throws.
+    try {
+      await c.env.CACHE.put("live:metrics", body, { expirationTtl: 60 });
+      await c.env.CACHE.put("live:metrics:ts", String(Date.now()), { expirationTtl: 60 });
+    } catch (e) {
+      console.warn("KV put live:metrics failed:", (e as Error).message);
+    }
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "x-edge-source": "origin-fresh",
+      },
+    });
   }
   return response;
+});
+
+// ---------------------------------------------------------------------------
+// MCP OAuth discovery — clients probe these before calling tools/call.
+// We don't require OAuth; respond with an RFC 8414-shaped doc that advertises
+// no authorization endpoints so probers stop polling and proceed to /mcp.
+// ---------------------------------------------------------------------------
+
+function oauthMetadata(baseUrl: string): Record<string, unknown> {
+  return {
+    issuer: baseUrl,
+    authorization_endpoint: null,
+    token_endpoint: null,
+    registration_endpoint: null,
+    response_types_supported: [],
+    grant_types_supported: [],
+    scopes_supported: [],
+    token_endpoint_auth_methods_supported: ["none"],
+    authorization_required: false,
+    service_documentation: `${baseUrl}/manifest`,
+  };
+}
+
+app.get("/.well-known/oauth-authorization-server", (c) => {
+  return new Response(JSON.stringify(oauthMetadata(publicBaseUrlOf(c))), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "public, max-age=86400",
+      "x-edge-source": "edge-stub",
+    },
+  });
+});
+
+app.get("/.well-known/oauth-protected-resource", (c) => {
+  const baseUrl = publicBaseUrlOf(c);
+  return new Response(
+    JSON.stringify({
+      resource: baseUrl,
+      authorization_servers: [],
+      bearer_methods_supported: [],
+      resource_documentation: `${baseUrl}/manifest`,
+      authentication_required: false,
+    }),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "public, max-age=86400",
+        "x-edge-source": "edge-stub",
+      },
+    },
+  );
+});
+
+app.get("/.well-known/openid-configuration", (c) => {
+  // OpenID Connect Discovery 1.0 — same payload shape as oauth-authorization-server
+  // is acceptable for probers that fall back here.
+  return new Response(JSON.stringify(oauthMetadata(publicBaseUrlOf(c))), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "public, max-age=86400",
+      "x-edge-source": "edge-stub",
+    },
+  });
 });
 
 app.get("/healthz/external", async (c) => {
@@ -181,43 +260,48 @@ const REFRESH_TARGETS: ReadonlyArray<{ path: string; isJson: boolean }> = [
   { path: "/compliance/jurisdictions", isJson: true },
 ];
 
-async function scheduledHandler(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+async function scheduledHandler(event: ScheduledController, env: Env, ctx: ExecutionContext) {
   // Resolve public base url for cron — we don't have a request here, so use
   // the configured value or default to the workers.dev URL the worker is on.
-  // Cron lifetime can run multiple subrequests in parallel.
   const publicBaseUrl = env.PUBLIC_BASE_URL ?? "https://agent-broker-edge.basil-agent.workers.dev";
 
   const tasks: Promise<unknown>[] = [];
 
-  // Refresh discovery KV.
-  for (const { path, isJson } of REFRESH_TARGETS) {
-    tasks.push(refreshKvFromOrigin(env.CACHE, env.ORIGIN_URL, publicBaseUrl, path, isJson));
-  }
-
-  // Keep origin warm with a single ping.
+  // Always keep the Render dyno warm (no KV writes, free).
   tasks.push(
     fetch(env.ORIGIN_URL + "/health", { headers: { "x-edge-probe": "cron-warmup" } }).catch(() => null),
   );
 
-  // Refresh metrics cache (counter, short TTL).
-  tasks.push(
-    (async () => {
-      try {
-        const r = await fetch(env.ORIGIN_URL + "/api/metrics", {
-          headers: { "x-edge-probe": "cron-metrics" },
-        });
-        if (r.ok) {
+  // KV writes count against the free-tier 1k/day budget. Refresh discovery
+  // and live metrics only every 30 min — between refreshes, edge requests
+  // either hit the existing KV-cached entry or fall through to the embedded
+  // snapshot / origin.
+  const minute = new Date(event.scheduledTime).getUTCMinutes();
+  const shouldRefreshKv = minute % 30 === 0;
+
+  if (shouldRefreshKv) {
+    for (const { path, isJson } of REFRESH_TARGETS) {
+      tasks.push(refreshKvFromOrigin(env.CACHE, env.ORIGIN_URL, publicBaseUrl, path, isJson));
+    }
+
+    tasks.push(
+      (async () => {
+        try {
+          const r = await fetch(env.ORIGIN_URL + "/api/metrics", {
+            headers: { "x-edge-probe": "cron-metrics" },
+          });
+          if (!r.ok) return;
           const body = await r.text();
           await env.CACHE.put("live:metrics", body, { expirationTtl: 60 });
           await env.CACHE.put("live:metrics:ts", String(Date.now()), { expirationTtl: 60 });
+        } catch (e) {
+          console.warn("cron metrics refresh failed:", (e as Error).message);
         }
-      } catch {
-        // Silent.
-      }
-    })(),
-  );
+      })(),
+    );
+  }
 
-  // Use waitUntil so cron returns fast but tasks complete.
+  // waitUntil so cron returns fast but tasks complete in the background.
   ctx.waitUntil(Promise.all(tasks));
 }
 

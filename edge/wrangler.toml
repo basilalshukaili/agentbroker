@@ -19,10 +19,12 @@ id = "f45691e20cdd4937ae88ccb64159d928"
 enabled = true
 head_sampling_rate = 1
 
-# Cron trigger to keep manifest cache warm and Render dyno awake.
-# Every 2 min: aggressive but well within free tier (1000 cron triggers/day).
+# Cron fires every 5 min so the Render free-tier dyno (15-min idle timeout)
+# stays warm. The handler keeps KV refreshes — which DO count against the
+# 1k writes/day free-tier cap — gated to every 30th minute so the daily
+# write budget stays around 12 paths × 48 refreshes = 576 writes/day.
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["*/5 * * * *"]
 
 # Allow importing .txt and .yaml as raw strings (snapshots embedded in bundle).
 [[rules]]
