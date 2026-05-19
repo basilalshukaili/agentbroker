@@ -28,6 +28,10 @@ type Env = {
   // subsystem silently no-ops — see src/alerts.ts.
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+  // x402 micropayments (Coinbase Agent Kit / x402-compatible MCP clients).
+  // When unset, tools/call is proxied directly to origin and only the Paddle
+  // subscription path applies — see src/x402.ts and src/mcp-edge.ts.
+  X402_RECEIVER_ADDRESS?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -95,7 +99,13 @@ app.get("/edge/info", async (c) => {
 // ---------------------------------------------------------------------------
 
 app.all("/mcp", async (c) => {
-  return handleMcpRequest(c.req.raw, c.env.ORIGIN_URL, publicBaseUrlOf(c));
+  return handleMcpRequest(
+    c.req.raw,
+    c.env.ORIGIN_URL,
+    publicBaseUrlOf(c),
+    c.env.X402_RECEIVER_ADDRESS,
+    c.env.CACHE,
+  );
 });
 
 // ---------------------------------------------------------------------------

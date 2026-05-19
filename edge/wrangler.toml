@@ -16,6 +16,14 @@ SERVICE_NAME = "agent-broker"
 #   TELEGRAM_CHAT_ID    → Numeric chat id (or @channel handle) that receives
 #                         Basil's alerts: first-revenue, low Twilio/Vapi
 #                         balance, and traffic milestones.
+#   X402_RECEIVER_ADDRESS → Ethereum address (0x…40hex) that receives USDC
+#                         micropayments on Base from x402-capable AI agents.
+#                         When UNSET, the worker behaves exactly as it does
+#                         today: tools/call is proxied straight to origin and
+#                         only the Paddle subscription path applies. When set,
+#                         tools/call demands an x402 payment proof (USDC on
+#                         Base) per call — see src/x402.ts for the price table.
+#                         Set with: wrangler secret put X402_RECEIVER_ADDRESS
 
 # KV cache for discovery payloads
 [[kv_namespaces]]
