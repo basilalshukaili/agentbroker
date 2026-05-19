@@ -1,6 +1,6 @@
-// /mcp JSON-RPC handler — edge-serves read-only methods (initialize, tools/list,
-// prompts/list, resources/list, ping); proxies state-changing methods (tools/call)
-// to the origin.
+// /mcp JSON-RPC handler — edge-serves the stable read-only methods (initialize,
+// tools/list, ping) from snapshots; proxies everything else (tools/call,
+// prompts/list, prompts/get, resources/list, resources/read) to origin.
 
 import { getSnapshots } from "./snapshots/index";
 import { proxyToOrigin } from "./proxy";
@@ -24,14 +24,14 @@ function jsonrpcError(id: unknown, code: number, message: string): Response {
   });
 }
 
+// Methods served from embedded snapshots. prompts/* and resources/* used to
+// be listed here returning empty arrays — that hid the four actual prompts and
+// the cookbook resource that the Python /mcp server exposes. They now proxy to
+// origin so the real payload reaches the agent.
 const EDGE_MCP_METHODS: ReadonlySet<string> = new Set([
   "initialize",
   "ping",
   "tools/list",
-  "prompts/list",
-  "prompts/get",
-  "resources/list",
-  "resources/read",
 ]);
 
 export async function handleMcpRequest(
@@ -91,14 +91,6 @@ export async function handleMcpRequest(
       const tl = snapshots.mcpToolsList as { result?: unknown };
       return jsonrpcResult(id, tl.result);
     }
-    case "prompts/list":
-      return jsonrpcResult(id, { prompts: [] });
-    case "prompts/get":
-      return jsonrpcError(id, -32602, "No prompts defined");
-    case "resources/list":
-      return jsonrpcResult(id, { resources: [] });
-    case "resources/read":
-      return jsonrpcError(id, -32602, "No resources defined");
     default:
       return jsonrpcError(id, -32601, `Method not found: ${method}`);
   }

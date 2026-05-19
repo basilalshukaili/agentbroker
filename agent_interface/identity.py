@@ -18,6 +18,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -30,9 +32,22 @@ from core.models import AgentIdentity, AgentScope, Principal
 # Config (override via environment in production)
 # ---------------------------------------------------------------------------
 
-_SIGNING_SECRET = "dev-secret-replace-in-production"
+_DEFAULT_SECRET = "dev-secret-replace-in-production"
+_SIGNING_SECRET = os.getenv("JWT_SIGNING_SECRET", _DEFAULT_SECRET)
 _ISSUER = "smb-broker-v1"
 _DEFAULT_TTL_SECONDS = 3600 * 24  # 24 hours
+
+# Startup-time guard: in production, refuse-to-deploy is too aggressive (would
+# break the app on missing env). Instead, loudly log so the operator notices
+# in the deploy logs and rotates the key before the first customer arrives.
+if os.getenv("ENVIRONMENT") == "production" and (
+    not os.getenv("JWT_SIGNING_SECRET") or _SIGNING_SECRET == _DEFAULT_SECRET
+):
+    logging.getLogger("smb_broker.identity").error(
+        "SECURITY: JWT_SIGNING_SECRET is missing or set to the development "
+        "default in a production environment. All issued tokens are forgeable. "
+        "Set a strong JWT_SIGNING_SECRET (>= 32 chars) and redeploy immediately."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +99,52 @@ def issue_token(req: TokenRequest) -> TokenResponse:
         issued_at=now,
         expires_at=now + req.ttl_seconds,
     )
+
+
+# ---------------------------------------------------------------------------
+# Subscription-plan → token mapping
+# ---------------------------------------------------------------------------
+
+_ONE_DAY = 86400
+_NINETY_DAYS = 90 * _ONE_DAY
+_ONE_YEAR = 365 * _ONE_DAY
+
+# (allowed_operations, budget_cap_usd, allowed_verticals, ttl_seconds)
+_PLAN_SCOPES: dict[str, tuple[list[str], float, list[str], int]] = {
+    "developer":  (["*"],  50.0, ["*"], _NINETY_DAYS),
+    "business":   (["*"], 500.0, ["*"], _NINETY_DAYS),
+    "enterprise": (["*"], 500.0, ["*"], _ONE_YEAR),
+}
+
+
+def issue_subscription_token(
+    customer_id: str,
+    plan: str,
+    customer_email: str,
+) -> TokenResponse:
+    """
+    Mint a long-lived Agent-Identity token for a paying subscriber.
+
+    Called from the Paddle webhook on `subscription.activated` and from the
+    admin `/auth/token` route. Unknown plan strings fall back to "developer"
+    so we never fail-closed on a paid customer.
+
+    `customer_email` is accepted for signature parity with the call sites
+    (the email is consumed by the delivery layer, not embedded in the JWT
+    to keep tokens small and reduce PII exposure if a token is leaked).
+    """
+    _ = customer_email  # delivery-layer concern; intentionally unused here
+    plan_key = (plan or "").strip().lower()
+    ops, cap, verticals, ttl = _PLAN_SCOPES.get(plan_key, _PLAN_SCOPES["developer"])
+    return issue_token(TokenRequest(
+        agent_id=f"sub_{customer_id}",
+        principal_id=customer_id,
+        principal_type="human",
+        allowed_operations=ops,
+        budget_cap_usd=cap,
+        allowed_verticals=verticals,
+        ttl_seconds=ttl,
+    ))
 
 
 # ---------------------------------------------------------------------------

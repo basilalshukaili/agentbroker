@@ -26,7 +26,9 @@ from core.models import (
 )
 from agent_interface.manifest_server import get_full_manifest, get_operations_list, get_manifest_version
 from agent_interface.discovery import get_discovery_card, health_check
-from agent_interface.identity import validate_token, check_operation_allowed
+from agent_interface.identity import (
+    validate_token, check_operation_allowed, issue_subscription_token,
+)
 from agent_interface.self_test import run_self_test
 from agent_interface.mcp_server import handle_mcp_request
 from agent_interface.well_known import (
@@ -469,6 +471,53 @@ async def manifest_version():
 
 
 # ---------------------------------------------------------------------------
+# Admin: mint API key
+# ---------------------------------------------------------------------------
+# Bridge route used to issue Agent-Identity tokens manually before Paddle
+# webhook delivery is in place (or whenever the webhook missed an event).
+# Gated by ADMIN_SECRET — anyone with the env var can mint a key for any
+# customer_id, so the secret is kept short-lived and rotated after launch.
+
+
+class _AuthTokenRequest(BaseModel):
+    customer_id: str = Field(..., description="Stable customer identifier (Paddle customer ID or email).")
+    plan: str = Field("developer", description="Subscription plan: developer | business | enterprise.")
+    customer_email: str = Field("", description="Email address — used for audit only, not embedded in JWT.")
+
+
+@app.post("/auth/token", tags=["Auth"], include_in_schema=False)
+async def auth_token(
+    req: _AuthTokenRequest,
+    x_admin_secret: Optional[str] = Header(None),
+):
+    """Mint a long-lived Agent-Identity token for a paying customer (admin only)."""
+    import os
+    expected = os.getenv("ADMIN_SECRET", "")
+    # Empty ADMIN_SECRET means the route is disabled — refuse outright rather
+    # than accept an empty header that happens to match an empty env value.
+    if not expected:
+        raise HTTPException(status_code=401, detail="Admin route is disabled (ADMIN_SECRET not set).")
+    if not x_admin_secret or not _consteq(x_admin_secret, expected):
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Admin-Secret header.")
+    resp = issue_subscription_token(
+        customer_id=req.customer_id,
+        plan=req.plan,
+        customer_email=req.customer_email,
+    )
+    return {
+        "token": resp.token,
+        "agent_id": resp.agent_id,
+        "expires_at": resp.expires_at,
+    }
+
+
+def _consteq(a: str, b: str) -> bool:
+    """Constant-time string comparison — avoids leaking via early-exit timing."""
+    import hmac
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
+# ---------------------------------------------------------------------------
 # Operations
 # ---------------------------------------------------------------------------
 
@@ -630,6 +679,48 @@ async def list_webhooks(
     agent_id = identity.agent_id if identity else "dev_agent"
     from agent_interface.webhooks import list_webhooks as _list
     return {"webhooks": _list(agent_id)}
+
+
+@app.post("/webhooks/paddle", tags=["Webhooks"])
+async def paddle_webhook(request: Request):
+    """
+    Paddle billing webhook → Telegram revenue alert.
+
+    Auth: HMAC-SHA256 over `Paddle-Signature` header, secret in
+    PADDLE_WEBHOOK_SECRET env var. Bad signature → 401, no alert.
+
+    Always returns 200 after a valid signature so Paddle does not retry,
+    even if the event type is unhandled or the Telegram send fails.
+    """
+    import json
+    import logging
+    import os
+    log = logging.getLogger("smb_broker.paddle_webhook")
+
+    body = await request.body()
+    sig_header = request.headers.get("paddle-signature", "")
+    secret = os.getenv("PADDLE_WEBHOOK_SECRET", "")
+
+    from billing.telegram_revenue_alerts import (
+        verify_paddle_signature, handle_paddle_event,
+    )
+
+    if not verify_paddle_signature(sig_header, body, secret):
+        log.warning("paddle_webhook_signature_invalid header_present=%s secret_present=%s",
+                    bool(sig_header), bool(secret))
+        raise HTTPException(status_code=401, detail="Invalid Paddle signature.")
+
+    try:
+        event = json.loads(body.decode("utf-8")) if body else {}
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        log.warning("paddle_webhook_malformed_json err=%s", e)
+        raise HTTPException(status_code=400, detail="Malformed JSON payload.")
+
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
+
+    await handle_paddle_event(event)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

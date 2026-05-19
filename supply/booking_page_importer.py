@@ -106,6 +106,40 @@ _PLATFORM_CHANNELS: dict[BookingPlatform, list[str]] = {
 
 
 # ---------------------------------------------------------------------------
+# Default capability seeds per platform
+#
+# Every imported booking URL gets the generic booking trio so verify_business
+# answers "yes" to obvious questions like capability_to_verify="booking".
+# Platform-specific extras give a richer signal (Doctolib -> medical, etc.).
+# ---------------------------------------------------------------------------
+
+_BASE_BOOKING_CAPABILITIES = ["booking", "appointment", "schedule"]
+
+_PLATFORM_CAPABILITIES: dict[BookingPlatform, list[str]] = {
+    BookingPlatform.CAL_COM:     ["consultation", "meeting"],
+    BookingPlatform.CALENDLY:    ["consultation", "meeting"],
+    BookingPlatform.DOCTOLIB:    ["medical_consultation", "doctor_visit"],
+    BookingPlatform.BOOKSY:      ["salon", "haircut", "beauty"],
+    BookingPlatform.FRESHA:      ["salon", "haircut", "beauty"],
+    BookingPlatform.SETMORE:     [],
+    BookingPlatform.SQUARE:      [],
+    BookingPlatform.OPENTABLE:   ["reservation", "dining"],
+    BookingPlatform.SCHEDULISTA: [],
+    BookingPlatform.ACUITY:      ["consultation"],
+    BookingPlatform.SQUARESPACE: [],
+    BookingPlatform.BOOKMYCITY:  [],
+    BookingPlatform.CUSTOM:      [],
+}
+
+
+def default_capabilities_for(platform: BookingPlatform) -> list[str]:
+    """Capabilities to seed when an imported URL has none supplied by the caller."""
+    extras = _PLATFORM_CAPABILITIES.get(platform, [])
+    # Preserve order, dedupe.
+    return list(dict.fromkeys(_BASE_BOOKING_CAPABILITIES + extras))
+
+
+# ---------------------------------------------------------------------------
 # Import request / result
 # ---------------------------------------------------------------------------
 
@@ -211,6 +245,13 @@ async def import_from_booking_url(req: ImportRequest) -> ImportResult:
     if req.contact_email:
         channels.append("email")
 
+    # Seed booking capabilities so verify_business answers "yes" to obvious
+    # capability names ("booking", "appointment", "schedule") plus any
+    # platform-implied extras (cal.com -> consultation, doctolib -> medical, etc.).
+    # Caller-supplied capabilities take precedence and are merged on top.
+    seeded_caps = default_capabilities_for(platform)
+    capabilities = list(dict.fromkeys(seeded_caps + list(req.capabilities or [])))
+
     entry = SMBEntry(
         smb_id=smb_id,
         name=business_name,
@@ -220,7 +261,7 @@ async def import_from_booking_url(req: ImportRequest) -> ImportResult:
         state="",
         zip_code="",
         country=country_code if country_code != "INTERNATIONAL" else "XX",
-        capabilities=req.capabilities or [],
+        capabilities=capabilities,
         channels_available=list(dict.fromkeys(channels)),  # preserve order, dedupe
         phone=req.contact_phone,
         email=req.contact_email,

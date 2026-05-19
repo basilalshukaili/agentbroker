@@ -9,7 +9,7 @@ Spec: https://spec.modelcontextprotocol.io/
 
 This module exposes a JSON-RPC 2.0 endpoint at /mcp that handles:
   - initialize           → handshake + server capabilities
-  - tools/list           → returns all 12 operations as MCP tools
+  - tools/list           → returns all operations as MCP tools
   - tools/call           → invokes an operation
   - resources/list       → exposes the manifest as a resource
   - resources/read       → returns manifest content
@@ -39,7 +39,7 @@ PROTOCOL_VERSION = "2024-11-05"
 
 
 # ---------------------------------------------------------------------------
-# Tool registry — all 12 operations exposed as MCP tools
+# Tool registry — all operations exposed as MCP tools
 # ---------------------------------------------------------------------------
 
 def _build_tool_list() -> list[dict]:
@@ -106,13 +106,32 @@ def _format_description_for_llm(op: dict) -> str:
     cost = op.get("cost_model", {})
     if cost:
         cost_basis = cost.get("basis", "per_call")
-        cost_amount = cost.get("amount_usd", "varies")
-        parts.append(f"COST: ${cost_amount} {cost_basis}")
+        # Manifest uses `unit_price_usd` on most ops, `amount_usd` on one — accept either.
+        cost_amount = cost.get("unit_price_usd", cost.get("amount_usd"))
+        # Channel- or outcome-variable pricing (send_message, schedule_appointment): point at preview_cost.
+        has_variable = any(
+            k in cost for k in ("voice_premium_usd", "success_bonus_usd", "tiers")
+        )
+        if cost_basis == "free":
+            parts.append("COST: free")
+        elif cost_amount is not None and not has_variable:
+            parts.append(f"COST: ${cost_amount} {cost_basis}")
+        elif cost_amount is not None and has_variable:
+            parts.append(f"COST: from ${cost_amount} {cost_basis} (see preview_cost for exact)")
+        else:
+            parts.append("COST: see preview_cost")
 
     slo = op.get("slo", {})
     if slo:
-        latency = slo.get("p50_latency_ms") or slo.get("max_latency_ms", "varies")
-        parts.append(f"LATENCY: ~{latency}ms")
+        # Manifest uses `p50_ms` on most ops, `p50_latency_ms` on one — accept either.
+        latency = (
+            slo.get("p50_ms")
+            or slo.get("p50_latency_ms")
+            or slo.get("p95_ms")
+            or slo.get("max_latency_ms")
+        )
+        if latency is not None:
+            parts.append(f"LATENCY: ~{latency}ms")
 
     profile = op.get("execution_profile", "sync")
     if profile != "sync":
@@ -201,6 +220,7 @@ class _ParamError(ValueError):
 # ---------------------------------------------------------------------------
 
 async def _h_initialize(params: dict) -> dict:
+    op_count = len(get_full_manifest().get("operations", []))
     return {
         "protocolVersion": PROTOCOL_VERSION,
         "serverInfo": {
@@ -214,7 +234,7 @@ async def _h_initialize(params: dict) -> dict:
             "logging": {},
         },
         "instructions": (
-            "SMB Transaction & Communication Broker. Use tools/list to see all 12 operations. "
+            f"SMB Transaction & Communication Broker. Use tools/list to see all {op_count} operations. "
             "Most operations require an X-Agent-Identity token in the underlying HTTP request. "
             "For state-changing operations (send_message, schedule_appointment), call preview_cost "
             "first to confirm the budget impact."
@@ -329,13 +349,38 @@ async def _dispatch_operation(name: str, args: dict) -> dict:
 
     elif name == "send_message":
         from core.send_message import handle_send_message
-        from core.models import SendMessageRequest, ChannelPreference, MessageContent, RecipientType
+        from core.models import (
+            SendMessageRequest, ChannelPreference, MessageContent,
+            Recipient, RecipientIdType, MessageType,
+        )
+        # Accept either the canonical schema (recipient: {id_type, id_value,
+        # country_code}) or the legacy flat shape (recipient_id + recipient_type
+        # + country_code) so an agent calling with the older surface still
+        # works while the public manifest migrates.
+        if "recipient" in args and isinstance(args["recipient"], dict):
+            recipient = Recipient(**args["recipient"])
+        else:
+            legacy_type = args.get("recipient_type") or "smb_id"
+            # Old "smb" alias maps to canonical "smb_id".
+            if legacy_type == "smb":
+                legacy_type = "smb_id"
+            recipient = Recipient(
+                id_type=RecipientIdType(legacy_type),
+                id_value=args.get("recipient_id", ""),
+                country_code=args.get("country_code"),
+            )
+        content = args.get("content") or args.get("message") or {}
+        if not isinstance(content, dict):
+            content = {"body": str(content)}
         req = SendMessageRequest(
-            recipient_id=args["recipient_id"],
-            recipient_type=RecipientType(args.get("recipient_type", "smb")),
-            channel_preference=ChannelPreference(args.get("channel_preference", "auto")),
-            message=MessageContent(**args["message"]),
-            country_code=args.get("country_code"),
+            recipient=recipient,
+            message_type=MessageType(args.get("message_type") or "transactional"),
+            content=MessageContent(**content),
+            preferred_channel=ChannelPreference(
+                args.get("preferred_channel")
+                or args.get("channel_preference")
+                or "auto"
+            ),
         )
         receipt = await handle_send_message(req)
 

@@ -47,12 +47,26 @@ async def handle_verify_business(
         "last_verified_at": smb.verified_at.isoformat() if smb.verified_at else None,
         "verification_method": "directory_lookup",
     }
+    # On a capability miss, surface what IS valid so the agent can retry without guessing.
+    if not capability_confirmed:
+        result["valid_capabilities"] = list(smb.capabilities)
+
+    if verified:
+        human_message = "Business verified."
+    elif not capability_confirmed:
+        valid = ", ".join(smb.capabilities) if smb.capabilities else "(none registered)"
+        human_message = (
+            f"Capability '{request.capability_to_verify}' not confirmed for this SMB. "
+            f"Valid capabilities: {valid}."
+        )
+    else:
+        human_message = f"Capability '{request.capability_to_verify}' not confirmed for this SMB."
 
     return OutcomeReceipt(
         operation_id=str(uuid.uuid4()),
         status=OperationStatus.SUCCESS if verified else OperationStatus.FAILURE,
         reason_code="verified" if verified else "capability_not_found",
-        human_message="Business verified." if verified else f"Capability '{request.capability_to_verify}' not confirmed for this SMB.",
+        human_message=human_message,
         result=result,
         cost=CostRecord(amount=0.02, currency="USD", basis="per_call"),
         latency_ms=int((time.monotonic() - t0) * 1000),
