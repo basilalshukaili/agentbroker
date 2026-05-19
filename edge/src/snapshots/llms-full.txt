@@ -15,11 +15,11 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ## Discovery
 
-- [Manifest (JSON)](https://agentbroker.qzz.io/manifest)
-- [OpenAPI spec](https://agentbroker.qzz.io/openapi.yaml)
-- [MCP endpoint](https://agentbroker.qzz.io/mcp)
-- [Service health](https://agentbroker.qzz.io/health)
-- [Discovery card](https://agentbroker.qzz.io/.well-known/agent-service)
+- [Manifest (JSON)](https://agent-broker-edge.basil-agent.workers.dev/manifest)
+- [OpenAPI spec](https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml)
+- [MCP endpoint](https://agent-broker-edge.basil-agent.workers.dev/mcp)
+- [Service health](https://agent-broker-edge.basil-agent.workers.dev/health)
+- [Discovery card](https://agent-broker-edge.basil-agent.workers.dev/.well-known/agent-service)
 
 ## Operations
 
@@ -32,7 +32,7 @@ Given criteria (vertical, location, capability, price band, availability window)
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/find_business`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business`
 
 ### verify_business
 
@@ -43,18 +43,18 @@ Confirm that an SMB is real, currently operating, and capable of the requested s
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/verify_business`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/verify_business`
 
 ### send_message
 
-Send an outbound message to an SMB or its customer across channels (SMS, email, chat, voice, push). Channel is abstracted — you specify intent and recipient; the service selects and falls back across channels.
+Send a transactional message that completes a consumer-initiated request — e.g., the user asked their agent to book, reschedule, or follow up on a specific appointment with a specific business. SMS, email, or voice. Marketing, promotional, and unsolicited outbound communication are explicitly out of scope and rejected by the compliance gate.
 
-- **When to use**: Use for outbound business communication: appointment reminders, follow-ups, marketing offers (with confirmed opt-in), transactional messages, or inbound response handling.
-- **When NOT to use**: Do not use for OTP or critical transactional confirmations — use send_transactional_confirmation instead. Do not use for recipients without consent where required (SMS marketing, EU recipients).
+- **When to use**: Use only when a consumer asked the agent to communicate with a named SMB on their behalf, or to acknowledge an inbound message the SMB received. Typical cases: confirming an appointment the agent just booked, asking a salon about a service the user requested, replying to a quote the user solicited.
+- **When NOT to use**: Do NOT use for marketing, promotions, sales prospecting, cold outreach, drip sequences, list-based messaging, or any communication the recipient has not initiated or pre-authorized. Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. The compliance gate rejects messages tagged as marketing and any communication to recipients without verified consent in jurisdictions that require it.
 - **Cost**: $varies per_message
 - **Execution**: sync_fast
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/send_message`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/send_message`
 
 ### capture_lead
 
@@ -65,7 +65,7 @@ Structured intake of a prospect into an SMB's funnel with validation, enrichment
 - **Cost**: $varies per_lead
 - **Execution**: sync_fast
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/capture_lead`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/capture_lead`
 
 ### schedule_appointment
 
@@ -76,7 +76,7 @@ Availability lookup, hold, confirm, reschedule, or cancel appointments with an S
 - **Cost**: $varies per_booking_attempt
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/schedule_appointment`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/schedule_appointment`
 
 ### send_transactional_confirmation
 
@@ -87,7 +87,7 @@ Idempotent transactional messages: OTPs, booking confirmations, payment receipts
 - **Cost**: $varies per_message
 - **Execution**: sync_fast
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/send_transactional_confirmation`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/send_transactional_confirmation`
 
 ### handle_inbound
 
@@ -98,7 +98,7 @@ Receive, classify, and route inbound messages on behalf of an SMB. Classifies in
 - **Cost**: $varies per_inbound
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/handle_inbound`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/handle_inbound`
 
 ### escalate_to_human
 
@@ -109,7 +109,7 @@ Hand off an in-flight task to a human operator with a full context bundle: trans
 - **Cost**: $varies per_escalation
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/escalate_to_human`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/escalate_to_human`
 
 ### get_status
 
@@ -120,7 +120,7 @@ Query the current state of any in-flight async operation by operation_id.
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/get_status`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/get_status`
 
 ### get_outcome
 
@@ -131,7 +131,7 @@ Retrieve the final OutcomeReceipt for a completed operation.
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/get_outcome`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/get_outcome`
 
 ### preview_cost
 
@@ -142,7 +142,7 @@ Return an expected cost estimate, latency estimate, and success-probability esti
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/preview_cost`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/preview_cost`
 
 ### self_test
 
@@ -153,7 +153,7 @@ Live capability probe that verifies the service is healthy, each claimed operati
 - **Cost**: $varies free
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/self_test`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/self_test`
 
 ### import_booking_url
 
@@ -164,15 +164,15 @@ Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTa
 - **Cost**: $0.005 per_call
 - **Execution**: sync
 - **Latency**: ~600ms
-- **Endpoint**: `POST https://agentbroker.qzz.io/ops/import_booking_url`
+- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/import_booking_url`
 
 ## Authentication
 
-All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://agentbroker.qzz.io/auth/token`. Scopes include allowed operations, budget cap, and verticals.
+All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://agent-broker-edge.basil-agent.workers.dev/auth/token`. Scopes include allowed operations, budget cap, and verticals.
 
 ## Compliance
 
-See [compliance docs](https://agentbroker.qzz.io/docs/compliance) for full jurisdiction matrix. Every outbound communication is gated by `compliance/pre_check` — this cannot be bypassed.
+See [compliance docs](https://agent-broker-edge.basil-agent.workers.dev/docs/compliance) for full jurisdiction matrix. This service only completes consumer-initiated transactional flows; marketing, promotional, and unsolicited outbound communication are out of scope and rejected by `compliance/pre_check`. The gate cannot be bypassed.
 
 ## Contact
 
@@ -578,16 +578,18 @@ basilalshukaili@gmail.com
     },
     {
       "name": "send_message",
-      "description": "Send an outbound message to an SMB or its customer across channels (SMS, email, chat, voice, push). Channel is abstracted \u2014 you specify intent and recipient; the service selects and falls back across channels.",
-      "when_to_use": "Use for outbound business communication: appointment reminders, follow-ups, marketing offers (with confirmed opt-in), transactional messages, or inbound response handling.",
-      "when_not_to_use": "Do not use for OTP or critical transactional confirmations \u2014 use send_transactional_confirmation instead. Do not use for recipients without consent where required (SMS marketing, EU recipients).",
+      "description": "Send a transactional message that completes a consumer-initiated request \u2014 e.g., the user asked their agent to book, reschedule, or follow up on a specific appointment with a specific business. SMS, email, or voice. Marketing, promotional, and unsolicited outbound communication are explicitly out of scope and rejected by the compliance gate.",
+      "when_to_use": "Use only when a consumer asked the agent to communicate with a named SMB on their behalf, or to acknowledge an inbound message the SMB received. Typical cases: confirming an appointment the agent just booked, asking a salon about a service the user requested, replying to a quote the user solicited.",
+      "when_not_to_use": "Do NOT use for marketing, promotions, sales prospecting, cold outreach, drip sequences, list-based messaging, or any communication the recipient has not initiated or pre-authorized. Do NOT use for OTPs or critical transactional confirmations \u2014 use send_transactional_confirmation. The compliance gate rejects messages tagged as marketing and any communication to recipients without verified consent in jurisdictions that require it.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
-        "US SMS marketing requires prior express written consent (TCPA) and active 10DLC campaign registration.",
-        "EU/UK recipients require explicit GDPR lawful basis and prior opt-in for marketing messages.",
-        "Canada requires CASL express consent for commercial electronic messages.",
-        "Voice channel to US recipients requires prior express consent for autodialed/prerecorded calls (TCPA).",
-        "All commercial email requires functional unsubscribe link (CAN-SPAM)."
+        "Permitted message types: transactional, reminder, follow_up, notification. Marketing is rejected at schema validation.",
+        "Every message must correspond to a consumer-initiated request; the agent must be acting on behalf of the end-user named in the request, not a third party trying to reach them.",
+        "US SMS requires the recipient have an existing relationship with the SMB or have explicitly requested the contact (TCPA).",
+        "EU/UK recipients require an explicit GDPR lawful basis tied to the user's request (contract or freely-given consent).",
+        "Canadian recipients require CASL implied or express consent tied to the underlying transaction.",
+        "Voice calls to US recipients require prior express consent for autodialed/prerecorded calls (TCPA).",
+        "Every commercial email contains a functional unsubscribe link (CAN-SPAM)."
       ],
       "input_schema": {
         "type": "object",
@@ -624,9 +626,9 @@ basilalshukaili@gmail.com
           },
           "message_type": {
             "type": "string",
+            "description": "Intent tag \u2014 must match the consumer-initiated transactional flow being completed. 'marketing' is not a permitted value; messages tagged as marketing are rejected by the compliance gate.",
             "enum": [
               "transactional",
-              "marketing",
               "reminder",
               "follow_up",
               "notification"
@@ -717,23 +719,25 @@ basilalshukaili@gmail.com
           }
         },
         {
-          "label": "Marketing SMS blocked \u2014 no consent",
+          "label": "Consumer asked agent to follow up on a quote",
           "input": {
             "recipient": {
-              "id_type": "phone",
-              "id_value": "+14045550200",
+              "id_type": "smb_id",
+              "id_value": "smb_044",
               "country_code": "US"
             },
-            "message_type": "marketing",
+            "message_type": "follow_up",
             "content": {
-              "body": "20% off this week only!"
+              "body": "Hi \u2014 checking back on the plumbing quote I requested yesterday for Maple St. Could you share availability for Thursday?"
             }
           },
           "output": {
-            "status": "failure",
-            "reason_code": "compliance_violation",
-            "human_message": "Recipient has not opted in to marketing SMS. Obtain TCPA-compliant consent before sending marketing messages to this number.",
-            "retriable": false
+            "status": "success",
+            "channel_used": "sms:twilio",
+            "cost": {
+              "amount": 0.05,
+              "currency": "USD"
+            }
           }
         },
         {
@@ -838,13 +842,13 @@ basilalshukaili@gmail.com
               },
               "consent_record_id": {
                 "type": "string",
-                "description": "ID of consent record if marketing opt-in obtained"
+                "description": "Optional ID of a consent record proving the prospect asked to be contacted (e.g., they filled an SMB's intake form or requested a quote). Required when downstream send_message calls are anticipated."
               }
             }
           },
           "source": {
             "type": "string",
-            "description": "Channel or campaign that sourced this lead"
+            "description": "Where the consumer-initiated request originated (e.g., 'consumer_request', 'inbound_quote_form', 'agent_referral_from_find_business')."
           }
         }
       },
@@ -2399,9 +2403,9 @@ basilalshukaili@gmail.com
     },
     "message_type": {
       "type": "string",
+      "description": "Intent tag \u2014 must match the consumer-initiated transactional flow being completed. 'marketing' is not a permitted value; messages tagged as marketing are rejected by the compliance gate.",
       "enum": [
         "transactional",
-        "marketing",
         "reminder",
         "follow_up",
         "notification"
@@ -2485,23 +2489,25 @@ basilalshukaili@gmail.com
 #### Example 2: 
 ```json
 {
-  "label": "Marketing SMS blocked \u2014 no consent",
+  "label": "Consumer asked agent to follow up on a quote",
   "input": {
     "recipient": {
-      "id_type": "phone",
-      "id_value": "+14045550200",
+      "id_type": "smb_id",
+      "id_value": "smb_044",
       "country_code": "US"
     },
-    "message_type": "marketing",
+    "message_type": "follow_up",
     "content": {
-      "body": "20% off this week only!"
+      "body": "Hi \u2014 checking back on the plumbing quote I requested yesterday for Maple St. Could you share availability for Thursday?"
     }
   },
   "output": {
-    "status": "failure",
-    "reason_code": "compliance_violation",
-    "human_message": "Recipient has not opted in to marketing SMS. Obtain TCPA-compliant consent before sending marketing messages to this number.",
-    "retriable": false
+    "status": "success",
+    "channel_used": "sms:twilio",
+    "cost": {
+      "amount": 0.05,
+      "currency": "USD"
+    }
   }
 }
 ```
@@ -2583,13 +2589,13 @@ basilalshukaili@gmail.com
         },
         "consent_record_id": {
           "type": "string",
-          "description": "ID of consent record if marketing opt-in obtained"
+          "description": "Optional ID of a consent record proving the prospect asked to be contacted (e.g., they filled an SMB's intake form or requested a quote). Required when downstream send_message calls are anticipated."
         }
       }
     },
     "source": {
       "type": "string",
-      "description": "Channel or campaign that sourced this lead"
+      "description": "Where the consumer-initiated request originated (e.g., 'consumer_request', 'inbound_quote_form', 'agent_referral_from_find_business')."
     }
   }
 }
