@@ -177,25 +177,79 @@ def validate_token(token: str) -> ValidationResult:
     if claims.get("exp", 0) < time.time():
         return ValidationResult(valid=False, error="Token has expired.")
 
-    # Build AgentIdentity
-    scope_raw = claims.get("scope", {})
-    principal_raw = claims.get("principal", {})
+    # Build AgentIdentity. The pydantic models live in core/models.py and
+    # have specific field shapes that don't match the JWT claim keys 1:1 —
+    # bridge the names here so a valid token always produces a usable
+    # identity (this is the bug a paid customer would hit on their first
+    # authenticated call).
+    from datetime import datetime, timezone
+    from core.models import Vertical
+
+    scope_raw = claims.get("scope", {}) or {}
+    principal_raw = claims.get("principal", {}) or {}
+
+    # JWT claim is `budget_cap_usd`; pydantic field is `budget_cap`.
+    budget_cap = float(
+        scope_raw.get("budget_cap_usd",
+                      scope_raw.get("budget_cap", 0.0)) or 0.0
+    )
+
+    # JWT claim verticals are strings or ["*"]. The model expects
+    # Optional[list[Vertical]]. Drop unknowns + treat "*" as None (= all).
+    raw_verticals = scope_raw.get("verticals") or []
+    typed_verticals: Optional[list[Vertical]]
+    if not raw_verticals or "*" in raw_verticals:
+        typed_verticals = None
+    else:
+        typed_verticals = []
+        for v in raw_verticals:
+            try:
+                typed_verticals.append(Vertical(v))
+            except ValueError:
+                # silently drop unknown verticals — better than 401-ing the
+                # whole token because of one stale enum value
+                pass
+        if not typed_verticals:
+            typed_verticals = None
 
     scope = AgentScope(
         operations=scope_raw.get("operations", ["*"]),
-        budget_cap_usd=scope_raw.get("budget_cap_usd", 0.0),
-        verticals=scope_raw.get("verticals", ["*"]),
+        budget_cap=budget_cap,
+        verticals=typed_verticals,
     )
-    principal = Principal(
-        id=principal_raw.get("id", "unknown"),
-        type=principal_raw.get("type", "system"),
+
+    # JWT claim has principal.type ∈ {"system", "human"} from the issuance
+    # path. The PrincipalKind enum only allows "consumer" / "business".
+    # Map system→business, human→consumer. If the principal is missing
+    # entirely (older tokens), default to None — AgentIdentity.principal is
+    # Optional so that's still valid.
+    principal_kind_raw = principal_raw.get("type") or principal_raw.get("kind")
+    if principal_kind_raw == "human":
+        principal_kind_raw = "consumer"
+    elif principal_kind_raw == "system":
+        principal_kind_raw = "business"
+
+    principal: Optional[Principal]
+    if principal_raw.get("id") and principal_kind_raw in {"consumer", "business"}:
+        from core.models import PrincipalKind
+        principal = Principal(
+            kind=PrincipalKind(principal_kind_raw),
+            id=str(principal_raw["id"]),
+        )
+    else:
+        principal = None
+
+    # JWT exp is epoch seconds; model expects a datetime.
+    expiry_dt = datetime.fromtimestamp(
+        float(claims.get("exp", 0.0)),
+        tz=timezone.utc,
     )
+
     identity = AgentIdentity(
         agent_id=claims["agent_id"],
         principal=principal,
         scope=scope,
-        issued_at=claims.get("iat", 0.0),
-        expires_at=claims.get("exp", 0.0),
+        expiry=expiry_dt,
         issuer=claims.get("iss", "unknown"),
     )
     return ValidationResult(valid=True, identity=identity)
@@ -221,7 +275,15 @@ def check_operation_allowed(identity: AgentIdentity, operation: str) -> bool:
 
 def check_vertical_allowed(identity: AgentIdentity, vertical: str) -> bool:
     verts = identity.scope.verticals
-    return "*" in verts or vertical in verts
+    # None or empty = unrestricted (matches the JWT "*" sentinel).
+    if not verts:
+        return True
+    # `verts` are now Vertical enum members (validate_token typed them);
+    # compare against both the value and the enum.
+    return any(
+        (getattr(v, "value", v) == vertical) or (v == vertical)
+        for v in verts
+    )
 
 
 # ---------------------------------------------------------------------------
