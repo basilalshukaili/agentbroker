@@ -47,14 +47,13 @@ _HOME_LIVE_JS = """
 def render_home() -> str:
     body = """
 <header class="hero">
-  <h1>Your AI agent books appointments on your behalf.</h1>
+  <h1>The agent-callable layer for SMB transactions.</h1>
   <p class="lead">
-    Agent Broker is a consumer-side booking tool. <strong>You</strong> ask your AI agent
-    (Claude, Cursor, Continue, or any MCP-aware client) to book or follow up on an
-    appointment with a specific business you named &mdash; using a booking URL you gave it
-    (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity,
-    Schedulista, Squarespace, BookMyCity). The agent completes the transaction. The
-    service is <strong>not</strong> a marketing, prospecting, or outbound-campaign platform.
+    Agent Broker is the MCP server that lets autonomous AI agents (Claude, Cursor, Continue,
+    any x402-aware client) actually <strong>do business</strong> with the long tail of small
+    and mid-sized businesses worldwide &mdash; finding them, verifying them, booking
+    appointments, sending messages, escalating to a human when stuck &mdash; with full
+    TCPA / GDPR / CASL / PDPL compliance enforced at runtime by a non-bypassable gate.
   </p>
   <div class="cta">
     <a class="btn btn-primary" href="/docs">Browse the live API &rarr;</a>
@@ -62,41 +61,43 @@ def render_home() -> str:
     <a class="btn btn-secondary" href="/pricing">Pricing</a>
   </div>
   <p style="margin-top:36px; font-size:14px; color:var(--text-muted);">
-    Example: a consumer types into their AI agent &mdash;<br>
+    Example: an agent gets a real consumer request &mdash;<br>
     <code style="display:inline-block; margin-top:8px; padding:8px 14px; background:var(--surface-2); border-radius:6px; color:var(--text);">
       "Book me a haircut at https://cal.com/jane-salon next Tuesday at 3pm"
     </code><br>
     <span style="display:inline-block; margin-top:14px;">
-      The agent uses Agent Broker to import the URL and complete the booking. The
-      consumer is the originator; the SMB is the consumer's named target.
+      Or an SMB asks its agent to text its opted-in customers about a sale. Or a
+      customer texts the salon "STOP" &mdash; our <code class="inline">handle_inbound</code>
+      classifies the opt-out and records it in the consent store automatically.
+      <strong>The compliance gate decides what's allowed, not the marketing copy.</strong>
     </span>
   </p>
 </header>
 
 <section class="section" id="scope">
-  <h2>What this service is, and what it is not.</h2>
+  <h2>Five message types, four channels, 22 jurisdictions.</h2>
   <div class="grid grid-3">
     <div class="card">
-      <h3 style="color:var(--accent);">&#10003; In scope</h3>
-      <p>Consumer-initiated booking, rescheduling, cancellation, and follow-up
-         on a transaction the consumer named. Booking confirmations to the
-         consumer. Replies to messages the SMB sent the consumer first.</p>
+      <h3 style="color:var(--accent);">What we facilitate</h3>
+      <p>Consumer-initiated bookings. SMB-initiated messages to opted-in customers
+         (marketing, reminders, transactional). Voice calls with two-party recording
+         consent. Cold-start discovery via <code class="inline">import_booking_url</code>.
+         Inbound classification + automatic STOP / opt-out handling.</p>
     </div>
     <div class="card">
-      <h3 style="color:#fca5a5;">&#10007; Out of scope</h3>
-      <p>Marketing messages, promotional offers, cold outreach, sales prospecting,
-         drip campaigns, list-based messaging, A/B test sends, lead-gen blasts.
-         The compliance gate rejects these at the API layer; the public schema
-         does not even permit a <code class="inline">marketing</code> message
-         type.</p>
+      <h3 style="color:#fca5a5;">What the gate rejects</h3>
+      <p>Marketing to recipients without a verified
+         <code class="inline">consent_record_id</code>. Bulk / list-based / drip campaigns.
+         Cold outreach to non-opted-in numbers. A/B test sends. Spam by any definition.
+         The gate runs synchronously before every send and returns a structured
+         <code class="inline">compliance_violation</code> receipt on rejection.</p>
     </div>
     <div class="card">
       <h3>How enforcement works</h3>
-      <p><a href="/compliance/check">/compliance/check</a> runs before every
-         outbound channel call. TCPA, GDPR, CASL, PDPL rules across 22
-         jurisdictions. A request that violates the gate returns a structured
-         <code class="inline">compliance_violation</code> receipt and never
-         reaches a carrier.</p>
+      <p><a href="/compliance/check">/compliance/check</a> runs before every outbound
+         channel call. TCPA, GDPR, CASL, PDPL rules across 22 jurisdictions, including
+         GCC (UAE, SA, OM, QA, KW, BH). A request that violates returns a structured
+         receipt and never reaches a carrier.</p>
     </div>
   </div>
 </section>
@@ -234,18 +235,17 @@ def render_home() -> str:
 def render_pricing() -> str:
     body = """
 <header class="hero">
-  <h1>Pricing for consumer-initiated bookings.</h1>
+  <h1>Pay per call. No subscription required.</h1>
   <p class="lead">
-    You pay per operation an AI agent completes <strong>on behalf of a named
-    consumer</strong> &mdash; finding a business the consumer asked about,
-    confirming a booking they requested, following up on a quote they
-    solicited. Free tier covers low-volume consumer use. Paid tiers fit
-    agent platforms serving many users. Marketing, promotional, and
-    unsolicited outbound use cases are not sold here at any price.
+    Two rails. <strong>AI agents pay per-call in USDC on Base</strong> via x402
+    micropayments &mdash; no signup, no card, no account. <strong>Human developers</strong>
+    can email us for a metered plan with higher quota + SLA. Reads are free on both
+    rails; writes are a few cents each. The compliance gate, not the price page,
+    decides what gets sent &mdash; marketing requires verified opt-in regardless of plan.
   </p>
   <div class="cta" style="margin-top:8px;">
-    <a class="btn btn-primary" href="/checkout?plan=developer">Get started &mdash; Developer $49/mo</a>
-    <a class="btn btn-secondary" href="mailto:""" + SUPPORT_EMAIL + """?subject=Enterprise%20plan%20inquiry">Talk to us &mdash; Enterprise</a>
+    <a class="btn btn-primary" href="/docs">See the live API &rarr;</a>
+    <a class="btn btn-secondary" href="mailto:""" + SUPPORT_EMAIL + """?subject=Enterprise%20inquiry">Enterprise &mdash; let's talk</a>
   </div>
 </header>
 
@@ -336,89 +336,83 @@ def render_checkout(plan: str | None) -> str:
     p = _PLAN_PRICES[plan_key]
     body = f"""
 <header class="hero">
-  <h1>Subscribe — {p['label']} plan</h1>
+  <h1>How you pay</h1>
   <p class="lead">
-    ${p['monthly_usd']} per month. Includes {p['ops']} agent operations. Billed by
-    <strong>Paddle</strong> as Merchant of Record &mdash; Paddle handles VAT, sales tax,
-    and chargebacks on our behalf. Cancel anytime from the customer portal.
+    Two rails, both live. <strong>If you're an AI agent</strong>, you don't need this
+    page &mdash; just call <code class="inline">POST /mcp</code>. We respond with
+    HTTP 402 + payment requirements; your x402 client auto-pays in USDC on Base.
+    <strong>If you're a human developer</strong> building an agent product, email us
+    and we'll set up a metered plan with higher quota and SLA.
   </p>
 </header>
 
 <section class="section">
-  <h2>What you are buying</h2>
+  <h2>Agent payment (x402, USDC on Base)</h2>
   <p style="color:var(--text-muted);">
-    A monthly subscription to {BRAND} for AI agents acting on behalf of consumers
-    who explicitly request a booking, reschedule, or follow-up with a specific
-    business. <strong>This is a consumer-side booking tool</strong> &mdash; it is
-    not sold for marketing, prospecting, or unsolicited outreach. See our
-    <a href="/terms">Terms</a> §6 for the full list of prohibited uses.
+    The primary rail. No signup, no card, no account. Your agent's wallet pays per call.
   </p>
-
-  <h2 style="margin-top:32px;">How payment works</h2>
   <ol style="color:var(--text-muted);">
-    <li>Click <em>Continue to Paddle</em>. The Paddle Checkout overlay opens
-        directly from this page.</li>
-    <li>Paddle collects payment details on its own PCI-DSS Level 1 infrastructure.
-        We never see your card number.</li>
-    <li>On success, Paddle returns a signed receipt and provisions your API
-        key. The key arrives by email within 60 seconds.</li>
-    <li>Recurring charges run monthly until you cancel. Refunds follow our
-        <a href="/refund">Refund Policy</a>.</li>
+    <li><code class="inline">POST /mcp</code> with a <code class="inline">tools/call</code>
+        for any write operation (send_message, schedule_appointment, capture_lead,
+        send_transactional_confirmation, handle_inbound, escalate_to_human, import_booking_url).</li>
+    <li>If no <code class="inline">X-PAYMENT-PROOF</code> header is present, the worker
+        responds with <strong>HTTP 402</strong> and a body containing
+        <code class="inline">payment_requirements</code> (recipient address, amount in USDC
+        atomic units, chain=base, currency contract, single-use nonce, 10-min expiry).</li>
+    <li>Your x402 client (Coinbase Agent Kit, custom wallet, etc.) sends the USDC payment
+        on Base and retries the request with
+        <code class="inline">X-PAYMENT-PROOF: &lt;tx-hash&gt;</code> +
+        <code class="inline">X-PAYMENT-NONCE: &lt;nonce&gt;</code>.</li>
+    <li>We verify the on-chain transfer (6 checks: exists, confirmed, USDC Transfer event,
+        amount &ge; required, &le; 10 min old, nonce unspent) and proxy the tool call.</li>
+    <li>All reads (<code class="inline">find_business</code>, <code class="inline">verify_business</code>,
+        <code class="inline">get_status</code>, <code class="inline">get_outcome</code>,
+        <code class="inline">preview_cost</code>, <code class="inline">self_test</code>) are
+        <strong>free</strong> &mdash; no x402 gate, no payment required.</li>
   </ol>
-
-  <div class="cta" style="margin-top:28px;">
-    <button class="btn btn-primary" id="paddle-checkout-btn" disabled>
-      Continue to Paddle &rarr;
-    </button>
-    <a class="btn btn-secondary" href="mailto:{SUPPORT_EMAIL}?subject=Subscribe%20to%20{p['label']}%20plan">
-      Email {SUPPORT_EMAIL} to subscribe
-    </a>
-  </div>
-
-  <p style="margin-top:18px;font-size:13px;color:var(--text-muted);">
-    The Paddle Checkout button activates after our Paddle Vendor account
-    completes review. While review is pending, email
-    <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> with the plan name and
-    we will issue a manual invoice + activate your account within one business
-    day.
+  <p style="margin-top:18px;color:var(--text-muted);">
+    Prices per write op: <code class="inline">$0.02</code> (send_message, send_transactional_confirmation),
+    <code class="inline">$0.03</code> (handle_inbound), <code class="inline">$0.05</code> (capture_lead),
+    <code class="inline">$0.005</code> (import_booking_url), <code class="inline">$0.15 + $0.35</code>
+    (schedule_appointment attempt + success), <code class="inline">$0.20</code> (escalate_to_human).
+    Total cost of a full booking flow: ~$0.19.
   </p>
 </section>
 
 <section class="section">
-  <h2>Your rights</h2>
-  <ul style="color:var(--text-muted);">
-    <li><strong>14-day refund</strong> on the initial subscription if you have
-        used fewer than 100 paid operations. See <a href="/refund">Refund Policy</a>.</li>
-    <li><strong>Cancel anytime</strong> from the customer portal Paddle emails
-        you after first charge.</li>
-    <li><strong>Privacy.</strong> We never store your card number. Paddle does;
-        we only receive a redacted token. See <a href="/privacy">Privacy Policy</a>.</li>
-    <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer
-        statutory rights are preserved. See <a href="/terms">Terms</a>.</li>
-  </ul>
+  <h2>Developer plan (fiat, contact us)</h2>
+  <p style="color:var(--text-muted);">
+    Building an agent product and want a metered plan with monthly invoicing, higher
+    rate limits, and a human SLA? Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
+    with your use case. {p['label']} tier nominally ${p['monthly_usd']}/month for {p['ops']} ops;
+    we tailor based on your traffic shape.
+  </p>
+  <div class="cta" style="margin-top:18px;">
+    <a class="btn btn-primary" href="mailto:{SUPPORT_EMAIL}?subject={p['label']}%20plan%20inquiry">
+      Email {SUPPORT_EMAIL}
+    </a>
+    <a class="btn btn-secondary" href="/docs">Or just try the API directly &rarr;</a>
+  </div>
 </section>
 
-<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
-<script>
-  // Paddle Checkout will be enabled once the Paddle Vendor account is approved
-  // and a price_id is configured. Until then the button is disabled and the
-  // mailto fallback is the live subscription path.
-  (function () {{
-    var vendorId = ""; // set after Paddle approval
-    var priceId  = ""; // set per plan after Paddle product is created
-    if (!window.Paddle || !vendorId || !priceId) return;
-    Paddle.Setup({{ token: vendorId }});
-    var btn = document.getElementById("paddle-checkout-btn");
-    if (!btn) return;
-    btn.disabled = false;
-    btn.addEventListener("click", function () {{
-      Paddle.Checkout.open({{ items: [{{ priceId: priceId, quantity: 1 }}] }});
-    }});
-  }})();
-</script>
+<section class="section">
+  <h2>Your rights either way</h2>
+  <ul style="color:var(--text-muted);">
+    <li><strong>Compliance gate.</strong> Every outbound message routes through
+        <a href="/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
+        PDPL across 22 jurisdictions. Marketing without a verified consent_record_id
+        is rejected at runtime regardless of how you paid.</li>
+    <li><strong>14-day refund</strong> on metered developer plans. See <a href="/refund">Refund Policy</a>.
+        x402 payments are per-call and non-refundable once verified on-chain.</li>
+    <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
+        See <a href="/privacy">Privacy Policy</a>.</li>
+    <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
+        rights are preserved. See <a href="/terms">Terms</a>.</li>
+  </ul>
+</section>
 """
-    return page(f"Subscribe — {p['label']}", body, active="pricing",
-                description=f"Subscribe to the {p['label']} plan. Paid by Paddle as Merchant of Record. Consumer-initiated booking transactions only.")
+    return page(f"How you pay", body, active="pricing",
+                description=f"Two payment rails: x402 micropayments for AI agents (primary), metered developer plans for human developers. {BRAND} does not require human signup for agents to pay.")
 
 
 # ---------------------------------------------------------------------------
@@ -436,17 +430,19 @@ def render_terms() -> str:
   If you do not agree, do not use the Service.</p>
 
   <h2>2. Service description &amp; scope</h2>
-  <p>The Service is a Model Context Protocol (MCP) server that lets an
-  AI agent complete <strong>consumer-initiated</strong> booking and
-  transactional tasks with small and mid-sized businesses on behalf of
-  an identifiable end-user (the &ldquo;Consumer&rdquo;). Every operation
-  the Service performs must trace back to a specific Consumer request
-  naming a specific business.</p>
-  <p>The Service is <strong>not</strong> a marketing platform, lead-list
-  vendor, prospecting tool, cold-outreach service, sequencer, autoresponder,
-  campaign sender, A/B testing tool, or any other form of unsolicited
-  communication infrastructure. It may not be used to contact recipients
-  who have not initiated or pre-authorized the communication.</p>
+  <p>The Service is a Model Context Protocol (MCP) server that lets AI agents
+  discover, verify, communicate with, schedule with, and transact with small
+  and mid-sized businesses. It supports five message types (transactional,
+  marketing, reminder, follow_up, notification), four channels (SMS, email,
+  voice, web form), and twelve booking platforms (Cal.com, Calendly, Doctolib,
+  Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace,
+  BookMyCity).</p>
+  <p>Every outbound communication routes through a non-bypassable compliance
+  gate that enforces TCPA / GDPR / CASL / PDPL rules across 22 jurisdictions.
+  Marketing messages require a verified opt-in <code>consent_record_id</code>
+  at send time &mdash; without one, the gate rejects the send with a
+  structured <code>compliance_violation</code> receipt that never reaches a
+  carrier. The gate, not the API surface, is the safety mechanism.</p>
   <p>The Service is offered on an &ldquo;as-is&rdquo; basis with no
   implied warranties.</p>
 
@@ -474,27 +470,22 @@ def render_terms() -> str:
   <p>The following uses are <strong>strictly prohibited</strong> and will result
   in immediate suspension of your account:</p>
   <ul>
-    <li><strong>Marketing or promotional messaging</strong> &mdash; advertising
-        a product, service, offer, discount, or event to a recipient. The
-        Service's compliance gate rejects messages tagged
-        <code>marketing</code> and the public API schema does not even permit
-        that value.</li>
-    <li><strong>Unsolicited outbound communication of any kind</strong>
-        &mdash; cold SMS, cold email, cold voice calls, mass outreach, drip
-        sequences, cadenced follow-ups not requested by the recipient,
-        list-based campaigns, A/B test sends, or contacting any recipient
-        the Consumer has not specifically named in their request.</li>
-    <li><strong>Sales prospecting or lead generation</strong> &mdash; using
-        the Service to find businesses or individuals for the purpose of
-        pitching them, regardless of the channel used to make the pitch.</li>
-    <li><strong>Acting on behalf of a third party rather than an end-Consumer</strong>
-        &mdash; for example, an SMB cannot use the Service to message its own
-        prospects; only a Consumer who has independently chosen to engage that
-        SMB may direct the agent to communicate.</li>
+    <li><strong>Marketing without recorded opt-in consent.</strong> Every
+        marketing message must reference a valid
+        <code>consent_record_id</code> in the consent_store; the compliance
+        gate verifies the consent at send time and rejects any send tagged
+        <code>marketing</code> that does not.</li>
+    <li><strong>Bulk, list-based, A/B test, or drip outbound communication</strong>
+        to recipients who did not request that specific outreach. We are a
+        per-call transaction broker, not a campaign sender.</li>
+    <li><strong>Cold outreach</strong> &mdash; contacting any recipient who has
+        no prior relationship with the SMB and has not initiated or
+        pre-authorized the communication.</li>
+    <li><strong>Sales prospecting</strong> &mdash; using the Service to find
+        businesses or individuals for the purpose of pitching them.</li>
     <li>Bulk communications (&ldquo;spam&rdquo;) by any definition.</li>
     <li>Harassing, threatening, or defrauding any person or business.</li>
-    <li>Impersonating another person or entity, including misrepresenting the
-        identity of the Consumer on whose behalf the agent acts.</li>
+    <li>Impersonating another person or entity.</li>
     <li>Reverse-engineering, scraping, or rate-abusing the Service.</li>
     <li>Circumventing or attempting to circumvent the compliance pre-check.</li>
     <li>Any use that violates applicable telecommunications, privacy, or
