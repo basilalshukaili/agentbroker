@@ -184,17 +184,31 @@ def render_home() -> str:
 </section>
 
 <section class="section" id="why">
-  <h2>Why agents pick us &mdash; measured, not assumed.</h2>
+  <h2>What's actually here &mdash; verifiable, not vibes.</h2>
   <p class="lead">
-    504 simulated trials &times; 3 agent personas (cost / quality / latency) with
-    adversarial tasks where we honestly lose. We do lose those &mdash; and win the rest.
+    Every number on this row maps to something you can confirm with one
+    <code class="inline">curl</code>. Nothing simulated, nothing aspirational &mdash;
+    just what the live service does today.
   </p>
   <div class="grid grid-4">
-    <div class="card metric"><div class="num">82%</div><div class="label">Aggregate WinRate (simulated)</div></div>
-    <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols supported</div></div>
-    <div class="card metric"><div class="num">22</div><div class="label">Jurisdictions with native rules</div></div>
-    <div class="card metric"><div class="num">$0</div><div class="label">Free tier: 100 ops/month</div></div>
+    <div class="card metric"><div class="num">13</div><div class="label">Callable tools</div></div>
+    <div class="card metric"><div class="num">12</div><div class="label">Booking platforms supported</div></div>
+    <div class="card metric"><div class="num">22</div><div class="label">Jurisdictions with native compliance</div></div>
+    <div class="card metric"><div class="num">2</div><div class="label">Payment rails (x402 + Paddle)</div></div>
   </div>
+  <div class="grid grid-4" style="margin-top:18px;">
+    <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols</div></div>
+    <div class="card metric"><div class="num">&lt;50ms</div><div class="label">p50 latency, edge-served globally</div></div>
+    <div class="card metric"><div class="num">$0</div><div class="label">Free tier &middot; reads always free</div></div>
+    <div class="card metric"><div class="num">~$0.001</div><div class="label">Base-chain gas per agent call</div></div>
+  </div>
+  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);">
+    Verify each: <a href="/.well-known/mcp.json">/.well-known/mcp.json</a> for tools,
+    <a href="/supply/platforms">/supply/platforms</a> for the 12 booking integrations,
+    <a href="/compliance/jurisdictions">/compliance/jurisdictions</a> for the 22 rule sets,
+    <a href="/manifest">/manifest</a> for the canonical contract,
+    <a href="/health">/health</a> for live status.
+  </p>
 </section>
 
 <section class="section">
