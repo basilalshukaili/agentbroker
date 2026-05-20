@@ -155,6 +155,20 @@
         "type": "object",
         "properties": {}
       }
+    },
+    {
+      "name": "import_booking_url",
+      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id usable immediately by schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["booking_url"],
+        "properties": {
+          "booking_url": {"type": "string", "format": "uri", "description": "Any URL on a supported booking platform."},
+          "business_name": {"type": "string"},
+          "vertical": {"type": "string", "enum": ["personal_services", "home_services", "professional_services"]},
+          "country_code": {"type": "string", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."}
+        }
+      }
     }
   ]
 }

@@ -172,7 +172,7 @@ def render_home() -> str:
     <div class="card"><h3>find_business</h3><p>Search verified SMBs by vertical + location + capability. <code>~$0.01</code></p></div>
     <div class="card"><h3>verify_business</h3><p>Confirm an SMB's capabilities before committing. <code>~$0.02</code></p></div>
     <div class="card"><h3>send_message</h3><p>Consumer-initiated transactional message (SMS / email / voice premium). <code>~$0.05</code> base</p></div>
-    <div class="card"><h3>capture_lead</h3><p>Structured intake when a consumer asks to be contacted by an SMB. <code>~$0.10</code></p></div>
+    <div class="card"><h3>capture_lead</h3><p>Structured intake when a consumer asks to be contacted by an SMB. <code>~$0.05</code></p></div>
     <div class="card"><h3>schedule_appointment</h3><p>Direct API or voice fallback. <code>$0.25 attempt + $0.75 on confirmed booking</code></p></div>
     <div class="card"><h3>send_transactional_confirmation</h3><p>Booking / receipt / reminder — reliable delivery, OTP-grade. <code>~$0.03</code></p></div>
     <div class="card"><h3>handle_inbound</h3><p>Classify and route inbound messages an SMB received. <code>~$0.08</code></p></div>

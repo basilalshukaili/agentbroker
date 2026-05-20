@@ -51,12 +51,25 @@ async def handle_find_business(
             ]
             recovery_payload = {
                 "operation": "import_booking_url",
+                "instructions": (
+                    "Ask the user for ANY public booking URL on a supported platform "
+                    "(Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, "
+                    "Square, Acuity, Schedulista, Squarespace, BookMyCity). Then call "
+                    "import_booking_url with that URL. The examples below show the "
+                    "URL SHAPE for each platform — do NOT call import_booking_url "
+                    "with these literal example URLs; substitute a real URL from the user."
+                ),
                 "example_payloads": [
-                    {"booking_url": "https://cal.com/<handle>", "vertical": request.vertical.value},
-                    {"booking_url": "https://calendly.com/<handle>", "vertical": request.vertical.value},
-                    {"booking_url": "https://www.doctolib.fr/<specialty>/<city>/<doctor>", "vertical": "professional_services"},
-                    {"booking_url": "https://booksy.com/en-us/<id>_<name>", "vertical": "personal_services"},
-                    {"booking_url": "https://www.opentable.com/r/<restaurant-slug>", "vertical": "restaurants"},
+                    {"booking_url": "https://cal.com/peer", "vertical": request.vertical.value,
+                     "note": "Replace 'peer' with the actual Cal.com handle the user gave you."},
+                    {"booking_url": "https://calendly.com/acme/intro", "vertical": request.vertical.value,
+                     "note": "Replace 'acme/intro' with the actual Calendly path the user gave you."},
+                    {"booking_url": "https://www.doctolib.fr/dentiste/paris/jean-dupont", "vertical": "professional_services",
+                     "note": "Replace path segments with the actual Doctolib URL the user gave you."},
+                    {"booking_url": "https://booksy.com/en-us/123_jane-salon", "vertical": "personal_services",
+                     "note": "Replace '123_jane-salon' with the actual Booksy slug the user gave you."},
+                    {"booking_url": "https://www.opentable.com/r/acme-bistro-tokyo", "vertical": "personal_services",
+                     "note": "Replace 'acme-bistro-tokyo' with the actual OpenTable slug the user gave you."},
                 ],
                 "supported_platforms_endpoint": "/supply/platforms",
             }

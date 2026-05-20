@@ -52,7 +52,11 @@ def _build_tool_list() -> list[dict]:
             "description": _format_description_for_llm(op),
             "inputSchema": op.get("input_schema", {"type": "object"}),
         }
-        # MCP annotations help client UIs render tools better
+        # MCP annotations help client UIs render tools better. idempotentHint
+        # must be tool-specific — retrying a non-idempotent write tool would
+        # double-bill via x402 AND duplicate the side effect (e.g. two SMS
+        # sends). Set True only for tools where a repeat call has no
+        # observable additional effect.
         tool["annotations"] = {
             "title": op["name"].replace("_", " ").title(),
             "readOnlyHint": op["name"] in {
@@ -63,7 +67,13 @@ def _build_tool_list() -> list[dict]:
                 "send_message", "schedule_appointment",
                 "send_transactional_confirmation", "escalate_to_human",
             },
-            "idempotentHint": True,
+            "idempotentHint": op["name"] in {
+                # Safe to retry — same input yields same observable result:
+                "find_business", "verify_business",
+                "get_status", "get_outcome",
+                "preview_cost", "self_test",
+                "import_booking_url",  # idempotent by design (returns same smb_id)
+            },
             "openWorldHint": op["name"] in {"send_message", "schedule_appointment"},
         }
         tools.append(tool)
@@ -615,12 +625,14 @@ async def _h_resources_read(params: dict) -> dict:
                     "1. `find_business(vertical, location, capability, max_results=5)`\n"
                     "2. If `result.businesses` is non-empty, pick one and `schedule_appointment(smb_id=...)`\n"
                     "3. If empty AND the user can supply a URL, fall through to `import_booking_url`\n\n"
-                    "## When completing a consumer-initiated message\n"
-                    "Only call `send_message` when the end-user explicitly asked the agent to "
-                    "communicate with a named SMB on their behalf — confirming a booking they "
-                    "requested, replying to a quote they solicited, following up on an inbound "
-                    "the SMB sent them. Cold outreach, marketing, drips, and prospecting are out "
-                    "of scope; the public schema does not even permit `message_type='marketing'`.\n"
+                    "## When sending an outbound message\n"
+                    "`send_message` supports five `message_type` values: transactional, "
+                    "reminder, follow_up, notification, marketing. Marketing requires a "
+                    "valid `consent_record_id` referencing a recorded opt-in in the "
+                    "consent_store; the compliance gate verifies at send time and rejects "
+                    "any marketing send without recorded consent (TCPA / GDPR / CASL / PDPL "
+                    "across 22 jurisdictions). Cold outreach, drip campaigns, bulk lists, "
+                    "and A/B sends are out of scope and rate-limited regardless.\n"
                     "1. (optional) `POST /compliance/check` to preview legality for the jurisdiction\n"
                     "2. `send_message(...)` — gate runs again at send time\n"
                     "3. Treat ComplianceViolationError as a stop signal, not retry\n\n"
@@ -689,7 +701,7 @@ async def _h_prompts_list(params: dict) -> dict:
                 ),
                 "arguments": [
                     {"name": "recipient", "description": "Phone (E.164) or email of the SMB the consumer named, or the consumer themselves for a transactional confirmation.", "required": True},
-                    {"name": "message_type", "description": "transactional | reminder | follow_up | notification. 'marketing' is not accepted.", "required": True},
+                    {"name": "message_type", "description": "transactional | marketing | reminder | follow_up | notification. Marketing requires a valid consent_record_id; the gate verifies and rejects unrecorded consent.", "required": True},
                     {"name": "country_code", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE'). Auto-inferred from phone if omitted.", "required": False},
                 ],
             },

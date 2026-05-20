@@ -2,17 +2,19 @@
 # Submit this file via PR to https://github.com/smithery-ai/registry
 # Or paste the contents into the Smithery web form: https://smithery.ai/server/new
 
-name: smb-broker
-displayName: "SMB Transaction & Communication Broker"
+name: agent-broker
+displayName: "Agent Broker — SMB Transactions & Bookings"
 description: >
-  Agent-callable horizontal layer for discovering, verifying, scheduling with,
-  and messaging long-tail small/mid-sized businesses worldwide. 12 operations,
-  built-in compliance (TCPA / GDPR / CASL / 10DLC / two-party recording consent),
-  channel fallback (Cal.com → voice AI → SMS → email → web form), idempotent.
+  Agent-callable horizontal layer for finding, verifying, booking, and messaging
+  long-tail small/mid-sized businesses worldwide. 13 operations across 12 booking
+  platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore,
+  Square, Acuity, Schedulista, Squarespace, BookMyCity). Built-in compliance
+  gate (TCPA / GDPR / CASL / PDPL across 22 jurisdictions). Pay-per-call via
+  x402 USDC-on-Base micropayments — no signup, no card.
 
 vendor: agent-broker-edge.basil-agent.workers.dev
 homepage: https://agent-broker-edge.basil-agent.workers.dev
-repository: https://github.com/YOUR_GITHUB_USERNAME/smb-broker
+repository: https://github.com/basilalshukaili/agentbroker
 license: proprietary
 
 categories:

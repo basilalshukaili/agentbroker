@@ -34,20 +34,23 @@ _KNOWN_OPERATIONS = frozenset({
     "import_booking_url",
 })
 
-# Pricing table — must stay in sync with billing/pricer.py
+# Pricing table — must stay in sync with manifest/manifest.json cost_model
+# and edge/src/x402.ts PRICING_ATOMIC. Any drift = agent trust violation
+# (agent calls preview_cost, sees one price, x402 charges another).
 _PRICING = {
     "find_business":                  {"min": 0.01, "max": 0.01, "basis": "per_call"},
     "verify_business":                {"min": 0.02, "max": 0.02, "basis": "per_call"},
-    "send_message":                   {"min": 0.02, "max": 0.30, "basis": "per_message"},
-    "capture_lead":                   {"min": 0.10, "max": 0.10, "basis": "per_lead"},
-    "schedule_appointment":           {"min": 0.25, "max": 1.00, "basis": "per_booking_attempt+success_bonus"},
-    "send_transactional_confirmation":{"min": 0.03, "max": 0.03, "basis": "per_message"},
-    "handle_inbound":                 {"min": 0.08, "max": 0.08, "basis": "per_inbound"},
-    "escalate_to_human":              {"min": 0.50, "max": 0.50, "basis": "per_escalation"},
+    "send_message":                   {"min": 0.02, "max": 0.22, "basis": "per_message"},
+    "capture_lead":                   {"min": 0.05, "max": 0.05, "basis": "per_lead"},
+    "schedule_appointment":           {"min": 0.15, "max": 0.50, "basis": "per_booking_attempt+success_bonus"},
+    "send_transactional_confirmation":{"min": 0.02, "max": 0.02, "basis": "per_message"},
+    "handle_inbound":                 {"min": 0.03, "max": 0.03, "basis": "per_inbound"},
+    "escalate_to_human":              {"min": 0.20, "max": 0.20, "basis": "per_escalation"},
     "get_status":                     {"min": 0.001,"max": 0.001,"basis": "per_call"},
     "get_outcome":                    {"min": 0.001,"max": 0.001,"basis": "per_call"},
-    "preview_cost":                   {"min": 0.001,"max": 0.001,"basis": "per_call"},
+    "preview_cost":                   {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "self_test":                      {"min": 0.0,  "max": 0.0,  "basis": "free"},
+    "import_booking_url":             {"min": 0.005,"max": 0.005,"basis": "per_call"},
 }
 
 _LATENCY = {
@@ -63,6 +66,7 @@ _LATENCY = {
     "get_outcome":                    {"p50": 50,   "p95": 200},
     "preview_cost":                   {"p50": 100,  "p95": 500},
     "self_test":                      {"p50": 200,  "p95": 1000},
+    "import_booking_url":             {"p50": 800,  "p95": 3000},
 }
 
 _SUCCESS_PROB = {
@@ -78,6 +82,7 @@ _SUCCESS_PROB = {
     "get_outcome": 0.999,
     "preview_cost": 0.999,
     "self_test": 0.999,
+    "import_booking_url": 0.92,
 }
 
 _CHANNEL_LIKELY = {

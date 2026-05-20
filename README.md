@@ -21,19 +21,19 @@ This service is the missing layer. Agents call us; we route to the right SMB thr
 
 | Operation | What it does | Cost | Latency |
 |-----------|--------------|------|---------|
-| `find_business` | Search SMBs by vertical + location + capability | $0.01 | <2s |
-| `verify_business` | Confirm an SMB has the capability you need | $0.01 | <2s |
-| `send_message` | SMS / email / voice with full compliance pre-check | $0.05 | <5s |
-| `capture_lead` | Hand a prospect to an SMB with dedup | $0.02 | <2s |
-| `schedule_appointment` | Book / reschedule / cancel — direct API → voice fallback | $0.15 base + $0.85 success premium | <5s sync, async otherwise |
-| `send_transactional_confirmation` | TCPA-exempt confirmations (booking, receipt) | $0.04 | <5s |
+| `find_business` | Search SMBs by vertical + location + capability | **free** (read) | <2s |
+| `verify_business` | Confirm an SMB has the capability you need | **free** (read) | <2s |
+| `send_message` | SMS / email / voice with full compliance pre-check | $0.02 base + $0.20 voice | <5s |
+| `capture_lead` | Structured intake when a consumer asks an SMB to follow up | $0.05 | <2s |
+| `schedule_appointment` | Book / reschedule / cancel — direct API → voice fallback | $0.15 attempt + $0.35 on confirmed booking | <5s sync, async otherwise |
+| `send_transactional_confirmation` | TCPA-exempt confirmations (booking, receipt, OTP) | $0.02 | <5s |
 | `handle_inbound` | Classify customer messages (booking / cancel / opt-out / question) | $0.03 | <5s |
-| `escalate_to_human` | Hand off to a human when an agent is stuck | $0.10 base + $0.40 success premium | async |
-| `get_status` | Poll status of an async operation | $0.001 | <1s |
-| `get_outcome` | Retrieve final outcome of an async operation | $0.001 | <1s |
+| `escalate_to_human` | Hand off to a human when an agent is stuck | $0.20 | async |
+| `get_status` | Poll status of an async operation | **free** (read) | <1s |
+| `get_outcome` | Retrieve final outcome of an async operation | **free** (read) | <1s |
 | `preview_cost` | Estimate cost / latency / success probability — **free** | $0.00 | <500ms |
 | `self_test` | Service health check — **free** | $0.00 | <2s |
-| `import_booking_url` | Parse any Cal.com / Calendly / Doctolib / Booksy / OpenTable / 7 more URLs into a bookable SMB | $0.01 | <2s |
+| `import_booking_url` | Parse any Cal.com / Calendly / Doctolib / Booksy / OpenTable / 7 more URLs into a bookable SMB | $0.005 | <2s |
 
 ## Quick start (for AI agents)
 
