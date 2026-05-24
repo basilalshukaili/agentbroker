@@ -32,6 +32,7 @@ _KNOWN_OPERATIONS = frozenset({
     "preview_cost",
     "self_test",
     "import_booking_url",
+    "call_business",
 })
 
 # Pricing table — must stay in sync with manifest/manifest.json cost_model
@@ -51,6 +52,7 @@ _PRICING = {
     "preview_cost":                   {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "self_test":                      {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "import_booking_url":             {"min": 0.005,"max": 0.005,"basis": "per_call"},
+    "call_business":                  {"min": 0.50, "max": 0.50, "basis": "per_call"},
 }
 
 _LATENCY = {
@@ -67,6 +69,7 @@ _LATENCY = {
     "preview_cost":                   {"p50": 100,  "p95": 500},
     "self_test":                      {"p50": 200,  "p95": 1000},
     "import_booking_url":             {"p50": 800,  "p95": 3000},
+    "call_business":                  {"p50": 45000,"p95": 180000},
 }
 
 _SUCCESS_PROB = {
@@ -83,10 +86,12 @@ _SUCCESS_PROB = {
     "preview_cost": 0.999,
     "self_test": 0.999,
     "import_booking_url": 0.92,
+    "call_business": 0.80,
 }
 
 _CHANNEL_LIKELY = {
     "send_message": "sms:twilio",
+    "call_business": "voice_ai:vapi",
     "schedule_appointment": "direct_api:calcom",
     "send_transactional_confirmation": "sms:twilio",
     "handle_inbound": "inbound:api",

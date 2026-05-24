@@ -23,6 +23,7 @@ from core.models import (
     ScheduleAppointmentRequest, SendTransactionalConfirmationRequest,
     HandleInboundRequest, EscalateToHumanRequest,
     PreviewCostRequest, WebhookRegistrationRequest,
+    CallBusinessRequest,
 )
 from agent_interface.manifest_server import get_full_manifest, get_operations_list, get_manifest_version
 from agent_interface.discovery import get_discovery_card, health_check
@@ -697,6 +698,16 @@ async def escalate_to_human(
     _get_identity(x_agent_identity, "escalate_to_human")
     from core.escalate_to_human import handle_escalate_to_human
     return await handle_escalate_to_human(req)
+
+
+@app.post("/ops/call_business", response_model=OutcomeReceipt, tags=["Operations"])
+async def call_business(
+    req: CallBusinessRequest,
+    x_agent_identity: Optional[str] = Header(None),
+):
+    _get_identity(x_agent_identity, "call_business")
+    from core.call_business import handle_call_business
+    return await handle_call_business(req)
 
 
 @app.get("/ops/get_status/{operation_id}", response_model=dict, tags=["Operations"])

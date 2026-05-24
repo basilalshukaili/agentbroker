@@ -521,6 +521,37 @@ class EscalateToHumanRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# call_business — conversational voice AI call to a business
+# ---------------------------------------------------------------------------
+
+class CallBusinessRequest(BaseModel):
+    """Place a conversational voice-AI call to a business on a consumer's behalf.
+
+    This is the differentiated capability: reaching the ~60M long-tail SMBs
+    that have NO API and NO booking page — only a phone number. The agent
+    gives an objective; our voice AI (Vapi) has the conversation and returns
+    a structured answer.
+
+    Calls are BUSINESS-directed (B2B), which is materially less restricted
+    under TCPA than calls to consumers — but the compliance gate still runs
+    (recording-consent per jurisdiction, do-not-call checks).
+    """
+    # Target: either a raw business phone (E.164) or a known smb_id.
+    business_phone: Optional[str] = None
+    smb_id: Optional[str] = None
+    # What the agent wants the call to accomplish, in plain language.
+    objective: str
+    # Optional structured fields the caller wants extracted from the answer
+    # (e.g. ["available_tuesday", "earliest_slot", "price_quote"]).
+    extract_fields: list[str] = Field(default_factory=list)
+    country_code: Optional[str] = None
+    # On whose behalf the call is placed — used for the call's opening line
+    # and for the consumer-initiated audit trail.
+    on_behalf_of: Optional[str] = None
+    max_duration_seconds: int = Field(default=180, le=600)
+
+
+# ---------------------------------------------------------------------------
 # get_status / get_outcome
 # ---------------------------------------------------------------------------
 

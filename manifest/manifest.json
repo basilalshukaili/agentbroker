@@ -1830,6 +1830,67 @@
           "description": "Page exists but we could not extract a usable business name. Pass `business_name` explicitly."
         }
       ]
+    },
+    {
+      "name": "call_business",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+      "when_to_use": "Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).",
+      "when_not_to_use": "Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.",
+      "execution_profile": "async_by_default",
+      "compliance_constraints": [
+        "Business-directed voice call. The opening line identifies the caller as an AI assistant acting on a consumer's behalf.",
+        "Recording consent enforced per jurisdiction (two-party-consent states/countries get a spoken consent prompt before recording).",
+        "Not for consumer-directed autodialing or prerecorded marketing (TCPA) — objective must be an operational business question."
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": ["objective"],
+        "properties": {
+          "business_phone": {"type": "string", "description": "Business phone in E.164 (e.g. +14045550123). Provide this OR smb_id."},
+          "smb_id": {"type": "string", "description": "Known SMB identifier with a phone on record. Provide this OR business_phone."},
+          "objective": {"type": "string", "description": "What the call should accomplish, in plain language."},
+          "extract_fields": {"type": "array", "items": {"type": "string"}, "description": "Structured fields to pull from the answer, e.g. ['available_tomorrow','price_quote','earliest_slot']."},
+          "country_code": {"type": "string", "description": "ISO 3166-1 alpha-2 for compliance + recording-consent routing."},
+          "on_behalf_of": {"type": "string", "description": "Name of the consumer the call is placed for."},
+          "max_duration_seconds": {"type": "integer", "maximum": 600, "default": 180}
+        }
+      },
+      "output_schema": {
+        "$ref": "#/components/OutcomeReceipt"
+      },
+      "cost_model": {
+        "basis": "per_call",
+        "unit_price_usd": 0.50
+      },
+      "slo": {
+        "p50_ms": 45000,
+        "p95_ms": 180000
+      },
+      "idempotency": "NOT idempotent — each call places a new phone call. Do not retry a call_business that returned pending_async; poll get_outcome instead.",
+      "failure_modes": [
+        "bad_input",
+        "voice_not_provisioned",
+        "compliance_violation",
+        "upstream_failure"
+      ],
+      "examples": [
+        {
+          "label": "Call a plumber with no booking page",
+          "input": {
+            "business_phone": "+14045550142",
+            "objective": "Ask if they can do an emergency drain unclog tomorrow morning and roughly what it costs.",
+            "extract_fields": ["available_tomorrow_am", "price_estimate"],
+            "country_code": "US",
+            "on_behalf_of": "the customer at 14 Maple St"
+          },
+          "output": {
+            "status": "pending_async",
+            "reason_code": "call_placed",
+            "channel_used": "voice_ai:vapi",
+            "cost": {"amount": 0.50, "currency": "USD"}
+          }
+        }
+      ]
     }
   ],
   "components": {

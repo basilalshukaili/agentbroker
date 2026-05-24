@@ -169,6 +169,23 @@
           "country_code": {"type": "string", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."}
         }
       }
+    },
+    {
+      "name": "call_business",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. Give an objective in plain language ('ask if they can do an emergency drain repair tomorrow morning and what it costs'); the voice AI has the conversation and extracts the answer. Business-directed (B2B) — far less restricted than calling consumers, but the compliance gate still runs (recording consent per jurisdiction). Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["objective"],
+        "properties": {
+          "business_phone": {"type": "string", "description": "Business phone in E.164 (e.g. +14045550123). Provide this OR smb_id."},
+          "smb_id": {"type": "string", "description": "Known SMB identifier with a phone on record. Provide this OR business_phone."},
+          "objective": {"type": "string", "description": "What the call should accomplish, in plain language."},
+          "extract_fields": {"type": "array", "items": {"type": "string"}, "description": "Structured fields to pull from the answer, e.g. ['available_tomorrow','price_quote','earliest_slot']."},
+          "country_code": {"type": "string", "description": "ISO 3166-1 alpha-2 for compliance + recording-consent routing."},
+          "on_behalf_of": {"type": "string", "description": "Name of the consumer the call is placed for (used in the opening line)."},
+          "max_duration_seconds": {"type": "integer", "maximum": 600, "default": 180}
+        }
+      }
     }
   ]
 }

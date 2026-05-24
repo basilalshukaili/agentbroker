@@ -66,6 +66,7 @@ def _build_tool_list() -> list[dict]:
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
                 "send_transactional_confirmation", "escalate_to_human",
+                "call_business",
             },
             "idempotentHint": op["name"] in {
                 # Safe to retry — same input yields same observable result:
@@ -74,7 +75,9 @@ def _build_tool_list() -> list[dict]:
                 "preview_cost", "self_test",
                 "import_booking_url",  # idempotent by design (returns same smb_id)
             },
-            "openWorldHint": op["name"] in {"send_message", "schedule_appointment"},
+            "openWorldHint": op["name"] in {
+                "send_message", "schedule_appointment", "call_business",
+            },
         }
         tools.append(tool)
     return tools
@@ -312,6 +315,7 @@ _WRITE_TOOLS_REQUIRING_AUTH = frozenset({
     "handle_inbound",
     "escalate_to_human",
     "import_booking_url",
+    "call_business",
 })
 
 
@@ -403,6 +407,20 @@ async def _dispatch_operation(name: str, args: dict, headers: Optional[dict] = N
             source=args.get("source", "agent"),
         )
         receipt = await handle_capture_lead(req)
+
+    elif name == "call_business":
+        from core.call_business import handle_call_business
+        from core.models import CallBusinessRequest
+        req = CallBusinessRequest(
+            business_phone=args.get("business_phone"),
+            smb_id=args.get("smb_id"),
+            objective=args["objective"],
+            extract_fields=args.get("extract_fields", []),
+            country_code=args.get("country_code"),
+            on_behalf_of=args.get("on_behalf_of"),
+            max_duration_seconds=args.get("max_duration_seconds", 180),
+        )
+        receipt = await handle_call_business(req)
 
     elif name == "self_test":
         from agent_interface.self_test import run_self_test
