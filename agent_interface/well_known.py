@@ -187,14 +187,21 @@ def get_mcp_descriptor() -> dict:
         "name": "agent-broker",
         "version": "0.1.0",
         "transport": {
-            "type": "http",
+            "type": "streamable-http",
             "endpoint": f"{BASE_URL}/mcp",
             "method": "POST",
             "content_type": "application/json",
         },
-        "alternate_transport": {
-            "type": "sse",
-            "endpoint": f"{BASE_URL}/mcp/sse",
+        "payments": {
+            "protocol": "x402",
+            "asset": "USDC",
+            "network": "base",
+            "description": (
+                "Paid tools require an x402 micropayment in USDC on Base. Call a paid "
+                "tool; the result is a PaymentRequired (x402Version 2) with the price "
+                "and pay-to address. Send the signed payment in "
+                "params._meta['x402/payment'] and retry. Reads are free."
+            ),
         },
         "description": (
             "MCP server for SMB Transaction & Communication Broker. "
