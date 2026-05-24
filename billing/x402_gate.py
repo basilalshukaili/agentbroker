@@ -54,10 +54,30 @@ _PRICING_USD: dict[str, str] = {
     "send_transactional_confirmation": "0.02",
     "handle_inbound": "0.03",
     "escalate_to_human": "0.20",
-    "import_booking_url": "0.005",
-    # call_business ($0.50) is omitted on purpose — the voice path is disabled,
-    # so charging for it would take money then return voice_not_provisioned.
+    # import_booking_url is intentionally FREE — it is the adoption wedge (turn
+    # any booking URL into a callable business). Agents import for free, then pay
+    # for the action (schedule_appointment / send_message). "Don't be greedy."
+    # call_business ($0.50) is also omitted — the voice path is disabled, so
+    # charging for it would take money then return voice_not_provisioned.
 }
+
+# Receipt statuses that mean "the paid action did NOT happen" → do NOT settle
+# (never charge for a failed/rejected call). Anything not in this set is treated
+# as chargeable (the action ran). Listing failures (not successes) avoids
+# accidentally giving away a legitimate success whose status string we forgot.
+_FAILURE_STATUSES = frozenset({
+    "failure", "failed", "error", "errored", "rejected", "denied", "blocked",
+    "compliance_blocked", "invalid", "not_found", "unsupported",
+    "unsupported_platform", "unprocessable", "timeout", "cancelled", "canceled",
+})
+
+
+def _receipt_is_error(receipt: Any) -> bool:
+    """True if the tool clearly failed (so the wrapper must NOT settle/charge)."""
+    if not isinstance(receipt, dict):
+        return False
+    status = str(receipt.get("status", "")).strip().lower()
+    return status in _FAILURE_STATUSES
 
 MAINNET = "eip155:8453"
 TESTNET = "eip155:84532"
@@ -66,6 +86,7 @@ TESTNET = "eip155:84532"
 _server: Any = None
 _server_lock = asyncio.Lock()
 _wrappers: dict[str, Callable] = {}
+_accepts_cache: dict[str, list] = {}
 _ed25519_key: Any = None
 
 
@@ -192,6 +213,32 @@ def _build_accepts(srv, tool: str) -> list:
     return accepts
 
 
+def _get_accepts(srv, tool: str) -> list:
+    """Cached per-tool PaymentRequirements (build once; reused by the MCP wrapper
+    and the HTTP /ops 402 response)."""
+    a = _accepts_cache.get(tool)
+    if a is None:
+        a = _build_accepts(srv, tool)
+        _accepts_cache.setdefault(tool, a)
+        a = _accepts_cache[tool]
+    return a
+
+
+def _bazaar_extension(tool: str) -> dict:
+    """Bazaar MCP discovery declaration for a tool (so facilitators index it)."""
+    from x402.extensions.bazaar import (
+        declare_mcp_discovery_extension, DeclareMcpDiscoveryConfig,
+    )
+    op = get_operation(tool) or {}
+    return declare_mcp_discovery_extension(DeclareMcpDiscoveryConfig(
+        tool_name=tool,
+        description=op.get("description") or tool,
+        input_schema=op.get("input_schema") or {"type": "object", "properties": {}},
+        transport="streamable-http",
+        example=_bazaar_example(tool),
+    ))
+
+
 def _bazaar_example(tool: str) -> Optional[dict]:
     """A small example argument set so the Bazaar entry ranks well in semantic
     search. Best-effort — pulled from the manifest's first example if present."""
@@ -248,22 +295,10 @@ def _build_wrapper(srv, tool: str):
     from x402 import ResourceInfo
     from x402.mcp.server_async import create_payment_wrapper, PaymentWrapperConfig
     from x402.mcp.types import PaymentWrapperHooks
-    from x402.extensions.bazaar import (
-        declare_mcp_discovery_extension, DeclareMcpDiscoveryConfig,
-    )
     op = get_operation(tool) or {}
     description = op.get("description") or tool
-    input_schema = op.get("input_schema") or {"type": "object", "properties": {}}
-
-    extensions = declare_mcp_discovery_extension(DeclareMcpDiscoveryConfig(
-        tool_name=tool,
-        description=description,
-        input_schema=input_schema,
-        transport="streamable-http",
-        example=_bazaar_example(tool),
-    ))
     cfg = PaymentWrapperConfig(
-        accepts=_build_accepts(srv, tool),
+        accepts=_get_accepts(srv, tool),
         # The Bazaar entry's `resource.url` is how a discovering agent learns
         # where to connect — it MUST be our real public MCP endpoint, not a
         # logical mcp://tool/... id. toolName (in the extension) disambiguates.
@@ -272,7 +307,7 @@ def _build_wrapper(srv, tool: str):
             description=description,
             mime_type="application/json",
         ),
-        extensions=extensions,
+        extensions=_bazaar_extension(tool),
         # Push a Telegram alert the instant a payment settles — the founder's
         # "a buyer came" signal.
         hooks=PaymentWrapperHooks(on_after_settlement=_notify_first_payment),
@@ -315,18 +350,55 @@ async def run_paid_tool(
     srv = await _ensure_server()
     wrapper = _wrappers.get(tool)
     if wrapper is None:
-        wrapper = _build_wrapper(srv, tool)
-        _wrappers[tool] = wrapper
+        built = _build_wrapper(srv, tool)
+        _wrappers.setdefault(tool, built)  # first writer wins under a race
+        wrapper = _wrappers[tool]
 
     async def handler(args: dict, _ctx: Any) -> dict:
         receipt = await dispatch()
-        is_err = isinstance(receipt, dict) and receipt.get("status") == "failure"
         return {
             "content": [{"type": "text", "text": json.dumps(receipt, default=str)}],
             "structuredContent": receipt,
-            "isError": is_err,
+            # Only settle (charge) when the tool actually did the work. A failed/
+            # rejected call returns is_error=True, which the SDK wrapper uses to
+            # SKIP settlement — the agent is never charged for a failure.
+            "isError": _receipt_is_error(receipt),
         }
 
     wrapped = wrapper(handler)
     result = await wrapped(arguments, {"_meta": meta or {}, "toolName": tool})
     return _mcp_result_to_jsonrpc(result)
+
+
+async def http_payment_required(tool: str) -> dict:
+    """Build a standard x402 PaymentRequired body for the REST surface (/ops/*).
+
+    The paid tools' REST routes must not be a free bypass of the /mcp x402 gate.
+    They return this 402 body; agents complete payment through the MCP endpoint
+    (resource.url points there). Never raises — falls back to a minimal body.
+    """
+    try:
+        srv = await _ensure_server()
+        from x402 import ResourceInfo
+        op = get_operation(tool) or {}
+        pr = await srv.create_payment_required_response(
+            _get_accepts(srv, tool),
+            ResourceInfo(
+                url=config.X402_PUBLIC_MCP_URL,
+                description=op.get("description") or tool,
+                mime_type="application/json",
+            ),
+            ("Payment required. This tool is paid via x402. Complete payment at the "
+             "MCP endpoint (POST /mcp, JSON-RPC tools/call, with the signed payment "
+             "in params._meta['x402/payment'])."),
+            _bazaar_extension(tool),
+        )
+        return pr.model_dump(by_alias=True)
+    except Exception as e:  # noqa: BLE001
+        log.warning("http_payment_required build failed tool=%s err=%s", tool, e)
+        return {
+            "x402Version": 2,
+            "error": "payment_required",
+            "detail": "This tool is paid via x402. Pay through POST /mcp (tools/call) "
+                      "with the payment in params._meta['x402/payment'].",
+        }

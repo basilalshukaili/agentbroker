@@ -183,6 +183,41 @@ async def _rate_limit_middleware(request: Request, call_next):
 
 
 # ---------------------------------------------------------------------------
+# x402 gate for the REST surface (/ops/*)
+# ---------------------------------------------------------------------------
+# The MCP dispatcher gates paid tools via x402, but each paid tool ALSO has a
+# REST twin under /ops/*. Without this, an agent could call /ops/send_message
+# (etc.) and get the paid action for free — bypassing payment entirely. When
+# x402 is enabled, those REST routes return a standard 402 directing the agent
+# to complete payment through the /mcp x402 flow (the response's resource.url
+# points there). Free reads and the free import wedge are unaffected.
+
+_X402_REST_PAID: dict[str, str] = {
+    "/ops/send_message": "send_message",
+    "/ops/capture_lead": "capture_lead",
+    "/ops/schedule_appointment": "schedule_appointment",
+    "/ops/send_transactional_confirmation": "send_transactional_confirmation",
+    "/ops/handle_inbound": "handle_inbound",
+    "/ops/escalate_to_human": "escalate_to_human",
+}
+
+
+@app.middleware("http")
+async def _x402_rest_payment_gate(request: Request, call_next):
+    if request.method == "POST":
+        tool = _X402_REST_PAID.get(request.url.path)
+        if tool:
+            from billing import x402_gate
+            if x402_gate.enabled() and x402_gate.is_paid_tool(tool):
+                body = await x402_gate.http_payment_required(tool)
+                return JSONResponse(
+                    status_code=402, content=body,
+                    headers={"Cache-Control": "no-store"},
+                )
+    return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
 # Auth helper
 # ---------------------------------------------------------------------------
 
