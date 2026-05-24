@@ -47,10 +47,10 @@ Confirm that an SMB is real, currently operating, and capable of the requested s
 
 ### send_message
 
-Send a transactional message that completes a consumer-initiated request — e.g., the user asked their agent to book, reschedule, or follow up on a specific appointment with a specific business. SMS, email, or voice. Marketing, promotional, and unsolicited outbound communication are explicitly out of scope and rejected by the compliance gate.
+Send a message on behalf of an agent's user or an SMB across SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.
 
-- **When to use**: Use only when a consumer asked the agent to communicate with a named SMB on their behalf, or to acknowledge an inbound message the SMB received. Typical cases: confirming an appointment the agent just booked, asking a salon about a service the user requested, replying to a quote the user solicited.
-- **When NOT to use**: Do NOT use for marketing, promotions, sales prospecting, cold outreach, drip sequences, list-based messaging, or any communication the recipient has not initiated or pre-authorized. Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. The compliance gate rejects messages tagged as marketing and any communication to recipients without verified consent in jurisdictions that require it.
+- **When to use**: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.
+- **When NOT to use**: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.
 - **Cost**: $varies per_message
 - **Execution**: sync_fast
 - **Latency**: ~ms
