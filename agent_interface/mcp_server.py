@@ -543,7 +543,7 @@ async def _h_resources_list(params: dict) -> dict:
             {
                 "uri": "agent-broker://manifest",
                 "name": "Capability Manifest",
-                "description": "Full manifest with all 13 operations and their schemas.",
+                "description": "Full manifest with all operations and their schemas.",
                 "mimeType": "application/json",
             },
             {
@@ -727,7 +727,7 @@ async def _h_prompts_list(params: dict) -> dict:
                 "name": "cost_estimation",
                 "description": "Get a cost estimate before committing to a paid operation. Free.",
                 "arguments": [
-                    {"name": "operation", "description": "Operation name (one of the 13 tools).", "required": True},
+                    {"name": "operation", "description": "Operation name (any tool from tools/list).", "required": True},
                 ],
             },
         ]
