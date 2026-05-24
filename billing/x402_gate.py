@@ -203,6 +203,42 @@ def _bazaar_example(tool: str) -> Optional[dict]:
     return None
 
 
+async def _notify_first_payment(ctx: Any) -> None:
+    """on_after_settlement hook — fire a Telegram push the moment a real payment
+    SETTLES on-chain. This is the "a buyer came" signal the founder waits on.
+
+    Fires on every settled payment (the first one is, by definition, the first
+    alert received). Never raises — an alert failure must not undo a settlement.
+    """
+    try:
+        from billing.telegram_revenue_alerts import send_telegram_alert
+        tool = getattr(ctx, "tool_name", "?")
+        settle = getattr(ctx, "settlement", None)
+        reqs = getattr(ctx, "payment_requirements", None)
+        tx = (getattr(settle, "transaction", "") or "") if settle is not None else ""
+        network = ""
+        if settle is not None:
+            network = getattr(settle, "network", "") or ""
+        if not network and reqs is not None:
+            network = getattr(reqs, "network", "") or ""
+        usd = price_usd(tool) or "?"
+        explorer = f"https://basescan.org/tx/{tx}" if tx else ""
+        lines = [
+            "*Agent Broker* — an AI agent just PAID (x402 / USDC).",
+            f"Tool: `{tool}`",
+            f"Amount: *${usd}* USDC ({network or 'base'})",
+        ]
+        if tx:
+            lines.append(f"Tx: `{tx}`")
+        if explorer:
+            lines.append(explorer)
+        lines.append("Settled via Coinbase CDP -> funds in your Binance USDC-Base account.")
+        await send_telegram_alert("\n".join(lines))
+        log.info("x402 settlement alert sent tool=%s tx=%s", tool, tx)
+    except Exception as e:  # noqa: BLE001 — never let an alert failure bubble
+        log.warning("x402 settlement alert failed: %s", e)
+
+
 def _build_wrapper(srv, tool: str):
     # NOTE: import the *framework-agnostic* wrapper from server_async — it takes
     # a handler with signature (args, extra) where extra carries `_meta`. The
@@ -211,6 +247,7 @@ def _build_wrapper(srv, tool: str):
     # Context), which does not fit our hand-rolled JSON-RPC dispatcher.
     from x402 import ResourceInfo
     from x402.mcp.server_async import create_payment_wrapper, PaymentWrapperConfig
+    from x402.mcp.types import PaymentWrapperHooks
     from x402.extensions.bazaar import (
         declare_mcp_discovery_extension, DeclareMcpDiscoveryConfig,
     )
@@ -236,6 +273,9 @@ def _build_wrapper(srv, tool: str):
             mime_type="application/json",
         ),
         extensions=extensions,
+        # Push a Telegram alert the instant a payment settles — the founder's
+        # "a buyer came" signal.
+        hooks=PaymentWrapperHooks(on_after_settlement=_notify_first_payment),
     )
     return create_payment_wrapper(srv, cfg)
 
