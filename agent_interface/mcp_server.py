@@ -292,6 +292,21 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     if not op:
         raise _ParamError(f"Unknown tool: '{name}'")
 
+    # x402 payment gate. When enabled, paid write tools must carry a settled
+    # USDC-on-Base payment (standard x402, settled via the Coinbase CDP
+    # facilitator). The gate runs the tool only after the agent's payment
+    # verifies, and settles only if the tool succeeds. Read tools — and the
+    # case where x402 is disabled/misconfigured — fall through to the free
+    # dispatch below, so the server never breaks on an x402 problem.
+    from billing import x402_gate
+    if x402_gate.enabled() and x402_gate.is_paid_tool(name):
+        async def _dispatch() -> dict:
+            # Payment is the authorization here — bypass the identity gate.
+            return await _dispatch_operation(name, arguments, headers or {}, skip_auth=True)
+        return await x402_gate.run_paid_tool(
+            name, arguments, params.get("_meta") or {}, _dispatch
+        )
+
     receipt = await _dispatch_operation(name, arguments, headers or {})
     return {
         "content": [
@@ -345,10 +360,18 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         )
 
 
-async def _dispatch_operation(name: str, args: dict, headers: Optional[dict] = None) -> dict:
+async def _dispatch_operation(
+    name: str, args: dict, headers: Optional[dict] = None, skip_auth: bool = False
+) -> dict:
     # Auth gate — runs before any side-effecting handler. Read-only tools
     # bypass the gate by virtue of not being in _WRITE_TOOLS_REQUIRING_AUTH.
-    _mcp_gate_identity(name, headers or {})
+    #
+    # skip_auth=True is set by the x402 paid path: a settled USDC payment IS the
+    # authorization for an autonomous agent, so also demanding an X-Agent-Identity
+    # token would defeat the whole no-signup premise. Identity-token auth still
+    # applies to the (free) non-x402 path when REQUIRE_AUTH is on.
+    if not skip_auth:
+        _mcp_gate_identity(name, headers or {})
     """Route an operation call to the underlying handler. Returns dict, not OutcomeReceipt."""
     if name == "find_business":
         from core.find_business import handle_find_business

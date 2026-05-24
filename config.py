@@ -103,6 +103,38 @@ BILLING_RECEIPT_SIGNING_SECRET = _env(
 DEFAULT_BUDGET_CAP_USD = _env_float("DEFAULT_BUDGET_CAP_USD", 10.0)
 
 # ---------------------------------------------------------------------------
+# x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)
+# ---------------------------------------------------------------------------
+# The standard x402 scheme: an agent sends a signed EIP-3009 authorization
+# (in the MCP `_meta["x402/payment"]` field or the HTTP `X-PAYMENT` header);
+# we VERIFY + SETTLE it through the Coinbase CDP facilitator. The first settled
+# payment auto-lists us in the x402 Bazaar (semantic discovery for agents).
+#
+# Disabled by default — set X402_ENABLED=true in prod once CDP keys + receiver
+# are configured. When disabled, paid tools run free (current behavior) so the
+# server never breaks if x402 is misconfigured.
+X402_ENABLED = _env_bool("X402_ENABLED", default=False)
+# Where settled USDC lands. Basil's Binance USDC-on-Base deposit address.
+X402_RECEIVER_ADDRESS = _env("X402_RECEIVER_ADDRESS", "")
+# Coinbase CDP facilitator (verify + settle). Appends /verify, /settle, /supported.
+X402_FACILITATOR_URL = _env(
+    "X402_FACILITATOR_URL", "https://api.cdp.coinbase.com/platform/v2/x402"
+)
+# Base mainnet (CAIP-2). The production settlement network.
+X402_NETWORK = _env("X402_NETWORK", "eip155:8453")
+# Also accept Base Sepolia testnet (eip155:84532) payments — for $0 end-to-end
+# validation only. NEVER enable in prod: testnet USDC is worthless, so accepting
+# it would give away real service for free.
+X402_ENABLE_TESTNET = _env_bool("X402_ENABLE_TESTNET", default=False)
+# CDP API key (EdDSA / Ed25519). Secret is 64-byte base64 (first 32 = seed).
+CDP_API_KEY_ID = _env("CDP_API_KEY_ID", "")
+CDP_API_KEY_SECRET = _env("CDP_API_KEY_SECRET", "")
+# Public MCP endpoint advertised in the Bazaar discovery `resource` so agents
+# who discover a paid tool know where to connect. Defaults to the edge worker.
+PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "https://agent-broker-edge.basil-agent.workers.dev")
+X402_PUBLIC_MCP_URL = _env("X402_PUBLIC_MCP_URL", PUBLIC_BASE_URL.rstrip("/") + "/mcp")
+
+# ---------------------------------------------------------------------------
 # Webhook delivery
 # ---------------------------------------------------------------------------
 

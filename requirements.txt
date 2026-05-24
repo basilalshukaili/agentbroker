@@ -39,6 +39,14 @@ python-jose[cryptography]==3.3.0   # JWT (production replacement for stub)
 passlib[bcrypt]==1.7.4
 tenacity==8.2.3           # Retry logic (supplements custom retry_policy)
 
+# --- Agent-native payments (x402 standard scheme via Coinbase CDP facilitator) ---
+# [evm]        → exact EVM scheme (eth-abi / eth-account / EIP-712 helpers)
+# [extensions] → Bazaar discovery (jsonschema)
+# Server-side only: verify + settle happen at the CDP facilitator, so there is
+# no wallet key or chain RPC in this process.
+x402[evm,extensions]==2.11.0
+pyjwt==2.9.0              # EdDSA (Ed25519) JWT used to auth to the CDP facilitator
+
 # --- Testing ---
 pytest==8.2.0
 pytest-asyncio==0.23.6
