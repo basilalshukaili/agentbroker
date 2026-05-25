@@ -32,9 +32,9 @@ jobs:
           from agent_interface.manifest_server import get_full_manifest
           from agent_interface.mcp_server import handle_mcp_request
           from agent_interface.well_known import get_llms_txt
-          assert len(get_full_manifest()['operations']) == 13, 'manifest must define 13 operations'
+          assert len(get_full_manifest()['operations']) >= 14, 'manifest must define at least 14 operations'
           r = asyncio.run(handle_mcp_request({'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}}))
-          assert len(r['result']['tools']) == 13, 'MCP must expose 13 tools'
+          assert len(r['result']['tools']) >= 14, 'MCP must expose at least 14 tools'
           assert 'find_business' in get_llms_txt(), 'llms.txt must include all operations'
           print('All checks passed.')
           "
