@@ -31,15 +31,15 @@ class TestManifestStructure:
         assert "operations" in self.manifest
         assert "service" in self.manifest
 
-    def test_all_13_operations_present(self):
+    def test_all_operations_present(self):
         expected = {
             "find_business", "verify_business", "send_message", "capture_lead",
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
-            "import_booking_url",
+            "import_booking_url", "call_business",
         }
         actual = {op["name"] for op in self.manifest["operations"]}
-        assert expected == actual, f"Missing: {expected - actual}"
+        assert expected == actual, f"missing={expected - actual} extra={actual - expected}"
 
     def test_every_operation_has_required_fields(self):
         required_fields = [
