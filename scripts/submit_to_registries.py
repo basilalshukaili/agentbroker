@@ -99,10 +99,11 @@ async def submit_smithery(dry_run: bool = False) -> dict:
     create_body = {
         "displayName": "Agent Broker",
         "description": (
-            "Horizontal agent-to-business action layer. 12 MCP tools to find, "
-            "verify, message, and schedule appointments with small businesses "
-            "worldwide. Built-in TCPA / GDPR / CASL compliance. Free tier: "
-            "100 ops/month."
+            "Horizontal agent-to-business action layer. 14 MCP tools for AI agents "
+            "to find, verify, message, and book appointments with small businesses "
+            "worldwide. Agents pay per call in USDC on Base via x402 — no signup, no "
+            "API key (reads free, writes paid). Built-in compliance gate "
+            "(TCPA / GDPR / CASL / PDPL across 22 jurisdictions)."
         ),
     }
     release_payload_json = json.dumps({
@@ -241,10 +242,10 @@ async def submit_mcp_servers_pr(dry_run: bool = False) -> dict:
     repo_url = _repo_url()
     line = (
         f"- **[Agent Broker]({repo_url})** — "
-        "Horizontal agent-to-business action layer. 12 MCP tools to find, "
-        "verify, message, and schedule appointments with small businesses "
-        "worldwide. Built-in TCPA / GDPR / CASL compliance. Free tier: "
-        f"100 ops/month. Endpoint: {base_url}/mcp"
+        "Horizontal agent-to-business action layer. 14 MCP tools for AI agents to "
+        "find, verify, message, and book appointments with small businesses worldwide. "
+        "Agents pay per call in USDC on Base via x402 (no signup; reads free, writes "
+        f"paid). Built-in TCPA / GDPR / CASL compliance gate. Endpoint: {base_url}/mcp"
     )
 
     if dry_run:
@@ -369,10 +370,10 @@ async def submit_mcp_servers_pr(dry_run: bool = False) -> dict:
                     "base": default_branch,
                     "body": (
                         "Adds Agent Broker to the Community Servers list.\n\n"
-                        "- 12 MCP tools (find/verify/message/schedule SMBs worldwide)\n"
-                        "- Built-in TCPA / GDPR / CASL compliance gate\n"
-                        "- Worldwide jurisdiction rules (22 countries) + INTERNATIONAL fallback\n"
-                        "- Free tier: 100 ops/month\n\n"
+                        "- 14 MCP tools (find/verify/message/book appointments with SMBs worldwide)\n"
+                        "- Agent-native payments: pay per call in USDC on Base via x402 "
+                        "(no signup/API key; reads free, writes paid)\n"
+                        "- Built-in TCPA / GDPR / CASL compliance gate (22 jurisdictions)\n\n"
                         f"Live MCP endpoint: {base_url}/mcp\n"
                         f"Repo: {repo_url}\n"
                         f"Discovery: {base_url}/.well-known/mcp.json"
@@ -415,9 +416,9 @@ async def submit_awesome_mcp_pr(dry_run: bool = False) -> dict:
 
     line = (
         f"- [Agent Broker]({repo_url}) — "
-        "Horizontal agent-to-business action layer. 12 tools for finding, "
-        "verifying, messaging, and scheduling with small/mid businesses worldwide. "
-        f"Built-in TCPA/GDPR/CASL compliance. Free tier 100 ops/month. {base_url}"
+        "AI agents find, verify, message, and book appointments with small businesses "
+        "worldwide, paying per call in USDC on Base via x402 (no signup; reads free, "
+        f"writes paid). Built-in TCPA/GDPR/CASL compliance gate. {base_url}"
     )
 
     if dry_run:
@@ -507,7 +508,7 @@ async def submit_awesome_mcp_pr(dry_run: bool = False) -> dict:
                     "title": "Add Agent Broker — horizontal agent-to-business layer",
                     "head": f"{owner}:{branch}",
                     "base": default_branch,
-                    "body": f"Adds Agent Broker (12-tool MCP server, free tier, worldwide compliance). Live: {base_url}/mcp",
+                    "body": f"Adds Agent Broker (14-tool MCP server; agents pay per call in USDC on Base via x402, reads free; worldwide TCPA/GDPR/CASL compliance gate). Live: {base_url}/mcp",
                     "maintainer_can_modify": True,
                 },
             )
