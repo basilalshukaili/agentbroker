@@ -988,6 +988,54 @@ async def web_refund_alias():
     return RedirectResponse(url="/refund", status_code=301)
 
 
+# ---------------------------------------------------------------------------
+# Fiat rail (Polar) — stable buy link + post-payment landing
+# ---------------------------------------------------------------------------
+# A human developer prepays here so their agent can call paid tools pre-paid.
+# This is the card/fiat counterpart to the x402 crypto rail (autonomous agents).
+# /billing/checkout always mints a FRESH Polar hosted checkout and redirects, so
+# the link never expires. On payment, the Polar webhook issues the API key.
+
+@app.get("/billing/checkout", tags=["Billing"], include_in_schema=False)
+async def billing_checkout():
+    """Stable buy link → fresh Polar hosted checkout (card; Polar = Merchant of Record)."""
+    import os as _os
+    from billing.providers import get_billing_provider
+    base = _os.getenv("PUBLIC_BASE_URL", "https://agent-broker-edge.basil-agent.workers.dev")
+    try:
+        prov = get_billing_provider()
+        session = await prov.create_checkout(
+            amount_usd=9.0,
+            description="Agent Broker — Developer Access (90 days)",
+            agent_id="web_checkout",
+            success_url=f"{base}/billing/success",
+            cancel_url=f"{base}/pricing",
+        )
+        return RedirectResponse(session.payment_url, status_code=303)
+    except Exception:
+        # If billing is misconfigured, don't 500 a prospective buyer — send them
+        # to pricing with a note rather than a stack trace.
+        return RedirectResponse(url="/pricing", status_code=303)
+
+
+@app.get("/billing/success", response_class=HTMLResponse, tags=["Billing"], include_in_schema=False)
+async def billing_success():
+    """Polar redirects here after a successful payment."""
+    return HTMLResponse(
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Thank you — Agent Broker</title></head>"
+        "<body style='font-family:system-ui,sans-serif;max-width:640px;margin:64px auto;padding:0 16px;line-height:1.5'>"
+        "<h1>Payment received ✅</h1>"
+        "<p>Thanks for buying Agent Broker developer access. Your API key (an "
+        "<code>X-Agent-Identity</code> token) is on its way to your email.</p>"
+        "<p>Your agent sends it as the <code>X-Agent-Identity</code> header on "
+        "requests to <code>/mcp</code>. Reads are free; writes are pre-paid against "
+        "your plan — no per-call crypto needed.</p>"
+        "<p><a href='/'>← Back to Agent Broker</a></p></body></html>"
+    )
+
+
 @app.get("/api/metrics", tags=["Metrics"])
 async def get_metrics():
     """Public counters consumed by the home-page live tiles. No PII."""

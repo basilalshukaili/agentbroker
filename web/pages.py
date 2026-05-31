@@ -195,7 +195,7 @@ def render_home() -> str:
     <div class="card metric"><div class="num">13</div><div class="label">Callable tools</div></div>
     <div class="card metric"><div class="num">12</div><div class="label">Booking platforms supported</div></div>
     <div class="card metric"><div class="num">22</div><div class="label">Jurisdictions with native compliance</div></div>
-    <div class="card metric"><div class="num">2</div><div class="label">Payment rails (x402 + Paddle)</div></div>
+    <div class="card metric"><div class="num">2</div><div class="label">Payment rails (x402 + Polar)</div></div>
   </div>
   <div class="grid grid-4" style="margin-top:18px;">
     <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols</div></div>
@@ -244,7 +244,8 @@ def render_pricing() -> str:
     decides what gets sent &mdash; marketing requires verified opt-in regardless of plan.
   </p>
   <div class="cta" style="margin-top:8px;">
-    <a class="btn btn-primary" href="/docs">See the live API &rarr;</a>
+    <a class="btn btn-primary" href="/billing/checkout">Pay with card via Polar &rarr;</a>
+    <a class="btn btn-secondary" href="/docs">See the live API &rarr;</a>
     <a class="btn btn-secondary" href="mailto:""" + SUPPORT_EMAIL + """?subject=Enterprise%20inquiry">Enterprise &mdash; let's talk</a>
   </div>
 </header>
@@ -286,19 +287,20 @@ def render_pricing() -> str:
     <div class="card"><h3>preview_cost</h3><p><strong>Free.</strong> Read-only quote, ±5% accurate.</p></div>
     <div class="card"><h3>self_test</h3><p><strong>Free.</strong> Live capability probe / health check.</p></div>
   </div>
-  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>Two payment rails:</strong> AI agents pay per-call in USDC on Base (x402 micropayments &mdash; no signup, no account, no card). Human developers can subscribe via Paddle for $49/mo (Developer) or $499/mo (Business) for higher quota + SLA.</p>
+  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>Two payment rails:</strong> AI agents pay per-call in USDC on Base (x402 micropayments &mdash; no signup, no account, no card). Human developers can <a href="/billing/checkout">prepay by card via Polar</a> to get a pre-paid API key for higher quota + SLA &mdash; their agent then calls without per-call crypto.</p>
 </section>
 
 <section class="section">
   <h2>Billing &amp; payments</h2>
   <p class="lead">
-    Payments processed by <strong>Paddle</strong> (Merchant of Record).
-    Paddle handles VAT/sales tax in 100+ countries on our behalf, so any
-    customer worldwide can pay with card, Apple/Google Pay, PayPal, or wire.
+    Payments processed by <strong>Polar</strong> (Merchant of Record).
+    Polar handles VAT/sales tax worldwide on our behalf, so any
+    customer can pay with card &mdash; and your <a href="/billing/checkout">pre-paid API key</a>
+    is emailed automatically on payment.
   </p>
   <div class="grid grid-3">
     <div class="card"><h3>Free tier</h3><p>No card required. 100 ops/month, any agent.</p></div>
-    <div class="card"><h3>Self-serve paid</h3><p>Card via Paddle Checkout. Monthly or annual.</p></div>
+    <div class="card"><h3>Self-serve paid</h3><p><a href="/billing/checkout">Card via Polar Checkout</a> &mdash; instant API key.</p></div>
     <div class="card"><h3>Enterprise</h3><p>Wire transfer / PO. Email <a href="mailto:""" + SUPPORT_EMAIL + """">""" + SUPPORT_EMAIL + """</a>.</p></div>
   </div>
 </section>
@@ -310,7 +312,7 @@ def render_pricing() -> str:
   <h3>Can I change plan at any time?</h3>
   <p style="color:var(--text-muted);">Yes. Upgrades take effect immediately and are prorated. Downgrades take effect at the end of the current billing period.</p>
   <h3>What payment methods do you accept?</h3>
-  <p style="color:var(--text-muted);">Cards (Visa, Mastercard, AmEx), Apple Pay, Google Pay, PayPal, and SEPA &mdash; all routed through Paddle. Enterprise plans can pay by wire.</p>
+  <p style="color:var(--text-muted);">Cards (Visa, Mastercard, AmEx), Apple Pay, Google Pay, PayPal, and SEPA &mdash; all routed through Polar. Enterprise plans can pay by wire.</p>
   <h3>Is there a contract?</h3>
   <p style="color:var(--text-muted);">No. Cancel anytime. Enterprise plans use a flexible MSA.</p>
 </section>
@@ -320,7 +322,7 @@ def render_pricing() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Checkout — Paddle Merchant-of-Record subscription start
+# Checkout — Polar Merchant-of-Record (fiat prepay) + x402 explainer
 # ---------------------------------------------------------------------------
 
 _PLAN_PRICES = {
@@ -380,17 +382,16 @@ def render_checkout(plan: str | None) -> str:
 </section>
 
 <section class="section">
-  <h2>Developer plan (fiat, contact us)</h2>
+  <h2>Developer plan (fiat, prepay by card)</h2>
   <p style="color:var(--text-muted);">
-    Building an agent product and want a metered plan with monthly invoicing, higher
-    rate limits, and a human SLA? Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
-    with your use case. {p['label']} tier nominally ${p['monthly_usd']}/month for {p['ops']} ops;
-    we tailor based on your traffic shape.
+    Prefer to prepay by card instead of wiring an x402 wallet? Buy developer access
+    via <strong>Polar</strong> (Merchant of Record &mdash; handles tax worldwide). On
+    payment we email you a pre-paid API key (an <code class="inline">X-Agent-Identity</code>
+    token); your agent sends it as a header and calls without per-call crypto. Need a
+    larger metered plan or human SLA? Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.
   </p>
   <div class="cta" style="margin-top:18px;">
-    <a class="btn btn-primary" href="mailto:{SUPPORT_EMAIL}?subject={p['label']}%20plan%20inquiry">
-      Email {SUPPORT_EMAIL}
-    </a>
+    <a class="btn btn-primary" href="/billing/checkout">Pay with card via Polar &rarr;</a>
     <a class="btn btn-secondary" href="/docs">Or just try the API directly &rarr;</a>
   </div>
 </section>
@@ -563,7 +564,7 @@ def render_privacy() -> str:
 
   <h2>3. What we never collect</h2>
   <ul>
-    <li>End-user payment card details &mdash; Paddle holds these on its PCI&#8209;DSS
+    <li>End-user payment card details &mdash; Polar holds these on its PCI&#8209;DSS
         Level 1 infrastructure; we receive only a redacted token.</li>
     <li>Biometric or special-category data.</li>
     <li>Recordings of voice calls (Vapi-side retention is configurable; we
@@ -590,7 +591,7 @@ def render_privacy() -> str:
 
   <h2>6. International transfers</h2>
   <p>Our application is hosted in Frankfurt, Germany (EU). Sub-processors
-  may store data in the United States (Twilio, Resend, Paddle, Cal.com).
+  may store data in the United States (Twilio, Resend, Polar, Cal.com).
   Where required, we rely on EU Standard Contractual Clauses and the
   Data Privacy Framework.</p>
 
@@ -601,7 +602,7 @@ def render_privacy() -> str:
     <li><strong>Vapi</strong> &mdash; voice AI agent fallback.</li>
     <li><strong>Resend</strong> &mdash; transactional email delivery.</li>
     <li><strong>Cal.com</strong> &mdash; calendar API for booking flows.</li>
-    <li><strong>Paddle</strong> &mdash; Merchant of Record for billing.</li>
+    <li><strong>Polar</strong> &mdash; Merchant of Record for billing.</li>
   </ul>
 
   <h2>8. Retention</h2>
