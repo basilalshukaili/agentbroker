@@ -34,7 +34,7 @@ from agent_interface.self_test import run_self_test
 from agent_interface.mcp_server import handle_mcp_request
 from agent_interface.well_known import (
     get_ai_plugin_manifest, get_openai_tools, get_anthropic_tools,
-    get_agents_json, get_mcp_descriptor, get_llms_txt, get_llms_full_txt,
+    get_agents_json, get_agent_card, get_mcp_descriptor, get_llms_txt, get_llms_full_txt,
 )
 from fastapi.responses import PlainTextResponse
 
@@ -314,8 +314,20 @@ async def well_known_anthropic_tools():
 
 @app.get("/.well-known/agents.json", tags=["Discovery"])
 async def well_known_agents():
-    """A2A (Agent-to-Agent) protocol descriptor."""
+    """A2A (Agent-to-Agent) protocol descriptor (legacy plural path)."""
     return get_agents_json()
+
+
+@app.get("/.well-known/agent-card.json", tags=["Discovery"])
+async def well_known_agent_card():
+    """Canonical A2A AgentCard (current spec path). Agent registries crawl this."""
+    return get_agent_card()
+
+
+@app.get("/.well-known/agent.json", tags=["Discovery"])
+async def well_known_agent_json():
+    """A2A AgentCard at the legacy singular path (alias of agent-card.json)."""
+    return get_agent_card()
 
 
 @app.get("/.well-known/mcp.json", tags=["Discovery"])

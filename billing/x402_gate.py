@@ -281,9 +281,47 @@ async def _notify_first_payment(ctx: Any) -> None:
             lines.append(explorer)
         lines.append("Settled via Coinbase CDP -> funds in your Binance USDC-Base account.")
         await send_telegram_alert("\n".join(lines))
+        try:
+            from telemetry.metrics import record_payment_settled
+            record_payment_settled()
+        except Exception:  # noqa: BLE001
+            pass
         log.info("x402 settlement alert sent tool=%s tx=%s", tool, tx)
     except Exception as e:  # noqa: BLE001 — never let an alert failure bubble
         log.warning("x402 settlement alert failed: %s", e)
+
+
+# Cooldown so a buyer retrying a payment several times doesn't spam Telegram.
+# In-memory: resets on restart, which is fine — re-alerting after a restart on a
+# genuine buyer is acceptable (better to over-signal a real buyer than miss one).
+_buyer_intent_last_alert: dict[str, float] = {}
+_BUYER_INTENT_COOLDOWN_S = 900.0  # 15 min per tool
+
+
+async def _notify_buyer_intent(tool: str) -> None:
+    """Fire a Telegram push the moment a REAL buyer attempts to pay (an x402
+    payment payload arrived), BEFORE settlement. Crawlers/scorers never build
+    signed payments, so this is the earliest high-signal "a real buyer is here"
+    event — even if their payment later fails, the founder hears about it and can
+    react. Never raises."""
+    try:
+        import time
+        now = time.time()
+        last = _buyer_intent_last_alert.get(tool, 0.0)
+        if now - last < _BUYER_INTENT_COOLDOWN_S:
+            return
+        _buyer_intent_last_alert[tool] = now
+        from billing.telegram_revenue_alerts import send_telegram_alert
+        usd = price_usd(tool) or "?"
+        await send_telegram_alert("\n".join([
+            "*Agent Broker* — a real buyer is here. 👀",
+            f"An AI agent attached an x402 payment for `{tool}` (${usd} USDC).",
+            "Verifying + settling now — if it clears you'll get the PAID alert next.",
+            "(Crawlers don't build signed payments, so this is a genuine buyer attempt.)",
+        ]))
+        log.info("x402 buyer-intent alert sent tool=%s", tool)
+    except Exception as e:  # noqa: BLE001
+        log.warning("x402 buyer-intent alert failed tool=%s err=%s", tool, e)
 
 
 def _build_wrapper(srv, tool: str):
@@ -347,6 +385,20 @@ async def run_paid_tool(
     Returns a JSON-RPC tools/call result dict (either a payment-required result
     when no/!valid payment, or the tool result with settlement in `_meta`).
     """
+    # Funnel telemetry: a paid tool was invoked. If the agent also attached an
+    # x402 payment, that's a REAL buyer (crawlers/scorers don't build signed
+    # payments) — record it and fire a buyer-intent alert immediately, before
+    # we even know if settlement succeeds, so the founder hears about the first
+    # real buyer the moment they touch a paid surface.
+    try:
+        from telemetry.metrics import record_paid_tool_attempt, record_payment_attempt
+        record_paid_tool_attempt()
+        if isinstance(meta, dict) and meta.get("x402/payment"):
+            record_payment_attempt()
+            await _notify_buyer_intent(tool)
+    except Exception as e:  # noqa: BLE001 — telemetry/alert must never block a sale
+        log.warning("x402 funnel telemetry failed tool=%s err=%s", tool, e)
+
     srv = await _ensure_server()
     wrapper = _wrappers.get(tool)
     if wrapper is None:

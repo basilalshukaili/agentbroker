@@ -178,6 +178,71 @@ def get_agents_json() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# /.well-known/agent-card.json (+ /.well-known/agent.json) — canonical A2A card
+# ---------------------------------------------------------------------------
+# The A2A protocol's discovery file was renamed agent.json → agent-card.json.
+# Agent-registry crawlers (e.g. AgenstryBot) probe these canonical paths; we
+# previously only served the non-standard plural agents.json, so they 404'd and
+# couldn't index us. This serves a spec-shaped AgentCard (camelCase fields) so
+# those registries catalog us. Honest about transport: discovery/transaction is
+# via our MCP endpoint + x402 micropayments (we are an MCP server, not a full
+# A2A JSON-RPC server) — the card's description and _meta make that explicit so
+# a discovering agent knows exactly how to actually call us.
+
+def get_agent_card() -> dict:
+    """Canonical A2A AgentCard, generated from the manifest."""
+    manifest = get_full_manifest()
+    skills = []
+    for op in manifest.get("operations", []):
+        skills.append({
+            "id": op["name"],
+            "name": op["name"].replace("_", " ").title(),
+            "description": op["description"],
+            "tags": [op.get("execution_profile", "sync"), *_extract_skill_tags(op)],
+            "examples": [ex.get("description", "") for ex in op.get("examples", [])][:2],
+            "inputModes": ["application/json"],
+            "outputModes": ["application/json"],
+        })
+    mcp_url = f"{BASE_URL}/mcp"
+    return {
+        "protocolVersion": "0.2.5",
+        "name": "Agent Broker",
+        "description": (
+            "AI agents find, verify, message, and book appointments with small "
+            "businesses worldwide. Pay per call in USDC on Base via x402 — no signup, "
+            "no API key (reads free, writes paid). Built-in TCPA/GDPR/CASL compliance "
+            "gate. Connect via the MCP endpoint below (streamable-http)."
+        ),
+        "url": mcp_url,
+        "preferredTransport": "streamable-http",
+        "version": "1.0.2",
+        "provider": {
+            "organization": "Agent Broker",
+            "url": BASE_URL,
+        },
+        "documentationUrl": f"{BASE_URL}/llms.txt",
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": True,
+            "stateTransitionHistory": True,
+        },
+        "defaultInputModes": ["application/json"],
+        "defaultOutputModes": ["application/json"],
+        "skills": skills,
+        "_meta": {
+            "transport": "mcp",
+            "mcpEndpoint": mcp_url,
+            "payments": {
+                "protocol": "x402",
+                "asset": "USDC",
+                "network": "base",
+                "model": "reads free, writes paid (per-call USDC micropayment)",
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # /.well-known/mcp.json — MCP server descriptor
 # ---------------------------------------------------------------------------
 
