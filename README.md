@@ -15,9 +15,13 @@ There are ~60 million long-tail small businesses in the US — barbers, plumbers
 
 This service is the missing layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest — Cal.com → SMS → voice AI → email → web form fallback — with full TCPA / GDPR / CASL / 10DLC / two-party recording-consent compliance enforced as a non-bypassable gate.
 
+## How agents pay
+
+Agents pay **per call in USDC on Base via x402** — no signup, no API key, no human in the loop. Reads are free; writes return an HTTP 402 with a payment requirement, the agent attaches a signed payment, and settlement clears through the Coinbase CDP facilitator. This is the agent-native rail: an autonomous agent discovers us (MCP Registry / Smithery / Bazaar), calls a tool, and pays — all on its own.
+
 ## What you can do with it
 
-13 operations, all callable via REST, MCP, OpenAI tools, Anthropic tools, or A2A protocol:
+14 operations, all callable via REST, MCP, OpenAI tools, Anthropic tools, or A2A protocol:
 
 | Operation | What it does | Cost | Latency |
 |-----------|--------------|------|---------|
@@ -145,7 +149,7 @@ AI agent → Cloudflare Worker edge (agent-broker-edge.basil-agent.workers.dev)
                Cron */2 keeps Render warm — cold starts eliminated
 ```
 
-The Python service exposes 13 operations over REST + MCP + .well-known surfaces. Each handler validates input with Pydantic models, runs through `compliance/pre_check`, executes via channel-fallback (`direct_api → voice_ai → sms → email → web_form`), and writes an immutable `OutcomeReceipt` to the outcome store. Async operations return `pending_async`. Idempotency is keyed by `(agent_id, operation, idempotency_key)` with 24h TTL.
+The Python service exposes 14 operations over REST + MCP + .well-known surfaces. Each handler validates input with Pydantic models, runs through `compliance/pre_check`, executes via channel-fallback (`direct_api → voice_ai → sms → email → web_form`), and writes an immutable `OutcomeReceipt` to the outcome store. Async operations return `pending_async`. Idempotency is keyed by `(agent_id, operation, idempotency_key)` with 24h TTL.
 
 Full architecture: [docs/architecture.md](./docs/architecture.md) · Edge layer: [edge/README.md](./edge/README.md)
 
