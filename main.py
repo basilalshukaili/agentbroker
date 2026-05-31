@@ -996,10 +996,17 @@ async def web_refund_alias():
 # /billing/checkout always mints a FRESH Polar hosted checkout and redirects, so
 # the link never expires. On payment, the Polar webhook issues the API key.
 
-@app.get("/billing/checkout", tags=["Billing"], include_in_schema=False)
+@app.get("/billing/checkout", response_class=HTMLResponse, tags=["Billing"], include_in_schema=False)
 async def billing_checkout():
-    """Stable buy link → fresh Polar hosted checkout (card; Polar = Merchant of Record)."""
+    """Stable buy link → fresh Polar hosted checkout (card; Polar = Merchant of Record).
+
+    Returns a tiny client-side redirect page (meta-refresh + JS) rather than a 303,
+    so the BROWSER navigates to polar.sh directly. A server 303 would be followed
+    *by the Cloudflare worker proxy* (serving Polar's HTML under our domain and
+    breaking its checkout JS); a client redirect proxies cleanly as plain HTML.
+    """
     import os as _os
+    import html as _html
     from billing.providers import get_billing_provider
     base = _os.getenv("PUBLIC_BASE_URL", "https://agent-broker-edge.basil-agent.workers.dev")
     try:
@@ -1011,10 +1018,23 @@ async def billing_checkout():
             success_url=f"{base}/billing/success",
             cancel_url=f"{base}/pricing",
         )
-        return RedirectResponse(session.payment_url, status_code=303)
+        url = session.payment_url
+        if not url or session.metadata.get("stub"):
+            return RedirectResponse(url="/pricing", status_code=303)
+        safe = _html.escape(url, quote=True)
+        return HTMLResponse(
+            f"<!doctype html><html><head><meta charset='utf-8'>"
+            f"<meta http-equiv='refresh' content='0;url={safe}'>"
+            f"<title>Redirecting to secure checkout…</title>"
+            f"<script>window.location.replace({__import__('json').dumps(url)});</script>"
+            f"</head><body style='font-family:system-ui,sans-serif;max-width:560px;margin:64px auto;padding:0 16px'>"
+            f"<p>Taking you to secure checkout (Polar)…</p>"
+            f"<p>If you are not redirected, <a href='{safe}'>click here to pay</a>.</p>"
+            f"</body></html>"
+        )
     except Exception:
         # If billing is misconfigured, don't 500 a prospective buyer — send them
-        # to pricing with a note rather than a stack trace.
+        # to pricing rather than a stack trace.
         return RedirectResponse(url="/pricing", status_code=303)
 
 
