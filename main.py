@@ -960,6 +960,10 @@ async def get_metrics():
         "total_businesses_found": summary.get("total_businesses_found", 0),
         "total_messages_sent": summary.get("total_messages_sent", 0),
         "total_operations_completed": summary.get("total_operations_completed", 0),
+        # Buyer funnel — distinguishes real buyers from indexing crawlers.
+        "total_paid_tool_attempts": summary.get("total_paid_tool_attempts", 0),
+        "total_payment_attempts": summary.get("total_payment_attempts", 0),
+        "total_payments_settled": summary.get("total_payments_settled", 0),
         "last_updated": summary.get("last_updated"),
     }
     return JSONResponse(content=payload, headers={"Cache-Control": "no-store"})
