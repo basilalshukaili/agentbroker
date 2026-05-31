@@ -195,26 +195,28 @@ class PolarProvider(BillingProvider):
     def __init__(self) -> None:
         self._api_key = os.getenv("POLAR_API_KEY", "")
         self._org_id = os.getenv("POLAR_ORG_ID", "")
+        # The Polar Product the checkout sells. Required by the current
+        # (product-based) checkout API — freeform amounts are no longer accepted.
+        self._product_id = os.getenv("POLAR_PRODUCT_ID", "")
         self._base_url = "https://api.polar.sh/v1"
 
     async def create_checkout(self, *, amount_usd, description, agent_id,
                               success_url, cancel_url) -> CheckoutSession:
-        if not self._api_key:
+        # Current Polar API is product-based: POST /v1/checkouts/ with a
+        # products[] list. `metadata` round-trips back to us on the webhook so we
+        # can attribute the payment to the agent/plan.
+        if not self._api_key or not self._product_id:
             return _stub_session("polar", amount_usd, success_url, agent_id)
         try:
             import httpx
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{self._base_url}/checkouts",
+                    f"{self._base_url}/checkouts/",
                     headers={"Authorization": f"Bearer {self._api_key}"},
                     json={
-                        "organization_id": self._org_id,
-                        "amount": int(amount_usd * 100),
-                        "currency": "USD",
-                        "product_description": description,
+                        "products": [self._product_id],
                         "success_url": success_url,
-                        "cancel_url": cancel_url,
-                        "customer_metadata": {"agent_id": agent_id},
+                        "metadata": {"agent_id": agent_id, "service": "agent-broker"},
                     },
                     timeout=10.0,
                 )
@@ -223,7 +225,7 @@ class PolarProvider(BillingProvider):
                 return CheckoutSession(
                     session_id=data["id"],
                     payment_url=data["url"],
-                    amount_usd=amount_usd,
+                    amount_usd=(data.get("amount") or int(amount_usd * 100)) / 100,
                     provider="polar",
                     expires_at=time.time() + 3600,
                     metadata={"agent_id": agent_id},
@@ -244,12 +246,14 @@ class PolarProvider(BillingProvider):
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    if data.get("status") == "succeeded":
+                    # Current Polar checkout terminal status is "confirmed"
+                    # (payment captured) or legacy "succeeded".
+                    if data.get("status") in ("confirmed", "succeeded"):
                         return PaymentReceipt(
-                            receipt_id=data.get("payment_id", session_id),
+                            receipt_id=data.get("id", session_id),
                             session_id=session_id,
-                            amount_usd=data["amount"] / 100,
-                            currency=data.get("currency", "USD"),
+                            amount_usd=(data.get("amount") or 0) / 100,
+                            currency=(data.get("currency") or "USD").upper(),
                             paid_at=time.time(),
                             provider="polar",
                             raw_response=data,
@@ -259,7 +263,7 @@ class PolarProvider(BillingProvider):
         return None
 
     def health_check(self) -> bool:
-        return bool(self._api_key and self._org_id)
+        return bool(self._api_key and self._product_id)
 
 
 # ---------------------------------------------------------------------------

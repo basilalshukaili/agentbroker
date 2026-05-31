@@ -879,6 +879,47 @@ async def paddle_webhook(request: Request):
     return {"ok": True}
 
 
+@app.post("/webhooks/polar", tags=["Webhooks"])
+async def polar_webhook(request: Request):
+    """
+    Polar billing webhook → mint an Agent-Identity token (the fiat rail).
+
+    A developer prepays via Polar's hosted checkout (Polar = Merchant of Record:
+    card + global tax + payout to Oman); on payment we issue a long-lived token
+    their agent sends as X-Agent-Identity to call paid tools pre-paid. Coexists
+    with the x402 crypto rail (no token → x402 402; valid token → pre-paid).
+
+    Auth: Standard Webhooks signature (webhook-id/-timestamp/-signature headers),
+    secret in POLAR_WEBHOOK_SECRET. Bad signature → 401, no grant.
+    Always returns 200 after a valid signature so Polar does not retry.
+    """
+    import json
+    import logging
+    import os
+    log = logging.getLogger("smb_broker.polar_webhook")
+
+    body = await request.body()
+    secret = os.getenv("POLAR_WEBHOOK_SECRET", "")
+
+    from billing.polar_webhook import verify_polar_signature, handle_polar_event
+
+    if not verify_polar_signature(body, request.headers, secret):
+        log.warning("polar_webhook_signature_invalid secret_present=%s", bool(secret))
+        raise HTTPException(status_code=401, detail="Invalid Polar signature.")
+
+    try:
+        event = json.loads(body.decode("utf-8")) if body else {}
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        log.warning("polar_webhook_malformed_json err=%s", e)
+        raise HTTPException(status_code=400, detail="Malformed JSON payload.")
+
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
+
+    await handle_polar_event(event)
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Web UI — server-rendered HTML, no client framework
 # ---------------------------------------------------------------------------
