@@ -1,0 +1,87 @@
+# Koyeb deployment — RECOMMENDED free-tier host
+# Forever-free 1 nano service, no credit card required, always-on,
+# GitHub auto-deploy. Works in Oman.
+#
+# Setup (10 min, no terminal needed):
+#   1. Sign up at https://koyeb.com (works with GitHub OAuth)
+#   2. Click "Create Service" → "GitHub" → select basilalshukaili/agentbroker
+#   3. Choose "Dockerfile" build mode, path: deploy/Dockerfile
+#   4. Region: Frankfurt (fra) — closest free region to Oman
+#   5. Instance type: nano (free)
+#   6. Add the env vars listed in this file under `env` (paste from .env)
+#   7. Click "Deploy"
+#
+# After deploy, Koyeb gives you a URL like https://agentbroker-<hash>.koyeb.app
+# To wire your custom domain agent-broker-edge.basil-agent.workers.dev:
+#   - In Koyeb dashboard → Service → Settings → Domains → "Add domain"
+#   - Add the CNAME record Koyeb prints to your DigitalPlat DNS dashboard.
+#
+# This file is a reference; Koyeb's UI uses it implicitly when you connect via GitHub.
+
+name: agentbroker
+type: web
+region: fra            # Frankfurt — free, closest to Oman
+instance_type: nano    # 256 MB RAM, 0.1 vCPU — free forever
+
+build:
+  type: docker
+  dockerfile: deploy/Dockerfile
+
+ports:
+  - port: 8000
+    protocol: http
+
+routes:
+  - path: /
+    port: 8000
+
+health_check:
+  path: /health
+  protocol: http
+  initial_delay: 10
+  interval: 30
+  timeout: 10
+
+scaling:
+  min: 1
+  max: 1   # free tier hard cap
+
+# Set these in the Koyeb UI (Settings → Environment variables) — NOT in this file:
+env:
+  - name: ENVIRONMENT
+    value: production
+  - name: LOG_LEVEL
+    value: INFO
+  - name: PUBLIC_BASE_URL
+    value: https://agent-broker-edge.basil-agent.workers.dev
+  - name: COMPLIANCE_DEFAULT_JURISDICTION
+    value: international
+  - name: SUPPLY_SEED_MODE
+    value: empty
+  - name: REQUIRE_AUTH
+    value: "false"
+  - name: BILLING_PROVIDER
+    value: paddle
+  # Secrets — paste values directly into Koyeb UI as type=secret:
+  - name: TWILIO_ACCOUNT_SID
+    secret: true
+  - name: TWILIO_AUTH_TOKEN
+    secret: true
+  - name: CALCOM_API_KEY
+    secret: true
+  - name: CALCOM_USERNAME
+    secret: true
+  - name: VAPI_API_KEY
+    secret: true
+  - name: VAPI_PUBLIC_KEY
+    secret: true
+  - name: RESEND_API_KEY
+    secret: true
+  - name: PADDLE_API_KEY
+    secret: true
+  - name: POLAR_API_KEY
+    secret: true
+  - name: AGENT_IDENTITY_SIGNING_SECRET
+    secret: true
+  - name: BILLING_RECEIPT_SIGNING_SECRET
+    secret: true
