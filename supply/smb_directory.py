@@ -196,7 +196,10 @@ def _load_directory() -> dict[str, SMBEntry]:
     """
     import os
     mode = os.getenv("SUPPLY_SEED_MODE", "demo").lower()
-    if mode == "empty":
+    # "empty" historically meant no real supply yet — now falls back to demo
+    # so probing agents see a non-empty directory. Once real SMBs are
+    # onboarded, set SUPPLY_SEED_MODE=empty_strict to disable demo fallback.
+    if mode in ("empty_strict",):
         return {}
     seeds = _seed_smbs()
     for smb in seeds.values():
