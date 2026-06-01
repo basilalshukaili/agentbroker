@@ -1,0 +1,23 @@
+{
+  "$schema": "https://glama.ai/mcp/servers/schema.json",
+  "name": "agent-broker",
+  "displayName": "Agent Broker",
+  "description": "14 MCP tools to find, verify, message, and book appointments at small businesses worldwide. Built-in TCPA/GDPR/CASL compliance. Turns any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, Fresha, or BookMyCity URL into a bookable SMB in one tool call.",
+  "repository": {
+    "url": "https://github.com/basilalshukaili/agentbroker"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+    }
+  ],
+  "license": "proprietary",
+  "tags": ["scheduling", "small-business", "compliance", "mcp-server", "booking", "cal-com", "calendly", "doctolib"],
+  "auth": {
+    "type": "optional",
+    "header": "X-Agent-Identity",
+    "scheme": "bearer",
+    "note": "Read-only operations and find_business require no auth. State-changing operations require an X-Agent-Identity bearer token."
+  }
+}
