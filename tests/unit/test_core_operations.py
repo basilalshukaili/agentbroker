@@ -92,14 +92,18 @@ class TestVerifyBusiness:
 
 class TestCaptureLead:
     def test_capture_lead_known_smb(self):
+        # smb_001 is a demo SMB (is_demo=True) -- the CRITICAL-1 fix short-circuits
+        # demo SMBs with status=failure/reason_code=demo_smb_no_live_booking before
+        # any real action (and before any CDP settlement). Updated expected values.
         req = CaptureLeadRequest(
             smb_id="smb_001",
             prospect=ProspectData(name="Jane Doe", phone="+14045559999", service_interest="haircut"),
             source="agent_test",
         )
         receipt = run(handle_capture_lead(req))
-        assert receipt.status == OperationStatus.SUCCESS
-        assert "lead_id" in receipt.result
+        assert receipt.status == OperationStatus.FAILURE
+        assert receipt.reason_code == "demo_smb_no_live_booking"
+        assert receipt.cost.amount == 0.0
 
     def test_capture_lead_unknown_smb_fails(self):
         req = CaptureLeadRequest(
