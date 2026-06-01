@@ -28,7 +28,7 @@ services:
       # [DEMO] labels is still available for non-prod environments by setting
       # SUPPLY_SEED_MODE=demo (see supply/smb_directory.py).
       - key: SUPPLY_SEED_MODE
-        value: empty
+        value: demo
       # PUBLIC_BASE_URL is the canonical user-facing domain — keyed to the
       # Cloudflare edge worker (Paddle's checkout-domain approval is registered
       # against this hostname). Render origin renders all og:url / canonical
