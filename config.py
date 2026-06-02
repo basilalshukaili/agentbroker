@@ -62,6 +62,12 @@ DATABASE_URL = _env(
 )
 
 # ---------------------------------------------------------------------------
+# Supabase -- durable storage for billing_events and smb_supply tables
+# ---------------------------------------------------------------------------
+SUPABASE_URL = _env("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = _env("SUPABASE_SERVICE_KEY", "")  # server-side only
+
+# ---------------------------------------------------------------------------
 # Redis / Celery
 # ---------------------------------------------------------------------------
 

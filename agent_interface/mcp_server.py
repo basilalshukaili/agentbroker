@@ -550,8 +550,32 @@ async def _dispatch_operation(
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")
 
+    # Durable billing — fire-and-forget meter record for every tool call.
+    # Works whether x402 is on or off. amount_usd=0 when x402 disabled (now).
+    try:
+        from billing.durable_meter import get_durable_meter
+        _cost = getattr(receipt, 'cost', None)
+        _amount = float(_cost.amount) if _cost and hasattr(_cost, 'amount') else 0.0
+        _basis = _cost.basis if _cost and hasattr(_cost, 'basis') else 'per_call'
+        _ch = getattr(receipt, 'channel_used', None)
+        _op_id = getattr(receipt, 'operation_id', name)
+        _success = getattr(receipt, 'status', None)
+        _success_bool = str(_success) != 'failure' if _success else True
+        _agent_id = ((headers or {}).get('x-agent-identity') or 'anonymous')[:64]
+        get_durable_meter().record(
+            agent_id=_agent_id,
+            operation=name,
+            operation_id=str(_op_id),
+            amount_usd=_amount,
+            basis=_basis,
+            channel_used=_ch,
+            success=_success_bool,
+        )
+    except Exception:
+        pass  # billing must never break tool dispatch
+
     # Convert OutcomeReceipt → dict
-    if hasattr(receipt, "model_dump"):
+    if hasattr(receipt, 'model_dump'):
         return receipt.model_dump()
     return dict(receipt) if isinstance(receipt, dict) else receipt.__dict__
 

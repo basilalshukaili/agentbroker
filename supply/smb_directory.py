@@ -206,6 +206,58 @@ def _load_directory() -> dict[str, SMBEntry]:
         smb.is_demo = True
         if not smb.name.startswith("[DEMO]"):
             smb.name = f"[DEMO] {smb.name}"
+
+    # Merge durable real entries from Supabase (non-demo, persisted across restarts).
+    # Demo seed is never overwritten -- durable entries only ADD supply.
+    import logging
+    _log = logging.getLogger("smb_broker.smb_directory")
+    try:
+        from storage.supabase_client import select_rows_sync
+        rows = select_rows_sync("smb_supply", filters={"is_demo": "false", "active": "true"})
+        for row in rows:
+            try:
+                sid = row.get("smb_id", "")
+                if not sid or sid in seeds:
+                    continue  # skip demo-IDs or conflicts
+                from core.models import Vertical
+                v = Vertical(row["vertical"])
+                pr = None
+                if row.get("price_min_usd") is not None or row.get("price_max_usd") is not None:
+                    pr = {"min_usd": float(row.get("price_min_usd") or 0),
+                          "max_usd": float(row.get("price_max_usd") or 0)}
+                vt = None
+                if row.get("verified_at"):
+                    from datetime import datetime, timezone
+                    vt = datetime.fromisoformat(str(row["verified_at"]).replace("Z", "+00:00"))
+                seeds[sid] = SMBEntry(
+                    smb_id=sid,
+                    name=row.get("name", sid),
+                    vertical=v,
+                    address=row.get("address", ""),
+                    city=row.get("city", ""),
+                    state=row.get("state", ""),
+                    zip_code=row.get("zip_code", ""),
+                    country=row.get("country", "US"),
+                    capabilities=list(row.get("capabilities") or []),
+                    channels_available=list(row.get("channels_available") or []),
+                    calcom_event_type_id=row.get("calcom_event_type_id"),
+                    square_location_id=row.get("square_location_id"),
+                    vapi_assistant_id=row.get("vapi_assistant_id"),
+                    phone=row.get("phone"),
+                    email=row.get("email"),
+                    website=row.get("website") or row.get("booking_url"),
+                    price_range=pr,
+                    verified_at=vt,
+                    active=True,
+                    is_demo=False,
+                )
+            except Exception as _row_exc:
+                _log.warning("smb_supply_row_skipped sid=%s err=%s", row.get("smb_id"), _row_exc)
+        if rows:
+            _log.info("smb_supply_loaded durable_count=%d", len(rows))
+    except Exception as _exc:
+        _log.warning("smb_supply_load_failed err=%s", _exc)
+
     return seeds
 
 
@@ -244,6 +296,58 @@ class SMBDirectory:
 
     def upsert(self, entry: SMBEntry) -> None:
         _DIRECTORY[entry.smb_id] = entry
+        # Persist real (non-demo) entries to Supabase for durability across restarts.
+        if not entry.is_demo:
+            self._persist_to_supabase(entry)
+
+    @staticmethod
+    def _persist_to_supabase(entry: SMBEntry) -> None:
+        """Fire-and-forget write of a real (non-demo) SMBEntry to smb_supply table."""
+        import asyncio
+        import logging
+        _log = logging.getLogger("smb_broker.smb_directory")
+        pr = entry.price_range or {}
+        row = {
+            "smb_id":                entry.smb_id,
+            "name":                  entry.name,
+            "vertical":              entry.vertical.value if hasattr(entry.vertical, "value") else str(entry.vertical),
+            "address":               entry.address or "",
+            "city":                  entry.city or "",
+            "state":                 entry.state or "",
+            "zip_code":              entry.zip_code or "",
+            "country":               entry.country or "US",
+            "capabilities":          list(entry.capabilities or []),
+            "channels_available":    list(entry.channels_available or []),
+            "calcom_event_type_id":  entry.calcom_event_type_id,
+            "square_location_id":    entry.square_location_id,
+            "vapi_assistant_id":     entry.vapi_assistant_id,
+            "phone":                 entry.phone,
+            "email":                 entry.email,
+            "website":               entry.website,
+            "price_min_usd":         float(pr.get("min_usd", 0)) if pr.get("min_usd") is not None else None,
+            "price_max_usd":         float(pr.get("max_usd", 0)) if pr.get("max_usd") is not None else None,
+            "is_demo":               False,
+            "active":                entry.active,
+            "booking_url":           entry.website,
+            "source":                "import_booking_url",
+            "verified_at":           entry.verified_at.isoformat() if entry.verified_at else None,
+        }
+        async def _do_upsert() -> None:
+            try:
+                from storage.supabase_client import upsert_row
+                result = await upsert_row("smb_supply", row, on_conflict="smb_id")
+                if result:
+                    _log.info("smb_supply_upserted smb_id=%s", entry.smb_id)
+            except Exception as exc:
+                _log.warning("smb_supply_upsert_failed smb_id=%s err=%s", entry.smb_id, exc)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(_do_upsert())
+            else:
+                asyncio.run(_do_upsert())
+        except Exception as exc:
+            _log.warning("smb_supply_schedule_failed smb_id=%s err=%s", entry.smb_id, exc)
 
     @staticmethod
     def _location_matches(smb: SMBEntry, zip_or_city: str) -> bool:
