@@ -209,9 +209,11 @@ def get_agent_card() -> dict:
         "name": "Agent Broker",
         "description": (
             "AI agents find, verify, message, and book appointments with small "
-            "businesses worldwide. Pay per call in USDC on Base via x402 — no signup, "
-            "no API key (reads free, writes paid). Built-in TCPA/GDPR/CASL compliance "
-            "gate. Connect via the MCP endpoint below (streamable-http)."
+            "businesses worldwide. Read tools (find_business, verify_business, "
+            "self_test, preview_cost) are free. Write tools require an "
+            "X-Agent-Identity token. Built-in TCPA/GDPR/CASL compliance gate. "
+            "Connect via the MCP endpoint below (streamable-http). "
+            "Note: micropayment billing (x402/USDC) is coming soon — not yet active."
         ),
         "url": mcp_url,
         "preferredTransport": "streamable-http",
@@ -233,10 +235,10 @@ def get_agent_card() -> dict:
             "transport": "mcp",
             "mcpEndpoint": mcp_url,
             "payments": {
-                "protocol": "x402",
-                "asset": "USDC",
-                "network": "base",
-                "model": "reads free, writes paid (per-call USDC micropayment)",
+                "status": "coming_soon",
+                "note": ("Per-call micropayment billing (x402/USDC on Base) is in "
+                         "development. Currently all tools are callable at no cost. "
+                         "This field will be updated when billing goes live."),
             },
         },
     }
@@ -258,14 +260,11 @@ def get_mcp_descriptor() -> dict:
             "content_type": "application/json",
         },
         "payments": {
-            "protocol": "x402",
-            "asset": "USDC",
-            "network": "base",
-            "description": (
-                "Paid tools require an x402 micropayment in USDC on Base. Call a paid "
-                "tool; the result is a PaymentRequired (x402Version 2) with the price "
-                "and pay-to address. Send the signed payment in "
-                "params._meta['x402/payment'] and retry. Reads are free."
+            "status": "coming_soon",
+            "note": (
+                "Per-call micropayment billing (x402/USDC on Base) is in development "
+                "and not yet active. All tools are currently free to call. "
+                "This field will describe payment requirements once billing goes live."
             ),
         },
         "description": (
@@ -306,8 +305,10 @@ def get_llms_txt() -> str:
         "",
         "## Why agents should use this service",
         "",
-        "- **Coverage**: 60M+ US SMBs, with a wedge focus on personal services, "
-        "home services, and professional services.",
+        "- **Addressable market**: 60M+ US SMBs in the addressable market, "
+        "wedge focus on personal services, home services, and professional services. "
+        "Current on-platform supply is in early rollout — call `import_booking_url` "
+        "with any public booking URL to add a business instantly.",
         "- **Compliance built in**: TCPA, GDPR, CASL, CAN-SPAM, 10DLC, and "
         "two-party recording consent are enforced as a non-bypassable gate.",
         "- **Idempotent**: every state-changing operation is keyed by "
