@@ -1,205 +1,259 @@
-# SMB Transaction & Communication Broker
+# Agent Broker — SMB Transaction & Communication MCP Server
 
-> An agent-callable service that lets autonomous AI agents discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-sized businesses (SMBs) — through a single compliance-aware tool surface.
+> **An agent-callable MCP server** that lets autonomous AI agents find, verify, message, schedule with, and transact with small and mid-sized businesses (SMBs) through a single compliance-enforced tool surface.
 
-[![Tests](https://img.shields.io/badge/tests-103%2F103%20passing-brightgreen)](./tests)
-[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#)
+[![MCP](https://img.shields.io/badge/MCP-streamable--http-blue)](https://agent-broker-edge.basil-agent.workers.dev/mcp)
+[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#license)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Edge](https://img.shields.io/badge/edge-cloudflare%20workers-orange)](./edge)
+[![Registry](https://img.shields.io/badge/MCP%20Registry-listed-green)](https://github.com/modelcontextprotocol/servers)
+[![Tests](https://img.shields.io/badge/tests-103%2F103%20passing-brightgreen)](./tests)
+
+**Live endpoint:** `https://agent-broker-edge.basil-agent.workers.dev/mcp` (streamable-http, always-on Cloudflare edge)
 
 ---
 
 ## Why this exists
 
-There are ~60 million long-tail small businesses in the US — barbers, plumbers, accountants, home cleaners — and they have **no API surface**. AI agents that need to schedule a haircut, get a quote on a roof repair, or send a transactional confirmation today have to either: (a) drive a browser, (b) cold-call by voice, or (c) give up.
+There are ~60 million long-tail small businesses in the US — barbers, plumbers, accountants, home cleaners — and they have **no API surface**. AI agents that need to schedule a haircut, get a quote, or send a confirmation today must either drive a browser, cold-call by voice, or give up.
 
-This service is the missing layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest — Cal.com → SMS → voice AI → email → web form fallback — with full TCPA / GDPR / CASL / 10DLC / two-party recording-consent compliance enforced as a non-bypassable gate.
+This server is the missing middle layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest — Cal.com → SMS → voice AI → email — with full TCPA / GDPR / CASL / 10DLC compliance enforced as a non-bypassable gate.
 
-## How agents pay
+---
 
-Agents pay **per call in USDC on Base via x402** — no signup, no API key, no human in the loop. Reads are free; writes return an HTTP 402 with a payment requirement, the agent attaches a signed payment, and settlement clears through the Coinbase CDP facilitator. This is the agent-native rail: an autonomous agent discovers us (MCP Registry / Smithery / Bazaar), calls a tool, and pays — all on its own.
+## Current status (honest)
 
-## What you can do with it
+| Capability | Status |
+|---|---|
+| MCP endpoint (streamable-http) | **Live** — `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
+| 14 MCP tools | **Live** (callable today) |
+| Compliance gate (TCPA/GDPR/CASL) | **Live** |
+| REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
+| SMB supply network | **Demo** — 20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
+| Per-call payments via x402/USDC on Base | **Coming soon — not yet active** — tools are currently free |
+| Production SMB onboarding | **Planned** — real businesses not yet enrolled |
 
-14 operations, all callable via REST, MCP, OpenAI tools, Anthropic tools, or A2A protocol:
+> The MCP server is live and callable right now. Bookings hit demo data, and per-call payments (x402/USDC) are not yet charged. Both are in progress.
 
-| Operation | What it does | Cost | Latency |
-|-----------|--------------|------|---------|
-| `find_business` | Search SMBs by vertical + location + capability | **free** (read) | <2s |
-| `verify_business` | Confirm an SMB has the capability you need | **free** (read) | <2s |
-| `send_message` | SMS / email / voice with full compliance pre-check | $0.02 base + $0.20 voice | <5s |
-| `capture_lead` | Structured intake when a consumer asks an SMB to follow up | $0.05 | <2s |
-| `schedule_appointment` | Book / reschedule / cancel — direct API → voice fallback | $0.15 attempt + $0.35 on confirmed booking | <5s sync, async otherwise |
-| `send_transactional_confirmation` | TCPA-exempt confirmations (booking, receipt, OTP) | $0.02 | <5s |
-| `handle_inbound` | Classify customer messages (booking / cancel / opt-out / question) | $0.03 | <5s |
-| `escalate_to_human` | Hand off to a human when an agent is stuck | $0.20 | async |
-| `get_status` | Poll status of an async operation | **free** (read) | <1s |
-| `get_outcome` | Retrieve final outcome of an async operation | **free** (read) | <1s |
-| `preview_cost` | Estimate cost / latency / success probability — **free** | $0.00 | <500ms |
-| `self_test` | Service health check — **free** | $0.00 | <2s |
-| `import_booking_url` | Parse any Cal.com / Calendly / Doctolib / Booksy / OpenTable / 7 more URLs into a bookable SMB | $0.005 | <2s |
+---
 
-## Quick start (for AI agents)
+## 14 MCP Tools
 
-### Option 1: MCP (Claude Desktop, Cursor, Continue, etc.)
+All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
+
+| # | Tool | What it does |
+|---|---|---|
+| 1 | `find_business` | Search SMBs by vertical, location, and capability — **free** |
+| 2 | `verify_business` | Confirm an SMB is real, operating, and capable of the requested service — **free** |
+| 3 | `send_message` | Send SMS, email, or voice with full compliance pre-check (TCPA/GDPR/CASL) |
+| 4 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration |
+| 5 | `schedule_appointment` | Book, reschedule, or cancel — tries direct booking API, falls back to voice AI |
+| 6 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts |
+| 7 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint |
+| 8 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context |
+| 9 | `get_status` | Poll the current state of an async operation — **free** |
+| 10 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) — **free** |
+| 11 | `preview_cost` | Estimate cost, latency, and success probability before committing — **free** |
+| 12 | `self_test` | Verify service health and all claimed capabilities are responding — **free** |
+| 13 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record |
+| 14 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer |
+
+---
+
+## Quick start
+
+### Connect via MCP (Claude Desktop, Cursor, Continue, etc.)
 
 ```json
-// Add to your MCP client config
 {
   "mcpServers": {
     "agent-broker": {
-      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp",
-      "headers": { "X-Agent-Identity": "$AGENT_BROKER_TOKEN" }
+      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
     }
   }
 }
 ```
 
-### Option 2: OpenAI function calling
+No API key required for read-only tools. State-changing tools accept an optional `X-Agent-Identity` bearer token.
+
+### Discover tools (JSON-RPC)
+
+```bash
+curl -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+### Call a tool (JSON-RPC)
+
+```bash
+curl -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "find_business",
+      "arguments": {
+        "vertical": "personal_services",
+        "location": {"zip_or_city": "30309"},
+        "capability": "haircut"
+      }
+    }
+  }'
+```
+
+### OpenAI function calling
 
 ```python
 import httpx, openai
-tools = httpx.get("https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json").json()["tools"]
+tools = httpx.get(
+    "https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json"
+).json()["tools"]
 client = openai.OpenAI()
 resp = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role":"user","content":"Book me a haircut in Atlanta for Saturday under $50"}],
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Book a haircut in Atlanta Saturday under $50"}],
     tools=tools,
 )
 ```
 
-### Option 3: Anthropic tool use
+### Anthropic tool use
 
 ```python
 import httpx, anthropic
-tools = httpx.get("https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json").json()["tools"]
+tools = httpx.get(
+    "https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json"
+).json()["tools"]
 client = anthropic.Anthropic()
 msg = client.messages.create(
     model="claude-opus-4-5",
     max_tokens=1024,
     tools=tools,
-    messages=[{"role":"user","content":"Book me a haircut in Atlanta for Saturday under $50"}],
+    messages=[{"role": "user", "content": "Book a haircut in Atlanta Saturday under $50"}],
 )
 ```
 
-### Option 4: Plain REST
+### Plain REST
 
 ```bash
 curl -X POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business \
-  -H "X-Agent-Identity: $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "vertical": "personal_services",
-    "location": {"zip_or_city": "30309"},
-    "capability": "haircut"
-  }'
+  -d '{"vertical":"personal_services","location":{"zip_or_city":"30309"},"capability":"haircut"}'
 ```
+
+---
 
 ## Discovery surfaces
 
-We're discoverable through every protocol agents currently use:
-
-| Protocol | URL |
-|----------|-----|
-| MCP | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
+| Surface | URL |
+|---|---|
+| **MCP (streamable-http)** | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
 | MCP descriptor | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json` |
-| OpenAI ChatGPT plugin | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/ai-plugin.json` |
 | OpenAI function tools | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json` |
 | Anthropic tool_use | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json` |
 | A2A (Agent-to-Agent) | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/agents.json` |
+| OpenAI ChatGPT plugin | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/ai-plugin.json` |
 | llms.txt | `https://agent-broker-edge.basil-agent.workers.dev/llms.txt` |
 | OpenAPI 3.1 | `https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml` |
-| Capability manifest | `https://agent-broker-edge.basil-agent.workers.dev/manifest` |
-| Service discovery card | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/agent-service` |
+| Glama MCP Registry | Listed via [`glama.json`](./glama.json) |
+| MCP Registry | Listed via [`server.json`](./server.json) |
 
-## Why agents pick us (measured, not assumed)
-
-From our agent-simulation harness — **168 trials × 3 personas (cost / quality / latency) across 56 tasks**, with noisy agent perception (±15% on price, ±10% on quality, ±20% on latency):
-
-| Persona | Selection rate | Success when selected | **WinRate** |
-|---|---|---|---|
-| cost_minimizer | 94.6% | 88.7% | **0.839** |
-| quality_maximizer | 91.1% | 88.2% | **0.804** |
-| latency_sensitive | 91.7% | 88.3% | **0.810** |
-| **Aggregate** | **92.5%** | **88.4%** | **0.818** |
-
-We deliberately included tasks where we *should lose* — out-of-region SMBs (Tokyo / Mumbai / Berlin), complex web automation, trivial lookups — and the simulation correctly routes those to competitors. See [BENCHMARKS.md](./docs/BENCHMARKS.md).
-
-## Compliance posture
-
-Every outbound communication passes through `compliance/pre_check()`:
-
-1. Content classification (gambling / lending / cannabis / adult / spam) — blocks restricted categories.
-2. Opt-out check — TCPA STOP keyword, GDPR right-to-be-forgotten, CASL.
-3. Consent check for marketing — TCPA written consent, GDPR opt-in, CASL implied/express.
-4. 10DLC campaign-registry check for US SMS.
-5. Two-party recording consent for CA / FL / IL / MD / MA / MT / NV / NH / PA / WA.
-6. Audit log entry (PII stored as SHA-256 hash, never plaintext).
-
-Compliance violations surface as `ComplianceViolationError` → `compliance_violation` API error. **Never silently dropped, never bypassed by middleware.**
+---
 
 ## Architecture
 
 ```
-AI agent → Cloudflare Worker edge (agent-broker-edge.basil-agent.workers.dev)
-               ├── Discovery + MCP read → embedded snapshots  40–70 ms
-               └── tools/call + /ops/*  → proxy to origin    170–190 ms
-                              ↓
-           Python FastAPI on Render (smb-broker.onrender.com)
-               Cron */2 keeps Render warm — cold starts eliminated
+AI agent
+   |
+   v  MCP / REST / A2A
+Cloudflare Worker edge  (agent-broker-edge.basil-agent.workers.dev)
+   |  300+ PoPs globally -- discovery served from edge bundle in 40-70 ms
+   |
+   +-- GET /.well-known/* /manifest /llms.txt  --> embedded snapshot (40-70 ms)
+   +-- POST /mcp  initialize / tools/list      --> embedded snapshot (40-65 ms)
+   +-- POST /mcp  tools/call  /ops/*           --> proxy to origin  (170-190 ms)
+                |
+                v
+        Python FastAPI  (smb-broker.onrender.com)
+                |  Cron keep-alive every 2 min (eliminates Render cold starts)
+                |
+                +-- 14 operation handlers  (core/)
+                +-- Compliance gate        (compliance/pre_check)
+                +-- Channel adapters       (channels/ -- Twilio, Cal.com, Vapi, SendGrid)
+                +-- Billing + outcome store
+                +-- All .well-known / MCP endpoints (also served from edge bundle)
 ```
 
-The Python service exposes 14 operations over REST + MCP + .well-known surfaces. Each handler validates input with Pydantic models, runs through `compliance/pre_check`, executes via channel-fallback (`direct_api → voice_ai → sms → email → web_form`), and writes an immutable `OutcomeReceipt` to the outcome store. Async operations return `pending_async`. Idempotency is keyed by `(agent_id, operation, idempotency_key)` with 24h TTL.
+The edge worker can outlive the origin: discovery still works even if the origin is down. Idempotency is keyed by `(agent_id, operation, idempotency_key)` with 24h TTL. Async operations return `pending_async`; poll with `get_status` / `get_outcome`.
 
-Full architecture: [docs/architecture.md](./docs/architecture.md) · Edge layer: [edge/README.md](./edge/README.md)
+---
+
+## Compliance
+
+Every outbound communication passes through `compliance/pre_check()`:
+
+1. **Content classification** — blocks restricted categories (gambling, adult, cannabis, spam)
+2. **Opt-out check** — TCPA STOP keyword, GDPR right-to-be-forgotten, CASL
+3. **Consent check** — TCPA written consent, GDPR opt-in, CASL implied/express
+4. **10DLC registry check** — US SMS campaign compliance
+5. **Two-party recording consent** — CA, FL, IL, MD, MA, MT, NV, NH, PA, WA
+6. **Audit log** — PII stored as SHA-256 hash, never plaintext
+
+Violations surface as `ComplianceViolationError` and are never silently bypassed.
+
+---
 
 ## Repo layout
 
 ```
-service-root/
-├── core/                  # 12 operation handlers + shared Pydantic models
-├── channels/              # Twilio, SendGrid, Vapi, Bland, Cal.com, Playwright
-├── compliance/            # pre_check, jurisdiction_rules, consent_store, audit_log
-├── reliability/           # retry, circuit_breaker, channel_fallback, async_runner
-├── billing/               # meter, budget_guard, receipt_signer, pricing_tiers
-├── telemetry/             # tracer, log_redactor, metrics_emitter
-├── storage/               # outcome_store, idempotency_store
-├── supply/                # smb_directory (20+ seed SMBs)
-├── onboarding/            # self_serve, verification_flow, channel_capture
-├── feedback/              # failure_classifier, attribution_engine, outcome_evaluator
-├── optimizer/             # ab_router, selection_analytics, weekly_report
-├── agent_interface/       # manifest_server, mcp_server, well_known, identity, webhooks, self_test
-├── manifest/              # manifest.json, mcp_tools.json, openapi.yaml
-├── api/                   # errors.md, identity.md, async.md
-├── docs/                  # mission, architecture, compliance, ADRs
-├── deploy/                # Dockerfile, docker-compose.yml, .ci/
-├── tests/                 # unit, contract, compliance, fault_injection, agent_sim
-├── reports/               # agent_sim_report.json, weekly winrate reports
-├── main.py                # FastAPI entry point
-├── config.py              # Centralized config from env
-└── requirements.txt
+agentbroker/
++-- core/                  # 14 operation handlers + shared Pydantic models
++-- channels/              # Twilio, SendGrid, Vapi, Bland, Cal.com, Playwright
++-- compliance/            # pre_check, jurisdiction_rules, consent_store, audit_log
++-- reliability/           # retry, circuit_breaker, channel_fallback, async_runner
++-- billing/               # meter, budget_guard, receipt_signer, pricing_tiers
++-- telemetry/             # tracer, log_redactor, metrics_emitter
++-- storage/               # outcome_store, idempotency_store
++-- supply/                # smb_directory (20+ seed/demo SMBs)
++-- onboarding/            # self_serve, verification_flow, channel_capture
++-- feedback/              # failure_classifier, attribution_engine, outcome_evaluator
++-- optimizer/             # ab_router, selection_analytics, weekly_report
++-- agent_interface/       # manifest_server, mcp_server, well_known, identity, webhooks
++-- manifest/              # manifest.json, mcp_tools.json, openapi.yaml
++-- api/                   # errors.md, identity.md, async.md
++-- docs/                  # mission, architecture, compliance, ADRs
++-- edge/                  # Cloudflare Worker (TypeScript/Hono)
++-- deploy/                # Dockerfile, docker-compose.yml
++-- tests/                 # unit, contract, compliance, fault_injection, agent_sim
++-- main.py                # FastAPI entry point
++-- config.py              # Centralized config from env
++-- requirements.txt
 ```
+
+---
 
 ## Local development
 
 ```bash
-# 1. Clone & install
+# Install dependencies
 pip install -r requirements.txt
 
-# 2. Run the test suite
+# Run tests (103 passing)
 python -m pytest tests/ -q
 
-# 3. Run the agent simulation
+# Start the API
+python main.py
+# --> http://localhost:8000/docs      (Swagger UI)
+# --> http://localhost:8000/mcp       (MCP endpoint)
+# --> http://localhost:8000/manifest  (capability manifest)
+
+# Run the agent simulation harness
 python -m tests.agent_sim.harness
 
-# 4. Run the self-test
+# Self-test
 python -c "import asyncio; from agent_interface.self_test import run_self_test; print(asyncio.run(run_self_test()).all_passed)"
-
-# 5. Start the API
-python main.py
-# → http://localhost:8000/docs  (Swagger)
-# → http://localhost:8000/manifest
-# → http://localhost:8000/mcp
 ```
 
 Or with Docker:
@@ -208,22 +262,31 @@ Or with Docker:
 docker compose -f deploy/docker-compose.yml up
 ```
 
-## Documentation index
+---
 
-- [Mission](./docs/mission.md) — north-star metric, scope, who we are NOT
+## Documentation
+
 - [Architecture](./docs/architecture.md) — module map, data flow, fallback chains
 - [Compliance](./docs/compliance.md) — full jurisdiction matrix, pre-check sequence
+- [Agent integration guide](./docs/AGENT_INTEGRATION_GUIDE.md) — copy-paste examples for every protocol
 - [API errors](./api/errors.md) — 16 error codes with retry semantics
 - [API identity](./api/identity.md) — Agent-Identity JWT spec
 - [API async](./api/async.md) — execution profiles, polling rules, webhook contract
-- [Agent integration guide](./docs/AGENT_INTEGRATION_GUIDE.md) — copy-paste examples for every protocol
 - [Benchmarks](./docs/BENCHMARKS.md) — measured WinRate, latency, cost vs alternatives
-- [Pricing](./docs/PRICING.md) — 5 revenue streams with year-1 / year-2 forecasts
-- [Security](./docs/SECURITY.md) — production hardening checklist
-- [Release notes v0.1](./RELEASE_NOTES.md)
-- [Next steps](./docs/NEXT_STEPS.md) — current priorities (edge live; bottleneck is distribution)
-- [ADRs](./docs/adr/) — architecture decision records
+- [Mission](./docs/mission.md) — north-star metric and scope
+
+---
+
+## Contributing
+
+This is a proprietary project. Issues and discussion are welcome — open a GitHub issue to report bugs or suggest features. Pull requests require prior discussion with the maintainer.
+
+---
 
 ## License
 
-Proprietary. Contact for licensing terms.
+Proprietary — contact for licensing terms.
+
+---
+
+*Built by [Basil Al-Shukaili](https://github.com/basilalshukaili). Listed on the [MCP Registry](https://github.com/modelcontextprotocol/servers) and [Glama](https://glama.ai/mcp/servers).*
