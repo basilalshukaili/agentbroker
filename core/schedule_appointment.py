@@ -61,6 +61,27 @@ async def handle_schedule_appointment(
             trace_id=trace_id,
         ))
 
+    # CRITICAL-1 fix: demo SMBs must never trigger a real charge.
+    # The directory contract (smb_directory.py line 39) promises that bookings
+    # against demo SMBs short-circuit with reason_code='demo_smb_no_live_booking'
+    # instead of contacting real businesses. This guard honours that promise and
+    # returns status=failure so _receipt_is_error() returns True in x402_gate,
+    # which causes the SDK to SKIP settlement — no USDC charged.
+    if getattr(smb, "is_demo", False):
+        return _store_terminal(OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="demo_smb_no_live_booking",
+            human_message=(
+                f"{smb.name} is a sandbox/demo entry. No real action was taken. "
+                "Use import_booking_url to add a real business."
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge_demo"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        ))
+
     # Fast path: direct_api:calcom
     if "direct_api:calcom" in smb.channels_available and smb.calcom_event_type_id:
         adapter = CalComAdapter()

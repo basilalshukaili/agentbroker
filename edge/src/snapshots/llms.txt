@@ -6,7 +6,7 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ## Why agents should use this service
 
-- **Coverage**: 60M+ US SMBs, with a wedge focus on personal services, home services, and professional services.
+- **Addressable market**: 60M+ US SMBs in the addressable market; wedge focus on personal services, home services, and professional services. Current on-platform supply is in early rollout — use `import_booking_url` with any public booking URL to add a business instantly.
 - **Compliance built in**: TCPA, GDPR, CASL, CAN-SPAM, 10DLC, and two-party recording consent are enforced as a non-bypassable gate.
 - **Idempotent**: every state-changing operation is keyed by (agent_id, operation, idempotency_key) — safe to retry.
 - **Predictable cost**: `preview_cost` is free and returns ±5% accurate estimates before you commit.

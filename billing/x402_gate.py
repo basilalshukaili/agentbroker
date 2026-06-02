@@ -69,6 +69,17 @@ _FAILURE_STATUSES = frozenset({
     "failure", "failed", "error", "errored", "rejected", "denied", "blocked",
     "compliance_blocked", "invalid", "not_found", "unsupported",
     "unsupported_platform", "unprocessable", "timeout", "cancelled", "canceled",
+    # CRITICAL-2 fix: pending_async is a non-terminal status — the Celery worker
+    # has been dispatched but the booking is NOT yet confirmed. Charging before
+    # the booking completes is dishonest billing (agent pays; booking may fail
+    # silently later). Adding pending_async here causes _receipt_is_error() to
+    # return True, so the SDK skips CDP settlement on async dispatch.
+    # Settlement deferred to a future Celery-completion webhook refactor.
+    "pending_async",
+    # MEDIUM-2 fix: partial means the operation was partially attempted but no
+    # real external action completed (e.g. capture_lead with no CRM write).
+    # Do not charge for stub/incomplete work.
+    "partial",
 })
 
 
@@ -93,6 +104,31 @@ _ed25519_key: Any = None
 # ---------------------------------------------------------------------------
 # Public predicates (cheap, pure, never raise)
 # ---------------------------------------------------------------------------
+
+# HIGH-1 FOUNDER ACTION REQUIRED — Dual x402 gate risk (cannot be fixed in code here).
+#
+# There are TWO x402 implementations:
+#   1. Edge (Cloudflare Worker): edge/src/mcp-edge.ts + edge/src/x402.ts
+#      Triggered by X402_RECEIVER_ADDRESS being set as a CF Worker secret.
+#      Uses a hand-rolled "exact-evm" + X-PAYMENT-PROOF scheme (NOT standard CDP).
+#      Does NOT call CDP /settle — only marks a KV nonce.
+#   2. Origin (this file): standard CDP x402 SDK, triggered by X402_ENABLED=true.
+#
+# If BOTH are active simultaneously an agent agent gets a 402 from the edge
+# (hand-rolled scheme), pays, and the edge proxies to origin — which then issues
+# ANOTHER 402 (CDP scheme). The agent is double-charged or the flow breaks.
+#
+# REQUIRED FOUNDER ACTION before setting X402_ENABLED=true on Render:
+#   - Log in to the Cloudflare dashboard.
+#   - Go to Workers & Pages → agent-broker-edge → Settings → Variables.
+#   - DELETE (or leave unset) the X402_RECEIVER_ADDRESS Worker secret.
+#   - This disables the edge x402 gate entirely. All tools/call requests proxy
+#     to origin where the single, CDP-backed gate here handles payment.
+#   - Only after confirming the edge secret is unset: set X402_ENABLED=true on Render.
+#
+# Do NOT set X402_RECEIVER_ADDRESS on the Cloudflare Worker at the same time
+# as X402_ENABLED=true on Render. One path only.
+
 
 def enabled() -> bool:
     """True only when x402 is fully configured. Safe to call on every request."""

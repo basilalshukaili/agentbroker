@@ -248,11 +248,15 @@ class SMBDirectory:
     @staticmethod
     def _location_matches(smb: SMBEntry, zip_or_city: str) -> bool:
         needle = zip_or_city.lower().strip()
-        return (
-            needle in smb.zip_code.lower()
-            or needle in smb.city.lower()
-            or needle in smb.state.lower()
-        )
+        city_l = smb.city.lower()
+        state_l = smb.state.lower()
+        zip_l = smb.zip_code.lower()
+        # Direct containment check
+        if needle in zip_l or needle in city_l or needle in state_l:
+            return True
+        # Split "City, STATE" format and check parts independently
+        parts = [p.strip() for p in needle.replace(",", " ").split() if p.strip()]
+        return any(p in city_l or p in state_l or p in zip_l for p in parts if len(p) > 1)
 
 
 _directory = SMBDirectory()

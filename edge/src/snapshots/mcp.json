@@ -1,1 +1,19 @@
-{"name":"agent-broker","version":"0.1.0","transport":{"type":"streamable-http","endpoint":"https://agent-broker-edge.basil-agent.workers.dev/mcp","method":"POST","content_type":"application/json"},"payments":{"protocol":"x402","asset":"USDC","network":"base","description":"Paid tools require an x402 micropayment in USDC on Base. Call a paid tool; the result is a PaymentRequired (x402Version 2) with the price and pay-to address. Send the signed payment in params._meta['x402/payment'] and retry. Reads are free."},"description":"MCP server for SMB Transaction & Communication Broker. Exposes 14 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, import_booking_url, call_business.","auth":{"header":"X-Agent-Identity","scheme":"bearer"}}
+{
+  "name": "agent-broker",
+  "version": "0.1.0",
+  "transport": {
+    "type": "streamable-http",
+    "endpoint": "https://agent-broker-edge.basil-agent.workers.dev/mcp",
+    "method": "POST",
+    "content_type": "application/json"
+  },
+  "payments": {
+    "status": "coming_soon",
+    "note": "Per-call micropayment billing (x402/USDC on Base) is in development and not yet active. All tools are currently free to call. This field will describe payment requirements once billing goes live."
+  },
+  "description": "MCP server for SMB Transaction & Communication Broker. Exposes 14 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, import_booking_url, call_business.",
+  "auth": {
+    "header": "X-Agent-Identity",
+    "scheme": "bearer"
+  }
+}
