@@ -59,3 +59,8 @@ services:
       # Generate a random 32+ char string and paste it in the Render dashboard.
       - key: BILLING_SIGNING_KEY
         sync: false
+      # Supabase -- durable billing_events + smb_supply storage
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
