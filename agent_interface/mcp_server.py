@@ -244,7 +244,7 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
             error=_error(
                 ERR_INVALID_PARAMS,
                 f"missing required argument '{missing}'. Call tools/list and use "
-                f"the inputSchema for this tool — argument names are exact.",
+                f"the inputSchema for this tool - argument names are exact.",
             ),
         ).to_dict()
     except Exception as exc:
@@ -377,7 +377,7 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         import os as _os
         checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
         how_to_buy = (
-            f" To get access: purchase a 90-day developer key at {checkout} — "
+            f" To get access: purchase a 90-day developer key at {checkout} - "
             f"flat price, no per-call billing. The key arrives by email; send it "
             f"as the X-Agent-Identity header on every call. Read-only tools "
             f"(find_business, verify_business, preview_cost, get_status) stay free."
