@@ -91,6 +91,12 @@ class CalComAdapter:
     ) -> dict[str, Any]:
         """Create a booking. v2 path: POST /v2/bookings with new schema."""
         if not self._api_key:
+            from channels.stub_policy import stubs_allowed
+            if not stubs_allowed():
+                # Never claim ACCEPTED for a booking that was never made.
+                raise RuntimeError(
+                    "booking channel not configured (CALCOM_API_KEY missing) — "
+                    "no booking was created and nothing was charged")
             return {
                 "uid": f"STUB_BOOKING_{event_type_id}",
                 "status": "ACCEPTED",

@@ -54,6 +54,9 @@ class VapiVoiceAdapter(ChannelAdapter):
             script = CONSENT_PROMPT_TEXT + " " + script
 
         if not self._api_key:
+            from channels.stub_policy import stubs_allowed, not_configured
+            if not stubs_allowed():
+                return not_configured("voice", "vapi", "VAPI_API_KEY")
             return ChannelResponse(
                 success=True,
                 provider_message_id=f"VAPI_STUB_{call_id[:8]}",
