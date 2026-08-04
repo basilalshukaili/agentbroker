@@ -5,12 +5,13 @@
 name: agent-broker
 displayName: "Agent Broker — SMB Transactions & Bookings"
 description: >
-  Agent-callable horizontal layer for finding, verifying, booking, and messaging
-  long-tail small/mid-sized businesses worldwide. 13 operations across 12 booking
-  platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore,
-  Square, Acuity, Schedulista, Squarespace, BookMyCity). Built-in compliance
-  gate (TCPA / GDPR / CASL / PDPL across 22 jurisdictions). Pay-per-call via
-  x402 USDC-on-Base micropayments — no signup, no card.
+  Agent-callable horizontal layer for finding, verifying, booking, messaging, and
+  calling long-tail small/mid-sized businesses worldwide. 14 operations across 12
+  booking platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable,
+  Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Built-in
+  compliance gate (TCPA / GDPR / CASL / PDPL across 22 jurisdictions). 6 read
+  tools always free — 8 write tools need a $9/90-day developer key (no per-call
+  billing, flat access).
 
 vendor: agent-broker-edge.basil-agent.workers.dev
 homepage: https://agent-broker-edge.basil-agent.workers.dev
@@ -44,7 +45,7 @@ connection:
   authentication:
     type: bearer
     header: X-Agent-Identity
-    description: "JWT token issued by /auth/token endpoint"
+    description: "90-day developer key purchased at https://buy.polar.sh/polar_cl_xmYfvh3u747R3UuYV4H4lBUZsRxAk9uD02MxY1XXufL — key arrives by email. Send as X-Agent-Identity header. Read tools (find_business, verify_business, get_status, get_outcome, preview_cost, self_test) are always free with no header."
 
 tools:
   - name: find_business
@@ -71,6 +72,10 @@ tools:
     description: "Free cost / latency / success-probability estimate"
   - name: self_test
     description: "Free service health check"
+  - name: import_booking_url
+    description: "Turn any public booking URL into a structured booking object"
+  - name: call_business
+    description: "Place a voice-AI phone call to a business on behalf of an agent"
 
 screenshots:
   - url: https://agent-broker-edge.basil-agent.workers.dev/static/screenshot-1.png
@@ -87,6 +92,5 @@ documentation:
     type: llms_txt
 
 pricing:
-  free_tier: "100 ops/month free for any agent"
-  paid_tiers: "Developer $49/mo, Business $499/mo, Enterprise negotiated"
-  outcome_pricing: "schedule_appointment: $0.15 base + $0.85 success premium"
+  free_tier: "6 read tools (find_business, verify_business, get_status, get_outcome, preview_cost, self_test) always free — no key required"
+  paid_tiers: "Developer $9/90-day flat — unlimited write-tool calls; key arrives by email after Polar checkout"
