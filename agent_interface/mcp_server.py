@@ -232,6 +232,21 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
             id=rpc_id,
             error=_error(ERR_INVALID_PARAMS, str(pe)),
         ).to_dict()
+    except KeyError as ke:
+        # A missing required argument is the caller's problem to fix, not an
+        # internal fault. Before 2026-08-04 this surfaced as
+        # "Internal error: 'vertical'", which tells an agent nothing and ends
+        # the session — the most expensive kind of error on a discovery
+        # marketplace. Name the argument and point at the schema instead.
+        missing = str(ke).strip("'\"")
+        return JsonRpcResponse(
+            id=rpc_id,
+            error=_error(
+                ERR_INVALID_PARAMS,
+                f"missing required argument '{missing}'. Call tools/list and use "
+                f"the inputSchema for this tool — argument names are exact.",
+            ),
+        ).to_dict()
     except Exception as exc:
         return JsonRpcResponse(
             id=rpc_id,
@@ -355,8 +370,22 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
     except HTTPException as he:
         # 401 unauthenticated or 403 insufficient scope — surface as a clear,
         # actionable JSON-RPC params error rather than a generic -32603.
+        #
+        # This error IS the storefront: it is the only moment an evaluating
+        # agent is told how to become a paying one. Ending it at "header
+        # required" (as it did before 2026-08-04) wastes every arrival.
+        import os as _os
+        checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
+        how_to_buy = (
+            f" To get access: purchase a 90-day developer key at {checkout} — "
+            f"flat price, no per-call billing. The key arrives by email; send it "
+            f"as the X-Agent-Identity header on every call. Read-only tools "
+            f"(find_business, verify_business, preview_cost, get_status) stay free."
+            if checkout else ""
+        )
         raise _ParamError(
-            f"auth_required for tool '{name}' (status={he.status_code}): {he.detail}"
+            f"auth_required for tool '{name}' (status={he.status_code}): "
+            f"{he.detail}{how_to_buy}"
         )
 
 

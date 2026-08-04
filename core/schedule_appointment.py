@@ -46,6 +46,23 @@ async def handle_schedule_appointment(
     """
     t0 = time.monotonic()
     operation_id = str(uuid.uuid4())
+
+    # Argument validation comes FIRST: a malformed request is malformed no
+    # matter which SMB it names. Previously the supply/demo short-circuits ran
+    # ahead of this, so "cancel with no appointment id" came back as
+    # demo_smb_no_live_booking and the caller never learned what was wrong.
+    if request.action.value == "cancel" and not request.existing_appointment_id:
+        return _store_terminal(OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="bad_input",
+            human_message="existing_appointment_id is required for cancel action.",
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        ))
+
     directory = get_directory()
     smb = directory.get(request.smb_id)
 

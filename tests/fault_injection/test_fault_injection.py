@@ -32,17 +32,55 @@ class TestChannelDown:
         assert receipt.status == OperationStatus.SUCCESS
 
     def test_schedule_appointment_falls_back_when_calcom_fails(self):
-        """When Cal.com raises an exception, should return pending_async (voice fallback)."""
-        with patch("channels.direct_api.calcom.CalComAdapter.get_availability",
+        """When Cal.com raises an exception, should return pending_async (voice fallback).
+
+        Uses a NON-demo SMB on purpose: the demo-SMB guard deliberately
+        short-circuits every booking against sandbox entries (so no real
+        business is ever contacted and no payment settles), which would mask
+        the fallback path this test exists to cover. smb_001 is a demo entry.
+        """
+        import dataclasses
+        from supply.smb_directory import get_directory
+
+        # Patch the lookup rather than upserting into the shared directory:
+        # upsert() touches the event loop, which breaks this module's
+        # get_event_loop()-based run() helper and cascades into every test
+        # that follows it.
+        real = dataclasses.replace(
+            get_directory().get("smb_001"),
+            smb_id="smb_faulttest_real",
+            name="Fallback Test Salon",
+            is_demo=False,
+        )
+
+        class _StubDirectory:
+            def get(self, smb_id):
+                return real if smb_id == "smb_faulttest_real" else None
+
+        with patch("core.schedule_appointment.get_directory",
+                   return_value=_StubDirectory()), \
+             patch("channels.direct_api.calcom.CalComAdapter.get_availability",
                    new_callable=AsyncMock, side_effect=Exception("Cal.com 503")):
             req = ScheduleAppointmentRequest(
-                smb_id="smb_001",
+                smb_id="smb_faulttest_real",
                 action=AppointmentAction.BOOK,
                 service="haircut",
             )
             receipt = run(handle_schedule_appointment(req))
             # Should fall back to async path, not raise
             assert receipt.status in (OperationStatus.SUCCESS, OperationStatus.PENDING_ASYNC)
+
+    def test_demo_smb_booking_never_contacts_a_real_business(self):
+        """The safety guard the test above steps around must itself be covered."""
+        req = ScheduleAppointmentRequest(
+            smb_id="smb_001",
+            action=AppointmentAction.BOOK,
+            service="haircut",
+        )
+        receipt = run(handle_schedule_appointment(req))
+        assert receipt.status == OperationStatus.FAILURE
+        assert receipt.reason_code == "demo_smb_no_live_booking"
+        assert receipt.cost.amount == 0.0
 
 
 class TestUnreachableSMB:
