@@ -64,7 +64,10 @@ class ResendEmailAdapter(ChannelAdapter):
             body += f"\n{self._physical_address}"
 
         if not self._api_key:
-            # Stub mode — no API key, return synthetic success for tests
+            from channels.stub_policy import stubs_allowed, not_configured
+            if not stubs_allowed():
+                return not_configured("email", "resend", "RESEND_API_KEY")
+            # Stub mode — synthetic success for tests (ALLOW_STUB_CHANNELS only)
             return ChannelResponse(
                 success=True,
                 provider_message_id=f"RESEND_STUB_{request.recipient_id[:8]}",

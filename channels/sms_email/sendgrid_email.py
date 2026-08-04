@@ -41,6 +41,9 @@ class SendGridEmailAdapter(ChannelAdapter):
             body += f"\n{_PHYSICAL_ADDRESS}"
 
         if not self._api_key:
+            from channels.stub_policy import stubs_allowed, not_configured
+            if not stubs_allowed():
+                return not_configured("email", "sendgrid", "SENDGRID_API_KEY")
             return ChannelResponse(
                 success=True,
                 provider_message_id=f"EMAIL_STUB_{request.recipient_id[:8]}",

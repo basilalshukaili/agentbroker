@@ -12,37 +12,68 @@ from core.models import (
     SendMessageRequest, OutcomeReceipt, OperationStatus, CostRecord,
     ChannelPreference, ComplianceViolationError, ErrorCode
 )
+import os
+
 from channels.sms_email.twilio_sms import TwilioSMSAdapter
 from channels.sms_email.sendgrid_email import SendGridEmailAdapter
+from channels.sms_email.resend_email import ResendEmailAdapter
 from channels.voice_ai.vapi import VapiVoiceAdapter
 from channels.adapter_interface import ChannelRequest
 from telemetry.metrics import increment_messages_sent
 
 
 _SMS_ADAPTER = TwilioSMSAdapter()
-_EMAIL_ADAPTER = SendGridEmailAdapter()
 _VOICE_ADAPTER = VapiVoiceAdapter()
+
+# Email provider: Resend is the one we actually own a verified domain on
+# (hatchloop.dev). SendGrid stays as the fallback name for deployments that
+# configured it. Whichever has a key wins; with neither, send_message now
+# fails honestly instead of returning a stub receipt (2026-08-04).
+_RESEND_ADAPTER = ResendEmailAdapter()
+_SENDGRID_ADAPTER = SendGridEmailAdapter()
+if os.getenv("RESEND_API_KEY"):
+    _EMAIL_CHANNEL, _EMAIL_ADAPTER = "email:resend", _RESEND_ADAPTER
+elif os.getenv("SENDGRID_API_KEY"):
+    _EMAIL_CHANNEL, _EMAIL_ADAPTER = "email:sendgrid", _SENDGRID_ADAPTER
+else:
+    _EMAIL_CHANNEL, _EMAIL_ADAPTER = "email:resend", _RESEND_ADAPTER
 
 # Cost per channel
 _CHANNEL_COSTS = {
     "sms:twilio": 0.05,
     "email:sendgrid": 0.02,
+    "email:resend": 0.02,
     "voice_ai:vapi": 0.30,
 }
 
 
 def _build_channel_chain(preference: ChannelPreference, recipient_id: str) -> list[tuple[str, object]]:
-    """Return ordered list of (channel_name, adapter) to try."""
+    """Return ordered list of (channel_name, adapter) to try.
+
+    Fallbacks are filtered by what the recipient identifier can actually
+    receive: an email address cannot be reached by SMS or a phone call, and a
+    phone number cannot be emailed. Before 2026-08-04 the chain fell back
+    across incompatible channels, so an unconfigured email send surfaced an
+    unrelated SMS/10DLC compliance error to the caller.
+    """
+    is_email = "@" in recipient_id
     if preference == ChannelPreference.SMS:
-        return [("sms:twilio", _SMS_ADAPTER), ("email:sendgrid", _EMAIL_ADAPTER)]
-    if preference == ChannelPreference.EMAIL:
-        return [("email:sendgrid", _EMAIL_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
-    if preference == ChannelPreference.VOICE:
-        return [("voice_ai:vapi", _VOICE_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
-    # AUTO: prefer SMS for phone-like IDs, email for email-like IDs
-    if "@" in recipient_id:
-        return [("email:sendgrid", _EMAIL_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
-    return [("sms:twilio", _SMS_ADAPTER), ("email:sendgrid", _EMAIL_ADAPTER)]
+        chain = [("sms:twilio", _SMS_ADAPTER), (_EMAIL_CHANNEL, _EMAIL_ADAPTER)]
+    elif preference == ChannelPreference.EMAIL:
+        chain = [(_EMAIL_CHANNEL, _EMAIL_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
+    elif preference == ChannelPreference.VOICE:
+        chain = [("voice_ai:vapi", _VOICE_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
+    elif is_email:
+        chain = [(_EMAIL_CHANNEL, _EMAIL_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
+    else:
+        chain = [("sms:twilio", _SMS_ADAPTER), (_EMAIL_CHANNEL, _EMAIL_ADAPTER)]
+
+    def reachable(channel_name: str) -> bool:
+        kind = channel_name.split(":")[0]
+        return (kind == "email") if is_email else (kind in ("sms", "voice_ai"))
+
+    filtered = [c for c in chain if reachable(c[0])]
+    return filtered or chain[:1]
 
 
 async def handle_send_message(

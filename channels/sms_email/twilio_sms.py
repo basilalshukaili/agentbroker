@@ -35,7 +35,10 @@ class TwilioSMSAdapter(ChannelAdapter):
         )
 
         if not self._account_sid or not self._auth_token:
-            # Stub mode for testing
+            from channels.stub_policy import stubs_allowed, not_configured
+            if not stubs_allowed():
+                return not_configured("sms", "twilio", "TWILIO_ACCOUNT_SID/AUTH_TOKEN")
+            # Stub mode for testing (ALLOW_STUB_CHANNELS only)
             return ChannelResponse(
                 success=True,
                 provider_message_id=f"SM_STUB_{request.recipient_id[:8]}",
