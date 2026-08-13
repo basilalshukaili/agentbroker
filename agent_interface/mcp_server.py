@@ -62,6 +62,7 @@ def _build_tool_list() -> list[dict]:
             "readOnlyHint": op["name"] in {
                 "find_business", "verify_business", "get_status",
                 "get_outcome", "preview_cost", "self_test",
+                "check_booking_link",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -74,6 +75,7 @@ def _build_tool_list() -> list[dict]:
                 "get_status", "get_outcome",
                 "preview_cost", "self_test",
                 "import_booking_url",  # idempotent by design (returns same smb_id)
+                "check_booking_link",  # pure classification, no side effects
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -484,6 +486,13 @@ async def _dispatch_operation(
             "total": report.total_checks,
             "latency_ms": report.latency_ms,
         }
+
+    elif name == "check_booking_link":
+        # Read-only pre-flight: classify a booking URL before the agent spends
+        # money on import_booking_url + schedule_appointment. No network, no
+        # state change. Returns a full OutcomeReceipt (dict), handled below.
+        from core.check_booking_link import handle_check_booking_link
+        receipt = await handle_check_booking_link(args["url"])
 
     elif name == "get_status":
         from core.status_outcome import handle_get_status

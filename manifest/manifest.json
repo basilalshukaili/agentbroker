@@ -1642,6 +1642,132 @@
       ]
     },
     {
+      "name": "check_booking_link",
+      "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.",
+      "when_to_use": "Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt.",
+      "when_not_to_use": "Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full http(s) URL to classify, e.g. 'https://cal.com/jane' or 'https://www.opentable.com/r/acme'."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "True if the URL host is a supported booking platform."
+          },
+          "importable": {
+            "type": "boolean",
+            "description": "True if import_booking_url will accept this URL (mirrors its host allowlist)."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Detected platform (e.g. 'cal.com', 'calendly', 'doctolib') or 'unknown'."
+          },
+          "predicted_smb_id": {
+            "type": "string",
+            "description": "The idempotent smb_id import_booking_url would assign to this URL."
+          },
+          "expected_channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inferred_country": {
+            "type": "string"
+          },
+          "checked_live": {
+            "type": "boolean",
+            "description": "Always false — this is an offline classification, the page is never fetched."
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free"
+      },
+      "slo": {
+        "p50_ms": 20,
+        "p95_ms": 100
+      },
+      "idempotency": "read-only",
+      "failure_modes": [
+        "bad_input"
+      ],
+      "examples": [
+        {
+          "label": "Supported Cal.com link",
+          "input": {
+            "url": "https://cal.com/jane"
+          },
+          "output": {
+            "supported": true,
+            "importable": true,
+            "platform": "cal.com",
+            "predicted_smb_id": "smb_imp_...",
+            "expected_channels": [
+              "direct_api:calcom"
+            ],
+            "checked_live": false
+          }
+        },
+        {
+          "label": "Unsupported generic URL",
+          "input": {
+            "url": "https://example.com/book-now"
+          },
+          "output": {
+            "supported": false,
+            "importable": false,
+            "platform": "unknown"
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Is this a bookable link? https://cal.com/jane",
+          "agent_call": {
+            "tool": "check_booking_link",
+            "arguments": {
+              "url": "https://cal.com/jane"
+            }
+          },
+          "then_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://cal.com/jane"
+            }
+          }
+        },
+        {
+          "user_says": "Can you book me here: https://www.opentable.com/r/acme-bistro",
+          "agent_call": {
+            "tool": "check_booking_link",
+            "arguments": {
+              "url": "https://www.opentable.com/r/acme-bistro"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "import_booking_url",
       "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
       "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.",

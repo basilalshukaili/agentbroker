@@ -33,6 +33,7 @@ _KNOWN_OPERATIONS = frozenset({
     "self_test",
     "import_booking_url",
     "call_business",
+    "check_booking_link",
 })
 
 # Pricing table — must stay in sync with manifest/manifest.json cost_model
@@ -53,6 +54,7 @@ _PRICING = {
     "self_test":                      {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "import_booking_url":             {"min": 0.005,"max": 0.005,"basis": "per_call"},
     "call_business":                  {"min": 0.50, "max": 0.50, "basis": "per_call"},
+    "check_booking_link":             {"min": 0.0,  "max": 0.0,  "basis": "free"},
 }
 
 _LATENCY = {
@@ -70,6 +72,7 @@ _LATENCY = {
     "self_test":                      {"p50": 200,  "p95": 1000},
     "import_booking_url":             {"p50": 800,  "p95": 3000},
     "call_business":                  {"p50": 45000,"p95": 180000},
+    "check_booking_link":             {"p50": 20,   "p95": 100},
 }
 
 _SUCCESS_PROB = {
@@ -87,6 +90,7 @@ _SUCCESS_PROB = {
     "self_test": 0.999,
     "import_booking_url": 0.92,
     "call_business": 0.80,
+    "check_booking_link": 0.999,
 }
 
 _CHANNEL_LIKELY = {
