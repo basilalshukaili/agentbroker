@@ -2,6 +2,7 @@ name = "agent-broker-edge"
 main = "src/index.ts"
 compatibility_date = "2025-11-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "8f0ebd0046e3f1c8a506f8f0f6d9476f"
 
 # Public-facing settings (non-secret) live in vars
 [vars]
@@ -28,7 +29,7 @@ SERVICE_NAME = "agent-broker"
 # KV cache for discovery payloads
 [[kv_namespaces]]
 binding = "CACHE"
-id = "f45691e20cdd4937ae88ccb64159d928"
+id = "bf9e60ef2cac4ef0b8f077df6dce97fb"
 
 # Observability (free)
 [observability]
@@ -41,6 +42,18 @@ head_sampling_rate = 1
 # write budget stays around 12 paths × 48 refreshes = 576 writes/day.
 [triggers]
 crons = ["*/5 * * * *"]
+
+# ---------------------------------------------------------------------------
+# FREEMIUM RATE-LIMIT (added 2026-08-13)
+# ---------------------------------------------------------------------------
+# Rate-limiting uses the existing CACHE KV namespace — no new bindings needed.
+# Free tier: 100 tools/call ops / IP / day; 429 response includes Polar link.
+# Polar product: $49/mo — https://buy.polar.sh/polar_cl_zRn6I67zMjFuenkjDme5RCnDYmA3vefHqX1zG3A5Phh
+#
+# To deploy this change:
+#   cd agentbroker\edge
+#   npx wrangler deploy
+# ---------------------------------------------------------------------------
 
 # Allow importing .txt and .yaml as raw strings (snapshots embedded in bundle).
 [[rules]]
