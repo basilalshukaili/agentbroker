@@ -15,6 +15,12 @@ import {
   verifyPaymentOnchain,
   type PaymentRequirements,
 } from "./x402";
+import {
+  checkRateLimit,
+  clientIp,
+  rateLimitExceededResponse,
+  withRateLimitHeaders,
+} from "./rate-limit";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -128,49 +134,67 @@ export async function handleMcpRequest(
   const id = body.id;
 
   if (!EDGE_MCP_METHODS.has(method)) {
-    // tools/call gets the x402 gate; other proxied methods (prompts/*,
-    // resources/*) pass straight through.
-    if (method === "tools/call" && x402Receiver) {
-      const toolName = String(body.params?.name ?? "");
-      if (isPricedTool(toolName)) {
-        const proof = request.headers.get("x-payment-proof");
-        const nonce = request.headers.get("x-payment-nonce");
-
-        if (!proof || !nonce) {
-          return issue402(toolName, x402Receiver, kv);
-        }
-
-        // Validate the nonce shape before touching KV — keeps malformed
-        // inputs from chewing through KV reads.
-        if (!/^[0-9a-fA-F]{32}$/.test(nonce)) {
-          return issue402(toolName, x402Receiver, kv, "nonce_malformed");
-        }
-
-        const kvKey = `x402:nonce:${nonce.toLowerCase()}`;
-        const required = getRequiredAmount(toolName);
-        const result = await verifyPaymentOnchain(
-          proof,
-          x402Receiver,
-          required,
-          kvKey,
-          kv,
-        );
-
-        if (!result.valid) {
-          return issue402(toolName, x402Receiver, kv, result.reason);
-        }
-
-        // Mark nonce spent so this proof can't be reused.
-        try {
-          await kv.put(kvKey, "spent", { expirationTtl: NONCE_SPENT_TTL_SEC });
-        } catch (e) {
-          console.warn("x402 mark-spent KV put failed:", (e as Error).message);
-        }
+    // tools/call: apply freemium rate-limit then optional x402 gate.
+    if (method === "tools/call") {
+      const ip = clientIp(request);
+      const rlResult = await checkRateLimit(ip, kv);
+      if (!rlResult.allowed) {
+        return rateLimitExceededResponse();
       }
-      // Free tools (preview_cost, self_test, anything not in the price table)
-      // fall through unguarded.
+
+      // x402 per-call payment gate (only when receiver address configured).
+      if (x402Receiver) {
+        const toolName = String(body.params?.name ?? "");
+        if (isPricedTool(toolName)) {
+          const proof = request.headers.get("x-payment-proof");
+          const nonce = request.headers.get("x-payment-nonce");
+
+          if (!proof || !nonce) {
+            return issue402(toolName, x402Receiver, kv);
+          }
+
+          // Validate the nonce shape before touching KV — keeps malformed
+          // inputs from chewing through KV reads.
+          if (!/^[0-9a-fA-F]{32}$/.test(nonce)) {
+            return issue402(toolName, x402Receiver, kv, "nonce_malformed");
+          }
+
+          const kvKey = `x402:nonce:${nonce.toLowerCase()}`;
+          const required = getRequiredAmount(toolName);
+          const result = await verifyPaymentOnchain(
+            proof,
+            x402Receiver,
+            required,
+            kvKey,
+            kv,
+          );
+
+          if (!result.valid) {
+            return issue402(toolName, x402Receiver, kv, result.reason);
+          }
+
+          // Mark nonce spent so this proof can't be reused.
+          try {
+            await kv.put(kvKey, "spent", { expirationTtl: NONCE_SPENT_TTL_SEC });
+          } catch (e) {
+            console.warn("x402 mark-spent KV put failed:", (e as Error).message);
+          }
+        }
+        // Free tools (preview_cost, self_test, anything not in the price table)
+        // fall through unguarded.
+      }
+
+      // Proxy and attach rate-limit headers to the response.
+      const proxyReq = new Request(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body: bodyText,
+      });
+      const { response } = await proxyToOrigin(proxyReq, originUrl);
+      return withRateLimitHeaders(response, rlResult);
     }
 
+    // All other non-edge methods (prompts/*, resources/*) — proxy straight through.
     const proxyReq = new Request(request.url, {
       method: "POST",
       headers: request.headers,

@@ -269,11 +269,11 @@ def get_mcp_descriptor() -> dict:
         },
         "description": (
             "MCP server for SMB Transaction & Communication Broker. "
-            "Exposes 15 operations: find_business, verify_business, send_message, "
+            "Exposes 16 operations: find_business, verify_business, send_message, "
             "capture_lead, schedule_appointment, send_transactional_confirmation, "
             "handle_inbound, escalate_to_human, get_status, get_outcome, "
             "preview_cost, self_test, import_booking_url, call_business, "
-            "check_booking_link."
+            "check_booking_link, check_compliance."
         ),
         "auth": {
             "header": "X-Agent-Identity",

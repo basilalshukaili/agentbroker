@@ -62,7 +62,7 @@ def _build_tool_list() -> list[dict]:
             "readOnlyHint": op["name"] in {
                 "find_business", "verify_business", "get_status",
                 "get_outcome", "preview_cost", "self_test",
-                "check_booking_link",
+                "check_booking_link", "check_compliance",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -76,6 +76,7 @@ def _build_tool_list() -> list[dict]:
                 "preview_cost", "self_test",
                 "import_booking_url",  # idempotent by design (returns same smb_id)
                 "check_booking_link",  # pure classification, no side effects
+                "check_compliance",    # pure gate preview, no send, no audit write
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -493,6 +494,20 @@ async def _dispatch_operation(
         # state change. Returns a full OutcomeReceipt (dict), handled below.
         from core.check_booking_link import handle_check_booking_link
         receipt = await handle_check_booking_link(args["url"])
+
+    elif name == "check_compliance":
+        # Read-only pre-flight: run the outbound compliance gate in preview mode
+        # (no send, no audit write) before the agent pays for send_message /
+        # call_business. Returns a full OutcomeReceipt (dict), handled below.
+        from core.check_compliance import handle_check_compliance
+        receipt = await handle_check_compliance(
+            recipient_id=args["recipient_id"],
+            content=args["content"],
+            channel=args.get("channel"),
+            message_type=args.get("message_type", "transactional"),
+            country_code=args.get("country_code"),
+            state_code=args.get("state_code"),
+        )
 
     elif name == "get_status":
         from core.status_outcome import handle_get_status

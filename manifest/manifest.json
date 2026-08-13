@@ -2017,6 +2017,174 @@
           }
         }
       ]
+    },
+    {
+      "name": "check_compliance",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+      "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
+      "when_not_to_use": "Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "recipient_id",
+          "content"
+        ],
+        "properties": {
+          "recipient_id": {
+            "type": "string",
+            "description": "Phone in E.164 (e.g. '+14045550100') or email address the message would go to."
+          },
+          "content": {
+            "type": "string",
+            "description": "The actual message body you intend to send. The gate classifies the real text, so a meaningful preview needs the real content."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "voice"
+            ],
+            "description": "Delivery channel. Omit to auto-infer sms/email from recipient_id; set 'voice' explicitly."
+          },
+          "message_type": {
+            "type": "string",
+            "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+            "default": "transactional"
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE', 'CA'). Auto-inferred from phone if omitted; drives which jurisdiction rules apply."
+          },
+          "state_code": {
+            "type": "string",
+            "description": "US state code (e.g. 'CA') for state-specific rules."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "legal": {
+            "type": "boolean",
+            "description": "True if the gate would permit this send."
+          },
+          "channel": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string",
+            "description": "The rule that blocked the send (null when legal=true)."
+          },
+          "remediation": {
+            "type": "string",
+            "description": "How to become compliant (present when legal=false)."
+          },
+          "checked_live": {
+            "type": "boolean",
+            "description": "Always false — this is a gate decision preview, not a live delivery."
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free"
+      },
+      "slo": {
+        "p50_ms": 15,
+        "p95_ms": 80
+      },
+      "idempotency": "read-only — no send, no audit write, no idempotency key required",
+      "failure_modes": [
+        "bad_input"
+      ],
+      "examples": [
+        {
+          "label": "Transactional email is permitted",
+          "input": {
+            "recipient_id": "jane@example.com",
+            "content": "Your appointment at Cuts & Co. is confirmed for Tuesday 10:30am.",
+            "message_type": "transactional",
+            "country_code": "US"
+          },
+          "output": {
+            "status": "success",
+            "reason_code": "compliant",
+            "result": {
+              "legal": true,
+              "channel": "email",
+              "message_type": "transactional",
+              "checked_live": false
+            }
+          }
+        },
+        {
+          "label": "Marketing SMS blocked — no recorded consent",
+          "input": {
+            "recipient_id": "+14045550200",
+            "content": "20% off this week only!",
+            "channel": "sms",
+            "message_type": "marketing",
+            "country_code": "US"
+          },
+          "output": {
+            "status": "success",
+            "reason_code": "not_compliant",
+            "result": {
+              "legal": false,
+              "rule": "TCPA_marketing_consent",
+              "remediation": "Obtain prior express written consent (TCPA) before sending marketing SMS to US numbers, and pass its consent_record_id.",
+              "checked_live": false
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Is it legal to text this US number a 20%-off promo?",
+          "agent_call": {
+            "tool": "check_compliance",
+            "arguments": {
+              "recipient_id": "+14045550200",
+              "content": "20% off this week only!",
+              "channel": "sms",
+              "message_type": "marketing",
+              "country_code": "US"
+            }
+          }
+        },
+        {
+          "user_says": "Before you email the dentist, make sure it's allowed",
+          "agent_call": {
+            "tool": "check_compliance",
+            "arguments": {
+              "recipient_id": "office@dentist.example",
+              "content": "Do you accept Cigna? Following up on my request.",
+              "message_type": "follow_up"
+            }
+          },
+          "then_call": {
+            "tool": "send_message",
+            "arguments": {
+              "recipient": {
+                "id_type": "email",
+                "id_value": "office@dentist.example"
+              },
+              "message_type": "follow_up",
+              "content": {
+                "body": "Do you accept Cigna? Following up on my request."
+              }
+            }
+          }
+        }
+      ]
     }
   ],
   "components": {

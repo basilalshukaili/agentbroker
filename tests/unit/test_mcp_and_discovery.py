@@ -44,7 +44,7 @@ class TestMcpServer:
             "find_business", "verify_business", "send_message", "capture_lead",
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
-            "import_booking_url", "call_business", "check_booking_link",
+            "import_booking_url", "call_business", "check_booking_link", "check_compliance",
         }
 
     def test_every_tool_has_input_schema_and_annotations(self):

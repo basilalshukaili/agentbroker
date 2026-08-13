@@ -30,6 +30,7 @@ def pre_check(
     state_code: Optional[str] = None,
     agent_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    preview: bool = False,
 ) -> None:
     """
     Perform all compliance checks. Returns None if compliant.
@@ -41,6 +42,13 @@ def pre_check(
     3. Consent check (for marketing/promotional messages)
     4. 10DLC campaign registration check (for US SMS)
     5. Jurisdiction-specific rules
+
+    preview=True runs the identical decision logic but suppresses ALL audit-log
+    writes. It exists for the free, read-only `check_compliance` tool: a
+    pre-flight must not record an OUTBOUND_DISPATCHED "allow" event (no message
+    was sent — that would be the same class of lie as a stub-success receipt),
+    nor inflate violation counts for a send that was never attempted. Real
+    dispatch paths call with preview=False (the default) and are unchanged.
     """
     rules = infer_jurisdiction(country_code, state_code)
     consent_store = get_consent_store()
@@ -53,6 +61,7 @@ def pre_check(
             "restricted_content",
             recipient_id, channel, jurisdiction, agent_id, trace_id,
             reason=classification.reason,
+            preview=preview,
         )
         raise ComplianceViolationError(
             rule="restricted_content",
@@ -68,6 +77,7 @@ def pre_check(
             "recipient_opted_out",
             recipient_id, channel, jurisdiction, agent_id, trace_id,
             reason="Recipient has opted out of this channel",
+            preview=preview,
         )
         raise ComplianceViolationError(
             rule="recipient_opted_out",
@@ -85,6 +95,7 @@ def pre_check(
                     "TCPA_marketing_consent",
                     recipient_id, channel, jurisdiction, agent_id, trace_id,
                     reason="No TCPA prior express written consent on file",
+                    preview=preview,
                 )
                 raise ComplianceViolationError(
                     rule="TCPA_marketing_consent",
@@ -99,6 +110,7 @@ def pre_check(
                 "GDPR_marketing_consent",
                 recipient_id, channel, jurisdiction, agent_id, trace_id,
                 reason="No GDPR lawful basis / opt-in on file",
+                preview=preview,
             )
             raise ComplianceViolationError(
                 rule="GDPR_marketing_consent",
@@ -112,6 +124,7 @@ def pre_check(
             _audit_violation(
                 "CASL_marketing_consent",
                 recipient_id, channel, jurisdiction, agent_id, trace_id,
+                preview=preview,
             )
             raise ComplianceViolationError(
                 rule="CASL_marketing_consent",
@@ -136,6 +149,7 @@ def pre_check(
                 "10DLC_campaign_not_registered",
                 recipient_id, channel, jurisdiction, agent_id, trace_id,
                 reason=f"No registered 10DLC campaign for use case {use_case}",
+                preview=preview,
             )
             raise ComplianceViolationError(
                 rule="10DLC_campaign_not_registered",
@@ -145,7 +159,12 @@ def pre_check(
                 message=f"No registered 10DLC campaign for use_case={use_case}. A2P SMS requires carrier-registered campaign.",
             )
 
-    # All checks passed — log authorized dispatch
+    # All checks passed. In a real dispatch this records an authorized-send
+    # audit event; in preview mode we record nothing, because no send is
+    # happening — an OUTBOUND_DISPATCHED "allow" here would claim a dispatch
+    # that never occurred.
+    if preview:
+        return
     get_audit_log().record(
         event_type=AuditEventType.OUTBOUND_DISPATCHED,
         agent_id=agent_id,
@@ -166,7 +185,12 @@ def _audit_violation(
     agent_id: Optional[str],
     trace_id: Optional[str],
     reason: str = "",
+    preview: bool = False,
 ) -> None:
+    # A preview (check_compliance) must be side-effect free — do not record a
+    # violation for a send that was never attempted.
+    if preview:
+        return
     get_audit_log().record(
         event_type=AuditEventType.COMPLIANCE_VIOLATION,
         agent_id=agent_id,

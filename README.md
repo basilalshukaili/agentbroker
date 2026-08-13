@@ -76,6 +76,8 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 
 No API key required for read-only tools. State-changing tools accept an optional `X-Agent-Identity` bearer token.
 
+**Free tier:** 100 `tools/call` operations per IP per day. Exceeding the limit returns HTTP 429 with an upgrade link. Upgrade to unlimited at $49/mo: https://buy.polar.sh/polar_cl_zRn6I67zMjFuenkjDme5RCnDYmA3vefHqX1zG3A5Phh
+
 ### Discover tools (JSON-RPC)
 
 ```bash
