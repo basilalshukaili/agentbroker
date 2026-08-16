@@ -30,10 +30,10 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo** — 20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Per-call payments via x402/USDC on Base | **Coming soon — not yet active** — tools are currently free |
+| Billing | **Live** — 6 read tools free; 8 write tools require authentication (`X-Agent-Identity` bearer token). Free tier: 100 ops/IP/day; upgrade at $49/mo via Polar. |
 | Production SMB onboarding | **Planned** — real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data, and per-call payments (x402/USDC) are not yet charged. Both are in progress.
+> The MCP server is live and callable right now. Bookings hit demo data. Rate-limited free access is active; write tools require a Polar subscription key. x402/USDC per-call billing is no longer the planned payment model.
 
 ---
 

@@ -13,8 +13,8 @@ description: >
   tools always free — 8 write tools need a $9/90-day developer key (no per-call
   billing, flat access).
 
-vendor: agent-broker-edge.basil-agent.workers.dev
-homepage: https://agent-broker-edge.basil-agent.workers.dev
+vendor: agent-broker-edge.techmate.workers.dev
+homepage: https://agent-broker-edge.techmate.workers.dev
 repository: https://github.com/basilalshukaili/agentbroker
 license: proprietary
 
@@ -41,11 +41,11 @@ tags:
 
 connection:
   type: http
-  url: https://agent-broker-edge.basil-agent.workers.dev/mcp
+  url: https://agent-broker-edge.techmate.workers.dev/mcp
   authentication:
     type: bearer
     header: X-Agent-Identity
-    description: "90-day developer key purchased at https://buy.polar.sh/polar_cl_xmYfvh3u747R3UuYV4H4lBUZsRxAk9uD02MxY1XXufL — key arrives by email. Send as X-Agent-Identity header. Read tools (find_business, verify_business, get_status, get_outcome, preview_cost, self_test) are always free with no header."
+    description: "100 ops/day free — no key required. For unlimited access, subscribe at https://buy.polar.sh/polar_cl_xmYfvh3u747R3UuYV4H4lBUZsRxAk9uD02MxY1XXufL ($49/mo flat, no per-call billing). Key arrives by email; send as X-Agent-Identity header. All 6 read tools always free."
 
 tools:
   - name: find_business
@@ -78,19 +78,19 @@ tools:
     description: "Place a voice-AI phone call to a business on behalf of an agent"
 
 screenshots:
-  - url: https://agent-broker-edge.basil-agent.workers.dev/static/screenshot-1.png
+  - url: https://agent-broker-edge.techmate.workers.dev/static/screenshot-1.png
     caption: "MCP tools surface in Claude Desktop"
-  - url: https://agent-broker-edge.basil-agent.workers.dev/static/screenshot-2.png
+  - url: https://agent-broker-edge.techmate.workers.dev/static/screenshot-2.png
     caption: "Live booking via Cal.com integration"
 
 documentation:
-  - url: https://agent-broker-edge.basil-agent.workers.dev/docs
+  - url: https://agent-broker-edge.techmate.workers.dev/docs
     type: getting_started
-  - url: https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json
+  - url: https://agent-broker-edge.techmate.workers.dev/.well-known/mcp.json
     type: mcp_descriptor
-  - url: https://agent-broker-edge.basil-agent.workers.dev/llms.txt
+  - url: https://agent-broker-edge.techmate.workers.dev/llms.txt
     type: llms_txt
 
 pricing:
-  free_tier: "6 read tools (find_business, verify_business, get_status, get_outcome, preview_cost, self_test) always free — no key required"
-  paid_tiers: "Developer $9/90-day flat — unlimited write-tool calls; key arrives by email after Polar checkout"
+  free_tier: "100 ops/day free — all 6 read tools + 100 write-tool calls per day with no key"
+  paid_tiers: "Unlimited — $49/mo flat (no per-call billing); key arrives by email after Polar checkout at https://buy.polar.sh/polar_cl_xmYfvh3u747R3UuYV4H4lBUZsRxAk9uD02MxY1XXufL"
