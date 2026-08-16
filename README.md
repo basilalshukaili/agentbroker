@@ -3,7 +3,7 @@
 > **An agent-callable MCP server** that lets autonomous AI agents find, verify, message, schedule with, and transact with small and mid-sized businesses (SMBs) through a single compliance-enforced tool surface.
 
 [![MCP](https://img.shields.io/badge/MCP-streamable--http-blue)](https://agent-broker-edge.basil-agent.workers.dev/mcp)
-[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Edge](https://img.shields.io/badge/edge-cloudflare%20workers-orange)](./edge)
 [![Registry](https://img.shields.io/badge/MCP%20Registry-listed-green)](https://github.com/modelcontextprotocol/servers)
@@ -281,13 +281,13 @@ docker compose -f deploy/docker-compose.yml up
 
 ## Contributing
 
-This is a proprietary project. Issues and discussion are welcome — open a GitHub issue to report bugs or suggest features. Pull requests require prior discussion with the maintainer.
+Licensed under MIT. Issues and discussion are welcome — open a GitHub issue to report bugs or suggest features. For substantial changes, please open an issue first to discuss direction. Note: this repo is the open-source server; the hosted service at agent-broker-edge.basil-agent.workers.dev (supply index, billing rails) is operated by Hatchloop.
 
 ---
 
 ## License
 
-Proprietary — contact for licensing terms.
+MIT — see [LICENSE](LICENSE). The hosted service and its supply/billing data are operated separately by Hatchloop.
 
 ---
 
