@@ -153,8 +153,99 @@ def _extract_customer_id(data: dict[str, Any]) -> str:
     return str(data.get("customer_id") or data.get("id") or "polar_customer")
 
 
+def _extract_order_id(data: dict[str, Any]) -> str:
+    """Best-effort order-id extraction across Polar's Order and Refund payload
+    shapes. `order.paid`/`order.created`/`order.refunded` carry the Order
+    object directly under `data` (so `data.id` IS the order id); `refund.
+    created`/`refund.updated` carry a Refund object that references its
+    order. Defensive like `_extract_plan`/`_extract_customer_id` above --
+    never raises, returns "" if nothing usable is found (callers must treat
+    that as "cannot dedupe" rather than a match)."""
+    order = data.get("order")
+    if isinstance(order, dict) and order.get("id"):
+        return str(order["id"])
+    for key in ("order_id", "id"):
+        v = data.get(key)
+        if isinstance(v, (str, int)) and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
 # Events that mean "money cleared, grant access".
 _GRANT_EVENTS = {"order.paid", "order.created", "subscription.active", "subscription.created"}
+
+# Events that mean "money came back, revoke access". Per Polar's webhook docs
+# (https://polar.sh/docs/integrate/webhooks/events): `order.refunded` fires on
+# the Order resource, `refund.created` fires on the Refund resource (belt and
+# suspenders -- handle whichever Polar actually sends), `subscription.revoked`
+# fires when a subscription's access is pulled (immediately, or at the end of
+# a `subscription.canceled` period -- we only act on the terminal `.revoked`).
+_REVOKE_EVENTS = {"order.refunded", "refund.created", "subscription.revoked"}
+
+# Durable dedup/revocation ledger. Same Supabase project + REST wrapper
+# (storage/supabase_client.py) that billing/durable_meter.py already writes
+# `billing_events` to -- this is a second table in that project, not new
+# infra. Expected columns: order_id, event_type, customer_id, status
+# ("processed" | "revoked"), ts. Like every other durable write in this
+# codebase, both read and write are best-effort: if the table doesn't exist
+# yet or Supabase is unreachable, checks fail OPEN (never block a real grant)
+# and writes are logged-and-swallowed -- identical fallback behavior to
+# today's code, just durable when the store is available.
+_POLAR_EVENTS_TABLE = "polar_order_events"
+
+
+async def _already_processed(order_id: str) -> bool:
+    """Durable idempotency check: has this order id already been granted?
+    Returns False (i.e. "not a duplicate, proceed") on any lookup failure --
+    an unreachable store must never block a real payment from being honored."""
+    if not order_id:
+        return False
+    try:
+        from storage.supabase_client import select_rows
+        rows = await select_rows(
+            _POLAR_EVENTS_TABLE, filters={"order_id": order_id, "status": "processed"},
+        )
+        return bool(rows)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("polar_idempotency_check_failed order_id=%s err=%s", order_id, exc)
+        return False
+
+
+async def _mark_processed(order_id: str, event_type: str, customer_id: str) -> None:
+    """Durably record that `order_id` has been granted, so a re-delivered
+    event (retry, or the duplicate-webhook-endpoint scenario) no-ops next
+    time. Best-effort -- never raises, matches durable_meter's fire-and-forget
+    write pattern."""
+    if not order_id:
+        return
+    try:
+        from storage.supabase_client import insert_row
+        await insert_row(_POLAR_EVENTS_TABLE, {
+            "order_id": order_id,
+            "event_type": event_type,
+            "customer_id": customer_id,
+            "status": "processed",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("polar_mark_processed_failed order_id=%s err=%s", order_id, exc)
+
+
+async def _handle_revoke_event(event_type: str, data: dict[str, Any]) -> None:
+    """A refund/revocation event: revoke the customer's Agent-Identity
+    token(s) immediately so a refunded order stops working right away
+    instead of riding out its natural 90-day expiry."""
+    order_id = _extract_order_id(data)
+    customer_id = _extract_customer_id(data)
+    logger.info(
+        "polar_revoke_event_received type=%s order_id=%s customer=%s",
+        event_type, order_id, customer_id,
+    )
+    try:
+        from agent_interface.identity import revoke_customer
+        await revoke_customer(customer_id=customer_id, order_id=order_id, reason=event_type)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("polar_revoke_failed customer=%s err=%s", customer_id, e)
 
 
 async def handle_polar_event(event: dict[str, Any]) -> None:
@@ -168,6 +259,10 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
 
     logger.info("polar_event_received type=%s", event_type)
 
+    if event_type in _REVOKE_EVENTS:
+        await _handle_revoke_event(event_type, data)
+        return
+
     if event_type not in _GRANT_EVENTS:
         logger.info("polar_event_unhandled type=%s", event_type)
         return
@@ -177,6 +272,19 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
     status = str(data.get("status") or "").lower()
     if event_type == "order.created" and status and status not in ("paid", "succeeded", "completed"):
         logger.info("polar_order_not_paid status=%s — skipping grant", status)
+        return
+
+    # Idempotency guard: re-delivery of an already-granted order (Polar retry,
+    # or the two-webhook-endpoints-pointing-at-us scenario) must no-op rather
+    # than double-mint a token and double-send the welcome email. Keyed on
+    # order id (not the webhook delivery id) because that's what's actually
+    # invariant across duplicate deliveries/endpoints for the same purchase.
+    order_id = _extract_order_id(data)
+    if order_id and await _already_processed(order_id):
+        logger.info(
+            "polar_event_duplicate_skipped type=%s order_id=%s — already processed, no-op",
+            event_type, order_id,
+        )
         return
 
     email = _extract_email(data)
@@ -197,6 +305,9 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
             token_resp.expires_at, tz=timezone.utc,
         ).isoformat(timespec="seconds")
         logger.info("polar_token_issued customer=%s plan=%s exp=%s", customer_id, plan, expires_iso)
+        # Mark processed only on a *successful* mint -- a failed issuance must
+        # stay eligible for the next retry/redelivery to actually grant access.
+        await _mark_processed(order_id, event_type, customer_id)
     except Exception as e:  # noqa: BLE001
         logger.exception("polar_token_issue_failed err=%s", e)
 

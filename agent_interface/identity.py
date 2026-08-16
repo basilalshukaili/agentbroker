@@ -166,6 +166,79 @@ class ValidationResult:
 
 _revoked_jtis: set[str] = set()
 
+# Durable, customer-level revocation (e.g. a Polar refund). Distinct from
+# `_revoked_jtis` above (single-token revoke_token()): a customer can hold
+# tokens whose jti we never recorded (they were minted by a webhook, not the
+# admin revoke path), so refund-driven revocation has to key on the customer
+# identity embedded in the token, not a jti we may not have.
+_revoked_customer_ids: set[str] = set()
+_revocation_hydrated = False
+
+
+def _hydrate_revocations() -> None:
+    """One-time, best-effort load of durably-revoked customer ids from
+    Supabase so a revocation survives a process restart (e.g. a Render
+    redeploy between the refund event and the next validate_token call).
+    No-ops safely when Supabase isn't configured (local/dev/tests) -- same
+    "durable is a bonus, in-memory always works" pattern as durable_meter.py
+    and supply/smb_directory.py."""
+    global _revocation_hydrated
+    if _revocation_hydrated:
+        return
+    _revocation_hydrated = True
+    try:
+        from storage.supabase_client import select_rows_sync
+        rows = select_rows_sync("polar_order_events", filters={"status": "revoked"})
+        for row in rows:
+            cid = row.get("customer_id")
+            if cid:
+                _revoked_customer_ids.add(str(cid))
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("smb_broker.identity").debug(
+            "revocation_hydrate_failed err=%s", exc,
+        )
+
+
+async def revoke_customer(
+    customer_id: str, order_id: Optional[str] = None, reason: str = "refund",
+) -> None:
+    """Revoke every token for `customer_id` (e.g. on a Polar
+    order.refunded/refund.created/subscription.revoked webhook).
+
+    Takes effect immediately in this process (in-memory set, checked by
+    every validate_token() call) and is durably persisted so the revocation
+    also survives a restart. Mirrors billing/durable_meter.py's write
+    pattern: the in-memory effect always applies even if the durable write
+    fails -- never raises."""
+    if not customer_id:
+        return
+    _revoked_customer_ids.add(str(customer_id))
+    logging.getLogger("smb_broker.identity").info(
+        "customer_revoked customer_id=%s order_id=%s reason=%s",
+        customer_id, order_id, reason,
+    )
+    try:
+        from storage.supabase_client import insert_row
+        from datetime import datetime, timezone
+        await insert_row("polar_order_events", {
+            "order_id": order_id or "",
+            "event_type": reason,
+            "customer_id": str(customer_id),
+            "status": "revoked",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("smb_broker.identity").warning(
+            "revocation_persist_failed customer_id=%s err=%s", customer_id, exc,
+        )
+
+
+def is_customer_revoked(customer_id: str) -> bool:
+    """True if `customer_id` has been revoked (this process, or durably
+    before this process started)."""
+    _hydrate_revocations()
+    return str(customer_id) in _revoked_customer_ids
+
 
 def validate_token(token: str) -> ValidationResult:
     """Verify signature and expiry. Return AgentIdentity if valid."""
@@ -178,6 +251,15 @@ def validate_token(token: str) -> ValidationResult:
     jti = claims.get("jti", "")
     if jti in _revoked_jtis:
         return ValidationResult(valid=False, error="Token has been revoked.")
+
+    # Check durable customer-level revocation (e.g. the order behind this
+    # token was refunded). Keyed on principal.id, which issue_subscription_
+    # token() sets to the Polar customer_id.
+    principal_id = (claims.get("principal") or {}).get("id")
+    if principal_id and is_customer_revoked(principal_id):
+        return ValidationResult(
+            valid=False, error="Token has been revoked (order refunded).",
+        )
 
     # Check expiry
     if claims.get("exp", 0) < time.time():
