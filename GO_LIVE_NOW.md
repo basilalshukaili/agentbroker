@@ -1,3 +1,8 @@
+> **⚠️ HISTORICAL — NOT CURRENT STATE (stamped 2026-08-17).**
+> This file is a point-in-time snapshot kept for history. Claims about deploys,
+> pricing, endpoints, and status here may be stale or contradicted by later work.
+> The authoritative current picture is **AUDIT-2026-08-16.md** plus `git log`.
+
 # GO_LIVE_NOW — archived
 
 This guide described the initial launch steps (push to GitHub, deploy to Fly.io, map domain).

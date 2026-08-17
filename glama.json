@@ -12,8 +12,17 @@
       "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
     }
   ],
-  "license": "proprietary",
-  "tags": ["scheduling", "small-business", "compliance", "mcp-server", "booking", "cal-com", "calendly", "doctolib"],
+  "license": "MIT",
+  "tags": [
+    "scheduling",
+    "small-business",
+    "compliance",
+    "mcp-server",
+    "booking",
+    "cal-com",
+    "calendly",
+    "doctolib"
+  ],
   "auth": {
     "type": "optional",
     "header": "X-Agent-Identity",
