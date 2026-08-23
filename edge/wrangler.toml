@@ -2,7 +2,11 @@ name = "agent-broker-edge"
 main = "src/index.ts"
 compatibility_date = "2025-11-01"
 compatibility_flags = ["nodejs_compat"]
-account_id = "8f0ebd0046e3f1c8a506f8f0f6d9476f"
+# basil-agent account ("ancient-poetry-7583") — the account that serves the
+# Smithery-listed URL. Access recovered 2026-08-23 (CF_API_TOKEN in ../.env).
+# The 2026-08-13 deploy to the techmate account (8f0ebd00...) is an orphaned
+# duplicate and is no longer the deploy target.
+account_id = "4996b77206796d62ffa870cdd6e5c4f5"
 
 # Public-facing settings (non-secret) live in vars
 [vars]
@@ -29,7 +33,7 @@ SERVICE_NAME = "agent-broker"
 # KV cache for discovery payloads
 [[kv_namespaces]]
 binding = "CACHE"
-id = "bf9e60ef2cac4ef0b8f077df6dce97fb"
+id = "f45691e20cdd4937ae88ccb64159d928"
 
 # Observability (free)
 [observability]
