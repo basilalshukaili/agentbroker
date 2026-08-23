@@ -5,7 +5,7 @@
   ],
   "name": "agent-broker",
   "displayName": "Agent Broker",
-  "description": "18 MCP tools: 18 MCP tools to find, verify, message, book, and transact at small businesses. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening. 10 read tools free.",
+  "description": "19 MCP tools to find, verify, message, book, and transact at small businesses. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening, cross-border trade-restriction mapping. 11 read tools free.",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker"
   },
@@ -40,6 +40,6 @@
     "type": "optional",
     "header": "X-Agent-Identity",
     "scheme": "bearer",
-    "note": "10 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key or $9/90d Polar subscription)."
+    "note": "11 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key or $9/90d Polar subscription)."
   }
 }

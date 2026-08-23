@@ -17,10 +17,11 @@ Add this to your Cline MCP settings (`cline_mcp_settings.json`):
 }
 ```
 
-That is the whole install. On connect, the server exposes **18 tools**. **10 read tools
+That is the whole install. On connect, the server exposes **19 tools**. **11 read tools
 are usable immediately with no key** (e.g. `find_business`, `verify_business`,
 `verify_company_record` — live GLEIF/SEC company data, `screen_sanctions` — live
-OFAC/EU/UN sanctions screening, `check_compliance`, `self_test`).
+OFAC/EU/UN sanctions screening, `map_trade_restriction` — cross-border embargo/export-control
+mapping, `check_compliance`, `self_test`).
 
 ## Optional: unlock the write tools (free)
 
