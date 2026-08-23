@@ -844,6 +844,49 @@
           "idempotentHint": true,
           "openWorldHint": false
         }
+      },
+      {
+        "name": "map_trade_restriction",
+        "description": "Free, live cross-border trade-compliance snapshot. Given a product and destination country (and optionally an HS code, origin country, and a list of parties to screen), returns: (a) whether the destination or any party hits an export-control or sanctions restriction, (b) the destination risk level (comprehensive_embargo / sectoral_sanctions / elevated_scrutiny / standard), (c) HS code hint if the caller provided one, (d) honest tariff guidance + official links without fabricated rates, and (e) party sanctions screening via OpenSanctions and OFAC SDN. Acts as a MIDDLEMAN -- unifies the OFAC comprehensive-embargo map, OpenSanctions (40+ official lists including BIS Entity List, EU, UN, UK), and OFAC SDN into one clean call. Never fabricates a tariff rate, a clear, or a restricted status.\n\nEXAMPLE USER QUERIES THAT MATCH THIS TOOL:\n  user: \"Can we ship laptops to Iran?\"\n  -> call map_trade_restriction({\"product\": \"laptop computers\", \"destination_country\": \"IR\"})\n  user: \"Screen this supplier before we import from them: Mahan Air, Iran\"\n  -> call map_trade_restriction({\"product\": \"aircraft parts\", \"destination_country\": \"US\", \"parties\": [\"Mahan Air\"]})\n  user: \"Is exporting hydraulic pumps to Russia restricted?\"\n  -> call map_trade_restriction({\"product\": \"hydraulic pumps\", \"hs_code\": \"8413.50\", \"destination_country\": \"RU\"})\n  user: \"Check if we can sell medical devices to Germany, supplier is ACME GmbH\"\n  -> call map_trade_restriction({\"product\": \"medical devices\", \"origin_country\": \"US\", \"destination_country\": \"DE\", \"parties\": [\"ACME GmbH\"]})\n\nWHEN TO USE: Use before any cross-border trade to flag embargoed destinations, screen exporters/importers/freight forwarders against sanctions lists, and get authoritative links to the applicable tariff databases. Call this as a pre-flight check before quoting, invoicing, or shipping internationally. Covers OFAC comprehensively-embargoed countries (Iran, North Korea, Cuba, Syria) and significant advisory countries (Russia, Belarus, Ukraine Crimea/DNR/LNR regions).\nWHEN NOT TO USE: Do NOT use as a substitute for a licensed export compliance review. Do NOT use to obtain authoritative tariff rates (this tool returns guidance links, never fabricated rates). Do NOT use for purely domestic shipments where no cross-border movement is involved.\nCOST: free\nLATENCY: ~3000ms",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "product",
+            "destination_country"
+          ],
+          "properties": {
+            "product": {
+              "type": "string",
+              "description": "Product name or description, e.g. 'laptop computers', 'crude oil', 'medical devices'. Used in the tariff guidance note."
+            },
+            "hs_code": {
+              "type": "string",
+              "description": "Optional Harmonized System code (e.g. '8471.30' for laptops). If provided, echoed back and included in tariff guidance. Not derived -- caller must supply the official HS code."
+            },
+            "origin_country": {
+              "type": "string",
+              "description": "Optional ISO 3166-1 alpha-2 code for the exporting country (e.g. 'US', 'DE'). Used in the tariff guidance note."
+            },
+            "destination_country": {
+              "type": "string",
+              "description": "ISO 3166-1 alpha-2 code for the importing country (e.g. 'IR', 'CA', 'DE'). Required. Checked against the OFAC comprehensive-embargo map and sectoral-sanctions advisory list."
+            },
+            "parties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional list of party names to screen (exporter, importer, freight forwarder, end-user, etc.). Each name is screened against OpenSanctions (40+ official lists) and OFAC SDN."
+            }
+          }
+        },
+        "annotations": {
+          "title": "Map Trade Restriction",
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
       }
     ]
   }

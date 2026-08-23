@@ -13,15 +13,16 @@ displayName: "Agent Broker — SMB Transactions & Bookings"
 # deploy/registry-submissions/smithery-sync-2026-08-16.md for the full audit.
 description: >
   Agent-callable horizontal layer for finding, verifying, booking, messaging, and
-  calling long-tail small/mid-sized businesses worldwide. 18 operations across 12
+  calling long-tail small/mid-sized businesses worldwide. 19 operations across 12
   booking platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable,
   Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), plus free
   pre-flight checks for booking links, outbound-message compliance, company
-  registry verification (GLEIF + SEC EDGAR), and live sanctions screening (OFAC
-  SDN + OpenSanctions covering EU, UN, UK, and 40+ official lists). Built-in
-  compliance gate (TCPA / GDPR / CASL / PDPL across 22 jurisdictions). 10 read
-  tools always free (100 ops/IP/day free tier) -- 8 write tools need a $49/mo
-  developer key (no per-call billing, flat access).
+  registry verification (GLEIF + SEC EDGAR), live sanctions screening (OFAC
+  SDN + OpenSanctions covering EU, UN, UK, and 40+ official lists), and
+  cross-border trade compliance (OFAC embargo map + party sanctions + tariff
+  guidance). Built-in compliance gate (TCPA / GDPR / CASL / PDPL across 22
+  jurisdictions). 11 read tools always free (100 ops/IP/day free tier) -- 8
+  write tools need a $49/mo developer key (no per-call billing, flat access).
 
 vendor: agent-broker-edge.techmate.workers.dev
 homepage: https://agent-broker-edge.techmate.workers.dev
@@ -99,6 +100,8 @@ tools:
     description: "Free live registry lookup: verify a company exists and return its official GLEIF LEI / SEC EDGAR record"
   - name: screen_sanctions
     description: "Free live sanctions screening: check a name/entity against OFAC SDN, EU, UN, UK, and 40+ official watchlists via OpenSanctions"
+  - name: map_trade_restriction
+    description: "Free cross-border trade compliance snapshot: OFAC embargo map + party sanctions screening + tariff guidance links for any product + destination"
 
 screenshots:
   - url: https://agent-broker-edge.techmate.workers.dev/static/screenshot-1.png

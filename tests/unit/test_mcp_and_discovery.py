@@ -33,19 +33,19 @@ class TestMcpServer:
         assert r["result"]["serverInfo"]["name"] == "smb-broker"
         assert "tools" in r["result"]["capabilities"]
 
-    def test_tools_list_returns_12_tools(self):
+    def test_tools_list_returns_19_tools(self):
         r = run(handle_mcp_request({
             "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {},
         }))
         tools = r["result"]["tools"]
-        assert len(tools) >= 13
+        assert len(tools) >= 19
         names = {t["name"] for t in tools}
         assert names == {
             "find_business", "verify_business", "send_message", "capture_lead",
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
-            "verify_company_record", "screen_sanctions",
+            "verify_company_record", "screen_sanctions", "map_trade_restriction",
         }
 
     def test_every_tool_has_input_schema_and_annotations(self):

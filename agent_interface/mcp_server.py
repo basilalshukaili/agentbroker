@@ -64,6 +64,7 @@ def _build_tool_list() -> list[dict]:
                 "get_outcome", "preview_cost", "self_test",
                 "check_booking_link", "check_compliance",
                 "verify_company_record", "screen_sanctions",
+                "map_trade_restriction",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -80,6 +81,7 @@ def _build_tool_list() -> list[dict]:
                 "check_compliance",    # pure gate preview, no send, no audit write
                 "verify_company_record",  # read-only live registry lookup
                 "screen_sanctions",    # read-only live sanctions lookup
+                "map_trade_restriction",  # read-only compliance snapshot
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -734,6 +736,19 @@ async def _dispatch_operation(
             entity_type=args.get("type"),
         )
 
+    elif name == "map_trade_restriction":
+        # Free read-only cross-border trade-compliance snapshot: OFAC embargo
+        # map + party sanctions screening (OpenSanctions + OFAC SDN) + tariff
+        # guidance links.  Never fabricates a rate or a clear.
+        from core.map_trade_restriction import handle_map_trade_restriction
+        receipt = await handle_map_trade_restriction(
+            product=args["product"],
+            destination_country=args["destination_country"],
+            hs_code=args.get("hs_code"),
+            origin_country=args.get("origin_country"),
+            parties=args.get("parties"),
+        )
+
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")
 
@@ -780,7 +795,7 @@ async def _dispatch_operation(
         "get_status", "get_outcome",
         "find_business", "verify_business", "preview_cost", "self_test",
         "check_booking_link", "check_compliance", "verify_company_record",
-        "screen_sanctions",
+        "screen_sanctions", "map_trade_restriction",
     })
 
     # FIX 1 (durable store) + FIX 5 (quota strip): persist operation to durable
