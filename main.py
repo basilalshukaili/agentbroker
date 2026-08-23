@@ -37,6 +37,7 @@ from agent_interface.well_known import (
     get_agents_json, get_agent_card, get_mcp_descriptor, get_llms_txt, get_llms_full_txt,
 )
 from fastapi.responses import PlainTextResponse
+from agent_interface.key_requests import router as key_requests_router
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# Register free-key request/verify routes (/keys/request, /keys/verify)
+app.include_router(key_requests_router)
 
 
 # ---------------------------------------------------------------------------

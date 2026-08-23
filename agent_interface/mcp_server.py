@@ -229,6 +229,20 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
             result = await handler(params, norm_headers)
         else:
             result = await handler(params)
+
+        # Fire-and-forget usage telemetry — never blocks, never raises.
+        try:
+            tool_name = params.get("name") if method == "tools/call" else None
+            arguments = params.get("arguments") if method == "tools/call" else None
+            ip = norm_headers.get("x-forwarded-for", norm_headers.get("x-real-ip", ""))
+            ua = norm_headers.get("user-agent", "")
+            raw_key = norm_headers.get("x-agent-identity", "")
+            key_id = raw_key[:64] if raw_key else "anonymous"
+            from billing.usage_logger import fire_log_usage
+            fire_log_usage(method, tool_name, arguments, ip, ua, key_id)
+        except Exception:  # noqa: BLE001
+            pass  # telemetry must never break the response
+
         return JsonRpcResponse(id=rpc_id, result=result).to_dict()
     except _ParamError as pe:
         return JsonRpcResponse(
@@ -368,6 +382,27 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
     from fastapi import HTTPException
 
     token = headers.get("x-agent-identity") if headers else None
+
+    # Free-tier daily limit check: if the caller holds a free key, enforce
+    # the 50-ops/day cap before hitting the full identity gate.
+    if token and token != "anonymous":
+        from agent_interface.key_request_logic import is_free_key, consume_free_daily, get_free_daily_remaining
+        from agent_interface.identity import validate_token
+        pre_check = validate_token(token)
+        if pre_check.valid and is_free_key(pre_check.identity.agent_id):
+            agent_id = pre_check.identity.agent_id
+            if not consume_free_daily(agent_id):
+                remaining = get_free_daily_remaining(agent_id)
+                raise _ParamError(
+                    f"free_tier_daily_limit_exceeded for tool '{name}': "
+                    f"your free key allows 50 gated operations per day (resets midnight UTC). "
+                    f"Remaining today: {remaining}. Upgrade at "
+                    f"{__import__('os').getenv('POLAR_CHECKOUT_URL', 'https://buy.polar.sh')} "
+                    f"for unlimited access."
+                )
+            # Free key with remaining budget — skip the full gate below
+            return
+
     try:
         _get_identity(token, name)
     except HTTPException as he:
@@ -375,16 +410,21 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         # actionable JSON-RPC params error rather than a generic -32603.
         #
         # This error IS the storefront: it is the only moment an evaluating
-        # agent is told how to become a paying one. Ending it at "header
-        # required" (as it did before 2026-08-04) wastes every arrival.
+        # agent is told how to become a paying one. Two paths are offered:
+        # a free email-verified key (immediate, 50 ops/day) and the paid plan.
         import os as _os
         checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
+        base_url = _os.getenv("MCP_PUBLIC_URL", "https://smb-broker.onrender.com/mcp").replace("/mcp", "")
+        free_key_url = f"{base_url}/keys/request"
         how_to_buy = (
-            f" To get access: purchase a 90-day developer key at {checkout} - "
-            f"flat price, no per-call billing. The key arrives by email; send it "
-            f"as the X-Agent-Identity header on every call. Read-only tools "
-            f"(find_business, verify_business, preview_cost, get_status) stay free."
-            if checkout else ""
+            f" To get access — Option 1 (free): get a verified free key (50 ops/day) at "
+            f"{free_key_url} — just provide your email, no payment needed. "
+            f"Option 2 (paid): purchase a 90-day unlimited key at {checkout} — "
+            f"flat price, no per-call billing. "
+            f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
+            f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
+            if checkout else
+            f" Get a free API key at {free_key_url} (50 ops/day, email verification required)."
         )
         raise _ParamError(
             f"auth_required for tool '{name}' (status={he.status_code}): "
