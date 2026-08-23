@@ -1,15 +1,16 @@
 {
-  "$schema": "https://glama.ai/mcp/servers/schema.json",
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["basilalshukaili"],
   "name": "agent-broker",
   "displayName": "Agent Broker",
-  "description": "14 MCP tools to find, verify, message, and book appointments at small businesses worldwide. Built-in TCPA/GDPR/CASL compliance. Turns any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, Fresha, or BookMyCity URL into a bookable SMB in one tool call.",
+  "description": "17 MCP tools to find, verify, message, and book appointments at small businesses worldwide. Live GLEIF/SEC company verification, built-in TCPA/GDPR/CASL compliance. 8 free read tools (no key needed), 50 write ops/day free with email-verified key, unlimited via Polar ($9/90d).",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker"
   },
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+      "url": "https://hatchloop.dev/mcp/agent-broker"
     }
   ],
   "license": "MIT",
@@ -19,14 +20,16 @@
     "compliance",
     "mcp-server",
     "booking",
+    "verification",
+    "gleif",
+    "sec",
     "cal-com",
-    "calendly",
-    "doctolib"
+    "calendly"
   ],
   "auth": {
     "type": "optional",
     "header": "X-Agent-Identity",
     "scheme": "bearer",
-    "note": "Read-only operations and find_business require no auth. State-changing operations require an X-Agent-Identity bearer token."
+    "note": "8 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key at hatchloop.dev/agent-broker)."
   }
 }
