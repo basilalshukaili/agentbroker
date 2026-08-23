@@ -63,6 +63,7 @@ def _build_tool_list() -> list[dict]:
                 "find_business", "verify_business", "get_status",
                 "get_outcome", "preview_cost", "self_test",
                 "check_booking_link", "check_compliance",
+                "verify_company_record",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -77,6 +78,7 @@ def _build_tool_list() -> list[dict]:
                 "import_booking_url",  # idempotent by design (returns same smb_id)
                 "check_booking_link",  # pure classification, no side effects
                 "check_compliance",    # pure gate preview, no send, no audit write
+                "verify_company_record",  # read-only live registry lookup
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -641,6 +643,15 @@ async def _dispatch_operation(
             "message": result.message,
             "next_steps": result.next_steps,
         }
+
+    elif name == "verify_company_record":
+        # Free read-only demand probe: live registry lookup via GLEIF + SEC EDGAR.
+        from core.verify_company_record import handle_verify_company_record
+        receipt = await handle_verify_company_record(
+            name=args["name"],
+            country=args.get("country"),
+            lei=args.get("lei"),
+        )
 
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")

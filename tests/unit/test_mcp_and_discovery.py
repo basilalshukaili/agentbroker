@@ -45,6 +45,7 @@ class TestMcpServer:
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
+            "verify_company_record",
         }
 
     def test_every_tool_has_input_schema_and_annotations(self):

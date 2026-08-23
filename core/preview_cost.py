@@ -35,6 +35,7 @@ _KNOWN_OPERATIONS = frozenset({
     "call_business",
     "check_booking_link",
     "check_compliance",
+    "verify_company_record",
 })
 
 # Pricing table — must stay in sync with manifest/manifest.json cost_model
@@ -57,6 +58,7 @@ _PRICING = {
     "call_business":                  {"min": 0.50, "max": 0.50, "basis": "per_call"},
     "check_booking_link":             {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "check_compliance":               {"min": 0.0,  "max": 0.0,  "basis": "free"},
+    "verify_company_record":          {"min": 0.0,  "max": 0.0,  "basis": "free"},
 }
 
 _LATENCY = {
@@ -76,6 +78,7 @@ _LATENCY = {
     "call_business":                  {"p50": 45000,"p95": 180000},
     "check_booking_link":             {"p50": 20,   "p95": 100},
     "check_compliance":               {"p50": 15,   "p95": 80},
+    "verify_company_record":          {"p50": 800,  "p95": 4000},
 }
 
 _SUCCESS_PROB = {
@@ -95,6 +98,7 @@ _SUCCESS_PROB = {
     "call_business": 0.80,
     "check_booking_link": 0.999,
     "check_compliance": 0.999,
+    "verify_company_record": 0.95,
 }
 
 _CHANNEL_LIKELY = {

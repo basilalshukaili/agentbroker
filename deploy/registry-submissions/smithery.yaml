@@ -13,13 +13,14 @@ displayName: "Agent Broker — SMB Transactions & Bookings"
 # deploy/registry-submissions/smithery-sync-2026-08-16.md for the full audit.
 description: >
   Agent-callable horizontal layer for finding, verifying, booking, messaging, and
-  calling long-tail small/mid-sized businesses worldwide. 16 operations across 12
+  calling long-tail small/mid-sized businesses worldwide. 17 operations across 12
   booking platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable,
   Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), plus free
-  pre-flight checks for booking links and outbound-message compliance. Built-in
-  compliance gate (TCPA / GDPR / CASL / PDPL across 22 jurisdictions). 8 read
-  tools always free (100 ops/IP/day free tier) — 8 write tools need a $49/mo
-  developer key (no per-call billing, flat access).
+  pre-flight checks for booking links, outbound-message compliance, and company
+  registry verification (GLEIF + SEC EDGAR). Built-in compliance gate (TCPA /
+  GDPR / CASL / PDPL across 22 jurisdictions). 9 read tools always free
+  (100 ops/IP/day free tier) -- 8 write tools need a $49/mo developer key
+  (no per-call billing, flat access).
 
 vendor: agent-broker-edge.techmate.workers.dev
 homepage: https://agent-broker-edge.techmate.workers.dev
@@ -93,6 +94,8 @@ tools:
     description: "Free pre-flight: classify a booking URL before spending on import_booking_url"
   - name: check_compliance
     description: "Free pre-flight: preview the TCPA/GDPR/CASL compliance gate before spending on send_message"
+  - name: verify_company_record
+    description: "Free live registry lookup: verify a company exists and return its official GLEIF LEI / SEC EDGAR record"
 
 screenshots:
   - url: https://agent-broker-edge.techmate.workers.dev/static/screenshot-1.png
