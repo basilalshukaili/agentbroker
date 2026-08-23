@@ -6,7 +6,7 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ## Why agents should use this service
 
-- **Addressable market**: 60M+ US SMBs in the addressable market; wedge focus on personal services, home services, and professional services. Current on-platform supply is in early rollout — use `import_booking_url` with any public booking URL to add a business instantly.
+- **Addressable market**: 60M+ US SMBs in the addressable market, wedge focus on personal services, home services, and professional services. Current on-platform supply is in early rollout — call `import_booking_url` with any public booking URL to add a business instantly.
 - **Compliance built in**: TCPA, GDPR, CASL, CAN-SPAM, 10DLC, and two-party recording consent are enforced as a non-bypassable gate.
 - **Idempotent**: every state-changing operation is keyed by (agent_id, operation, idempotency_key) — safe to retry.
 - **Predictable cost**: `preview_cost` is free and returns ±5% accurate estimates before you commit.
@@ -15,11 +15,11 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ## Discovery
 
-- [Manifest (JSON)](https://agent-broker-edge.basil-agent.workers.dev/manifest)
-- [OpenAPI spec](https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml)
-- [MCP endpoint](https://agent-broker-edge.basil-agent.workers.dev/mcp)
-- [Service health](https://agent-broker-edge.basil-agent.workers.dev/health)
-- [Discovery card](https://agent-broker-edge.basil-agent.workers.dev/.well-known/agent-service)
+- [Manifest (JSON)](https://smb-broker.onrender.com/manifest)
+- [OpenAPI spec](https://smb-broker.onrender.com/openapi.yaml)
+- [MCP endpoint](https://smb-broker.onrender.com/mcp)
+- [Service health](https://smb-broker.onrender.com/health)
+- [Discovery card](https://smb-broker.onrender.com/.well-known/agent-service)
 
 ## Operations
 
@@ -32,7 +32,7 @@ Given criteria (vertical, location, capability, price band, availability window)
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/find_business`
 
 ### verify_business
 
@@ -43,7 +43,7 @@ Confirm that an SMB is real, currently operating, and capable of the requested s
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/verify_business`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/verify_business`
 
 ### send_message
 
@@ -54,7 +54,7 @@ Send a message on behalf of an agent's user or an SMB across SMS, email, or voic
 - **Cost**: $varies per_message
 - **Execution**: sync_fast
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/send_message`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/send_message`
 
 ### capture_lead
 
@@ -65,7 +65,7 @@ Structured intake of a prospect into an SMB's funnel with validation, enrichment
 - **Cost**: $varies per_lead
 - **Execution**: sync_fast
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/capture_lead`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/capture_lead`
 
 ### schedule_appointment
 
@@ -76,7 +76,7 @@ Availability lookup, hold, confirm, reschedule, or cancel appointments with an S
 - **Cost**: $varies per_booking_attempt
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/schedule_appointment`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/schedule_appointment`
 
 ### send_transactional_confirmation
 
@@ -87,7 +87,7 @@ Idempotent transactional messages: OTPs, booking confirmations, payment receipts
 - **Cost**: $varies per_message
 - **Execution**: sync_fast
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/send_transactional_confirmation`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/send_transactional_confirmation`
 
 ### handle_inbound
 
@@ -98,7 +98,7 @@ Receive, classify, and route inbound messages on behalf of an SMB. Classifies in
 - **Cost**: $varies per_inbound
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/handle_inbound`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/handle_inbound`
 
 ### escalate_to_human
 
@@ -109,7 +109,7 @@ Hand off an in-flight task to a human operator with a full context bundle: trans
 - **Cost**: $varies per_escalation
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/escalate_to_human`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/escalate_to_human`
 
 ### get_status
 
@@ -120,7 +120,7 @@ Query the current state of any in-flight async operation by operation_id.
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/get_status`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/get_status`
 
 ### get_outcome
 
@@ -131,7 +131,7 @@ Retrieve the final OutcomeReceipt for a completed operation.
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/get_outcome`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/get_outcome`
 
 ### preview_cost
 
@@ -142,7 +142,7 @@ Return an expected cost estimate, latency estimate, and success-probability esti
 - **Cost**: $varies per_call
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/preview_cost`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/preview_cost`
 
 ### self_test
 
@@ -153,7 +153,18 @@ Live capability probe that verifies the service is healthy, each claimed operati
 - **Cost**: $varies free
 - **Execution**: sync
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/self_test`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/self_test`
+
+### check_booking_link
+
+Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.
+
+- **When to use**: Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt.
+- **When NOT to use**: Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).
+- **Cost**: $varies free
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/check_booking_link`
 
 ### import_booking_url
 
@@ -164,7 +175,7 @@ Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTa
 - **Cost**: $0.005 per_call
 - **Execution**: sync
 - **Latency**: ~600ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/import_booking_url`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/import_booking_url`
 
 ### call_business
 
@@ -175,15 +186,37 @@ Place a conversational voice-AI phone call to a business on a consumer's behalf 
 - **Cost**: $varies per_call
 - **Execution**: async_by_default
 - **Latency**: ~ms
-- **Endpoint**: `POST https://agent-broker-edge.basil-agent.workers.dev/ops/call_business`
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/call_business`
+
+### check_compliance
+
+Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.
+
+- **When to use**: Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.
+- **When NOT to use**: Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.
+- **Cost**: $varies free
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/check_compliance`
+
+### verify_company_record
+
+Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried.
+
+- **When to use**: Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup.
+- **When NOT to use**: Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen.
+- **Cost**: $varies free
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://smb-broker.onrender.com/ops/verify_company_record`
 
 ## Authentication
 
-All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://agent-broker-edge.basil-agent.workers.dev/auth/token`. Scopes include allowed operations, budget cap, and verticals.
+All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://smb-broker.onrender.com/auth/token`. Scopes include allowed operations, budget cap, and verticals.
 
 ## Compliance
 
-See [compliance docs](https://agent-broker-edge.basil-agent.workers.dev/docs/compliance) for full jurisdiction matrix. This service only completes consumer-initiated transactional flows; marketing, promotional, and unsolicited outbound communication are out of scope and rejected by `compliance/pre_check`. The gate cannot be bypassed.
+See [compliance docs](https://smb-broker.onrender.com/docs/compliance) for full jurisdiction matrix. This service only completes consumer-initiated transactional flows; marketing, promotional, and unsolicited outbound communication are out of scope and rejected by `compliance/pre_check`. The gate cannot be bypassed.
 
 ## Contact
 
@@ -1837,6 +1870,132 @@ basilalshukaili@gmail.com
       ]
     },
     {
+      "name": "check_booking_link",
+      "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.",
+      "when_to_use": "Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt.",
+      "when_not_to_use": "Do not use to confirm the page is currently live/available \u2014 this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full http(s) URL to classify, e.g. 'https://cal.com/jane' or 'https://www.opentable.com/r/acme'."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "True if the URL host is a supported booking platform."
+          },
+          "importable": {
+            "type": "boolean",
+            "description": "True if import_booking_url will accept this URL (mirrors its host allowlist)."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Detected platform (e.g. 'cal.com', 'calendly', 'doctolib') or 'unknown'."
+          },
+          "predicted_smb_id": {
+            "type": "string",
+            "description": "The idempotent smb_id import_booking_url would assign to this URL."
+          },
+          "expected_channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inferred_country": {
+            "type": "string"
+          },
+          "checked_live": {
+            "type": "boolean",
+            "description": "Always false \u2014 this is an offline classification, the page is never fetched."
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free"
+      },
+      "slo": {
+        "p50_ms": 20,
+        "p95_ms": 100
+      },
+      "idempotency": "read-only",
+      "failure_modes": [
+        "bad_input"
+      ],
+      "examples": [
+        {
+          "label": "Supported Cal.com link",
+          "input": {
+            "url": "https://cal.com/jane"
+          },
+          "output": {
+            "supported": true,
+            "importable": true,
+            "platform": "cal.com",
+            "predicted_smb_id": "smb_imp_...",
+            "expected_channels": [
+              "direct_api:calcom"
+            ],
+            "checked_live": false
+          }
+        },
+        {
+          "label": "Unsupported generic URL",
+          "input": {
+            "url": "https://example.com/book-now"
+          },
+          "output": {
+            "supported": false,
+            "importable": false,
+            "platform": "unknown"
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Is this a bookable link? https://cal.com/jane",
+          "agent_call": {
+            "tool": "check_booking_link",
+            "arguments": {
+              "url": "https://cal.com/jane"
+            }
+          },
+          "then_call": {
+            "tool": "import_booking_url",
+            "arguments": {
+              "booking_url": "https://cal.com/jane"
+            }
+          }
+        },
+        {
+          "user_says": "Can you book me here: https://www.opentable.com/r/acme-bistro",
+          "agent_call": {
+            "tool": "check_booking_link",
+            "arguments": {
+              "url": "https://www.opentable.com/r/acme-bistro"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "import_booking_url",
       "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent \u2014 calling twice returns the same smb_id.",
       "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.",
@@ -2115,6 +2274,346 @@ basilalshukaili@gmail.com
             "cost": {
               "amount": 0.5,
               "currency": "USD"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "check_compliance",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run \u2014 but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+      "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated \u2014 anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
+      "when_not_to_use": "Do not treat a legal=true as a permanent license \u2014 the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "recipient_id",
+          "content"
+        ],
+        "properties": {
+          "recipient_id": {
+            "type": "string",
+            "description": "Phone in E.164 (e.g. '+14045550100') or email address the message would go to."
+          },
+          "content": {
+            "type": "string",
+            "description": "The actual message body you intend to send. The gate classifies the real text, so a meaningful preview needs the real content."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "voice"
+            ],
+            "description": "Delivery channel. Omit to auto-infer sms/email from recipient_id; set 'voice' explicitly."
+          },
+          "message_type": {
+            "type": "string",
+            "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+            "default": "transactional"
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE', 'CA'). Auto-inferred from phone if omitted; drives which jurisdiction rules apply."
+          },
+          "state_code": {
+            "type": "string",
+            "description": "US state code (e.g. 'CA') for state-specific rules."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "legal": {
+            "type": "boolean",
+            "description": "True if the gate would permit this send."
+          },
+          "channel": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string",
+            "description": "The rule that blocked the send (null when legal=true)."
+          },
+          "remediation": {
+            "type": "string",
+            "description": "How to become compliant (present when legal=false)."
+          },
+          "checked_live": {
+            "type": "boolean",
+            "description": "Always false \u2014 this is a gate decision preview, not a live delivery."
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free"
+      },
+      "slo": {
+        "p50_ms": 15,
+        "p95_ms": 80
+      },
+      "idempotency": "read-only \u2014 no send, no audit write, no idempotency key required",
+      "failure_modes": [
+        "bad_input"
+      ],
+      "examples": [
+        {
+          "label": "Transactional email is permitted",
+          "input": {
+            "recipient_id": "jane@example.com",
+            "content": "Your appointment at Cuts & Co. is confirmed for Tuesday 10:30am.",
+            "message_type": "transactional",
+            "country_code": "US"
+          },
+          "output": {
+            "status": "success",
+            "reason_code": "compliant",
+            "result": {
+              "legal": true,
+              "channel": "email",
+              "message_type": "transactional",
+              "checked_live": false
+            }
+          }
+        },
+        {
+          "label": "Marketing SMS blocked \u2014 no recorded consent",
+          "input": {
+            "recipient_id": "+14045550200",
+            "content": "20% off this week only!",
+            "channel": "sms",
+            "message_type": "marketing",
+            "country_code": "US"
+          },
+          "output": {
+            "status": "success",
+            "reason_code": "not_compliant",
+            "result": {
+              "legal": false,
+              "rule": "TCPA_marketing_consent",
+              "remediation": "Obtain prior express written consent (TCPA) before sending marketing SMS to US numbers, and pass its consent_record_id.",
+              "checked_live": false
+            }
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Is it legal to text this US number a 20%-off promo?",
+          "agent_call": {
+            "tool": "check_compliance",
+            "arguments": {
+              "recipient_id": "+14045550200",
+              "content": "20% off this week only!",
+              "channel": "sms",
+              "message_type": "marketing",
+              "country_code": "US"
+            }
+          }
+        },
+        {
+          "user_says": "Before you email the dentist, make sure it's allowed",
+          "agent_call": {
+            "tool": "check_compliance",
+            "arguments": {
+              "recipient_id": "office@dentist.example",
+              "content": "Do you accept Cigna? Following up on my request.",
+              "message_type": "follow_up"
+            }
+          },
+          "then_call": {
+            "tool": "send_message",
+            "arguments": {
+              "recipient": {
+                "id_type": "email",
+                "id_value": "office@dentist.example"
+              },
+              "message_type": "follow_up",
+              "content": {
+                "body": "Do you accept Cigna? Following up on my request."
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "verify_company_record",
+      "description": "Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried.",
+      "when_to_use": "Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup.",
+      "when_not_to_use": "Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen.",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Legal company name to look up, e.g. Apple Inc or Volkswagen AG."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country filter (e.g. US, DE, GB). Narrows GLEIF results to one jurisdiction."
+          },
+          "lei": {
+            "type": "string",
+            "description": "Optional 20-character Legal Entity Identifier for a direct, precise lookup."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "found",
+              "not_found"
+            ]
+          },
+          "legal_name": {
+            "type": "string"
+          },
+          "lei": {
+            "type": "string"
+          },
+          "entity_status": {
+            "type": "string"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "registered_address": {
+            "type": "string"
+          },
+          "registry_authority": {
+            "type": "string"
+          },
+          "ticker": {
+            "type": "string"
+          },
+          "sec_cik": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources_queried": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources_unavailable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free"
+      },
+      "slo": {
+        "p50_ms": 800,
+        "p95_ms": 4000
+      },
+      "idempotency": "read-only",
+      "failure_modes": [
+        "bad_input",
+        "upstream_timeout"
+      ],
+      "examples": [
+        {
+          "label": "Look up Apple Inc by name and country",
+          "input": {
+            "name": "Apple Inc",
+            "country": "US"
+          },
+          "output": {
+            "status": "found",
+            "legal_name": "Apple Inc.",
+            "lei": "HWUPKR0MPOU8FGXBT394",
+            "entity_status": "ACTIVE",
+            "jurisdiction": "US",
+            "sources": [
+              "GLEIF",
+              "SEC EDGAR"
+            ]
+          }
+        },
+        {
+          "label": "Direct LEI lookup",
+          "input": {
+            "name": "Volkswagen AG",
+            "lei": "529900HNOAA1KXQJUQ27"
+          },
+          "output": {
+            "status": "found",
+            "legal_name": "Volkswagen AG",
+            "lei": "529900HNOAA1KXQJUQ27",
+            "entity_status": "ACTIVE",
+            "jurisdiction": "DE",
+            "sources": [
+              "GLEIF"
+            ]
+          }
+        },
+        {
+          "label": "Company not found in registries",
+          "input": {
+            "name": "zzz-nonexistent-company-xyz"
+          },
+          "output": {
+            "status": "not_found"
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Is Apple Inc a real registered company?",
+          "agent_call": {
+            "tool": "verify_company_record",
+            "arguments": {
+              "name": "Apple Inc",
+              "country": "US"
+            }
+          }
+        },
+        {
+          "user_says": "Look up the LEI for Volkswagen AG",
+          "agent_call": {
+            "tool": "verify_company_record",
+            "arguments": {
+              "name": "Volkswagen AG",
+              "country": "DE"
+            }
+          }
+        },
+        {
+          "user_says": "Verify this LEI: 529900HNOAA1KXQJUQ27",
+          "agent_call": {
+            "tool": "verify_company_record",
+            "arguments": {
+              "name": "Volkswagen AG",
+              "lei": "529900HNOAA1KXQJUQ27"
             }
           }
         }
@@ -3515,6 +4014,107 @@ basilalshukaili@gmail.com
 - transient
 - internal
 
+## Operation: check_booking_link
+
+### Input Schema
+```json
+{
+  "type": "object",
+  "required": [
+    "url"
+  ],
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "Full http(s) URL to classify, e.g. 'https://cal.com/jane' or 'https://www.opentable.com/r/acme'."
+    }
+  }
+}
+```
+
+### Output Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "supported": {
+      "type": "boolean",
+      "description": "True if the URL host is a supported booking platform."
+    },
+    "importable": {
+      "type": "boolean",
+      "description": "True if import_booking_url will accept this URL (mirrors its host allowlist)."
+    },
+    "platform": {
+      "type": "string",
+      "description": "Detected platform (e.g. 'cal.com', 'calendly', 'doctolib') or 'unknown'."
+    },
+    "predicted_smb_id": {
+      "type": "string",
+      "description": "The idempotent smb_id import_booking_url would assign to this URL."
+    },
+    "expected_channels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "inferred_country": {
+      "type": "string"
+    },
+    "checked_live": {
+      "type": "boolean",
+      "description": "Always false \u2014 this is an offline classification, the page is never fetched."
+    }
+  }
+}
+```
+
+### Examples
+#### Example 1: 
+```json
+{
+  "label": "Supported Cal.com link",
+  "input": {
+    "url": "https://cal.com/jane"
+  },
+  "output": {
+    "supported": true,
+    "importable": true,
+    "platform": "cal.com",
+    "predicted_smb_id": "smb_imp_...",
+    "expected_channels": [
+      "direct_api:calcom"
+    ],
+    "checked_live": false
+  }
+}
+```
+
+#### Example 2: 
+```json
+{
+  "label": "Unsupported generic URL",
+  "input": {
+    "url": "https://example.com/book-now"
+  },
+  "output": {
+    "supported": false,
+    "importable": false,
+    "platform": "unknown"
+  }
+}
+```
+
+### Failure Modes
+- bad_input
+
 ## Operation: import_booking_url
 
 ### Input Schema
@@ -3733,4 +4333,279 @@ basilalshukaili@gmail.com
 - voice_not_provisioned
 - compliance_violation
 - upstream_failure
+
+## Operation: check_compliance
+
+### Input Schema
+```json
+{
+  "type": "object",
+  "required": [
+    "recipient_id",
+    "content"
+  ],
+  "properties": {
+    "recipient_id": {
+      "type": "string",
+      "description": "Phone in E.164 (e.g. '+14045550100') or email address the message would go to."
+    },
+    "content": {
+      "type": "string",
+      "description": "The actual message body you intend to send. The gate classifies the real text, so a meaningful preview needs the real content."
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "sms",
+        "email",
+        "voice"
+      ],
+      "description": "Delivery channel. Omit to auto-infer sms/email from recipient_id; set 'voice' explicitly."
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+      "default": "transactional"
+    },
+    "country_code": {
+      "type": "string",
+      "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE', 'CA'). Auto-inferred from phone if omitted; drives which jurisdiction rules apply."
+    },
+    "state_code": {
+      "type": "string",
+      "description": "US state code (e.g. 'CA') for state-specific rules."
+    }
+  }
+}
+```
+
+### Output Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "legal": {
+      "type": "boolean",
+      "description": "True if the gate would permit this send."
+    },
+    "channel": {
+      "type": "string"
+    },
+    "message_type": {
+      "type": "string"
+    },
+    "jurisdiction": {
+      "type": "string"
+    },
+    "rule": {
+      "type": "string",
+      "description": "The rule that blocked the send (null when legal=true)."
+    },
+    "remediation": {
+      "type": "string",
+      "description": "How to become compliant (present when legal=false)."
+    },
+    "checked_live": {
+      "type": "boolean",
+      "description": "Always false \u2014 this is a gate decision preview, not a live delivery."
+    }
+  }
+}
+```
+
+### Examples
+#### Example 1: 
+```json
+{
+  "label": "Transactional email is permitted",
+  "input": {
+    "recipient_id": "jane@example.com",
+    "content": "Your appointment at Cuts & Co. is confirmed for Tuesday 10:30am.",
+    "message_type": "transactional",
+    "country_code": "US"
+  },
+  "output": {
+    "status": "success",
+    "reason_code": "compliant",
+    "result": {
+      "legal": true,
+      "channel": "email",
+      "message_type": "transactional",
+      "checked_live": false
+    }
+  }
+}
+```
+
+#### Example 2: 
+```json
+{
+  "label": "Marketing SMS blocked \u2014 no recorded consent",
+  "input": {
+    "recipient_id": "+14045550200",
+    "content": "20% off this week only!",
+    "channel": "sms",
+    "message_type": "marketing",
+    "country_code": "US"
+  },
+  "output": {
+    "status": "success",
+    "reason_code": "not_compliant",
+    "result": {
+      "legal": false,
+      "rule": "TCPA_marketing_consent",
+      "remediation": "Obtain prior express written consent (TCPA) before sending marketing SMS to US numbers, and pass its consent_record_id.",
+      "checked_live": false
+    }
+  }
+}
+```
+
+### Failure Modes
+- bad_input
+
+## Operation: verify_company_record
+
+### Input Schema
+```json
+{
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Legal company name to look up, e.g. Apple Inc or Volkswagen AG."
+    },
+    "country": {
+      "type": "string",
+      "description": "Optional ISO 3166-1 alpha-2 country filter (e.g. US, DE, GB). Narrows GLEIF results to one jurisdiction."
+    },
+    "lei": {
+      "type": "string",
+      "description": "Optional 20-character Legal Entity Identifier for a direct, precise lookup."
+    }
+  }
+}
+```
+
+### Output Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "found",
+        "not_found"
+      ]
+    },
+    "legal_name": {
+      "type": "string"
+    },
+    "lei": {
+      "type": "string"
+    },
+    "entity_status": {
+      "type": "string"
+    },
+    "jurisdiction": {
+      "type": "string"
+    },
+    "registered_address": {
+      "type": "string"
+    },
+    "registry_authority": {
+      "type": "string"
+    },
+    "ticker": {
+      "type": "string"
+    },
+    "sec_cik": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources_queried": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources_unavailable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
+```
+
+### Examples
+#### Example 1: 
+```json
+{
+  "label": "Look up Apple Inc by name and country",
+  "input": {
+    "name": "Apple Inc",
+    "country": "US"
+  },
+  "output": {
+    "status": "found",
+    "legal_name": "Apple Inc.",
+    "lei": "HWUPKR0MPOU8FGXBT394",
+    "entity_status": "ACTIVE",
+    "jurisdiction": "US",
+    "sources": [
+      "GLEIF",
+      "SEC EDGAR"
+    ]
+  }
+}
+```
+
+#### Example 2: 
+```json
+{
+  "label": "Direct LEI lookup",
+  "input": {
+    "name": "Volkswagen AG",
+    "lei": "529900HNOAA1KXQJUQ27"
+  },
+  "output": {
+    "status": "found",
+    "legal_name": "Volkswagen AG",
+    "lei": "529900HNOAA1KXQJUQ27",
+    "entity_status": "ACTIVE",
+    "jurisdiction": "DE",
+    "sources": [
+      "GLEIF"
+    ]
+  }
+}
+```
+
+#### Example 3: 
+```json
+{
+  "label": "Company not found in registries",
+  "input": {
+    "name": "zzz-nonexistent-company-xyz"
+  },
+  "output": {
+    "status": "not_found"
+  }
+}
+```
+
+### Failure Modes
+- bad_input
+- upstream_timeout
 
