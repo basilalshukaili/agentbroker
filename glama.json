@@ -1,9 +1,11 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": ["basilalshukaili"],
+  "maintainers": [
+    "basilalshukaili"
+  ],
   "name": "agent-broker",
   "displayName": "Agent Broker",
-  "description": "17 MCP tools to find, verify, message, and book appointments at small businesses worldwide. Live GLEIF/SEC company verification, built-in TCPA/GDPR/CASL compliance. 9 free read tools (no key needed), 50 write ops/day free with email-verified key, unlimited via Polar ($9/90d).",
+  "description": "18 MCP tools: 18 MCP tools to find, verify, message, book, and transact at small businesses. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening. 10 read tools free.",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker"
   },
@@ -15,21 +17,29 @@
   ],
   "license": "MIT",
   "tags": [
-    "scheduling",
-    "small-business",
-    "compliance",
+    "mcp",
     "mcp-server",
+    "model-context-protocol",
+    "smb",
+    "business-automation",
+    "scheduling",
     "booking",
-    "verification",
+    "compliance",
+    "tcpa",
+    "gdpr",
     "gleif",
     "sec",
     "cal-com",
-    "calendly"
+    "calendly",
+    "sanctions-screening",
+    "verification",
+    "hatchloop",
+    "ai-agents"
   ],
   "auth": {
     "type": "optional",
     "header": "X-Agent-Identity",
     "scheme": "bearer",
-    "note": "9 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key at hatchloop.dev/agent-broker, $9/90d unlimited)."
+    "note": "10 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key or $9/90d Polar subscription)."
   }
 }
