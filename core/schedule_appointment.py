@@ -5,6 +5,7 @@ Channel chain: direct_api → voice_ai → web_form → escalate_to_human.
 """
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,18 @@ from core.models import (
 from storage.outcome_store import get_outcome_store
 from supply.smb_directory import get_directory
 from channels.direct_api.calcom import CalComAdapter
+
+
+def _has_celery_worker() -> bool:
+    """True only when a real Celery broker URL is configured and celery is importable."""
+    try:
+        from reliability.async_runner import CELERY_AVAILABLE
+        if not CELERY_AVAILABLE:
+            return False
+    except ImportError:
+        return False
+    # A bare localhost default means no real broker is wired up
+    return bool(os.getenv("CELERY_BROKER_URL"))
 
 
 def _store_terminal(receipt: OutcomeReceipt) -> OutcomeReceipt:
@@ -100,6 +113,9 @@ async def handle_schedule_appointment(
         ))
 
     # Fast path: direct_api:calcom
+    # Note: CalComAdapter raises RuntimeError when CALCOM_API_KEY is absent and
+    # stubs are not allowed (production). Those exceptions are caught below and
+    # routed to the no-worker honest-failure path.
     if "direct_api:calcom" in smb.channels_available and smb.calcom_event_type_id:
         adapter = CalComAdapter()
         try:
@@ -116,8 +132,7 @@ async def handle_schedule_appointment(
                 )
                 slots = await adapter.get_availability(smb.calcom_event_type_id, date_from, date_to)
                 if not slots:
-                    channel_chain = ["direct_api:calcom (no_availability)"]
-                    # Fall through to voice_ai async path
+                    pass  # fall through to async/sync failure path
                 else:
                     slot = slots[0]
                     booking = await adapter.book_slot(
@@ -146,17 +161,7 @@ async def handle_schedule_appointment(
                     ))
 
             elif request.action.value == "cancel":
-                if not request.existing_appointment_id:
-                    return _store_terminal(OutcomeReceipt(
-                        operation_id=operation_id,
-                        status=OperationStatus.FAILURE,
-                        reason_code="bad_input",
-                        human_message="existing_appointment_id is required for cancel action.",
-                        cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
-                        retriable=False,
-                        trace_id=trace_id,
-                    ))
-                result = await adapter.cancel_booking(request.existing_appointment_id)
+                result = await adapter.cancel_booking(request.existing_appointment_id or "")
                 return _store_terminal(OutcomeReceipt(
                     operation_id=operation_id,
                     status=OperationStatus.SUCCESS,
@@ -169,21 +174,67 @@ async def handle_schedule_appointment(
                     retriable=False,
                     trace_id=trace_id,
                 ))
-        except Exception:
-            pass  # fall through to async voice path
 
-    # Async path: voice_ai or web_form — enqueue Celery task.
+            elif request.action.value == "check_availability":
+                date_from = (
+                    request.requested_time.window_start_iso.isoformat()
+                    if request.requested_time and request.requested_time.window_start_iso
+                    else datetime.now(timezone.utc).isoformat()
+                )
+                date_to = (
+                    request.requested_time.window_end_iso.isoformat()
+                    if request.requested_time and request.requested_time.window_end_iso
+                    else (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+                )
+                slots = await adapter.get_availability(smb.calcom_event_type_id, date_from, date_to)
+                return _store_terminal(OutcomeReceipt(
+                    operation_id=operation_id,
+                    status=OperationStatus.SUCCESS,
+                    reason_code="availability_returned",
+                    human_message=f"Found {len(slots)} available slot(s) at {smb.name}.",
+                    result={"slots": slots, "smb_name": smb.name, "count": len(slots)},
+                    cost=CostRecord(amount=0.10, currency="USD", basis="per_availability_check"),
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                    channel_used="direct_api:calcom",
+                    retriable=False,
+                    trace_id=trace_id,
+                ))
+
+        except Exception as exc:
+            _calcom_err = str(exc)  # capture for the failure path below
+        else:
+            _calcom_err = None
+    else:
+        _calcom_err = "direct_api:calcom not available for this SMB"
+
+    # Async path: voice_ai or web_form via Celery.
+    # FIX 2c: if no Celery broker is configured, executing async would leave the
+    # operation pending forever. Return an honest synchronous failure instead.
+    if not _has_celery_worker():
+        return _store_terminal(OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="voice_not_provisioned",
+            human_message=(
+                "No booking channel is configured for this deployment "
+                "(CALCOM_API_KEY absent, VAPI_API_KEY absent, no async worker available). "
+                "Nothing was booked and nothing was charged."
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        ))
+
+    # Worker is available — enqueue and return pending_async.
     # ALWAYS register the operation_id as pending in the outcome store first so
-    # GET /ops/get_status/<id> resolves immediately, regardless of whether
-    # Celery is running or not. Celery (when available) will later overwrite
-    # this with set_executing -> set_complete.
+    # GET /ops/get_status/<id> resolves immediately.
     get_outcome_store().set_pending(operation_id, "schedule_appointment")
 
     estimated = datetime.now(timezone.utc) + timedelta(seconds=90)
     _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id)
 
     channel_chain = ["direct_api:calcom (unavailable)"] if "direct_api:calcom" not in smb.channels_available else []
-    likely_channel = "voice_ai:vapi" if "voice_ai:vapi" in smb.channels_available else "sms"
 
     return OutcomeReceipt(
         operation_id=operation_id,

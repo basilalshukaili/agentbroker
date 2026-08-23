@@ -101,14 +101,18 @@ if CELERY_AVAILABLE and _celery_app:
                     _fire_webhook(operation_id, result, trace_id)
                     return result
 
-            # Fallback: stub success for voice AI path
+            # FIX 2a: voice AI path is not configured on this deployment.
+            # Never fabricate a confirmation -- return an honest failure.
             result = {
                 "operation_id": operation_id,
-                "status": "success",
-                "reason_code": "appointment_confirmed_via_voice",
-                "human_message": f"Appointment confirmed at {smb.name} via voice AI.",
-                "result": {"channel_used": "voice_ai:vapi", "smb_name": smb.name},
-                "cost": {"amount": 1.25, "currency": "USD", "basis": "per_booking+voice_premium"},
+                "status": "failure",
+                "reason_code": "voice_not_provisioned",
+                "human_message": (
+                    f"Voice AI channel (VAPI_API_KEY) is not configured on this deployment. "
+                    f"No booking was created at {smb.name} and nothing was charged."
+                ),
+                "result": {"channel_used": None, "smb_name": smb.name},
+                "cost": {"amount": 0.0, "currency": "USD", "basis": "no_charge"},
                 "retriable": False,
             }
             store.set_complete(operation_id, result)

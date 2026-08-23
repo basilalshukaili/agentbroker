@@ -59,6 +59,12 @@ def _decode_agent_id(raw_prefix: str) -> str:
     return "legacy_redacted"
 
 
+_TABLE_PK: dict[str, str] = {
+    "usage_events": "id",
+    "operations": "operation_id",
+}
+
+
 async def _patch_table(
     table: str,
     column: str,
@@ -78,12 +84,14 @@ async def _patch_table(
         "Prefer": "return=representation",
     }
 
+    pk = _TABLE_PK.get(table, "id")
+
     # SELECT rows with eyJ-prefixed values using PostgREST LIKE filter
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{url}/rest/v1/{table}",
             headers=headers,
-            params={column: f"like.eyJ%", "limit": 10000, "select": f"id,{column}"},
+            params={column: f"like.eyJ%", "limit": 10000, "select": f"{pk},{column}"},
         )
     if resp.status_code != 200:
         log.error("select_failed table=%s status=%s body=%s",

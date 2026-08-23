@@ -54,6 +54,11 @@ class CalComAdapter:
     ) -> list[dict[str, Any]]:
         """Fetch available slots. v2 returns {data: {slots: {date: [...]}, ...}}."""
         if not self._api_key:
+            from channels.stub_policy import stubs_allowed
+            if not stubs_allowed():
+                raise RuntimeError(
+                    "availability check channel not configured (CALCOM_API_KEY missing) -- "
+                    "no availability was fetched and nothing was charged")
             return self._stub_availability(date_from, date_to)
         try:
             import httpx
@@ -130,6 +135,11 @@ class CalComAdapter:
     async def cancel_booking(self, booking_uid: str, reason: str = "") -> dict[str, Any]:
         """Cancel a booking. v2: POST /v2/bookings/{uid}/cancel"""
         if not self._api_key:
+            from channels.stub_policy import stubs_allowed
+            if not stubs_allowed():
+                raise RuntimeError(
+                    "booking channel not configured (CALCOM_API_KEY missing) -- "
+                    "no cancellation was performed and nothing was charged")
             return {"status": "CANCELLED", "uid": booking_uid}
         try:
             import httpx

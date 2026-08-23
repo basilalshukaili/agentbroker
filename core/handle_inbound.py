@@ -66,10 +66,28 @@ async def handle_inbound(
 
     if intent == "opt_out" and request.sender:
         from compliance.consent_store import get_consent_store
+        from storage.supabase_client import insert_row
+
         phone = request.sender.phone
+        channel = request.inbound_channel.value
+        recipient_id = phone or request.sender.email or "unknown"
+
+        # In-memory revoke (fast path for within-session checks)
         if phone:
-            get_consent_store().revoke_consent(phone, request.inbound_channel.value, "marketing", "keyword_STOP")
-        result["opt_out_processed"] = True
+            get_consent_store().revoke_consent(phone, channel, "marketing", "keyword_STOP")
+
+        # FIX 3: Durable write to Supabase consent_optouts table.
+        # opt_out_processed is True ONLY if the durable write succeeds.
+        # A STOP that silently fails is a compliance violation.
+        opt_out_row = {
+            "recipient_id": recipient_id,
+            "channel": channel,
+            "use_case": "marketing",
+            "revocation_method": "keyword_STOP",
+            "source": "inbound_handler",
+        }
+        inserted = await insert_row("consent_optouts", opt_out_row)
+        result["opt_out_processed"] = inserted is not None
 
     return OutcomeReceipt(
         operation_id=operation_id,

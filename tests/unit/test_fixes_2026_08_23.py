@@ -268,7 +268,8 @@ class TestCostTruth:
             f"handle_inbound cost should be $0.03 (manifest), got ${receipt.cost.amount}"
 
     def test_escalate_to_human_cost_matches_manifest(self):
-        """escalate_to_human must bill $0.20 (manifest), not $0.50 (was wrong)."""
+        """escalate_to_human must bill $0.20 (manifest) on a successful Supabase insert."""
+        from unittest.mock import AsyncMock, patch
         from core.escalate_to_human import handle_escalate_to_human
         from core.models import (
             EscalateToHumanRequest, EscalationReason, EscalationContext
@@ -282,9 +283,13 @@ class TestCostTruth:
                 recommended_next_step="human_review",
             ),
         )
-        receipt = run(handle_escalate_to_human(req))
+        # FIX 1: cost is only $0.20 when the Supabase insert succeeds.
+        # Mock to simulate a successful durable write.
+        fake_row = {"id": "test-escalation-uuid", "status": "open"}
+        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=fake_row):
+            receipt = run(handle_escalate_to_human(req))
         assert receipt.cost.amount == 0.20, \
-            f"escalate_to_human cost should be $0.20 (manifest), got ${receipt.cost.amount}"
+            f"escalate_to_human cost should be $0.20 (manifest) on success, got ${receipt.cost.amount}"
 
     def test_handle_inbound_cost_is_not_old_wrong_value(self):
         from core.handle_inbound import handle_inbound

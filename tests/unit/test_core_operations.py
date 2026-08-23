@@ -162,13 +162,19 @@ class TestHandleInbound:
         assert "cancellation" in receipt.reason_code
 
     def test_stop_keyword_triggers_opt_out(self):
+        from unittest.mock import AsyncMock, patch
         req = HandleInboundRequest(
             smb_id="smb_001",
             inbound_channel=InboundChannel.SMS,
             sender=InboundSender(phone="+14045550001"),
             raw_message="STOP",
         )
-        receipt = run(handle_inbound(req))
+        # FIX 3: opt_out_processed is now set from the Supabase durable write.
+        # Mock the insert to return a row so the test verifies the opt-out path
+        # without needing a live Supabase connection.
+        fake_row = {"id": "test-consent-uuid", "recipient_id": "+14045550001"}
+        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=fake_row):
+            receipt = run(handle_inbound(req))
         assert receipt.result.get("opt_out_processed") is True
 
 

@@ -10,14 +10,30 @@ Policy now:
   - Missing credentials => honest failure (`channel_not_configured`).
   - Synthetic success is available ONLY when ALLOW_STUB_CHANNELS is explicitly
     truthy (local tests / simulation harness), never by default.
+  - HARD PROD GUARD (FIX 4): when the RENDER env var is set, or
+    ENVIRONMENT/ENV=production, stubs are ALWAYS disabled regardless of
+    ALLOW_STUB_CHANNELS. This prevents stub receipts from ever appearing in
+    production even if someone accidentally sets ALLOW_STUB_CHANNELS on Render.
 """
 import os
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
+def _is_production() -> bool:
+    """True when running in a production environment (Render, explicit flag, etc.)."""
+    # Render sets this env var automatically on all services
+    if os.getenv("RENDER"):
+        return True
+    env = os.getenv("ENVIRONMENT", os.getenv("ENV", "")).strip().lower()
+    return env in ("production", "prod")
+
+
 def stubs_allowed() -> bool:
-    """True only when a human explicitly enabled synthetic responses."""
+    """True only when a human explicitly enabled synthetic responses AND not in production."""
+    if _is_production():
+        # Hard guard: stubs can never be enabled in production
+        return False
     return os.getenv("ALLOW_STUB_CHANNELS", "").strip().lower() in _TRUTHY
 
 

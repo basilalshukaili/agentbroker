@@ -32,12 +32,18 @@ class TestChannelDown:
         assert receipt.status == OperationStatus.SUCCESS
 
     def test_schedule_appointment_falls_back_when_calcom_fails(self):
-        """When Cal.com raises an exception, should return pending_async (voice fallback).
+        """When Cal.com raises an exception, the handler must not raise.
 
         Uses a NON-demo SMB on purpose: the demo-SMB guard deliberately
         short-circuits every booking against sandbox entries (so no real
         business is ever contacted and no payment settles), which would mask
         the fallback path this test exists to cover. smb_001 is a demo entry.
+
+        2026-08-24 behaviour update: with no Celery broker configured (test env),
+        the handler now returns an honest FAILURE (voice_not_provisioned) instead
+        of a pending_async that would hang forever. Both FAILURE and PENDING_ASYNC
+        are acceptable non-raise outcomes -- the important invariant is that the
+        handler never raises and never returns a fabricated success.
         """
         import dataclasses
         from supply.smb_directory import get_directory
@@ -67,8 +73,13 @@ class TestChannelDown:
                 service="haircut",
             )
             receipt = run(handle_schedule_appointment(req))
-            # Should fall back to async path, not raise
-            assert receipt.status in (OperationStatus.SUCCESS, OperationStatus.PENDING_ASYNC)
+            # Must not raise; status must be a non-fabricated outcome
+            assert receipt.status in (
+                OperationStatus.SUCCESS, OperationStatus.PENDING_ASYNC, OperationStatus.FAILURE
+            )
+            # If it's failure, it must be an honest not-configured failure, never a fake success
+            if receipt.status == OperationStatus.FAILURE:
+                assert receipt.cost.amount == 0.0, "No charge on fallback failure"
 
     def test_demo_smb_booking_never_contacts_a_real_business(self):
         """The safety guard the test above steps around must itself be covered."""
