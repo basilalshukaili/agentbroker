@@ -31,8 +31,11 @@ and source code at the root of this repository are used directly.
 
 If you forked from GitHub, set the secrets in **Settings → Repository secrets**:
 
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
+- `TWILIO_ACCOUNT_SID` (required for both auth modes)
+- `TWILIO_API_KEY_SID` + `TWILIO_API_KEY_SECRET` (API-Key mode, preferred; SK... key pair)
+- `TWILIO_AUTH_TOKEN` (legacy mode only; omit when using API-Key mode)
+- `TWILIO_MESSAGING_SERVICE_SID` (preferred sender; MG... Messaging Service)
+- `TWILIO_FROM_NUMBER` (E.164 fallback sender e.g. +15005550006; omit if using Messaging Service)
 - `CALCOM_API_KEY`
 - `CALCOM_USERNAME`
 - `VAPI_API_KEY`

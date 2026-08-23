@@ -158,9 +158,18 @@ the free tier (3 small VMs).
    ```
 4. Set secrets (these are what the running container reads; never goes to git):
    ```bash
+   # Twilio auth — two modes supported (pick one):
+   #   API-Key mode (preferred): set all three of TWILIO_ACCOUNT_SID,
+   #     TWILIO_API_KEY_SID (starts with SK), TWILIO_API_KEY_SECRET
+   #   Legacy mode: set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN
+   # Sender (pick one):
+   #   TWILIO_MESSAGING_SERVICE_SID (preferred, 10DLC-registered)
+   #   TWILIO_FROM_NUMBER (E.164 fallback e.g. +15005550006)
    flyctl secrets set \
      TWILIO_ACCOUNT_SID="your_twilio_account_sid" \
-     TWILIO_AUTH_TOKEN="your_twilio_auth_token" \
+     TWILIO_API_KEY_SID="SKxxxx" \
+     TWILIO_API_KEY_SECRET="your_api_key_secret" \
+     TWILIO_MESSAGING_SERVICE_SID="MGxxxx" \
      CALCOM_API_KEY="your_calcom_api_key" \
      CALCOM_USERNAME="basil-9t8bfa" \
      VAPI_API_KEY="your_vapi_api_key" \

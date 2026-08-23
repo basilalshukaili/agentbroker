@@ -1,6 +1,20 @@
 """
 Twilio SMS channel adapter.
-Requires: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_MESSAGING_SERVICE_SID env vars.
+
+Auth modes (checked in order of preference):
+  API-Key mode (preferred):
+    TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET + TWILIO_ACCOUNT_SID
+    -> Client(api_key_sid, api_key_secret, account_sid)
+  Legacy mode:
+    TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN
+    -> Client(account_sid, auth_token)
+  Neither set -> honest channel_not_configured failure (nothing sent, nothing charged).
+
+Sender resolution (checked in order of preference):
+  TWILIO_MESSAGING_SERVICE_SID (preferred) -> messages.create(messaging_service_sid=...)
+  TWILIO_FROM_NUMBER             -> messages.create(from_=...)
+  Neither set -> honest channel_not_configured/no_sender failure (nothing sent, nothing charged).
+
 All sends pass through compliance.pre_check before dispatch.
 """
 from __future__ import annotations
@@ -17,9 +31,35 @@ class TwilioSMSAdapter(ChannelAdapter):
     channel_name = "sms:twilio"
 
     def __init__(self) -> None:
+        # API-Key auth (SK... key + secret + account SID)
+        self._api_key_sid = os.getenv("TWILIO_API_KEY_SID", "")
+        self._api_key_secret = os.getenv("TWILIO_API_KEY_SECRET", "")
+        # Both auth modes need ACCOUNT_SID; legacy mode also needs AUTH_TOKEN
         self._account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
         self._auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
+        # Sender: Messaging Service SID is preferred over a raw From number
         self._messaging_service_sid = os.getenv("TWILIO_MESSAGING_SERVICE_SID", "")
+        self._from_number = os.getenv("TWILIO_FROM_NUMBER", "")
+
+    def _auth_mode(self) -> str:
+        """Return 'api_key', 'legacy', or 'none' based on which env vars are set."""
+        if self._api_key_sid and self._api_key_secret and self._account_sid:
+            return "api_key"
+        if self._account_sid and self._auth_token:
+            return "legacy"
+        return "none"
+
+    def _build_client(self):
+        """Construct and return a Twilio REST Client for the detected auth mode."""
+        from twilio.rest import Client  # type: ignore
+        mode = self._auth_mode()
+        if mode == "api_key":
+            # API-Key auth: positional args are (username=api_key_sid, password=api_key_secret,
+            # account_sid=account_sid) — Twilio SDK convention for key-based auth.
+            return Client(self._api_key_sid, self._api_key_secret, self._account_sid)
+        if mode == "legacy":
+            return Client(self._account_sid, self._auth_token)
+        return None
 
     async def send(self, request: ChannelRequest) -> ChannelResponse:
         # Compliance pre-check — MUST run before any dispatch
@@ -34,26 +74,40 @@ class TwilioSMSAdapter(ChannelAdapter):
             trace_id=request.trace_id,
         )
 
-        if not self._account_sid or not self._auth_token:
+        if self._auth_mode() == "none":
             from channels.stub_policy import stubs_allowed, not_configured
             if not stubs_allowed():
-                return not_configured("sms", "twilio", "TWILIO_ACCOUNT_SID/AUTH_TOKEN")
-            # Stub mode for testing (ALLOW_STUB_CHANNELS only)
+                return not_configured(
+                    "sms",
+                    "twilio",
+                    "TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID/TWILIO_API_KEY_SECRET "
+                    "(API-Key mode) or TWILIO_AUTH_TOKEN (legacy mode)",
+                )
+            # Stub mode for testing (ALLOW_STUB_CHANNELS only — never in production)
             return ChannelResponse(
                 success=True,
                 provider_message_id=f"SM_STUB_{request.recipient_id[:8]}",
                 raw_response={"stub": True},
             )
 
+        # Auth is configured — now check that a sender is set
+        if not self._messaging_service_sid and not self._from_number:
+            from channels.stub_policy import not_configured
+            return not_configured(
+                "sms",
+                "twilio",
+                "TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER (no sender configured)",
+            )
+
         try:
             # Production path: Twilio REST API
-            from twilio.rest import Client  # type: ignore
-            client = Client(self._account_sid, self._auth_token)
-            message = client.messages.create(
-                body=request.content,
-                messaging_service_sid=self._messaging_service_sid,
-                to=request.recipient_id,
-            )
+            client = self._build_client()
+            create_kwargs: dict = dict(body=request.content, to=request.recipient_id)
+            if self._messaging_service_sid:
+                create_kwargs["messaging_service_sid"] = self._messaging_service_sid
+            else:
+                create_kwargs["from_"] = self._from_number
+            message = client.messages.create(**create_kwargs)
             return ChannelResponse(
                 success=message.status not in ("failed", "undelivered"),
                 provider_message_id=message.sid,
@@ -67,4 +121,4 @@ class TwilioSMSAdapter(ChannelAdapter):
             )
 
     async def health_check(self) -> bool:
-        return bool(self._account_sid and self._auth_token)
+        return self._auth_mode() != "none"

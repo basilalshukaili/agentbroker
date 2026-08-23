@@ -79,9 +79,24 @@ CELERY_RESULT_BACKEND = _env("CELERY_RESULT_BACKEND", REDIS_URL)
 # Channel credentials
 # ---------------------------------------------------------------------------
 
+# Twilio — two auth modes supported:
+#   API-Key mode (preferred, use for API Keys created under a project/subaccount):
+#     TWILIO_API_KEY_SID    — starts with "SK"
+#     TWILIO_API_KEY_SECRET — the secret for the above API Key
+#     TWILIO_ACCOUNT_SID   — the Account SID (starts with "AC") for the API Key
+#   Legacy mode (Account SID + Auth Token, still supported):
+#     TWILIO_ACCOUNT_SID   — your Account SID (starts with "AC")
+#     TWILIO_AUTH_TOKEN    — the Auth Token from the Twilio console
+#
+# Sender — exactly one must be set:
+#   TWILIO_MESSAGING_SERVICE_SID — preferred; 10DLC-registered Messaging Service
+#   TWILIO_FROM_NUMBER            — E.164 fallback (e.g. "+15005550006")
 TWILIO_ACCOUNT_SID = _env("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = _env("TWILIO_AUTH_TOKEN", "")
-TWILIO_FROM_NUMBER = _env("TWILIO_FROM_NUMBER", "")
+TWILIO_AUTH_TOKEN = _env("TWILIO_AUTH_TOKEN", "")           # legacy mode only
+TWILIO_API_KEY_SID = _env("TWILIO_API_KEY_SID", "")         # API-Key mode (SK...)
+TWILIO_API_KEY_SECRET = _env("TWILIO_API_KEY_SECRET", "")   # API-Key mode secret
+TWILIO_MESSAGING_SERVICE_SID = _env("TWILIO_MESSAGING_SERVICE_SID", "")  # preferred sender
+TWILIO_FROM_NUMBER = _env("TWILIO_FROM_NUMBER", "")          # fallback sender (E.164)
 
 SENDGRID_API_KEY = _env("SENDGRID_API_KEY", "")
 SENDGRID_FROM_EMAIL = _env("SENDGRID_FROM_EMAIL", "noreply@agent-broker-edge.basil-agent.workers.dev")
@@ -174,12 +189,28 @@ def validate_production_config() -> list[str]:
         ("AGENT_IDENTITY_SIGNING_SECRET", AGENT_IDENTITY_SIGNING_SECRET),
         ("DATABASE_URL", DATABASE_URL),
         ("REDIS_URL", REDIS_URL),
-        ("TWILIO_ACCOUNT_SID", TWILIO_ACCOUNT_SID),
-        ("TWILIO_AUTH_TOKEN", TWILIO_AUTH_TOKEN),
         ("SENDGRID_API_KEY", SENDGRID_API_KEY),
         ("BILLING_RECEIPT_SIGNING_SECRET", BILLING_RECEIPT_SIGNING_SECRET),
     ]
     for name, val in required_in_prod:
         if not val or "CHANGE-IN-PRODUCTION" in val or val == "":
             warnings.append(f"MISSING or DEFAULT value for required production secret: {name}")
+
+    # Twilio auth: at least one mode must be configured (API-Key preferred over legacy)
+    api_key_mode_ok = bool(TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET and TWILIO_ACCOUNT_SID)
+    legacy_mode_ok = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN)
+    if not api_key_mode_ok and not legacy_mode_ok:
+        warnings.append(
+            "MISSING Twilio auth: set TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID + "
+            "TWILIO_API_KEY_SECRET (API-Key mode, preferred) OR "
+            "TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (legacy mode)"
+        )
+
+    # Twilio sender: at least one must be set
+    if not TWILIO_MESSAGING_SERVICE_SID and not TWILIO_FROM_NUMBER:
+        warnings.append(
+            "MISSING Twilio sender: set TWILIO_MESSAGING_SERVICE_SID "
+            "(preferred, 10DLC-registered) or TWILIO_FROM_NUMBER (E.164 fallback)"
+        )
+
     return warnings

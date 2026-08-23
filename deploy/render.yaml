@@ -38,11 +38,24 @@ services:
       - key: BILLING_PROVIDER
         value: paddle
       # Set the rest via Render dashboard → Environment:
-      #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, CALCOM_API_KEY, VAPI_API_KEY,
-      #   RESEND_API_KEY, AGENT_IDENTITY_SIGNING_SECRET, BILLING_RECEIPT_SIGNING_SECRET
+      #   Twilio auth — API-Key mode (preferred):
+      #     TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID (SK...), TWILIO_API_KEY_SECRET
+      #   Twilio auth — legacy mode (alternative):
+      #     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
+      #   Twilio sender — pick one:
+      #     TWILIO_MESSAGING_SERVICE_SID (preferred, MG...) or TWILIO_FROM_NUMBER (E.164)
+      #   Other:
+      #     CALCOM_API_KEY, VAPI_API_KEY,
+      #     RESEND_API_KEY, AGENT_IDENTITY_SIGNING_SECRET, BILLING_RECEIPT_SIGNING_SECRET
       - key: TWILIO_ACCOUNT_SID
         sync: false
+      - key: TWILIO_API_KEY_SID
+        sync: false
+      - key: TWILIO_API_KEY_SECRET
+        sync: false
       - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_MESSAGING_SERVICE_SID
         sync: false
       - key: CALCOM_API_KEY
         sync: false
