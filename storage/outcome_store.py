@@ -134,13 +134,21 @@ async def _supabase_upsert(
     try:
         import json as _json
         from storage.supabase_client import upsert_row
+        # FIX (quota strip, belt-and-suspenders): strip the transient per-call
+        # `quota` block from the serialised result even if the caller somehow
+        # passed a mutated dict.  Quota belongs to the response envelope only.
+        _EPHEMERAL_KEYS = frozenset({"quota"})
+        persisted_outcome = (
+            {k: v for k, v in outcome.items() if k not in _EPHEMERAL_KEYS}
+            if outcome else None
+        )
         row: dict[str, Any] = {
             "operation_id": operation_id,
             "ts": record.get("updated_at") or datetime.now(timezone.utc).isoformat(),
             "tool": tool or record.get("operation_type") or "unknown",
             "status": record.get("status", "unknown"),
             "reason_code": (outcome or {}).get("reason_code"),
-            "result_json": _json.dumps(outcome, default=str) if outcome else None,
+            "result_json": _json.dumps(persisted_outcome, default=str) if persisted_outcome else None,
             "agent_id": agent_id,
         }
         await upsert_row("operations", row, on_conflict="operation_id")

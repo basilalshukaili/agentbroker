@@ -233,13 +233,15 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
             result = await handler(params)
 
         # Fire-and-forget usage telemetry — never blocks, never raises.
+        # FIX 1 (cred hygiene): pass the PARSED agent_id to fire_log_usage,
+        # never a slice of the raw bearer token.
         try:
             tool_name = params.get("name") if method == "tools/call" else None
             arguments = params.get("arguments") if method == "tools/call" else None
             ip = norm_headers.get("x-forwarded-for", norm_headers.get("x-real-ip", ""))
             ua = norm_headers.get("user-agent", "")
             raw_key = norm_headers.get("x-agent-identity", "")
-            key_id = raw_key[:64] if raw_key else "anonymous"
+            key_id = _agent_id_from_token(raw_key)
             from billing.usage_logger import fire_log_usage
             fire_log_usage(method, tool_name, arguments, ip, ua, key_id)
         except Exception:  # noqa: BLE001
@@ -275,6 +277,25 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
 
 class _ParamError(ValueError):
     pass
+
+
+def _agent_id_from_token(raw_token: str) -> str:
+    """Extract the PARSED agent_id from an X-Agent-Identity bearer token.
+
+    Returns 'anonymous' for empty, missing, or invalid tokens.
+    This is the sole safe way to derive a loggable identity — it never stores
+    any slice of the raw bearer token value.
+    """
+    if not raw_token or raw_token in ("", "anonymous"):
+        return "anonymous"
+    try:
+        from agent_interface.identity import validate_token
+        result = validate_token(raw_token)
+        if result.valid and result.identity:
+            return result.identity.agent_id
+    except Exception:  # noqa: BLE001
+        pass
+    return "anonymous"
 
 
 # ---------------------------------------------------------------------------
@@ -708,7 +729,12 @@ async def _dispatch_operation(
 
     # Durable billing — fire-and-forget meter record for every tool call.
     # Works whether x402 is on or off. amount_usd=0 when x402 disabled (now).
-    _agent_id = ((headers or {}).get('x-agent-identity') or 'anonymous')[:64]
+    #
+    # FIX 1 (cred hygiene): use _agent_id_from_token so we record the PARSED
+    # agent_id (e.g. "free_4f19be4f44ef1e0f") and never a slice of the raw
+    # bearer token (which would start with "eyJ...").
+    _raw_token = (headers or {}).get('x-agent-identity') or ''
+    _agent_id = _agent_id_from_token(_raw_token)
     try:
         from billing.durable_meter import get_durable_meter
         _cost = getattr(receipt, 'cost', None)
@@ -736,21 +762,37 @@ async def _dispatch_operation(
     else:
         receipt_dict = dict(receipt) if isinstance(receipt, dict) else receipt.__dict__
 
-    # FIX 1 (2026-08-23): Persist operation to durable store so get_status /
-    # get_outcome can retrieve it across requests (Supabase-backed).
+    # FIX 2 (audit-trail): read-only operations (get_status, get_outcome, etc.)
+    # must NEVER upsert over the existing durable row — that would overwrite the
+    # originating tool name with the reader name (e.g. tool="get_outcome" over
+    # tool="handle_inbound").  Only state-changing tools write a row.
+    _PERSIST_SKIP_TOOLS = frozenset({
+        "get_status", "get_outcome",
+        "find_business", "verify_business", "preview_cost", "self_test",
+        "check_booking_link", "check_compliance", "verify_company_record",
+    })
+
+    # FIX 1 (durable store) + FIX 5 (quota strip): persist operation to durable
+    # store so get_status/get_outcome can retrieve it across requests.
+    # Strip the transient `quota` block before persisting — quota belongs to the
+    # response envelope only, not to the durable record.
     # Fail-open: a store error must never break the tool call.
-    try:
-        from storage.outcome_store import get_outcome_store
-        _persist_op_id = receipt_dict.get('operation_id')
-        if _persist_op_id:
-            get_outcome_store().set_complete(
-                _persist_op_id,
-                receipt_dict,
-                tool=name,
-                agent_id=_agent_id if _agent_id != 'anonymous' else None,
-            )
-    except Exception:
-        pass
+    if name not in _PERSIST_SKIP_TOOLS:
+        try:
+            from storage.outcome_store import get_outcome_store
+            _persist_op_id = receipt_dict.get('operation_id')
+            if _persist_op_id:
+                # Copy and strip quota so the async upsert never serialises it
+                # even if _inject_quota_block mutates receipt_dict after we return.
+                _persist_receipt = {k: v for k, v in receipt_dict.items() if k != 'quota'}
+                get_outcome_store().set_complete(
+                    _persist_op_id,
+                    _persist_receipt,
+                    tool=name,
+                    agent_id=_agent_id if _agent_id != 'anonymous' else None,
+                )
+        except Exception:
+            pass
 
     return receipt_dict
 

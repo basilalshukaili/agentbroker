@@ -56,7 +56,73 @@ def _render(confirmation_type: str, data: dict) -> str:
     try:
         return template.format(**data)
     except KeyError:
-        return str(data)
+        # Fall back to listing the data fields in a readable way rather than
+        # exposing a raw Python dict repr as the email body.
+        lines = [f"  {k}: {v}" for k, v in data.items() if v is not None]
+        return "\n".join(lines) if lines else "(no details provided)"
+
+
+_CONFIRMATION_TYPE_LABELS: dict[str, str] = {
+    "booking_confirmation": "Booking Confirmation",
+    "cancellation_notice": "Appointment Cancellation Notice",
+    "payment_receipt": "Payment Receipt",
+    "otp": "Your Verification Code",
+    "reminder": "Appointment Reminder",
+}
+
+
+def _build_subject(confirmation_type: str, data: dict) -> str:
+    """Build a specific, descriptive email subject line."""
+    label = _CONFIRMATION_TYPE_LABELS.get(confirmation_type, "Confirmation")
+    # Try to enrich subject with business name and/or time
+    smb = data.get("smb_name") or data.get("business_name") or ""
+    when = data.get("appointment_time") or data.get("date") or ""
+    if smb and when:
+        return f"{label}: {smb} on {when}"
+    if smb:
+        return f"{label}: {smb}"
+    if when:
+        return f"{label} on {when}"
+    return label
+
+
+def _build_email_body(confirmation_type: str, data: dict, core_text: str) -> str:
+    """
+    Format a proper plain-text confirmation email.
+
+    Structure:
+      Hello <name>,
+
+      <core confirmation text>
+
+      If you have questions, please reply to this message.
+
+      Best regards,
+      SMB Agent Broker
+      ---
+      This is an automated transactional message sent on behalf of <smb_name>.
+    """
+    name = data.get("name") or data.get("customer_name") or ""
+    greeting = f"Hello {name}," if name else "Hello,"
+
+    smb = data.get("smb_name") or data.get("business_name") or ""
+    footer_from = f"on behalf of {smb}" if smb else "via SMB Agent Broker"
+
+    lines = [
+        greeting,
+        "",
+        core_text,
+        "",
+        "If you have any questions, please reply to this message.",
+        "",
+        "Best regards,",
+        "SMB Agent Broker",
+        "",
+        "---",
+        f"This is an automated transactional message sent {footer_from}.",
+        "To stop receiving messages, reply STOP.",
+    ]
+    return "\n".join(lines)
 
 
 async def handle_send_transactional_confirmation(
@@ -66,20 +132,27 @@ async def handle_send_transactional_confirmation(
 ) -> OutcomeReceipt:
     t0 = time.monotonic()
     operation_id = str(uuid.uuid4())
-    body = _render(request.confirmation_type.value, request.data)
+    core_text = _render(request.confirmation_type.value, request.data)
     recipient = request.recipient.phone_or_email
 
     is_email = "@" in recipient
     if is_email:
         adapter, channel_name = _get_email_adapter()
+        # For email: format a proper plain-text body and a specific subject.
+        body = _build_email_body(request.confirmation_type.value, request.data, core_text)
+        subject = _build_subject(request.confirmation_type.value, request.data)
     else:
         adapter, channel_name = _get_sms_adapter()
+        # For SMS: use the concise rendered template directly (no email wrapper).
+        body = core_text
+        subject = None
 
     channel_req = ChannelRequest(
         recipient_id=recipient,
         channel="email" if is_email else "sms",
         message_type="transactional",
         content=body,
+        subject=subject,
         agent_id=agent_id,
         trace_id=trace_id,
     )
