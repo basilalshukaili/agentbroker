@@ -45,7 +45,10 @@ from core.models import CostRecord, OperationStatus, OutcomeReceipt
 # ---------------------------------------------------------------------------
 
 _OPENSANCTIONS_BASE = "https://api.opensanctions.org"
-_OFAC_SDN_CSV_URL = "https://ofac.treasury.gov/downloads/sdn.csv"
+# OpenSanctions publishes free bulk data (no API key needed) at a stable URL.
+# Updated daily. 7.5MB CSV with id, schema, name, aliases, sanctions, program_ids.
+# This is derived from the official OFAC SDN XML published by US Treasury.
+_OFAC_SDN_CSV_URL = "https://data.opensanctions.org/datasets/latest/us_ofac_sdn/targets.simple.csv"
 _TIMEOUT = 10  # seconds per upstream
 
 _DISCLAIMER = (
@@ -281,73 +284,97 @@ async def _fetch_ofac_sdn_csv() -> Optional[str]:
 
 def _parse_ofac_sdn(csv_text: str, query_name: str) -> list[dict]:
     """
-    Parse OFAC SDN CSV and return matches for query_name.
+    Parse OpenSanctions targets.simple.csv (OFAC SDN dataset) and return matches.
 
-    OFAC SDN CSV format (semicolon-delimited, no header in classic format;
-    newer versions may have a header row starting with 'ent_num'):
-      field 0: ent_num
-      field 1: sdn_name (primary name, typically "LAST NAME, FIRST NAME" or entity name)
-      field 2: sdn_type (individual / entity / vessel / aircraft)
-      field 3: program (sanctions program, may be comma-separated)
-      field 4: title (individuals only)
-      fields 5-11: vessel fields
-      field 11: remarks
+    CSV format (comma-delimited, quoted, with header row):
+      col 0: id          -- OpenSanctions entity ID (e.g. "NK-223CQDBzp8MRk...")
+      col 1: schema      -- Entity type: Person, Organization, Vessel, Aircraft
+      col 2: name        -- Primary name
+      col 3: aliases     -- Alternate names, semicolon-separated
+      col 4: birth_date
+      col 5: countries
+      col 6: addresses
+      col 7: identifiers
+      col 8: sanctions   -- Full program description (e.g. "GLOMAG - Executive Order 13818")
+      col 9: phones
+      col 10: emails
+      col 11: program_ids -- Short codes (e.g. "US-GLOMAG")
+      col 12-15: dataset, first_seen, last_seen, last_change
 
-    Rows that begin with "-0-" are continuation lines for long remarks; we skip them
-    for name matching purposes.
+    Searches query_name against both the primary name and all aliases.
     """
     matches: list[dict] = []
-    seen_names: set[str] = set()  # deduplicate
+    seen_ids: set[str] = set()
 
     try:
-        reader = csv.reader(io.StringIO(csv_text), delimiter=";", quotechar='"')
+        reader = csv.reader(io.StringIO(csv_text), delimiter=",", quotechar='"')
+        header_seen = False
         for row in reader:
-            # Skip empty rows, header rows, and continuation lines
             if not row:
                 continue
-            first_field = row[0].strip()
-            if not first_field or first_field.startswith("-0-"):
-                continue
-            # Skip header row if present (newer OFAC format has it)
-            if first_field.lower() in ("ent_num", "#", "ent num"):
-                continue
+            # Skip header row
+            if not header_seen:
+                header_seen = True
+                if row[0].lower() in ("id", "#"):
+                    continue
 
-            if len(row) < 4:
-                continue
-
-            sdn_name = row[1].strip() if len(row) > 1 else ""
-            if not sdn_name or sdn_name == "-0-":
+            if len(row) < 3:
                 continue
 
-            score = _word_match_score(query_name, sdn_name)
-            if score < _MATCH_THRESHOLD_OFAC:
+            entity_id = row[0].strip() if len(row) > 0 else ""
+            schema = row[1].strip() if len(row) > 1 else ""
+            primary_name = row[2].strip() if len(row) > 2 else ""
+            aliases_raw = row[3].strip() if len(row) > 3 else ""
+            sanctions = row[8].strip() if len(row) > 8 else ""
+            program_ids = row[11].strip() if len(row) > 11 else ""
+
+            if not primary_name:
+                continue
+            if entity_id in seen_ids:
                 continue
 
-            sdn_type = row[2].strip().upper() if len(row) > 2 else ""
-            program = row[3].strip() if len(row) > 3 else ""
+            # Search primary name and all aliases
+            all_names = [primary_name] + [a.strip() for a in aliases_raw.split(";") if a.strip()]
+            best_score = 0.0
+            best_match_name = primary_name
+            for candidate in all_names:
+                s = _word_match_score(query_name, candidate)
+                if s > best_score:
+                    best_score = s
+                    best_match_name = candidate
 
-            # entity_type label
-            if sdn_type in ("INDIVIDUAL", "I"):
+            if best_score < _MATCH_THRESHOLD_OFAC:
+                continue
+
+            seen_ids.add(entity_id)
+
+            # Entity type from schema
+            schema_upper = schema.upper()
+            if schema_upper == "PERSON":
                 etype = "INDIVIDUAL"
-            elif sdn_type in ("VESSEL", "V"):
+            elif schema_upper == "VESSEL":
                 etype = "VESSEL"
-            elif sdn_type in ("AIRCRAFT", "A"):
+            elif schema_upper == "AIRCRAFT":
                 etype = "AIRCRAFT"
             else:
                 etype = "ENTITY"
 
-            name_key = _normalize_name(sdn_name)
-            if name_key in seen_names:
-                continue
-            seen_names.add(name_key)
+            # Program: prefer short program_ids, fallback to full sanctions description
+            program_str = _ascii(program_ids[:80]) if program_ids else _ascii(sanctions[:80])
+
+            source_url = (
+                f"https://www.opensanctions.org/entities/{entity_id}/"
+                if entity_id
+                else "https://ofac.treasury.gov/sanctions-list-service"
+            )
 
             matches.append({
-                "name": _ascii(sdn_name),
+                "name": _ascii(best_match_name),
                 "list": "OFAC-SDN",
-                "match_score": round(score, 3),
-                "program": _ascii(program[:80]) if program else None,
+                "match_score": round(best_score, 3),
+                "program": program_str or None,
                 "entity_type": etype,
-                "source_url": "https://ofac.treasury.gov/sanctions-list-service",
+                "source_url": source_url,
             })
 
     except Exception:
@@ -362,7 +389,8 @@ async def _call_ofac_sdn(
     name: str,
 ) -> tuple[list[dict], list[str], list[str]]:
     """
-    Query the official OFAC SDN list via Treasury CSV download.
+    Query OFAC SDN list via OpenSanctions public bulk data (no API key needed).
+    Data source: data.opensanctions.org, derived from US Treasury SDN XML, updated daily.
     Returns (matches, sources_queried, sources_unavailable).
     """
     sources_queried = [_OFAC_SDN_CSV_URL]
@@ -370,7 +398,10 @@ async def _call_ofac_sdn(
 
     csv_text = await _fetch_ofac_sdn_csv()
     if csv_text is None:
-        sources_unavailable.append("OFAC-SDN (download failed)")
+        sources_unavailable.append(
+            "OFAC-SDN via OpenSanctions public data (download failed; "
+            "source: data.opensanctions.org)"
+        )
         return [], sources_queried, sources_unavailable
 
     matches = _parse_ofac_sdn(csv_text, name)
@@ -468,7 +499,10 @@ async def handle_screen_sanctions(
             "UK-HMT-Financial-Sanctions, and 40+ more)"
         )
     if not ofac_unavail:
-        screened_lists.append("OFAC-SDN (US Treasury Specially Designated Nationals)")
+        screened_lists.append(
+            "OFAC-SDN (US Treasury Specially Designated Nationals, "
+            "via OpenSanctions public bulk data at data.opensanctions.org)"
+        )
 
     # Fall back to honest "partial" if everything failed
     if not screened_lists:

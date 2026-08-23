@@ -80,15 +80,27 @@ _OPENSANCTIONS_EMPTY_RESPONSE = {
     }
 }
 
-# Minimal OFAC SDN CSV snippet (semicolon-delimited, no header)
-# Format: ent_num;sdn_name;sdn_type;program;title;...
+# Minimal OpenSanctions targets.simple.csv snippet (comma-delimited, with header).
+# Format: id,schema,name,aliases,birth_date,countries,addresses,identifiers,
+#         sanctions,phones,emails,program_ids,dataset,first_seen,last_seen,last_change
+_OFAC_CSV_HEADER = (
+    '"id","schema","name","aliases","birth_date","countries","addresses",'
+    '"identifiers","sanctions","phones","emails","program_ids","dataset",'
+    '"first_seen","last_seen","last_change"\n'
+)
+
 _OFAC_CSV_WITH_MATCH = (
-    "1;KIM, Jong Un;individual;DPRK;;;;;;;;\n"
-    "2;SOME OTHER ENTITY;entity;SDT;;;;;;;;\n"
+    _OFAC_CSV_HEADER +
+    '"NK-KIM001","Person","KIM Jong Un","Kim Jong-un;Kim Jong-un","","kp","","","'
+    'DPRK - Executive Order 13722","","","US-DPRK","US OFAC SDN","","2026-08-23",""\n'
+    '"NK-OTHER01","Organization","SOME OTHER ENTITY","","","","","","'
+    'SDT - Some Program","","","US-SDT","US OFAC SDN","","2026-08-23",""\n'
 )
 
 _OFAC_CSV_NO_MATCH = (
-    "99;TOTALLY UNRELATED CORP;entity;IRAN;;;;;;;;\n"
+    _OFAC_CSV_HEADER +
+    '"NK-TEST001","Organization","TOTALLY UNRELATED CORP XYZ999","","","ir","","","'
+    'IRAN - Some Program","","","US-IRAN","US OFAC SDN","","2026-08-23",""\n'
 )
 
 
@@ -316,7 +328,14 @@ class TestAsciiOutput:
         assert _ascii("OFAC-SDN") == "OFAC-SDN"
 
     def test_non_ascii_in_sanctions_name_replaced(self):
-        csv_with_unicode = "1;AL-QA’IDA;entity;SDT;;;;;;;;\n"
+        # Use a name with non-ASCII character: U+2019 right single quote
+        curly_apos = chr(0x2019)
+        alqaida_name = "AL-QA" + curly_apos + "IDA"
+        csv_with_unicode = (
+            _OFAC_CSV_HEADER +
+            '"NK-ALQAIDA","Organization","' + alqaida_name + '","QAEDA","","","","","'
+            'SDT - Terrorism","","","US-SDT","US OFAC SDN","","2026-08-23",""\n'
+        )
         matches = _parse_ofac_sdn(csv_with_unicode, "AL-QAIDA")
         for m in matches:
             assert all(ord(c) < 128 for c in m["name"]), (
