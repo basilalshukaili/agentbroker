@@ -2390,6 +2390,181 @@
           }
         }
       ]
+    },
+    {
+      "name": "screen_sanctions",
+      "description": "Free, live screening of a name or entity against official sanctions and watchlists. Queries OpenSanctions (aggregates OFAC SDN, EU Consolidated Financial Sanctions, UN Security Council, UK HMT, and 40+ official lists) plus the OFAC SDN list directly from the US Treasury. Returns matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.",
+      "when_to_use": "Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.",
+      "when_not_to_use": "Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available for best accuracy."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. 'US', 'RU', 'IR'). Narrows results to entities associated with this country."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["person", "entity"],
+            "description": "Optional entity type hint. 'person' for individuals, 'entity' for organizations/companies. Omit to screen both."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "matched": {
+            "type": "boolean",
+            "description": "True if any match was found on the screened lists above the confidence threshold."
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string", "description": "Name as it appears on the sanctions list"},
+                "list": {"type": "string", "description": "Sanctions list name (e.g. OFAC-SDN, EU-Financial-Sanctions)"},
+                "match_score": {"type": "number", "description": "Match confidence 0.0-1.0 (higher = more confident)"},
+                "program": {"type": "string", "description": "Sanctions program (e.g. SDGT, IRAN, RUSSIA-EO14024)"},
+                "entity_type": {"type": "string", "description": "INDIVIDUAL, ENTITY, VESSEL, or AIRCRAFT"},
+                "source_url": {"type": "string", "description": "URL of the authoritative source record"}
+              }
+            }
+          },
+          "lists_screened": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Human-readable list of which sanctions lists were actually queried."
+          },
+          "sources_queried": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "API/data URLs that were called during screening."
+          },
+          "screened_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp when the screening was performed."
+          },
+          "disclaimer": {
+            "type": "string",
+            "description": "Informational disclaimer -- results are not legal advice."
+          },
+          "sources_unavailable": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Sources that were attempted but unavailable (fail-open: partial results returned)."
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free",
+        "amount_usd": 0.0,
+        "notes": "Free read tool. OpenSanctions requires a free API key (OPENSANCTIONS_API_KEY env var); OFAC SDN is always free with no key."
+      },
+      "slo": {
+        "p50_ms": 2000,
+        "p95_ms": 8000,
+        "max_latency_ms": 12000,
+        "notes": "Latency dominated by live upstream API calls. OFAC SDN path downloads ~5MB CSV; OpenSanctions path is a small JSON POST."
+      },
+      "idempotency": "full",
+      "failure_modes": [
+        {
+          "code": "bad_input",
+          "description": "name field is empty or missing",
+          "retriable": false
+        },
+        {
+          "code": "partial_screening",
+          "description": "One or more upstream sources was unavailable; matches from remaining sources returned",
+          "retriable": true
+        },
+        {
+          "code": "sources_all_unavailable",
+          "description": "All upstreams timed out or errored; no screening could be performed",
+          "retriable": true
+        }
+      ],
+      "examples": [
+        {
+          "label": "Screen a known sanctioned individual",
+          "input": {"name": "Kim Jong-un", "country": "KP", "type": "person"},
+          "output": {
+            "matched": true,
+            "matches": [
+              {
+                "name": "KIM, Jong Un",
+                "list": "OFAC-SDN",
+                "match_score": 1.0,
+                "program": "DPRK",
+                "entity_type": "INDIVIDUAL",
+                "source_url": "https://ofac.treasury.gov/sanctions-list-service"
+              }
+            ],
+            "screened_at": "2026-08-23T00:00:00Z",
+            "disclaimer": "Informational screening only, not legal advice; confirm against the official source before acting on any result."
+          }
+        },
+        {
+          "label": "Screen a clean (non-sanctioned) name",
+          "input": {"name": "Jane Smith"},
+          "output": {
+            "matched": false,
+            "matches": [],
+            "screened_at": "2026-08-23T00:00:00Z",
+            "disclaimer": "Informational screening only, not legal advice; confirm against the official source before acting on any result."
+          }
+        },
+        {
+          "label": "Partial result when one upstream is down",
+          "input": {"name": "ACME Trading LLC"},
+          "output": {
+            "matched": false,
+            "matches": [],
+            "sources_unavailable": ["OpenSanctions (OPENSANCTIONS_API_KEY not set)"],
+            "screened_at": "2026-08-23T00:00:00Z",
+            "disclaimer": "Informational screening only, not legal advice; confirm against the official source before acting on any result."
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Screen this vendor before we pay them: ACME Trading LLC, Russia",
+          "agent_call": {
+            "tool": "screen_sanctions",
+            "arguments": {"name": "ACME Trading LLC", "country": "RU", "type": "entity"}
+          }
+        },
+        {
+          "user_says": "Is Kim Jong-un on the OFAC list?",
+          "agent_call": {
+            "tool": "screen_sanctions",
+            "arguments": {"name": "Kim Jong-un", "country": "KP", "type": "person"}
+          }
+        },
+        {
+          "user_says": "Run a sanctions check on this person before onboarding",
+          "agent_call": {
+            "tool": "screen_sanctions",
+            "arguments": {"name": "Ivan Petrov", "country": "RU", "type": "person"}
+          }
+        },
+        {
+          "user_says": "Do a compliance check -- is this company sanctioned?",
+          "agent_call": {
+            "tool": "screen_sanctions",
+            "arguments": {"name": "Mahan Air", "country": "IR", "type": "entity"}
+          }
+        }
+      ]
     }
   ],
   "components": {

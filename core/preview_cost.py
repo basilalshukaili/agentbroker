@@ -36,6 +36,7 @@ _KNOWN_OPERATIONS = frozenset({
     "check_booking_link",
     "check_compliance",
     "verify_company_record",
+    "screen_sanctions",
 })
 
 # Pricing table — must stay in sync with manifest/manifest.json cost_model
@@ -59,6 +60,7 @@ _PRICING = {
     "check_booking_link":             {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "check_compliance":               {"min": 0.0,  "max": 0.0,  "basis": "free"},
     "verify_company_record":          {"min": 0.0,  "max": 0.0,  "basis": "free"},
+    "screen_sanctions":               {"min": 0.0,  "max": 0.0,  "basis": "free"},
 }
 
 _LATENCY = {
@@ -79,6 +81,7 @@ _LATENCY = {
     "check_booking_link":             {"p50": 20,   "p95": 100},
     "check_compliance":               {"p50": 15,   "p95": 80},
     "verify_company_record":          {"p50": 800,  "p95": 4000},
+    "screen_sanctions":               {"p50": 2000, "p95": 8000},
 }
 
 _SUCCESS_PROB = {
@@ -99,6 +102,7 @@ _SUCCESS_PROB = {
     "check_booking_link": 0.999,
     "check_compliance": 0.999,
     "verify_company_record": 0.95,
+    "screen_sanctions": 0.90,
 }
 
 _CHANNEL_LIKELY = {

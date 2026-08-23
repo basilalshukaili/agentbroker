@@ -63,7 +63,7 @@ def _build_tool_list() -> list[dict]:
                 "find_business", "verify_business", "get_status",
                 "get_outcome", "preview_cost", "self_test",
                 "check_booking_link", "check_compliance",
-                "verify_company_record",
+                "verify_company_record", "screen_sanctions",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -79,6 +79,7 @@ def _build_tool_list() -> list[dict]:
                 "check_booking_link",  # pure classification, no side effects
                 "check_compliance",    # pure gate preview, no send, no audit write
                 "verify_company_record",  # read-only live registry lookup
+                "screen_sanctions",    # read-only live sanctions lookup
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -724,6 +725,15 @@ async def _dispatch_operation(
             lei=args.get("lei"),
         )
 
+    elif name == "screen_sanctions":
+        # Free read-only sanctions screening: OFAC SDN + OpenSanctions (40+ lists).
+        from core.screen_sanctions import handle_screen_sanctions
+        receipt = await handle_screen_sanctions(
+            name=args["name"],
+            country=args.get("country"),
+            entity_type=args.get("type"),
+        )
+
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")
 
@@ -770,6 +780,7 @@ async def _dispatch_operation(
         "get_status", "get_outcome",
         "find_business", "verify_business", "preview_cost", "self_test",
         "check_booking_link", "check_compliance", "verify_company_record",
+        "screen_sanctions",
     })
 
     # FIX 1 (durable store) + FIX 5 (quota strip): persist operation to durable

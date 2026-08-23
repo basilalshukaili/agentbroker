@@ -37,7 +37,7 @@ class TestManifestStructure:
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
-            "verify_company_record",
+            "verify_company_record", "screen_sanctions",
         }
         actual = {op["name"] for op in self.manifest["operations"]}
         assert expected == actual, f"missing={expected - actual} extra={actual - expected}"
