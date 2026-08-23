@@ -2,14 +2,14 @@
 
 > **An agent-callable MCP server** that lets autonomous AI agents find, verify, message, schedule with, and transact with small and mid-sized businesses (SMBs) through a single compliance-enforced tool surface.
 
-[![MCP](https://img.shields.io/badge/MCP-streamable--http-blue)](https://agent-broker-edge.basil-agent.workers.dev/mcp)
+[![MCP](https://img.shields.io/badge/MCP-streamable--http-blue)](https://hatchloop.dev/mcp/agent-broker)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Edge](https://img.shields.io/badge/edge-cloudflare%20workers-orange)](./edge)
 [![Registry](https://img.shields.io/badge/MCP%20Registry-listed-green)](https://github.com/modelcontextprotocol/servers)
 [![Tests](https://img.shields.io/badge/tests-103%2F103%20passing-brightgreen)](./tests)
 
-**Live endpoint:** `https://agent-broker-edge.basil-agent.workers.dev/mcp` (streamable-http, always-on Cloudflare edge)
+**Live endpoint:** `https://hatchloop.dev/mcp/agent-broker` (streamable-http, always-on Cloudflare edge)
 
 ---
 
@@ -25,63 +25,98 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 | Capability | Status |
 |---|---|
-| MCP endpoint (streamable-http) | **Live** — `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
-| 14 MCP tools | **Live** (callable today) |
+| MCP endpoint (streamable-http) | **Live** — `https://hatchloop.dev/mcp/agent-broker` |
+| 17 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo** — 20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live** — 6 read tools free; 8 write tools require authentication (`X-Agent-Identity` bearer token). Free tier: 100 ops/IP/day; upgrade at $49/mo via Polar. |
+| Billing | **Live** — 9 read tools free (no key needed). Write tools: free email-verified key (50 ops/day) at hatchloop.dev/agent-broker; unlimited at $9/90d. |
+| x402 payment rail | **Verified** on Base mainnet (tx 0x38a0d9ec) |
 | Production SMB onboarding | **Planned** — real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. Rate-limited free access is active; write tools require a Polar subscription key. x402/USDC per-call billing is no longer the planned payment model.
+> The MCP server is live and callable right now. Bookings hit demo data. 9 read tools are free with no key. Write tools require a free email-verified key (50 ops/day) — get one at https://hatchloop.dev/agent-broker.
 
 ---
 
-## 14 MCP Tools
+## 17 MCP Tools
 
 All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
 
-| # | Tool | What it does |
-|---|---|---|
-| 1 | `find_business` | Search SMBs by vertical, location, and capability — **free** |
-| 2 | `verify_business` | Confirm an SMB is real, operating, and capable of the requested service — **free** |
-| 3 | `send_message` | Send SMS, email, or voice with full compliance pre-check (TCPA/GDPR/CASL) |
-| 4 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration |
-| 5 | `schedule_appointment` | Book, reschedule, or cancel — tries direct booking API, falls back to voice AI |
-| 6 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts |
-| 7 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint |
-| 8 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context |
-| 9 | `get_status` | Poll the current state of an async operation — **free** |
-| 10 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) — **free** |
-| 11 | `preview_cost` | Estimate cost, latency, and success probability before committing — **free** |
-| 12 | `self_test` | Verify service health and all claimed capabilities are responding — **free** |
-| 13 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record |
-| 14 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer |
+| # | Tool | What it does | Auth |
+|---|---|---|---|
+| 1 | `find_business` | Search SMBs by vertical, location, and capability | **free** |
+| 2 | `verify_business` | Confirm an SMB is real, operating, and capable of the requested service | **free** |
+| 3 | `get_status` | Poll the current state of an async operation | **free** |
+| 4 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) | **free** |
+| 5 | `preview_cost` | Estimate cost, latency, and success probability before committing | **free** |
+| 6 | `self_test` | Verify service health and all claimed capabilities are responding | **free** |
+| 7 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it — sub-100ms pre-flight | **free** |
+| 8 | `check_compliance` | Preview TCPA/GDPR/CASL/10DLC gate result before spending a paid send | **free** |
+| 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup — official legal name, status, jurisdiction, address | **free** |
+| 10 | `send_message` | Send SMS, email, or voice with compliance pre-check enforced | key |
+| 11 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
+| 12 | `schedule_appointment` | Book, reschedule, or cancel — tries direct booking API, falls back to voice AI | key |
+| 13 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
+| 14 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
+| 15 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
+| 16 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
+| 17 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
+
+Free key (50 write ops/day): https://hatchloop.dev/agent-broker — Unlimited: $9/90d
 
 ---
 
 ## Quick start
 
-### Connect via MCP (Claude Desktop, Cursor, Continue, etc.)
+### Connect via MCP (Claude Desktop, Cursor, Cline, Continue, etc.)
 
 ```json
 {
   "mcpServers": {
     "agent-broker": {
-      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+      "url": "https://hatchloop.dev/mcp/agent-broker"
     }
   }
 }
 ```
 
-No API key required for read-only tools. State-changing tools accept an optional `X-Agent-Identity` bearer token.
+**9 read tools require no key** (find_business, verify_business, verify_company_record, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test).
 
-**Free tier:** 100 `tools/call` operations per IP per day. Exceeding the limit returns HTTP 429 with an upgrade link. Upgrade to unlimited at $49/mo: https://buy.polar.sh/polar_cl_zRn6I67zMjFuenkjDme5RCnDYmA3vefHqX1zG3A5Phh
+**Write tools** require an `X-Agent-Identity` bearer token:
+- Free email-verified key (50 ops/day): https://hatchloop.dev/agent-broker
+- Unlimited: $9/90d at the same link
+
+Add your key to the config once you have one:
+
+```json
+{
+  "mcpServers": {
+    "agent-broker": {
+      "url": "https://hatchloop.dev/mcp/agent-broker",
+      "headers": {
+        "X-Agent-Identity": "Bearer YOUR_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+### Or via npx (stdio transport)
+
+```bash
+npx agentbroker-mcp
+```
+
+With a key:
+
+```bash
+AGENT_BROKER_KEY=your_key npx agentbroker-mcp
+```
 
 ### Discover tools (JSON-RPC)
 
 ```bash
-curl -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
+curl -X POST https://hatchloop.dev/mcp/agent-broker \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
@@ -89,7 +124,7 @@ curl -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
 ### Call a tool (JSON-RPC)
 
 ```bash
-curl -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
+curl -X POST https://hatchloop.dev/mcp/agent-broker \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -111,7 +146,7 @@ curl -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
 ```python
 import httpx, openai
 tools = httpx.get(
-    "https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json"
+    "https://hatchloop.dev/.well-known/openai-tools.json"
 ).json()["tools"]
 client = openai.OpenAI()
 resp = client.chat.completions.create(
@@ -126,7 +161,7 @@ resp = client.chat.completions.create(
 ```python
 import httpx, anthropic
 tools = httpx.get(
-    "https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json"
+    "https://hatchloop.dev/.well-known/anthropic-tools.json"
 ).json()["tools"]
 client = anthropic.Anthropic()
 msg = client.messages.create(
@@ -140,7 +175,7 @@ msg = client.messages.create(
 ### Plain REST
 
 ```bash
-curl -X POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business \
+curl -X POST https://hatchloop.dev/ops/find_business \
   -H "Content-Type: application/json" \
   -d '{"vertical":"personal_services","location":{"zip_or_city":"30309"},"capability":"haircut"}'
 ```
@@ -151,14 +186,15 @@ curl -X POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business
 
 | Surface | URL |
 |---|---|
-| **MCP (streamable-http)** | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
-| MCP descriptor | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/mcp.json` |
-| OpenAI function tools | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json` |
-| Anthropic tool_use | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json` |
-| A2A (Agent-to-Agent) | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/agents.json` |
-| OpenAI ChatGPT plugin | `https://agent-broker-edge.basil-agent.workers.dev/.well-known/ai-plugin.json` |
-| llms.txt | `https://agent-broker-edge.basil-agent.workers.dev/llms.txt` |
-| OpenAPI 3.1 | `https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml` |
+| **MCP (streamable-http)** | `https://hatchloop.dev/mcp/agent-broker` |
+| MCP descriptor | `https://hatchloop.dev/.well-known/mcp.json` |
+| OpenAI function tools | `https://hatchloop.dev/.well-known/openai-tools.json` |
+| Anthropic tool_use | `https://hatchloop.dev/.well-known/anthropic-tools.json` |
+| A2A (Agent-to-Agent) | `https://hatchloop.dev/.well-known/agents.json` |
+| OpenAI ChatGPT plugin | `https://hatchloop.dev/.well-known/ai-plugin.json` |
+| llms.txt | `https://hatchloop.dev/llms.txt` |
+| OpenAPI 3.1 | `https://hatchloop.dev/openapi.yaml` |
+| npm shim (stdio) | `npx agentbroker-mcp` |
 | Glama MCP Registry | Listed via [`glama.json`](./glama.json) |
 | MCP Registry | Listed via [`server.json`](./server.json) |
 
