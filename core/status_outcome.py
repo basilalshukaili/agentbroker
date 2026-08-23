@@ -1,10 +1,13 @@
 """
 get_status / get_outcome — core operation handlers.
+
+FIX 1 (2026-08-23): Both handlers now call get_async() which reads from
+Supabase when the operation is not in the same-process in-memory cache,
+making async polling work across requests.
 """
 from __future__ import annotations
 
 import time
-import uuid
 
 from core.models import OutcomeReceipt, OperationStatus, CostRecord
 from storage.outcome_store import get_outcome_store
@@ -16,7 +19,7 @@ async def handle_get_status(
     trace_id: str | None = None,
 ) -> dict:
     store = get_outcome_store()
-    record = store.get(operation_id)
+    record = await store.get_async(operation_id)
     if not record:
         return {
             "operation_id": operation_id,
@@ -39,7 +42,7 @@ async def handle_get_outcome(
 ) -> OutcomeReceipt:
     t0 = time.monotonic()
     store = get_outcome_store()
-    record = store.get(operation_id)
+    record = await store.get_async(operation_id)
 
     if not record:
         return OutcomeReceipt(
@@ -67,7 +70,21 @@ async def handle_get_outcome(
 
     outcome = record.get("outcome")
     if outcome:
-        return OutcomeReceipt(**outcome)
+        try:
+            return OutcomeReceipt(**outcome)
+        except Exception:
+            # outcome may be a plain dict from Supabase; build best-effort receipt
+            return OutcomeReceipt(
+                operation_id=outcome.get("operation_id", operation_id),
+                status=OperationStatus(outcome.get("status", "success")),
+                reason_code=outcome.get("reason_code", "completed"),
+                human_message=outcome.get("human_message", "Operation completed."),
+                result=outcome.get("result"),
+                cost=CostRecord(**(outcome.get("cost") or {"amount": 0.001, "currency": "USD", "basis": "per_call"})),
+                latency_ms=int((time.monotonic() - t0) * 1000),
+                retriable=False,
+                trace_id=trace_id,
+            )
 
     return OutcomeReceipt(
         operation_id=operation_id,

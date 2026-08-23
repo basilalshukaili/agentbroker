@@ -42,7 +42,7 @@ async def handle_escalate_to_human(
         reason_code="escalation_queued",
         human_message=f"Escalation ticket {ticket_id} created in {queue}. Estimated human response: {estimated.isoformat()}.",
         result=result,
-        cost=CostRecord(amount=0.50, currency="USD", basis="per_escalation"),
+        cost=CostRecord(amount=0.20, currency="USD", basis="per_escalation"),  # FIX 4: manifest price
         latency_ms=int((time.monotonic() - t0) * 1000),
         channel_used="internal:ticketing",
         estimated_completion_time=estimated,

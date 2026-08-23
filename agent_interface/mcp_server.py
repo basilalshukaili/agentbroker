@@ -342,6 +342,14 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
         )
 
     receipt = await _dispatch_operation(name, arguments, headers or {})
+
+    # FIX 5 (2026-08-23): Inject quota block into every gated tool response so
+    # callers can see how many free-tier ops remain without a separate API call.
+    # Added for gated tools only (write tools that consume daily budget).
+    if name in _WRITE_TOOLS_REQUIRING_AUTH:
+        token = (headers or {}).get("x-agent-identity", "")
+        _inject_quota_block(receipt, token)
+
     return {
         "content": [
             {"type": "text", "text": json.dumps(receipt, indent=2, default=str)}
@@ -366,6 +374,42 @@ _WRITE_TOOLS_REQUIRING_AUTH = frozenset({
     "import_booking_url",
     "call_business",
 })
+
+
+def _inject_quota_block(receipt: dict, token: str) -> None:
+    """
+    FIX 5 (2026-08-23): Inject a `quota` block into the receipt dict for
+    free-tier callers so they can see remaining daily ops without a separate
+    call.  Mutates `receipt` in place.  Never raises.
+    """
+    try:
+        if not token or token in ("", "anonymous"):
+            return
+        from agent_interface.key_request_logic import is_free_key, get_free_daily_remaining
+        from agent_interface.identity import validate_token
+        from datetime import datetime, timezone, timedelta
+
+        pre_check = validate_token(token)
+        if not (pre_check and pre_check.valid):
+            return
+        aid = pre_check.identity.agent_id
+        if not is_free_key(aid):
+            return
+
+        remaining = get_free_daily_remaining(aid)
+        # Calculate UTC midnight (start of next day)
+        now_utc = datetime.now(timezone.utc)
+        midnight_utc = (now_utc + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        receipt["quota"] = {
+            "tier": "free",
+            "remaining_today": remaining,
+            "daily_limit": 50,
+            "resets": midnight_utc.strftime("%Y-%m-%dT00:00:00Z"),
+        }
+    except Exception:  # noqa: BLE001 — quota injection never breaks dispatch
+        pass
 
 
 def _mcp_gate_identity(name: str, headers: dict) -> None:
@@ -395,10 +439,16 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             agent_id = pre_check.identity.agent_id
             if not consume_free_daily(agent_id):
                 remaining = get_free_daily_remaining(agent_id)
+                from datetime import datetime, timezone, timedelta as _td
+                _now = datetime.now(timezone.utc)
+                _midnight = (_now + _td(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ).strftime("%Y-%m-%dT00:00:00Z")
                 raise _ParamError(
                     f"free_tier_daily_limit_exceeded for tool '{name}': "
-                    f"your free key allows 50 gated operations per day (resets midnight UTC). "
-                    f"Remaining today: {remaining}. Upgrade at "
+                    f"your free key allows 50 gated operations per day. "
+                    f"quota: {{tier: free, remaining_today: {remaining}, resets: {_midnight}}}. "
+                    f"Upgrade at "
                     f"{__import__('os').getenv('POLAR_CHECKOUT_URL', 'https://buy.polar.sh')} "
                     f"for unlimited access."
                 )
@@ -658,6 +708,7 @@ async def _dispatch_operation(
 
     # Durable billing — fire-and-forget meter record for every tool call.
     # Works whether x402 is on or off. amount_usd=0 when x402 disabled (now).
+    _agent_id = ((headers or {}).get('x-agent-identity') or 'anonymous')[:64]
     try:
         from billing.durable_meter import get_durable_meter
         _cost = getattr(receipt, 'cost', None)
@@ -667,7 +718,6 @@ async def _dispatch_operation(
         _op_id = getattr(receipt, 'operation_id', name)
         _success = getattr(receipt, 'status', None)
         _success_bool = str(_success) != 'failure' if _success else True
-        _agent_id = ((headers or {}).get('x-agent-identity') or 'anonymous')[:64]
         get_durable_meter().record(
             agent_id=_agent_id,
             operation=name,
@@ -682,8 +732,27 @@ async def _dispatch_operation(
 
     # Convert OutcomeReceipt → dict
     if hasattr(receipt, 'model_dump'):
-        return receipt.model_dump()
-    return dict(receipt) if isinstance(receipt, dict) else receipt.__dict__
+        receipt_dict = receipt.model_dump()
+    else:
+        receipt_dict = dict(receipt) if isinstance(receipt, dict) else receipt.__dict__
+
+    # FIX 1 (2026-08-23): Persist operation to durable store so get_status /
+    # get_outcome can retrieve it across requests (Supabase-backed).
+    # Fail-open: a store error must never break the tool call.
+    try:
+        from storage.outcome_store import get_outcome_store
+        _persist_op_id = receipt_dict.get('operation_id')
+        if _persist_op_id:
+            get_outcome_store().set_complete(
+                _persist_op_id,
+                receipt_dict,
+                tool=name,
+                agent_id=_agent_id if _agent_id != 'anonymous' else None,
+            )
+    except Exception:
+        pass
+
+    return receipt_dict
 
 
 # ---------------------------------------------------------------------------

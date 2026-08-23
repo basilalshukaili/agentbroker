@@ -63,23 +63,33 @@ def classify_session_kind(
     Classify the caller into one of three buckets:
       'crawler'            — registry bot, no meaningful work
       'anon_agent'         — tools/call with no key
-      'verified_human_key' — tools/call with a minted key
+      'verified_human_key' — tools/call with a minted key (paid or free-verified)
+
+    KEY PRESENCE WINS (FIX 3, 2026-08-23): a call carrying a valid key_id is
+    always 'verified_human_key', regardless of User-Agent.  Registry bots and
+    CI tooling sometimes use curl/python-httpx UAs while sending a real key;
+    labelling those as 'crawler' poisoned the session_kind metric.
+    Crawler classification is reserved for keyless traffic only.
     """
+    # Key presence wins — checked FIRST, before any UA inspection.
+    if key_id and key_id not in ("", "anonymous"):
+        # Non-work methods (initialize / tools/list) are still discovery, even
+        # when keyed — mark them crawler so they don't inflate work counts.
+        if method not in _NON_WORK_METHODS:
+            return "verified_human_key"
+
     ua_lower = (user_agent or "").lower()
 
-    # UA-based crawler detection
+    # UA-based crawler detection (keyless traffic only from here down)
     for fragment in _CRAWLER_UA_FRAGMENTS:
         if fragment in ua_lower:
             return "crawler"
 
-    # Non-work method → crawler (or at least non-agent)
+    # Non-work method => crawler / non-agent
     if method in _NON_WORK_METHODS:
         return "crawler"
 
-    # From here down: this is a tools/call
-    if key_id and key_id != "anonymous":
-        return "verified_human_key"
-
+    # tools/call with no key
     return "anon_agent"
 
 

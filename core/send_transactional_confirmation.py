@@ -1,18 +1,27 @@
 """
 send_transactional_confirmation — core operation handler.
 Idempotent transactional messages: OTPs, booking confirmations, receipts.
+
+FIX 2 (2026-08-23):
+  - Switched email adapter from SendGridEmailAdapter (no API key set) to
+    ResendEmailAdapter — same adapter used by send_message, which is confirmed
+    working.  Root cause of upstream_failure was a missing SENDGRID_API_KEY
+    causing the SendGrid adapter to return channel_not_configured.
+  - Error path now surfaces the adapter name and its error code/message so
+    callers get actionable diagnostics instead of the opaque
+    "Confirmation delivery failed." message.
+  - Cost on success aligned to manifest: $0.02 (was $0.03).
 """
 from __future__ import annotations
 
+import os
 import time
 import uuid
 
 from core.models import (
     SendTransactionalConfirmationRequest, OutcomeReceipt, OperationStatus,
-    CostRecord, ChannelPreference, ComplianceViolationError
+    CostRecord, ComplianceViolationError
 )
-from channels.sms_email.twilio_sms import TwilioSMSAdapter
-from channels.sms_email.sendgrid_email import SendGridEmailAdapter
 from channels.adapter_interface import ChannelRequest
 
 _TEMPLATES = {
@@ -23,8 +32,23 @@ _TEMPLATES = {
     "reminder": "Hi {name}, reminder: {reminder_text}. Reply STOP to unsubscribe.",
 }
 
-_SMS = TwilioSMSAdapter()
-_EMAIL = SendGridEmailAdapter()
+# FIX 2: Use Resend (the configured email provider) instead of SendGrid.
+# Mirror the same adapter-selection logic as send_message.py so both tools
+# use the same live channel.
+def _get_email_adapter():
+    from channels.sms_email.resend_email import ResendEmailAdapter
+    from channels.sms_email.sendgrid_email import SendGridEmailAdapter
+    if os.getenv("RESEND_API_KEY"):
+        return ResendEmailAdapter(), "email:resend"
+    if os.getenv("SENDGRID_API_KEY"):
+        return SendGridEmailAdapter(), "email:sendgrid"
+    # Default to Resend (will fail honestly with channel_not_configured if no key)
+    return ResendEmailAdapter(), "email:resend"
+
+
+def _get_sms_adapter():
+    from channels.sms_email.twilio_sms import TwilioSMSAdapter
+    return TwilioSMSAdapter(), "sms:twilio"
 
 
 def _render(confirmation_type: str, data: dict) -> str:
@@ -46,13 +70,14 @@ async def handle_send_transactional_confirmation(
     recipient = request.recipient.phone_or_email
 
     is_email = "@" in recipient
-    primary_channel = "email" if is_email else "sms"
-    adapter = _EMAIL if is_email else _SMS
-    channel_name = "email:sendgrid" if is_email else "sms:twilio"
+    if is_email:
+        adapter, channel_name = _get_email_adapter()
+    else:
+        adapter, channel_name = _get_sms_adapter()
 
     channel_req = ChannelRequest(
         recipient_id=recipient,
-        channel=primary_channel,
+        channel="email" if is_email else "sms",
         message_type="transactional",
         content=body,
         agent_id=agent_id,
@@ -68,12 +93,29 @@ async def handle_send_transactional_confirmation(
                 reason_code="confirmation_sent",
                 human_message=f"{request.confirmation_type.value} sent via {channel_name}.",
                 result={"provider_message_id": resp.provider_message_id},
-                cost=CostRecord(amount=0.03, currency="USD", basis="per_message"),
+                cost=CostRecord(amount=0.02, currency="USD", basis="per_message"),  # FIX 4: manifest price
                 latency_ms=int((time.monotonic() - t0) * 1000),
                 channel_used=channel_name,
                 retriable=False,
                 trace_id=trace_id,
             )
+        # Adapter returned success=False — surface the provider's own diagnostics
+        err_code = getattr(resp, "error_code", "unknown")
+        err_msg = getattr(resp, "error_message", "no detail")
+        return OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="upstream_failure",
+            human_message=(
+                f"Confirmation delivery failed via {channel_name}: "
+                f"[{err_code}] {err_msg}"
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            channel_used=channel_name,
+            retriable=True,
+            trace_id=trace_id,
+        )
     except ComplianceViolationError as cve:
         return OutcomeReceipt(
             operation_id=operation_id,
@@ -84,13 +126,18 @@ async def handle_send_transactional_confirmation(
             retriable=False,
             trace_id=trace_id,
         )
-
-    return OutcomeReceipt(
-        operation_id=operation_id,
-        status=OperationStatus.FAILURE,
-        reason_code="upstream_failure",
-        human_message="Confirmation delivery failed.",
-        cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
-        retriable=True,
-        trace_id=trace_id,
-    )
+    except Exception as exc:
+        return OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="upstream_failure",
+            human_message=(
+                f"Confirmation delivery failed via {channel_name}: "
+                f"[exception:{type(exc).__name__}] {exc}"
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            channel_used=channel_name,
+            retriable=True,
+            trace_id=trace_id,
+        )
