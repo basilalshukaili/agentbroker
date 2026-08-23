@@ -8,11 +8,11 @@
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+      "url": "https://hatchloop.dev/mcp/agent-broker"
     }
   ]
 }
