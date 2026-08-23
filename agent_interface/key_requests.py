@@ -67,10 +67,9 @@ async def request_free_key(body: KeyRequestBody):
 
     token, expires_at = make_verify_token(email)
 
-    # Derive base URL
-    base_url = os.getenv("MCP_PUBLIC_URL", "").replace("/mcp", "").rstrip("/")
-    if not base_url:
-        base_url = "https://smb-broker.onrender.com"
+    # Derive base URL — use the Render origin (PUBLIC_BASE_URL) not the edge
+    # worker URL (MCP_PUBLIC_URL), since /keys/* routes live on the origin.
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").rstrip("/")
     verify_url = f"{base_url}/keys/verify?token={token}"
 
     # Store pending (best-effort) + send email

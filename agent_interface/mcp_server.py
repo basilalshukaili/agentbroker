@@ -414,7 +414,9 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         # a free email-verified key (immediate, 50 ops/day) and the paid plan.
         import os as _os
         checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
-        base_url = _os.getenv("MCP_PUBLIC_URL", "https://smb-broker.onrender.com/mcp").replace("/mcp", "")
+        # Use PUBLIC_BASE_URL (the Render origin) for /keys/* routes — MCP_PUBLIC_URL
+        # points at the edge worker which doesn't serve /keys/ endpoints.
+        base_url = _os.getenv("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").rstrip("/")
         free_key_url = f"{base_url}/keys/request"
         how_to_buy = (
             f" To get access — Option 1 (free): get a verified free key (50 ops/day) at "
