@@ -419,10 +419,10 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         base_url = _os.getenv("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").rstrip("/")
         free_key_url = f"{base_url}/keys/request"
         how_to_buy = (
-            f" To get access — Option 1 (free): get a verified free key (50 ops/day) at "
-            f"{free_key_url} — just provide your email, no payment needed. "
-            f"Option 2 (paid): purchase a 90-day unlimited key at {checkout} — "
-            f"flat price, no per-call billing. "
+            f" To get access: Option 1 (free): get a verified free key (50 ops/day) at "
+            f"{free_key_url} (just provide your email, no payment needed). "
+            f"Option 2 (paid): purchase a 90-day unlimited key at {checkout} "
+            f"(flat price, no per-call billing). "
             f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
