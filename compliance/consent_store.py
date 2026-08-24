@@ -42,6 +42,11 @@ class ConsentStore:
 
     def __init__(self) -> None:
         self._records: dict[str, ConsentRecord] = {}
+        # Enforcement set of (recipient_id, channel) that have opted out. Kept
+        # separate from consent records so a STOP with NO prior opt-in still
+        # blocks (the common case), and hydrated from the durable consent_optouts
+        # table on startup so an opt-out survives a process restart.
+        self._opted_out: set[tuple[str, str]] = set()
 
     def record_consent(
         self,
@@ -104,19 +109,26 @@ class ConsentStore:
         use_case: str,
         revocation_method: str,
     ) -> bool:
+        # A STOP/opt-out MUST always register enforcement, even when there is no
+        # prior opt-in record (the normal case). Record it in the opted-out set
+        # that is_opted_out() consults; also flip any existing consent record.
+        self._opted_out.add((recipient_id, channel))
         key = self._key(recipient_id, channel, use_case)
         record = self._records.get(key)
-        if not record:
-            return False
-        self._records[key] = record.model_copy(update={
-            "status": ConsentStatus.OPTED_OUT,
-            "revoked_at": datetime.now(timezone.utc),
-            "revocation_method": revocation_method,
-        })
+        if record:
+            self._records[key] = record.model_copy(update={
+                "status": ConsentStatus.OPTED_OUT,
+                "revoked_at": datetime.now(timezone.utc),
+                "revocation_method": revocation_method,
+            })
         return True
 
     def is_opted_out(self, recipient_id: str, channel: str) -> bool:
-        """Check if a recipient has opted out of ANY use case on this channel."""
+        """Check if a recipient has opted out of ANY use case on this channel.
+        Consults the durable-mirrored opted-out set first (survives restarts),
+        then any in-memory consent record flipped to OPTED_OUT."""
+        if (recipient_id, channel) in self._opted_out:
+            return True
         for key, record in self._records.items():
             if (
                 record.recipient_id == recipient_id
@@ -126,6 +138,22 @@ class ConsentStore:
             ):
                 return True
         return False
+
+    def mark_opted_out(self, recipient_id: str, channel: str) -> None:
+        """Directly register an opt-out for enforcement (recipient, channel)."""
+        if recipient_id and channel:
+            self._opted_out.add((recipient_id, channel))
+
+    def hydrate_opted_out(self, pairs) -> int:
+        """Load durable opt-outs into the enforcement set on process start so a
+        STOP recorded before a restart still blocks. `pairs` = iterable of
+        (recipient_id, channel). Returns how many were loaded."""
+        n = 0
+        for recipient_id, channel in pairs:
+            if recipient_id and channel:
+                self._opted_out.add((recipient_id, channel))
+                n += 1
+        return n
 
     @staticmethod
     def _key(recipient_id: str, channel: str, use_case: str) -> str:

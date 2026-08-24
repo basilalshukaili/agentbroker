@@ -72,7 +72,10 @@ async def handle_inbound(
         channel = request.inbound_channel.value
         recipient_id = phone or request.sender.email or "unknown"
 
-        # In-memory revoke (fast path for within-session checks)
+        # In-memory enforcement (so the very next send is blocked this process).
+        # Register the SAME recipient_id that pre_check + the durable row use -
+        # not just phone - so email opt-outs are honored too.
+        get_consent_store().mark_opted_out(recipient_id, channel)
         if phone:
             get_consent_store().revoke_consent(phone, channel, "marketing", "keyword_STOP")
 

@@ -53,6 +53,20 @@ async def lifespan(app: FastAPI):
         for w in warnings:
             import logging
             logging.getLogger("smb_broker").warning(w)
+    # Hydrate durable opt-outs (STOP requests) into the compliance enforcement
+    # set so a recorded opt-out survives a process restart. Without this the
+    # "non-bypassable" gate would leak to opted-out recipients after any redeploy.
+    try:
+        from storage.supabase_client import select_rows
+        from compliance.consent_store import get_consent_store
+        rows = await select_rows("consent_optouts", limit=10000)
+        pairs = [(r.get("recipient_id"), r.get("channel")) for r in (rows or [])]
+        loaded = get_consent_store().hydrate_opted_out(pairs)
+        import logging
+        logging.getLogger("smb_broker").info("hydrated %d durable opt-outs", loaded)
+    except Exception as exc:  # noqa: BLE001 - never block startup on hydration
+        import logging
+        logging.getLogger("smb_broker").warning("optout_hydration_failed: %s", exc)
     yield
 
 

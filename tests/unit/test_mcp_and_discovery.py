@@ -30,7 +30,7 @@ class TestMcpServer:
         assert r["jsonrpc"] == "2.0"
         assert r["id"] == 1
         assert "protocolVersion" in r["result"]
-        assert r["result"]["serverInfo"]["name"] == "smb-broker"
+        assert r["result"]["serverInfo"]["name"] == "agent-broker"
         assert "tools" in r["result"]["capabilities"]
 
     def test_tools_list_returns_19_tools(self):

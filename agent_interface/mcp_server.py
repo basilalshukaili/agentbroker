@@ -33,7 +33,7 @@ from agent_interface.manifest_server import get_full_manifest, get_operation
 # MCP server metadata
 # ---------------------------------------------------------------------------
 
-SERVER_NAME = "smb-broker"
+SERVER_NAME = "agent-broker"
 SERVER_VERSION = "0.1.0"
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -628,7 +628,7 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
         # Use PUBLIC_BASE_URL (the Render origin) for /keys/* routes — MCP_PUBLIC_URL
         # points at the edge worker which doesn't serve /keys/ endpoints.
-        base_url = _os.getenv("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").rstrip("/")
+        base_url = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
         free_key_url = f"{base_url}/keys/request"
         how_to_buy = (
             f" To get access: Option 1 (free): get a verified free key (50 ops/day) at "
