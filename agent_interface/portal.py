@@ -190,9 +190,13 @@ async def _update_account(account_id: str, updates: dict[str, Any]) -> bool:
 # Resend magic-link email
 # ---------------------------------------------------------------------------
 
-async def _send_magic_link(email: str, token: str) -> None:
+_VALID_PACKAGES = frozenset({"starter", "growth", "scale"})
+
+
+async def _send_magic_link(email: str, token: str, package: str = "") -> None:
     resend_key = os.getenv("RESEND_API_KEY", "")
-    callback_url = f"{_PUBLIC_URL}/portal-api/callback?token={token}"
+    pkg_suffix = f"&package={package}" if package and package in _VALID_PACKAGES else ""
+    callback_url = f"{_PUBLIC_URL}/portal-api/callback?token={token}{pkg_suffix}"
 
     if not resend_key:
         logger.info("DEV magic link (no RESEND_API_KEY): %s", callback_url)
@@ -327,6 +331,7 @@ async def _issue_key_for_account(account: dict) -> Optional[dict]:
 
 class LoginRequest(BaseModel):
     email: str
+    package: Optional[str] = None
 
 
 class TopupRequest(BaseModel):
@@ -341,16 +346,19 @@ class TopupRequest(BaseModel):
 async def portal_login(req: LoginRequest) -> JSONResponse:
     """Send a magic sign-in link. Always 200 (no email enumeration)."""
     email = req.email.strip().lower()
+    package = req.package.strip().lower() if req.package else ""
+    if package not in _VALID_PACKAGES:
+        package = ""
     if email and "@" in email:
         token, _ = make_magic_token(email)
         import asyncio
-        asyncio.create_task(_send_magic_link(email, token))
+        asyncio.create_task(_send_magic_link(email, token, package=package))
     return JSONResponse({"ok": True, "message": "If that email has an account, a sign-in link is on its way."})
 
 
 @router.get("/callback")
-async def portal_callback(token: str = "") -> Response:
-    """Verify magic token, set session cookie, 302 to /portal."""
+async def portal_callback(token: str = "", package: str = "") -> Response:
+    """Verify magic token, set session cookie, 302 to /portal (preserving package intent)."""
     if not token:
         return RedirectResponse(url=f"{_PUBLIC_URL}/portal?error=missing_token", status_code=302)
     email = verify_magic_token(token)
@@ -359,7 +367,10 @@ async def portal_callback(token: str = "") -> Response:
     if await _is_token_used(token):
         return RedirectResponse(url=f"{_PUBLIC_URL}/portal?error=token_used", status_code=302)
     await _consume_token(token)
-    response = RedirectResponse(url=f"{_PUBLIC_URL}/portal", status_code=302)
+    # Carry the package intent through — only same-site /portal paths, sanitised values only
+    safe_package = package.strip().lower() if package and package.strip().lower() in _VALID_PACKAGES else ""
+    redirect_url = f"{_PUBLIC_URL}/portal?package={safe_package}" if safe_package else f"{_PUBLIC_URL}/portal"
+    response = RedirectResponse(url=redirect_url, status_code=302)
     _set_session(response, email)
     return response
 
