@@ -1,8 +1,8 @@
 name: CI + smoke
 
-# Lightweight CI: runs tests on every push so Koyeb's auto-deploy
-# only picks up commits that pass tests. Koyeb itself handles the
-# build + deploy via its GitHub integration — no deploy step needed here.
+# Lightweight CI: runs tests + manifest/MCP validation on every push.
+# Deploy to Render is triggered separately (via the Render API / dashboard);
+# this workflow only gates correctness and smoke-tests the live branded endpoint.
 
 on:
   push:
@@ -32,9 +32,9 @@ jobs:
           from agent_interface.manifest_server import get_full_manifest
           from agent_interface.mcp_server import handle_mcp_request
           from agent_interface.well_known import get_llms_txt
-          assert len(get_full_manifest()['operations']) >= 14, 'manifest must define at least 14 operations'
+          assert len(get_full_manifest()['operations']) >= 19, 'manifest must define at least 19 operations'
           r = asyncio.run(handle_mcp_request({'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}}))
-          assert len(r['result']['tools']) >= 14, 'MCP must expose at least 14 tools'
+          assert len(r['result']['tools']) >= 19, 'MCP must expose at least 19 tools'
           assert 'find_business' in get_llms_txt(), 'llms.txt must include all operations'
           print('All checks passed.')
           "
@@ -45,22 +45,22 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Wait for Koyeb to redeploy
+      - name: Wait for Render to redeploy
         run: sleep 120
       - name: Hit /health on production domain
         continue-on-error: true   # don't fail the workflow if domain not yet propagated
         run: |
           for i in 1 2 3 4 5; do
-            if curl -fsS https://agent-broker-edge.basil-agent.workers.dev/health; then echo; exit 0; fi
+            if curl -fsS https://api.hatchloop.dev/health; then echo; exit 0; fi
             echo "retry $i..."; sleep 30
           done
-          echo "Health check did not pass — verify Koyeb dashboard manually."
+          echo "Health check did not pass — verify Render dashboard manually."
           exit 0
       - name: Hit MCP tools/list
         continue-on-error: true
         run: |
-          curl -fsS -X POST https://agent-broker-edge.basil-agent.workers.dev/mcp \
+          curl -fsS -X POST https://hatchloop.dev/mcp/agent-broker \
             -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | grep -q "find_business" \
           && echo "MCP responding correctly" \
-          || echo "MCP smoke skipped (check Koyeb dashboard)"
+          || echo "MCP smoke skipped (check Render dashboard)"

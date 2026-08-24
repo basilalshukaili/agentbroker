@@ -1,34 +1,40 @@
 name: Publish to MCP Registry
 
 # Publishes server.json to the official MCP Registry (registry.modelcontextprotocol.io)
-# using GitHub OIDC — authenticates as this repo's owner to claim the
-# io.github.basilalshukaili/* namespace. No interactive login, no stored secret.
-# Triggers on a version tag (vX.Y.Z) or manual dispatch.
+# for the dev.hatchloop/* namespace using DNS auth. hatchloop.dev is DNS-verified;
+# the Ed25519 private key lives in the MCP_REGISTRY_DNS_KEY repo secret.
+#
+# Why DNS and not GitHub OIDC: OIDC can only claim the io.github.<owner>/* namespace
+# (the reverse-DNS name we deliberately moved off). Our published name is
+# dev.hatchloop/agent-broker, which requires DNS-verified auth.
+#
+# Auto-runs whenever server.json changes on main (bump the "version" field on each
+# change — the registry rejects a duplicate version), or on manual dispatch. Keeping
+# this entry current is the single upstream lever: directories that aggregate from the
+# official registry pick the change up automatically.
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: ["server.json"]
   workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write   # required for OIDC authentication
-      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Install mcp-publisher
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
       - name: Validate server.json
-        run: ./mcp-publisher validate || true
+        run: ./mcp-publisher validate
 
-      - name: Authenticate (GitHub OIDC)
-        run: ./mcp-publisher login github-oidc
+      - name: Authenticate (DNS — dev.hatchloop namespace)
+        run: ./mcp-publisher login dns --domain hatchloop.dev --private-key "${{ secrets.MCP_REGISTRY_DNS_KEY }}"
 
       - name: Publish to MCP Registry
         run: ./mcp-publisher publish
