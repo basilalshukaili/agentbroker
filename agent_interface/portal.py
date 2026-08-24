@@ -56,7 +56,11 @@ router = APIRouter(prefix="/portal", tags=["Portal"])
 # a process; Supabase provides durability across restarts (best-effort).
 _used_tokens: set[str] = set()
 
-_PUBLIC_URL = os.getenv("PUBLIC_BASE_URL", "https://hatchloop.dev")
+# Portal public URLs MUST be hatchloop.dev: the /portal-api/* proxy prefix only
+# exists on Vercel (hatchloop.dev), and the session cookie is Domain=.hatchloop.dev.
+# Do NOT fall back to the origin PUBLIC_BASE_URL (smb-broker.onrender.com) - that
+# 404s the callback and breaks the cross-domain cookie. Own env, hatchloop.dev default.
+_PUBLIC_URL = os.getenv("PORTAL_BASE_URL", "https://hatchloop.dev")
 _SESSION_TTL_S = 30 * 24 * 3600  # 30 days
 
 
