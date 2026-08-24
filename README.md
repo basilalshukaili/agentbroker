@@ -26,7 +26,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Capability | Status |
 |---|---|
 | MCP endpoint (streamable-http) | **Live** — `https://hatchloop.dev/mcp/agent-broker` |
-| 17 MCP tools | **Live** (callable today) |
+| 19 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo** — 20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
