@@ -12,7 +12,7 @@ from billing.polar_webhook import (
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 # Official Standard Webhooks test vector.
 _SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"

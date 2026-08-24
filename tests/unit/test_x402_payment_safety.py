@@ -10,7 +10,7 @@ from core.models import (
 )
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 class TestDemoSMBNeverCharged:
     def test_capture_lead_demo_smb_failure(self):

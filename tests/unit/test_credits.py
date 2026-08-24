@@ -25,7 +25,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def _make_reserve_ok(balance_after: int = 80) -> dict:

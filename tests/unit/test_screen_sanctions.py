@@ -39,7 +39,7 @@ from agent_interface.mcp_server import _build_tool_list, handle_mcp_request
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

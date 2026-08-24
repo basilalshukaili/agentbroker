@@ -258,7 +258,7 @@ class TestMCPTelemetryWiring:
             fired.append({"method": method, "tool": tool_name})
 
         with mpatch("billing.usage_logger.fire_log_usage", fake_fire):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 handle_mcp_request(
                     {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                      "params": {"protocolVersion": "2024-11-05", "clientInfo": {"name": "test", "version": "1"}}},
@@ -280,7 +280,7 @@ class TestMCPTelemetryWiring:
             fired.append(method)
 
         with mpatch("billing.usage_logger.fire_log_usage", fake_fire):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 handle_mcp_request(
                     {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
                 )
