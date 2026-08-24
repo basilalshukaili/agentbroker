@@ -38,7 +38,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 ---
 
-## 17 MCP Tools
+## 19 MCP Tools
 
 All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
 
