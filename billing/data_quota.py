@@ -25,6 +25,7 @@ Honesty invariants:
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -147,14 +148,24 @@ async def _consume_anon_data(ip: str) -> tuple[bool, int]:
         from storage.supabase_client import select_rows, insert_row
         import httpx
 
-        rows = await select_rows("anon_data_quota", filters={"bucket_key": bucket}, limit=1)
+        # Hard 2-second timeout on every Supabase call -- a hang is NOT an
+        # exception and would bypass the except Exception fail-open below.
+        # asyncio.TimeoutError IS a subclass of Exception, so the outer
+        # except block catches it and returns fail-open.
+        rows = await asyncio.wait_for(
+            select_rows("anon_data_quota", filters={"bucket_key": bucket}, limit=1),
+            timeout=2.0,
+        )
         if not rows:
             # First call today for this IP bucket.
-            await insert_row("anon_data_quota", {
-                "bucket_key": bucket,
-                "count": 1,
-                "quota_date": today,
-            })
+            await asyncio.wait_for(
+                insert_row("anon_data_quota", {
+                    "bucket_key": bucket,
+                    "count": 1,
+                    "quota_date": today,
+                }),
+                timeout=2.0,
+            )
             return True, limit - 1
 
         row = rows[0]

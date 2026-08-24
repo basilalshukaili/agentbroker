@@ -462,9 +462,25 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
         _dm_ip = (_dm_fwd.split(",")[0].strip()
                   if _dm_fwd else
                   (headers or {}).get("x-real-ip", ""))
-        _quota_check = await _dq.consume_data_quota(
-            name=name, token=_dm_token, ip=_dm_ip, headers=headers or {}
-        )
+        # Defense-in-depth: outer 2.5s hard wall-clock timeout at the call site.
+        # Even a total hang inside consume_data_quota (e.g. asyncio.wait_for
+        # inside data_quota.py fires but re-raises unexpectedly) costs at most
+        # 2.5s then the gate fails-open.  asyncio.TimeoutError is a subclass of
+        # Exception so (Exception,) covers both branches.
+        try:
+            _quota_check = await asyncio.wait_for(
+                _dq.consume_data_quota(
+                    name=name, token=_dm_token, ip=_dm_ip, headers=headers or {}
+                ),
+                timeout=2.5,
+            )
+        except (asyncio.TimeoutError, Exception) as _qe:
+            import logging as _qlog
+            _qlog.getLogger("smb_broker.mcp_server").warning(
+                "data_quota gate timed out or errored name=%s err=%s -- failing open",
+                name, type(_qe).__name__,
+            )
+            _quota_check = {"allowed": True, "remaining": -1}
         if not _quota_check["allowed"]:
             _qr = _quota_check["response"]
             return {
