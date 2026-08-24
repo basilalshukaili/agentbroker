@@ -110,11 +110,19 @@ _CHANNEL_LIKELY = {
 }
 
 
+_PREMIUM_DATA_TOOLS: frozenset = frozenset({
+    "verify_company_record", "screen_sanctions", "map_trade_restriction",
+})
+
+_ZERO_PRICING = {"min": 0.0, "max": 0.0, "basis": "free_while_metering_off"}
+
+
 async def handle_preview_cost(
     request: PreviewCostRequest,
     agent_id: str | None = None,
     trace_id: str | None = None,
 ) -> PreviewCostResponse | OutcomeReceipt:
+    import os as _os_pc
     op = request.operation
     if op not in _KNOWN_OPERATIONS:
         valid = sorted(_KNOWN_OPERATIONS)
@@ -127,7 +135,16 @@ async def handle_preview_cost(
             trace_id=trace_id,
         )
 
-    pricing = _PRICING.get(op, {"min": 0.01, "max": 1.00, "basis": "per_call"})
+    # Honesty invariant: preview_cost == real charge.
+    # When DATA_METERING_ENABLED is off (the default), the 3 premium data tools
+    # are unconditionally free (bypass gate). Show $0.00 so the preview matches.
+    _data_metering_on = _os_pc.getenv("DATA_METERING_ENABLED", "").lower() in (
+        "1", "true", "yes"
+    )
+    if op in _PREMIUM_DATA_TOOLS and not _data_metering_on:
+        pricing = _ZERO_PRICING
+    else:
+        pricing = _PRICING.get(op, {"min": 0.01, "max": 1.00, "basis": "per_call"})
     latency = _LATENCY.get(op, {"p50": 1000, "p95": 5000})
 
     # Estimate cost: use midpoint for preview, stay within ±5% of actual

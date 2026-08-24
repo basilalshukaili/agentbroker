@@ -17,11 +17,16 @@ Add this to your Cline MCP settings (`cline_mcp_settings.json`):
 }
 ```
 
-That is the whole install. On connect, the server exposes **19 tools**. **11 read tools
-are usable immediately with no key** (e.g. `find_business`, `verify_business`,
-`verify_company_record`  -  live GLEIF/SEC company data, `screen_sanctions`  -  live
-OFAC/EU/UN sanctions screening, `map_trade_restriction`  -  cross-border embargo/export-control
-mapping, `check_compliance`, `self_test`).
+That is the whole install. On connect, the server exposes **19 tools**.
+
+**8 utility tools are unconditionally free (no key, no limit):** `find_business`, `verify_business`,
+`check_compliance`, `check_booking_link`, `preview_cost`, `get_status`, `get_outcome`, `self_test`.
+
+**3 premium data tools are free up to a daily quota, then $0.02/call:** `verify_company_record`
+(live GLEIF/SEC company data), `screen_sanctions` (live OFAC/EU/UN sanctions screening),
+`map_trade_restriction` (cross-border embargo/export-control mapping). Anonymous callers get
+20 calls/day; email-verified free keys get 50/day. Beyond the quota: top up credits at
+https://hatchloop.dev/pricing or pay per call via x402.
 
 ## Optional: unlock the write tools (free)
 
@@ -47,7 +52,8 @@ Click the verification link in the email, then add the key as a header:
 }
 ```
 
-Free tier: 50 write operations/day. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+Free tier (write tools): 50 operations/day. Free tier (premium data tools): 50 calls/day.
+Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ## Verify it is working
 

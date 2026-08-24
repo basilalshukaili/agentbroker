@@ -37,6 +37,13 @@ _SPEC_CENTS = {
     "send_transactional_confirmation": 2,
     "handle_inbound":              3,
     "escalate_to_human":           20,
+    # Premium data tools -- 2cr/call when DATA_METERING_ENABLED=true.
+    # When the flag is off (default), the bypass gate makes them free at runtime,
+    # but the pricing table still stores 2cr so the credits/x402 rails work
+    # correctly when metering is enabled.
+    "verify_company_record":       2,
+    "screen_sanctions":            2,
+    "map_trade_restriction":       2,
 }
 
 _SPEC_MAX_CENTS = {
@@ -45,8 +52,7 @@ _SPEC_MAX_CENTS = {
 }
 
 _SPEC_FREE = {
-    "find_business", "verify_business", "verify_company_record",
-    "screen_sanctions", "map_trade_restriction", "get_status", "get_outcome",
+    "find_business", "verify_business", "get_status", "get_outcome",
     "preview_cost", "self_test", "check_booking_link", "check_compliance",
     "import_booking_url", "call_business",
 }
@@ -116,7 +122,8 @@ class TestSpecValues:
 class TestX402GateParity:
     """x402_gate._PRICING_USD derived from pricing.py matches prior hard-coded values."""
 
-    # These were the hard-coded values before the refactor.
+    # These were the hard-coded values before the refactor, plus the 3 premium
+    # data tools added in the freemium slice (DATA_METERING_ENABLED flag, 2026-08-24).
     _PRIOR_PRICING_USD = {
         "send_message": "0.02",
         "capture_lead": "0.05",
@@ -124,6 +131,10 @@ class TestX402GateParity:
         "send_transactional_confirmation": "0.02",
         "handle_inbound": "0.03",
         "escalate_to_human": "0.20",
+        # Premium data tools added 2026-08-24 (freemium metering slice).
+        "verify_company_record": "0.02",
+        "screen_sanctions": "0.02",
+        "map_trade_restriction": "0.02",
     }
 
     def test_x402_paid_ops_unchanged(self):

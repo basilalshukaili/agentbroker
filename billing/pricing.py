@@ -19,12 +19,9 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 _PRICING_CENTS: dict[str, int] = {
-    # FREE -- reads, probes, adoption wedges
+    # FREE -- reads, probes, adoption wedges (no key required, unmetered)
     "find_business":               0,
     "verify_business":             0,
-    "verify_company_record":       0,
-    "screen_sanctions":            0,
-    "map_trade_restriction":       0,
     "get_status":                  0,
     "get_outcome":                 0,
     "preview_cost":                0,
@@ -33,6 +30,11 @@ _PRICING_CENTS: dict[str, int] = {
     "check_compliance":            0,
     "import_booking_url":          0,   # adoption wedge -- free so agents import without friction
     "call_business":               0,   # voice not provisioned; 0cr until enabled
+    # PREMIUM DATA TOOLS (2cr/call when DATA_METERING_ENABLED=true; free within daily quota)
+    # When DATA_METERING_ENABLED=false (default) these run free/unmetered via the bypass in mcp_server.py.
+    "verify_company_record":       2,   # live GLEIF LEI + SEC EDGAR lookup
+    "screen_sanctions":            2,   # OFAC SDN + OpenSanctions 40+ lists
+    "map_trade_restriction":       2,   # OFAC embargo + export-control + sanctioned-party screening
     # PAID writes
     "send_message":                2,   # variable: min 2cr, max 22cr (Twilio SMS)
     "capture_lead":                5,

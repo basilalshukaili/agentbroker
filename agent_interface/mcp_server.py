@@ -350,6 +350,30 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     if not op:
         raise _ParamError(f"Unknown tool: '{name}'")
 
+    # -----------------------------------------------------------------------
+    # DATA TOOL BYPASS (DATA_METERING_ENABLED=false, which is the default)
+    # -----------------------------------------------------------------------
+    # When DATA_METERING_ENABLED is off, the 3 premium data tools run free
+    # and unmetered -- exactly as before this feature. We short-circuit here
+    # so that even when X402_ENABLED or CREDITS_ENABLED is on, those billing
+    # gates never fire for data tools while metering is off.
+    # When DATA_METERING_ENABLED=true, we skip this block and fall through to
+    # the x402/credits gates and the data-quota gate below.
+    import os as _os_dm
+    _data_metering_on = _os_dm.getenv("DATA_METERING_ENABLED", "").lower() in (
+        "1", "true", "yes"
+    )
+    if name in _PREMIUM_DATA_TOOLS and not _data_metering_on:
+        _bypass_receipt = await _dispatch_operation(name, arguments, headers or {})
+        return {
+            "content": [
+                {"type": "text",
+                 "text": json.dumps(_bypass_receipt, indent=2, default=str)}
+            ],
+            "isError": _bypass_receipt.get("status") == "failure",
+        }
+    # -----------------------------------------------------------------------
+
     # x402 payment gate. When enabled, paid write tools must carry a settled
     # USDC-on-Base payment (standard x402, settled via the Coinbase CDP
     # facilitator). The gate runs the tool only after the agent's payment
@@ -419,6 +443,39 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
                 }
     # --- END SLICE 3 ---
 
+    # -----------------------------------------------------------------------
+    # DATA QUOTA GATE (DATA_METERING_ENABLED=true only)
+    # -----------------------------------------------------------------------
+    # At this point, x402-paying agents have already returned via the x402
+    # gate above. Credit-account holders have already returned via the credits
+    # gate above. Remaining callers are: email-verified free-key holders and
+    # anonymous callers.  Apply per-caller daily quota here.
+    #
+    # Within quota  -> call proceeds free (quota decremented, cost=0).
+    # Beyond quota  -> honest failure, status=failure, reason_code=free_quota_exceeded,
+    #                  cost=0, tool NOT dispatched.
+    if name in _PREMIUM_DATA_TOOLS and _data_metering_on:
+        from billing import data_quota as _dq
+        _dm_token = (headers or {}).get("x-agent-identity", "")
+        # Prefer the leftmost IP from X-Forwarded-For (closest real client).
+        _dm_fwd = (headers or {}).get("x-forwarded-for", "") or ""
+        _dm_ip = (_dm_fwd.split(",")[0].strip()
+                  if _dm_fwd else
+                  (headers or {}).get("x-real-ip", ""))
+        _quota_check = await _dq.consume_data_quota(
+            name=name, token=_dm_token, ip=_dm_ip, headers=headers or {}
+        )
+        if not _quota_check["allowed"]:
+            _qr = _quota_check["response"]
+            return {
+                "content": [
+                    {"type": "text", "text": json.dumps(_qr, indent=2, default=str)}
+                ],
+                "isError": True,
+            }
+        # Within quota -- fall through to free dispatch below.
+    # -----------------------------------------------------------------------
+
     receipt = await _dispatch_operation(name, arguments, headers or {})
 
     # FIX 5 (2026-08-23): Inject quota block into every gated tool response so
@@ -435,6 +492,15 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
         "isError": receipt.get("status") == "failure",
     }
 
+
+# Premium data tools gated by DATA_METERING_ENABLED.
+# When the flag is false (default prod state) these run completely free.
+# When true they enter the freemium quota path (see _h_tools_call below).
+_PREMIUM_DATA_TOOLS: frozenset[str] = frozenset({
+    "verify_company_record",
+    "screen_sanctions",
+    "map_trade_restriction",
+})
 
 # Tools that mutate state or charge upstream credits. The MCP dispatcher must
 # gate these the same way /ops/* gates them — otherwise a developer-tier

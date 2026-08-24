@@ -234,6 +234,23 @@ GRANDFATHER_CREDITS = _env_int("GRANDFATHER_CREDITS", 1000)
 FREE_SIGNUP_CREDITS = _env_int("FREE_SIGNUP_CREDITS", 100)
 
 # ---------------------------------------------------------------------------
+# Data tool freemium metering (DATA_METERING_ENABLED)
+# ---------------------------------------------------------------------------
+# When false (default): verify_company_record, screen_sanctions,
+# map_trade_restriction run free/unmetered -- exactly as before this feature.
+# When true: those tools are gated by a per-caller daily free quota.
+#   Within quota: call runs free (quota decremented).
+#   Beyond quota: x402 (if payment present) -> credits (if funded account) ->
+#                 honest failure with reason_code=free_quota_exceeded (cost=0).
+# Go-live requires founder approval of quotas + $0.02 price, then flip to true.
+DATA_METERING_ENABLED = _env_bool("DATA_METERING_ENABLED", default=False)
+# Daily free quota for email-verified free-key holders (in-memory, per process restart).
+FREE_DATA_QUOTA_PER_DAY = _env_int("FREE_DATA_QUOTA_PER_DAY", 50)
+# Daily free quota for anonymous callers (tracked by sha256(ip)+date in Supabase,
+# best-effort: fail-open when Supabase is unavailable or IP is unknown).
+ANON_DATA_QUOTA_PER_DAY = _env_int("ANON_DATA_QUOTA_PER_DAY", 20)
+
+# ---------------------------------------------------------------------------
 # x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)
 # ---------------------------------------------------------------------------
 # The standard x402 scheme: an agent sends a signed EIP-3009 authorization
