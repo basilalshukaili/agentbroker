@@ -130,14 +130,14 @@ def render_home() -> str:
 
 <section class="section" id="how">
   <h2>Connect in one line, in any agent ecosystem.</h2>
-  <p class="lead">We expose the same 12 tools through every protocol agents speak today.</p>
+  <p class="lead">We expose the same 19 tools through every protocol agents speak today.</p>
   <div class="grid grid-3">
     <div class="card">
       <h3>MCP &mdash; Claude Desktop / Cursor / Continue</h3>
       <pre><code>{
   "mcpServers": {
     "agent-broker": {
-      "url": "https://smb-broker.onrender.com/mcp",
+      "url": "https://hatchloop.dev/mcp/agent-broker",
       "headers": {
         "X-Agent-Identity": "$TOKEN"
       }
@@ -148,14 +148,14 @@ def render_home() -> str:
     <div class="card">
       <h3>OpenAI function calling</h3>
       <pre><code>tools = httpx.get(
-  "https://smb-broker.onrender.com"
+  "https://hatchloop.dev"
   "/.well-known/openai-tools.json"
 ).json()["tools"]</code></pre>
     </div>
     <div class="card">
       <h3>Anthropic tool_use</h3>
       <pre><code>tools = httpx.get(
-  "https://smb-broker.onrender.com"
+  "https://hatchloop.dev"
   "/.well-known/anthropic-tools.json"
 ).json()["tools"]</code></pre>
     </div>
@@ -163,7 +163,7 @@ def render_home() -> str:
 </section>
 
 <section class="section" id="tools">
-  <h2>12 operations. One contract. Worldwide.</h2>
+  <h2>19 operations. One contract. Worldwide.</h2>
   <p class="lead">
     Same OutcomeReceipt schema for every operation. Same compliance gate.
     Same idempotency contract. No surprises.
