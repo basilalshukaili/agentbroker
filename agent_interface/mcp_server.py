@@ -365,6 +365,60 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
             name, arguments, params.get("_meta") or {}, _dispatch
         )
 
+    # --- SLICE 3: Credits payment gate ---
+    # Runs AFTER the x402 branch (ONE rail: x402-paying calls never reach here).
+    # Activates ONLY when CREDITS_ENABLED=true. When false: zero behavior change.
+    # Path: paid tool + funded non-free credit account -> run_metered_tool
+    #   -> reserve(MAX) first; if insufficient return honest failure (no dispatch)
+    #   -> dispatch -> commit on success / release on failure
+    # Free keys (free_*) keep the existing 50/day path unchanged.
+    # Reads and zero-cost ops bypass entirely (is_credit_paid_tool guard).
+    import os as _os_credits
+    if _os_credits.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+        from billing import credits as _credits_mod
+        if _credits_mod.is_credit_paid_tool(name):
+            _cr_account = _credits_mod.resolve_account(headers or {})
+            if _cr_account and not _credits_mod.is_free_key(_cr_account):
+                # Grandfather: auto-create account on first encounter
+                # (idempotent, fail-open -- never blocks a paid call)
+                try:
+                    await _credits_mod.ensure_grandfather(_cr_account)
+                except Exception:
+                    pass
+
+                async def _credit_dispatch() -> dict:
+                    return await _dispatch_operation(
+                        name, arguments, headers or {}, skip_auth=True
+                    )
+
+                try:
+                    _cr_result = await _credits_mod.run_metered_tool(
+                        name, _cr_account, _credit_dispatch
+                    )
+                except RuntimeError:
+                    # Supabase unreachable -- fail closed: refuse paid work
+                    _cr_result = {
+                        "status": "failure",
+                        "reason_code": "billing_unavailable",
+                        "human_message": (
+                            "Credits billing temporarily unavailable. "
+                            "Please retry in a moment."
+                        ),
+                    }
+
+                _is_cr_err = (
+                    _cr_result.get("status") == "failure"
+                    or "reason_code" in _cr_result
+                )
+                return {
+                    "content": [
+                        {"type": "text",
+                         "text": json.dumps(_cr_result, indent=2, default=str)}
+                    ],
+                    "isError": _is_cr_err,
+                }
+    # --- END SLICE 3 ---
+
     receipt = await _dispatch_operation(name, arguments, headers or {})
 
     # FIX 5 (2026-08-23): Inject quota block into every gated tool response so
@@ -497,12 +551,13 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         how_to_buy = (
             f" To get access: Option 1 (free): get a verified free key (50 ops/day) at "
             f"{free_key_url} (just provide your email, no payment needed). "
-            f"Option 2 (paid): purchase a 90-day unlimited key at {checkout} "
-            f"(flat price, no per-call billing). "
+            f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
+            f"Scale $99/13,000) at https://hatchloop.dev/pricing; or agents may pay per-call via x402. "
             f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
-            f" Get a free API key at {free_key_url} (50 ops/day, email verification required)."
+            f" Get a free API key at {free_key_url} (50 ops/day, email verification required). "
+            f"Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing."
         )
         raise _ParamError(
             f"auth_required for tool '{name}' (status={he.status_code}): "

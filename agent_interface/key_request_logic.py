@@ -129,7 +129,7 @@ async def send_verification_email(email: str, verify_url: str) -> None:
             "html": (
                 f"<p>Hi,</p>"
                 f"<p>Click the link below to verify your email and get your free AgentBroker API key "
-                f"(50 gated operations per day, valid 90 days).</p>"
+                f"(50 gated operations per day).</p>"
                 f"<p><a href=\"{verify_url}\">{verify_url}</a></p>"
                 f"<p>This link expires in 1 hour.</p>"
                 f"<p>If you did not request this, ignore this email.</p>"
@@ -269,7 +269,7 @@ def html_success(token_value: str, expires_iso: str, key_id: str, paid_url: str)
         f"<pre>X-Agent-Identity: {token_value}</pre>"
         "<p>Endpoint: <code>https://smb-broker.onrender.com/mcp</code></p>"
         "<h2>Need more?</h2>"
-        f"<p><a href=\"{paid_url}\">Upgrade to paid plan</a> &#8212; unlimited ops, 90-day key, flat price.</p>"
+        f"<p><a href=\"https://hatchloop.dev/pricing\">Buy credits</a> &#8212; Starter $9/1,000 ops, Growth $29/3,500, Scale $99/13,000. No flat or unlimited subscription.</p>"
         "<p style=\"color:#999;font-size:12px;\">Your key was also sent to your email.</p>"
         "</body></html>"
     )

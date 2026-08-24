@@ -1180,7 +1180,7 @@ async def billing_checkout():
         prov = get_billing_provider()
         session = await prov.create_checkout(
             amount_usd=9.0,
-            description="Agent Broker — Developer Access (90 days)",
+            description="Agent Broker — Starter Credits (1,000 write ops)",
             agent_id="web_checkout",
             success_url=f"{base}/billing/success",
             cancel_url=f"{base}/pricing",

@@ -47,7 +47,7 @@ Click the verification link in the email, then add the key as a header:
 }
 ```
 
-Free tier: 50 write operations/day. Flat $9 / 90 days for unlimited.
+Free tier: 50 write operations/day. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ## Verify it is working
 

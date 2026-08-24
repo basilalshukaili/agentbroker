@@ -40,6 +40,6 @@
     "type": "optional",
     "header": "X-Agent-Identity",
     "scheme": "bearer",
-    "note": "11 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key or $9/90d Polar subscription)."
+    "note": "11 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key for 50 ops/day, or buy credits at https://hatchloop.dev/pricing)."
   }
 }
