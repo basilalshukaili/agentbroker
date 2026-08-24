@@ -1,4 +1,4 @@
-# Agent Broker — SMB Transaction & Communication MCP Server
+# Agent Broker  -  SMB Transaction & Communication MCP Server
 
 > **An agent-callable MCP server** that lets autonomous AI agents find, verify, message, schedule with, and transact with small and mid-sized businesses (SMBs) through a single compliance-enforced tool surface.
 
@@ -15,9 +15,9 @@
 
 ## Why this exists
 
-There are ~60 million long-tail small businesses in the US — barbers, plumbers, accountants, home cleaners — and they have **no API surface**. AI agents that need to schedule a haircut, get a quote, or send a confirmation today must either drive a browser, cold-call by voice, or give up.
+There are ~60 million long-tail small businesses in the US  -  barbers, plumbers, accountants, home cleaners  -  and they have **no API surface**. AI agents that need to schedule a haircut, get a quote, or send a confirmation today must either drive a browser, cold-call by voice, or give up.
 
-This server is the missing middle layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest — Cal.com → SMS → voice AI → email — with full TCPA / GDPR / CASL / 10DLC compliance enforced as a non-bypassable gate.
+This server is the missing middle layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest  -  Cal.com -> SMS -> voice AI -> email  -  with full TCPA / GDPR / CASL / 10DLC compliance enforced as a non-bypassable gate.
 
 ---
 
@@ -25,16 +25,16 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 | Capability | Status |
 |---|---|
-| MCP endpoint (streamable-http) | **Live** — `https://hatchloop.dev/mcp/agent-broker` |
+| MCP endpoint (streamable-http) | **Live**  -  `https://hatchloop.dev/mcp/agent-broker` |
 | 19 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
-| SMB supply network | **Demo** — 20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live** — 11 read tools free (no key needed). Write tools: free email-verified key (50 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
+| SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
+| Billing | **Live**  -  11 read tools free (no key needed). Write tools: free email-verified key (50 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
 | x402 payment rail | **Verified** on Base mainnet (tx 0x38a0d9ec) |
-| Production SMB onboarding | **Planned** — real businesses not yet enrolled |
+| Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. 11 read tools are free with no key. Write tools require a free email-verified key (50 ops/day) — get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+> The MCP server is live and callable right now. Bookings hit demo data. 11 read tools are free with no key. Write tools require a free email-verified key (50 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ---
 
@@ -50,19 +50,19 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 4 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) | **free** |
 | 5 | `preview_cost` | Estimate cost, latency, and success probability before committing | **free** |
 | 6 | `self_test` | Verify service health and all claimed capabilities are responding | **free** |
-| 7 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it — sub-100ms pre-flight | **free** |
+| 7 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it  -  sub-100ms pre-flight | **free** |
 | 8 | `check_compliance` | Preview TCPA/GDPR/CASL/10DLC gate result before spending a paid send | **free** |
-| 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup — official legal name, status, jurisdiction, address | **free** |
+| 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free** |
 | 10 | `send_message` | Send SMS, email, or voice with compliance pre-check enforced | key |
 | 11 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
-| 12 | `schedule_appointment` | Book, reschedule, or cancel — tries direct booking API, falls back to voice AI | key |
+| 12 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
 | 13 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
 | 14 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
 | 15 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
 | 16 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
 | 17 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
 
-Free key (50 write ops/day): https://hatchloop.dev/agent-broker — Credits from $9/1,000 ops: https://hatchloop.dev/pricing
+Free key (50 write ops/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing
 
 ---
 
@@ -232,12 +232,12 @@ The edge worker can outlive the origin: discovery still works even if the origin
 
 Every outbound communication passes through `compliance/pre_check()`:
 
-1. **Content classification** — blocks restricted categories (gambling, adult, cannabis, spam)
-2. **Opt-out check** — TCPA STOP keyword, GDPR right-to-be-forgotten, CASL
-3. **Consent check** — TCPA written consent, GDPR opt-in, CASL implied/express
-4. **10DLC registry check** — US SMS campaign compliance
-5. **Two-party recording consent** — CA, FL, IL, MD, MA, MT, NV, NH, PA, WA
-6. **Audit log** — PII stored as SHA-256 hash, never plaintext
+1. **Content classification**  -  blocks restricted categories (gambling, adult, cannabis, spam)
+2. **Opt-out check**  -  TCPA STOP keyword, GDPR right-to-be-forgotten, CASL
+3. **Consent check**  -  TCPA written consent, GDPR opt-in, CASL implied/express
+4. **10DLC registry check**  -  US SMS campaign compliance
+5. **Two-party recording consent**  -  CA, FL, IL, MD, MA, MT, NV, NH, PA, WA
+6. **Audit log**  -  PII stored as SHA-256 hash, never plaintext
 
 Violations surface as `ComplianceViolationError` and are never silently bypassed.
 
@@ -304,26 +304,26 @@ docker compose -f deploy/docker-compose.yml up
 
 ## Documentation
 
-- [Architecture](./docs/architecture.md) — module map, data flow, fallback chains
-- [Compliance](./docs/compliance.md) — full jurisdiction matrix, pre-check sequence
-- [Agent integration guide](./docs/AGENT_INTEGRATION_GUIDE.md) — copy-paste examples for every protocol
-- [API errors](./api/errors.md) — 16 error codes with retry semantics
-- [API identity](./api/identity.md) — Agent-Identity JWT spec
-- [API async](./api/async.md) — execution profiles, polling rules, webhook contract
-- [Benchmarks](./docs/BENCHMARKS.md) — measured WinRate, latency, cost vs alternatives
-- [Mission](./docs/mission.md) — north-star metric and scope
+- [Architecture](./docs/architecture.md)  -  module map, data flow, fallback chains
+- [Compliance](./docs/compliance.md)  -  full jurisdiction matrix, pre-check sequence
+- [Agent integration guide](./docs/AGENT_INTEGRATION_GUIDE.md)  -  copy-paste examples for every protocol
+- [API errors](./api/errors.md)  -  16 error codes with retry semantics
+- [API identity](./api/identity.md)  -  Agent-Identity JWT spec
+- [API async](./api/async.md)  -  execution profiles, polling rules, webhook contract
+- [Benchmarks](./docs/BENCHMARKS.md)  -  measured WinRate, latency, cost vs alternatives
+- [Mission](./docs/mission.md)  -  north-star metric and scope
 
 ---
 
 ## Contributing
 
-Licensed under MIT. Issues and discussion are welcome — open a GitHub issue to report bugs or suggest features. For substantial changes, please open an issue first to discuss direction. Note: this repo is the open-source server; the hosted service at agent-broker-edge.basil-agent.workers.dev (supply index, billing rails) is operated by Hatchloop.
+Licensed under MIT. Issues and discussion are welcome  -  open a GitHub issue to report bugs or suggest features. For substantial changes, please open an issue first to discuss direction. Note: this repo is the open-source server; the hosted service at agent-broker-edge.basil-agent.workers.dev (supply index, billing rails) is operated by Hatchloop.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The hosted service and its supply/billing data are operated separately by Hatchloop.
+MIT  -  see [LICENSE](LICENSE). The hosted service and its supply/billing data are operated separately by Hatchloop.
 
 ---
 
