@@ -32,7 +32,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 _TEST_SECRET = "test-portal-secret-abc123"
