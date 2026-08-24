@@ -197,7 +197,7 @@ TWILIO_MESSAGING_SERVICE_SID = _env("TWILIO_MESSAGING_SERVICE_SID", "")  # prefe
 TWILIO_FROM_NUMBER = _env("TWILIO_FROM_NUMBER", "")          # fallback sender (E.164)
 
 SENDGRID_API_KEY = _env("SENDGRID_API_KEY", "")
-SENDGRID_FROM_EMAIL = _env("SENDGRID_FROM_EMAIL", "noreply@agent-broker-edge.basil-agent.workers.dev")
+SENDGRID_FROM_EMAIL = _env("SENDGRID_FROM_EMAIL", "noreply@hatchloop.dev")
 
 VAPI_API_KEY = _env("VAPI_API_KEY", "")
 BLAND_API_KEY = _env("BLAND_API_KEY", "")
@@ -279,7 +279,7 @@ CDP_API_KEY_ID = _env("CDP_API_KEY_ID", "")
 CDP_API_KEY_SECRET = _env("CDP_API_KEY_SECRET", "")
 # Public MCP endpoint advertised in the Bazaar discovery `resource` so agents
 # who discover a paid tool know where to connect. Defaults to the edge worker.
-PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "https://agent-broker-edge.basil-agent.workers.dev")
+PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
 X402_PUBLIC_MCP_URL = _env("X402_PUBLIC_MCP_URL", PUBLIC_BASE_URL.rstrip("/") + "/mcp")
 
 # ---------------------------------------------------------------------------

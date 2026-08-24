@@ -82,7 +82,7 @@ Free key (50 write ops/day + 50 premium data calls/day): https://hatchloop.dev/a
 }
 ```
 
-**9 read tools require no key** (find_business, verify_business, verify_company_record, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test).
+**11 tools require no key** (find_business, verify_business, verify_company_record, screen_sanctions, map_trade_restriction, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test).
 
 **Write tools** require an `X-Agent-Identity` bearer token:
 - Free email-verified key (50 ops/day): https://hatchloop.dev/agent-broker
@@ -219,7 +219,7 @@ Cloudflare Worker edge  (agent-broker-edge.basil-agent.workers.dev)
         Python FastAPI  (smb-broker.onrender.com)
                 |  Cron keep-alive every 2 min (eliminates Render cold starts)
                 |
-                +-- 14 operation handlers  (core/)
+                +-- 19 operation handlers  (core/)
                 +-- Compliance gate        (compliance/pre_check)
                 +-- Channel adapters       (channels/ -- Twilio, Cal.com, Vapi, SendGrid)
                 +-- Billing + outcome store

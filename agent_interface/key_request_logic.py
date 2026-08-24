@@ -171,7 +171,7 @@ async def send_key_email(email: str, token_value: str, expires_iso: str) -> None
                 f"<p>Limits: <strong>50 gated operations per day</strong>, "
                 f"valid until <strong>{expires_iso}</strong>.</p>"
                 f"<p>Usage: send it as the <code>X-Agent-Identity</code> header on every call to "
-                f"<code>https://smb-broker.onrender.com/mcp</code>.</p>"
+                f"<code>https://hatchloop.dev/mcp/agent-broker</code>.</p>"
                 f"<p>Need more ops? <a href=\"{paid_url}\">Upgrade to paid plan</a>.</p>"
                 f"<p>&#8212; HatchLoop / AgentBroker</p>"
             ),
@@ -267,7 +267,7 @@ def html_success(token_value: str, expires_iso: str, key_id: str, paid_url: str)
         "<h2>How to use</h2>"
         "<p>Add this header to every MCP call:</p>"
         f"<pre>X-Agent-Identity: {token_value}</pre>"
-        "<p>Endpoint: <code>https://smb-broker.onrender.com/mcp</code></p>"
+        "<p>Endpoint: <code>https://hatchloop.dev/mcp/agent-broker</code></p>"
         "<h2>Need more?</h2>"
         f"<p><a href=\"https://hatchloop.dev/pricing\">Buy credits</a> &#8212; Starter $9/1,000 ops, Growth $29/3,500, Scale $99/13,000. No flat or unlimited subscription.</p>"
         "<p style=\"color:#999;font-size:12px;\">Your key was also sent to your email.</p>"

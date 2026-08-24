@@ -69,7 +69,7 @@ async def request_free_key(body: KeyRequestBody):
 
     # Derive base URL — use the Render origin (PUBLIC_BASE_URL) not the edge
     # worker URL (MCP_PUBLIC_URL), since /keys/* routes live on the origin.
-    base_url = os.getenv("PUBLIC_BASE_URL", "https://smb-broker.onrender.com").rstrip("/")
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
     verify_url = f"{base_url}/keys/verify?token={token}"
 
     # Store pending (best-effort) + send email

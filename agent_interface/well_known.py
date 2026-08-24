@@ -26,7 +26,7 @@ from agent_interface.manifest_server import get_full_manifest
 # ---------------------------------------------------------------------------
 
 import os
-BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://smb-broker.onrender.com")
+BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
 
 
 # ---------------------------------------------------------------------------
