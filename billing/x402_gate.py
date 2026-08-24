@@ -42,23 +42,15 @@ from urllib.parse import urlparse
 
 import config
 from agent_interface.manifest_server import get_operation
+from billing.pricing import price_usd_str as _price_usd_str, _PAID_OPS as _x402_paid_ops
 
 log = logging.getLogger("smb_broker.x402")
 
-# Canonical pricing (USD strings — kept as strings to avoid float repr drift).
-# Mirrors the edge PRICING_ATOMIC: $X = atomic / 1e6. Reads are free (absent).
+# Pricing derived from billing/pricing.py -- the SINGLE source of truth.
+# Do NOT add literal prices here; edit billing/pricing.py instead.
+# Only paid ops appear (import_booking_url and call_business are 0cr = absent).
 _PRICING_USD: dict[str, str] = {
-    "send_message": "0.02",
-    "capture_lead": "0.05",
-    "schedule_appointment": "0.15",
-    "send_transactional_confirmation": "0.02",
-    "handle_inbound": "0.03",
-    "escalate_to_human": "0.20",
-    # import_booking_url is intentionally FREE — it is the adoption wedge (turn
-    # any booking URL into a callable business). Agents import for free, then pay
-    # for the action (schedule_appointment / send_message). "Don't be greedy."
-    # call_business ($0.50) is also omitted — the voice path is disabled, so
-    # charging for it would take money then return voice_not_provisioned.
+    op: _price_usd_str(op) for op in _x402_paid_ops
 }
 
 # Receipt statuses that mean "the paid action did NOT happen" → do NOT settle

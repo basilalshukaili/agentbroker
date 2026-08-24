@@ -38,6 +38,50 @@ def _headers(key: str) -> dict[str, str]:
     }
 
 
+async def rpc(fn: str, payload: dict[str, Any]) -> Any:
+    """
+    Call a Supabase Postgres function via PostgREST: POST /rest/v1/rpc/{fn}.
+
+    RAISES on any failure -- callers on the spend path must fail closed.
+    Unlike insert_row's fail-open design (billing is optional), RPC calls
+    gate real money: if we cannot reach Supabase, we MUST NOT do paid work.
+
+    Returns the parsed JSON response body (typically a dict from JSONB functions).
+    """
+    url, key = _get_config()
+    if not url or not key:
+        raise RuntimeError(
+            f"rpc({fn!r}) aborted: SUPABASE_URL or service key not configured. "
+            "Cannot proceed on spend path without Supabase."
+        )
+    import httpx
+    endpoint = f"{url}/rest/v1/rpc/{fn}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(endpoint, headers=headers, json=payload)
+    except Exception as exc:
+        raise RuntimeError(
+            f"rpc({fn!r}) transport error: {exc}"
+        ) from exc
+
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(
+            f"rpc({fn!r}) failed: HTTP {resp.status_code} body={resp.text[:400]}"
+        )
+    try:
+        return resp.json()
+    except Exception as exc:
+        raise RuntimeError(
+            f"rpc({fn!r}) JSON decode error: {exc} body={resp.text[:200]}"
+        ) from exc
+
+
 async def insert_row(table: str, row: dict[str, Any]) -> Optional[dict]:
     """
     Insert a single row into `table`. Returns the inserted row on success,

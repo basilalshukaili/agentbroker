@@ -13,56 +13,47 @@ from core.models import (
     PreviewCostRequest,
     PreviewCostResponse,
 )
+from billing.pricing import price_cents as _price_cents, max_credits as _max_credits, ALL_OPERATIONS
 
 # Authoritative list of every operation the broker exposes. preview_cost
-# refuses to invent a quote for anything outside this set so the ±5% SLO
-# advertised in the response can be honored — a fabricated midpoint for an
-# unknown op would violate it on the first real call.
-_KNOWN_OPERATIONS = frozenset({
-    "find_business",
-    "verify_business",
-    "send_message",
-    "capture_lead",
-    "schedule_appointment",
-    "send_transactional_confirmation",
-    "handle_inbound",
-    "escalate_to_human",
-    "get_status",
-    "get_outcome",
-    "preview_cost",
-    "self_test",
-    "import_booking_url",
-    "call_business",
-    "check_booking_link",
-    "check_compliance",
-    "verify_company_record",
-    "screen_sanctions",
-    "map_trade_restriction",
-})
+# refuses to invent a quote for anything outside this set so the +-5% SLO
+# advertised in the response can be honored.
+_KNOWN_OPERATIONS = ALL_OPERATIONS
 
-# Pricing table — must stay in sync with manifest/manifest.json cost_model
-# and edge/src/x402.ts PRICING_ATOMIC. Any drift = agent trust violation
-# (agent calls preview_cost, sees one price, x402 charges another).
-_PRICING = {
-    "find_business":                  {"min": 0.01, "max": 0.01, "basis": "per_call"},
-    "verify_business":                {"min": 0.02, "max": 0.02, "basis": "per_call"},
-    "send_message":                   {"min": 0.02, "max": 0.22, "basis": "per_message"},
-    "capture_lead":                   {"min": 0.05, "max": 0.05, "basis": "per_lead"},
-    "schedule_appointment":           {"min": 0.15, "max": 0.50, "basis": "per_booking_attempt+success_bonus"},
-    "send_transactional_confirmation":{"min": 0.02, "max": 0.02, "basis": "per_message"},
-    "handle_inbound":                 {"min": 0.03, "max": 0.03, "basis": "per_inbound"},
-    "escalate_to_human":              {"min": 0.20, "max": 0.20, "basis": "per_escalation"},
-    "get_status":                     {"min": 0.001,"max": 0.001,"basis": "per_call"},
-    "get_outcome":                    {"min": 0.001,"max": 0.001,"basis": "per_call"},
-    "preview_cost":                   {"min": 0.0,  "max": 0.0,  "basis": "free"},
-    "self_test":                      {"min": 0.0,  "max": 0.0,  "basis": "free"},
-    "import_booking_url":             {"min": 0.005,"max": 0.005,"basis": "per_call"},
-    "call_business":                  {"min": 0.50, "max": 0.50, "basis": "per_call"},
-    "check_booking_link":             {"min": 0.0,  "max": 0.0,  "basis": "free"},
-    "check_compliance":               {"min": 0.0,  "max": 0.0,  "basis": "free"},
-    "verify_company_record":          {"min": 0.0,  "max": 0.0,  "basis": "free"},
-    "screen_sanctions":               {"min": 0.0,  "max": 0.0,  "basis": "free"},
-    "map_trade_restriction":          {"min": 0.0,  "max": 0.0,  "basis": "free"},
+# Pricing table -- min/max/basis, sourced from billing/pricing.py (single
+# source of truth). Min = base price_cents/100; max = max_credits/100 for
+# variable ops. Free ops are now consistently 0.0 (fixes a prior bug where
+# find_business=0.01, verify_business=0.02, get_status/get_outcome=0.001,
+# import_booking_url=0.005, call_business=0.50 were falsely shown as paid).
+_PRICING_BASIS: dict[str, str] = {
+    "find_business":               "per_call",
+    "verify_business":             "per_call",
+    "send_message":                "per_message",
+    "capture_lead":                "per_lead",
+    "schedule_appointment":        "per_booking_attempt+success_bonus",
+    "send_transactional_confirmation": "per_message",
+    "handle_inbound":              "per_inbound",
+    "escalate_to_human":           "per_escalation",
+    "get_status":                  "per_call",
+    "get_outcome":                 "per_call",
+    "preview_cost":                "free",
+    "self_test":                   "free",
+    "import_booking_url":          "per_call",
+    "call_business":               "per_call",
+    "check_booking_link":          "free",
+    "check_compliance":            "free",
+    "verify_company_record":       "per_call",
+    "screen_sanctions":            "per_call",
+    "map_trade_restriction":       "per_call",
+}
+
+_PRICING: dict[str, dict] = {
+    op: {
+        "min": _price_cents(op) / 100,
+        "max": _max_credits(op) / 100,
+        "basis": _PRICING_BASIS.get(op, "per_call"),
+    }
+    for op in ALL_OPERATIONS
 }
 
 _LATENCY = {
