@@ -1,11 +1,109 @@
 """
 Centralized configuration — reads from environment variables with safe defaults.
 All secrets MUST be set via environment variables in production. Never commit secrets.
+
+Render SECRET FILES: Render mounts secret files at /etc/secrets/<name> (and at
+the project root as a fallback). They are NOT injected as environment variables
+automatically, so os.getenv() returns None without the hydration step below.
+hydrate_env_from_secret_files() runs before any config variable is resolved and
+populates os.environ from those files, making the rest of this module work
+identically whether a value was supplied as a real env var or a secret file.
 """
 from __future__ import annotations
 
+import logging
 import os
-from dataclasses import dataclass, field
+import re
+from pathlib import Path
+
+_log = logging.getLogger("smb_broker.config")
+
+# Regex for a valid environment-variable name: starts with uppercase letter,
+# followed by zero or more uppercase letters, digits, or underscores.
+_ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+# Directories to search, in priority order.
+# /etc/secrets is Render's canonical mount point for secret files.
+# The project root (CWD) is a documented fallback Render also uses.
+_SECRET_DIRS = [
+    Path("/etc/secrets"),
+    Path("."),
+]
+
+
+def hydrate_env_from_secret_files(
+    extra_dirs: list[Path] | None = None,
+) -> list[str]:
+    """
+    Load Render secret files into os.environ before config variables are read.
+
+    For each candidate directory (primarily /etc/secrets, then CWD), iterates
+    its top-level entries. Any file whose name matches ^[A-Z][A-Z0-9_]*$ is
+    treated as an environment variable: if the variable is not already set in
+    os.environ, its value is read from the file and injected.
+
+    Rules:
+    - Never overwrites an already-set env var (env var wins over secret file).
+    - Silently skips directories that do not exist (safe on local dev).
+    - Skips sub-directories and files with non-ENV-key names.
+    - Never logs values, only key names.
+    - All errors are caught and logged as warnings -- startup never crashes.
+
+    Returns the list of key names that were hydrated (names only).
+    """
+    dirs = list(_SECRET_DIRS)
+    if extra_dirs:
+        dirs = list(extra_dirs) + dirs
+
+    hydrated: list[str] = []
+    seen_dirs: set[str] = set()
+
+    for d in dirs:
+        try:
+            resolved = str(d.resolve())
+            if resolved in seen_dirs:
+                continue
+            seen_dirs.add(resolved)
+
+            if not d.exists() or not d.is_dir():
+                continue
+
+            for entry in d.iterdir():
+                try:
+                    if not entry.is_file():
+                        continue
+                    name = entry.name
+                    if not _ENV_KEY_RE.match(name):
+                        continue
+                    if os.environ.get(name):
+                        # Already set -- do not overwrite.
+                        continue
+                    value = entry.read_text(encoding="utf-8").strip()
+                    if not value:
+                        continue
+                    os.environ[name] = value
+                    hydrated.append(name)
+                    _log.info("secret_file_hydrated key=%s source=%s", name, d)
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "secret_file_hydration_skipped entry=%s err=%s", entry, exc
+                    )
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("secret_file_hydration_dir_error dir=%s err=%s", d, exc)
+
+    if hydrated:
+        _log.info(
+            "secret_file_hydration_complete count=%d keys=%s",
+            len(hydrated),
+            sorted(hydrated),
+        )
+    return hydrated
+
+
+# Hydrate from secret files BEFORE any os.environ.get() call below so that
+# downstream config variables pick up values whether they were supplied as
+# real environment variables or as Render secret files.
+hydrate_env_from_secret_files()
 
 
 def _env(key: str, default: str = "") -> str:
@@ -122,6 +220,18 @@ BILLING_RECEIPT_SIGNING_SECRET = _env(
     "billing-secret-CHANGE-IN-PRODUCTION",
 )
 DEFAULT_BUDGET_CAP_USD = _env_float("DEFAULT_BUDGET_CAP_USD", 10.0)
+
+# ---------------------------------------------------------------------------
+# Credits billing (slice 3+4)
+# ---------------------------------------------------------------------------
+# CREDITS_ENABLED=false (default) means the server behaves exactly as today.
+# Flip to true ONLY after: (a) Polar packages created with metadata.credits,
+# (b) POLAR_PACKAGES env set, (c) end-to-end credit path verified.
+CREDITS_ENABLED = _env_bool("CREDITS_ENABLED", default=False)
+# Courtesy grant for existing paid-key holders when CREDITS_ENABLED first flips on.
+GRANDFATHER_CREDITS = _env_int("GRANDFATHER_CREDITS", 1000)
+# Free-signup grant: credits issued to a new account with no Polar purchase.
+FREE_SIGNUP_CREDITS = _env_int("FREE_SIGNUP_CREDITS", 100)
 
 # ---------------------------------------------------------------------------
 # x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)
