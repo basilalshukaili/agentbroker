@@ -28,6 +28,7 @@ Security invariants:
 """
 from __future__ import annotations
 
+import hashlib as _hashlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -479,6 +480,82 @@ async def portal_key_reveal(hl_portal: Optional[str] = Cookie(None)) -> JSONResp
             return JSONResponse({"ok": True, "key": issued["token"]})
         return JSONResponse({"ok": False, "reason": "key_issue_failed"})
     return JSONResponse({"ok": True, "key": key_token})
+
+
+@router.post("/key/generate")
+async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONResponse:
+    """
+    Mint a free-tier API key for the logged-in user (email-verified, no purchase required).
+
+    If a key already exists on the account, returns {ok: true, already: true}.
+    If no key: mints a free key using the same customer_id derivation as /keys/verify
+    (free_<sha256(email)[:16]>, budget_cap_usd=0.0, 90-day TTL), stores it on the
+    credit_accounts row, and returns {ok: true, generated: true}.
+
+    The raw key is NEVER returned here — call POST /key/reveal to retrieve it once.
+    """
+    email = _require_session(hl_portal)
+    account = await _get_account(email)
+
+    # Key already exists — idempotent no-op
+    if account and account.get("key_token"):
+        return JSONResponse({"ok": True, "already": True})
+
+    # Mint a free-tier JWT using the same deterministic customer_id as /keys/verify
+    customer_id = f"free_{_hashlib.sha256(email.encode()).hexdigest()[:16]}"
+    _FREE_KEY_TTL_S = 90 * 86400  # 90 days, same as key_requests.py
+
+    from agent_interface.identity import issue_token, TokenRequest
+    token_resp = issue_token(TokenRequest(
+        agent_id=customer_id,
+        principal_id=customer_id,
+        principal_type="human",
+        allowed_operations=["*"],
+        budget_cap_usd=0.0,   # free tier — no credit spend
+        allowed_verticals=["*"],
+        ttl_seconds=_FREE_KEY_TTL_S,
+    ))
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if account:
+        # Account exists but has no key — update in place
+        ok = await _update_account(
+            account.get("account_id", ""),
+            {
+                "key_token": token_resp.token,
+                "key_jti": token_resp.agent_id,
+                "updated_at": now_iso,
+            },
+        )
+        if not ok:
+            logger.error("portal.key_generate update_account failed email=%s", email)
+            return JSONResponse({"ok": False, "reason": "key_store_failed"})
+    else:
+        # No account yet — create one with the free key attached
+        try:
+            from storage.supabase_client import upsert_row
+            await upsert_row(
+                "credit_accounts",
+                {
+                    "account_id": customer_id,
+                    "email": email,
+                    "balance_credits": 0,
+                    "plan": "free",
+                    "key_token": token_resp.token,
+                    "key_jti": token_resp.agent_id,
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                },
+                on_conflict="email",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("portal.key_generate upsert_account failed email=%s err=%s", email, exc)
+            return JSONResponse({"ok": False, "reason": "key_store_failed"})
+
+    logger.info("portal.free_key_generated customer_id=%s", customer_id)
+    # Raw key intentionally NOT returned — call /key/reveal to retrieve it.
+    return JSONResponse({"ok": True, "generated": True})
 
 
 @router.post("/key/regenerate")

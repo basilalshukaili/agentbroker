@@ -444,3 +444,137 @@ class TestPolarPackages:
         with patch.dict(os.environ, {"POLAR_PACKAGES": "not-valid-json"}):
             result = product_id_for_package("starter")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# POST /portal/key/generate
+# ---------------------------------------------------------------------------
+
+class TestPortalKeyGenerate:
+    """
+    Tests for POST /portal/key/generate.
+
+    Invariants verified:
+    - Mints a free key when no key exists on the account.
+    - Idempotent: returns already=true when a key already exists.
+    - Creates a new account row when no account exists.
+    - Raw key NEVER appears in the response (only /key/reveal returns it).
+    - Unauthenticated calls (no/invalid session) raise HTTPException 401.
+    """
+
+    def _dummy_cookie(self) -> str:
+        """Produce a valid-looking cookie string (session check is mocked)."""
+        return "dummy-session-cookie"
+
+    def test_generate_mints_key_when_no_key(self):
+        """When account exists but has no key, generate mints one and returns generated=true."""
+        from agent_interface.portal import portal_key_generate
+        import json
+
+        mock_account = {
+            "account_id": "free_abc123",
+            "email": "user@example.com",
+            "key_token": None,
+            "plan": "free",
+        }
+
+        with (
+            patch("agent_interface.portal._require_session", return_value="user@example.com"),
+            patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=mock_account),
+            patch("agent_interface.portal._update_account", new_callable=AsyncMock, return_value=True),
+        ):
+            result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
+
+        body = json.loads(result.body)
+        assert body["ok"] is True
+        assert body.get("generated") is True
+        assert "key" not in body
+        assert "token" not in body
+
+    def test_generate_idempotent_when_key_exists(self):
+        """When account already has a key_token, returns already=true without re-minting."""
+        from agent_interface.portal import portal_key_generate
+        import json
+
+        mock_account = {
+            "account_id": "free_abc123",
+            "email": "user@example.com",
+            "key_token": "existing.jwt.token",
+            "plan": "free",
+        }
+
+        with (
+            patch("agent_interface.portal._require_session", return_value="user@example.com"),
+            patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=mock_account),
+        ):
+            result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
+
+        body = json.loads(result.body)
+        assert body["ok"] is True
+        assert body.get("already") is True
+        assert "key" not in body
+        assert "token" not in body
+
+    def test_generate_creates_account_when_none_exists(self):
+        """When no account row exists, generate creates one via upsert_row and returns generated=true."""
+        from agent_interface.portal import portal_key_generate
+        import json
+
+        with (
+            patch("agent_interface.portal._require_session", return_value="new@example.com"),
+            patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=None),
+            patch("storage.supabase_client.upsert_row", new_callable=AsyncMock, return_value={"account_id": "free_xyz"}),
+        ):
+            result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
+
+        body = json.loads(result.body)
+        assert body["ok"] is True
+        assert body.get("generated") is True
+        assert "key" not in body
+        assert "token" not in body
+
+    def test_generate_raw_key_never_returned_in_any_path(self):
+        """The raw key string must never appear in the /key/generate response body."""
+        from agent_interface.portal import portal_key_generate
+        import json
+
+        # Path 1: new key minted for existing account
+        mock_account_no_key = {
+            "account_id": "free_abc",
+            "email": "user@example.com",
+            "key_token": None,
+        }
+        with (
+            patch("agent_interface.portal._require_session", return_value="user@example.com"),
+            patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=mock_account_no_key),
+            patch("agent_interface.portal._update_account", new_callable=AsyncMock, return_value=True),
+        ):
+            result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
+        body_text = result.body.decode()
+        assert '"key"' not in body_text
+        assert '"token"' not in body_text
+
+        # Path 2: key already exists
+        mock_account_with_key = {
+            "account_id": "free_abc",
+            "email": "user@example.com",
+            "key_token": "some.jwt.value",
+        }
+        with (
+            patch("agent_interface.portal._require_session", return_value="user@example.com"),
+            patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=mock_account_with_key),
+        ):
+            result2 = run(portal_key_generate(hl_portal=self._dummy_cookie()))
+        body_text2 = result2.body.decode()
+        assert '"key"' not in body_text2
+        assert '"token"' not in body_text2
+
+    def test_generate_unauthenticated_raises_http_401(self):
+        """Without a valid session cookie, portal_key_generate raises HTTPException 401."""
+        from agent_interface.portal import portal_key_generate
+        from fastapi import HTTPException
+        import pytest as _pytest
+
+        with _pytest.raises(HTTPException) as exc_info:
+            run(portal_key_generate(hl_portal=None))
+        assert exc_info.value.status_code == 401
