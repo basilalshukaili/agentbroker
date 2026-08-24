@@ -311,6 +311,74 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
     except Exception as e:  # noqa: BLE001
         logger.exception("polar_token_issue_failed err=%s", e)
 
+    # --- SLICE 4: Credit grant on purchase ---
+    # Maps the purchased Polar product -> credits and grants them to the
+    # sub_{customer_id} credit account. Idempotent: keyed on order_id so a
+    # re-delivered webhook never double-grants. Reuses the same
+    # polar_order_events idempotency already checked above.
+    # The account_id convention matches resolve_account (agent_id from JWT):
+    # issue_subscription_token sets agent_id = f"sub_{customer_id}".
+    try:
+        import os as _os_c
+        if _os_c.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+            from billing.packages import credits_for_product
+            from billing.credits import grant as _credit_grant
+
+            product_obj = data.get("product") or {}
+            product_name = (product_obj.get("name") if isinstance(product_obj, dict) else "") or ""
+            product_id = (product_obj.get("id") if isinstance(product_obj, dict) else "") or ""
+            product_meta = (product_obj.get("metadata") if isinstance(product_obj, dict) else None) or {}
+
+            pkg_credits = credits_for_product(
+                product_name=product_name,
+                product_id=product_id,
+                product_metadata=product_meta,
+            )
+            if pkg_credits > 0 and order_id:
+                credit_account = f"sub_{customer_id}"
+                await _credit_grant(
+                    account_id=credit_account,
+                    amount=pkg_credits,
+                    source="polar",
+                    idempotency_key=order_id,
+                    order_id=order_id,
+                )
+                logger.info(
+                    "polar_credit_grant_applied account=%s credits=%d order_id=%s",
+                    credit_account, pkg_credits, order_id,
+                )
+            elif pkg_credits <= 0:
+                logger.warning(
+                    "polar_credit_grant_skipped: no credits resolved for "
+                    "product_name=%r product_id=%r order_id=%s",
+                    product_name, product_id, order_id,
+                )
+
+            # SLICE 6: Send WELCOME email with credits, API key, and quickstart.
+            # Only sent when we have an email and a token was successfully issued.
+            if email and token_value and pkg_credits > 0:
+                try:
+                    from billing.emails import send_welcome_email as _welcome
+                    # Derive USD amount from the order's amount field (cents -> USD).
+                    raw_amount = data.get("amount") or data.get("total_amount")
+                    amount_usd_val: float | None = None
+                    if isinstance(raw_amount, (int, float)):
+                        amount_usd_val = float(raw_amount) / 100
+                    import asyncio as _asyncio
+                    _asyncio.create_task(_welcome(
+                        email=email,
+                        credits=pkg_credits,
+                        api_key=token_value,
+                        order_id=order_id or None,
+                        amount_usd=amount_usd_val,
+                    ))
+                except Exception as _we:  # noqa: BLE001
+                    logger.warning("polar_welcome_email_failed customer=%s err=%s", customer_id, _we)
+
+    except Exception as e:  # noqa: BLE001
+        logger.warning("polar_credit_grant_failed customer=%s order=%s err=%s", customer_id, order_id, e)
+    # --- END SLICE 4 ---
+
     # Email the key (best-effort, reuses the Resend path).
     if token_value and email:
         try:

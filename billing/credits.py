@@ -151,6 +151,111 @@ async def grant(account_id: str, amount: int, source: str = "grant",
     })
 
 
+async def ensure_grandfather(account_id: str) -> bool:
+    """Ensure a paid credit account exists; grant GRANDFATHER_CREDITS on first encounter.
+
+    Called from the dispatch path BEFORE reserve so a new paid-key holder never
+    hits an empty account. Idempotent: the credit_grant RPC uses ON CONFLICT DO
+    NOTHING on the idempotency_key, so the grant fires exactly once even if this
+    runs multiple times concurrently.
+
+    Always fail-open (never raises): a missing courtesy grant must not block a
+    legitimate paid call. Charges are still fail-closed via reserve().
+
+    Returns True if a grandfather grant was applied, False otherwise.
+    """
+    import os as _os
+    try:
+        existing = await get_balance(account_id)
+        if existing is not None:
+            # Account already exists with a row -- no grant needed
+            return False
+        # First time we see this paid account -- apply one-time courtesy grant
+        grandfather_credits = int(_os.getenv("GRANDFATHER_CREDITS", "1000"))
+        if grandfather_credits <= 0:
+            return False
+        await grant(
+            account_id=account_id,
+            amount=grandfather_credits,
+            source="grandfather",
+            idempotency_key=f"grandfather_{account_id}",
+        )
+        log.info(
+            "grandfather_grant_applied account=%s amount=%d",
+            account_id, grandfather_credits,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ensure_grandfather failed account=%s err=%s", account_id, exc)
+        return False
+
+
+async def _maybe_low_balance_nudge(account_id: str, balance: int) -> None:
+    """Fire a low-balance email nudge when balance < 500cr and not recently notified.
+
+    Dedup: reads low_balance_notified_at from credit_accounts. If the field is
+    None or older than 24h, sends the nudge and updates the timestamp. Always
+    fails silently (best-effort, never raises). Called from run_metered_tool
+    after a successful commit.
+    """
+    _LOW_BALANCE = 500
+    _NOTIFY_INTERVAL_S = 86400  # 24 hours
+
+    if balance >= _LOW_BALANCE:
+        return
+
+    try:
+        import os as _os
+        import httpx as _httpx
+        from datetime import datetime, timezone
+
+        url = _os.getenv("SUPABASE_URL", "").rstrip("/")
+        key = _os.getenv("SUPABASE_SERVICE_KEY", "") or _os.getenv("SUPABASE_ANON_KEY", "")
+        if not url or not key:
+            return
+
+        # Read the account row for email + low_balance_notified_at.
+        from storage.supabase_client import select_rows
+        rows = await select_rows("credit_accounts", filters={"account_id": account_id}, limit=1)
+        if not rows:
+            return
+        row = rows[0]
+        email = row.get("email") or ""
+        if not email:
+            return
+
+        # Dedup check: skip if notified within 24h.
+        notified_at_str = row.get("low_balance_notified_at")
+        if notified_at_str:
+            try:
+                notified_ts = datetime.fromisoformat(notified_at_str.replace("Z", "+00:00")).timestamp()
+                if (datetime.now(timezone.utc).timestamp() - notified_ts) < _NOTIFY_INTERVAL_S:
+                    return  # notified recently, skip
+            except Exception:
+                pass
+
+        # Send the nudge.
+        from billing.emails import send_low_balance_email
+        await send_low_balance_email(email=email, balance=balance)
+
+        # Update low_balance_notified_at (PATCH, best-effort).
+        now_iso = datetime.now(timezone.utc).isoformat()
+        async with _httpx.AsyncClient(timeout=6.0) as client:
+            await client.patch(
+                f"{url}/rest/v1/credit_accounts",
+                headers={
+                    "apikey": key,
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+                params={"account_id": f"eq.{account_id}"},
+                json={"low_balance_notified_at": now_iso},
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.debug("_maybe_low_balance_nudge failed account=%s err=%s", account_id, exc)
+
+
 async def get_balance(account_id: str) -> Optional[int]:
     """Return the current balance in credits for `account_id`, or None if not found.
 
@@ -281,4 +386,14 @@ async def run_metered_tool(
             "charged": actual_charged,
             "balance": balance_after,
         }
+
+    # --- Step 5: Fire low-balance nudge (slice 6) ---
+    # Non-blocking; never raises. Dedup enforced by low_balance_notified_at (24h).
+    if not is_error and balance_after < 500:
+        try:
+            import asyncio as _asyncio
+            _asyncio.create_task(_maybe_low_balance_nudge(account_id, balance_after))
+        except Exception:  # noqa: BLE001
+            pass
+
     return receipt

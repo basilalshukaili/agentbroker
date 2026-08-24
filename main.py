@@ -38,6 +38,7 @@ from agent_interface.well_known import (
 )
 from fastapi.responses import PlainTextResponse
 from agent_interface.key_requests import router as key_requests_router
+from agent_interface.portal import router as portal_router
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,9 @@ app = FastAPI(
 
 # Register free-key request/verify routes (/keys/request, /keys/verify)
 app.include_router(key_requests_router)
+
+# Register portal routes (/portal/*)
+app.include_router(portal_router)
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +223,165 @@ async def _x402_rest_payment_gate(request: Request, call_next):
                     headers={"Cache-Control": "no-store"},
                 )
     return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# SLICE 3: Credits gate for the REST /ops write path
+# ---------------------------------------------------------------------------
+# Mirrors the MCP credit branch: reserve -> dispatch -> commit/release.
+# Gated by CREDITS_ENABLED (default false) so existing behavior is unchanged.
+# ONE rail guarantee: skips when x402 is enabled (x402 owns that rail).
+# Free keys (free_*) fall through to the existing 50/day path.
+# Bypass risk: without this, an agent could call /ops/send_message directly
+# and get paid work for free (bypassing the MCP credit branch).
+
+@app.middleware("http")
+async def _credits_rest_payment_gate(request: Request, call_next):
+    """Credits gate for /ops writes -- activates only when CREDITS_ENABLED=true.
+
+    When false: completely transparent (zero risk to existing behavior).
+    When true: reserve MAX -> dispatch -> commit on success / release on failure.
+    ONE rail: skips when x402 is enabled (x402_gate owns that rail).
+    """
+    import os as _os_c
+    if not _os_c.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+        return await call_next(request)
+
+    if request.method != "POST":
+        return await call_next(request)
+
+    tool = _X402_REST_PAID.get(request.url.path)
+    if not tool:
+        return await call_next(request)
+
+    # ONE rail: x402 handles its own rail; credits gate skips
+    from billing.x402_gate import enabled as _x402_enabled
+    if _x402_enabled():
+        return await call_next(request)
+
+    from billing import credits as _cr
+    from billing.pricing import is_paid as _is_paid, max_credits as _max_cr, credit_cents as _cc
+    if not _is_paid(tool):
+        return await call_next(request)
+
+    headers_dict = dict(request.headers)
+    account_id = _cr.resolve_account(headers_dict)
+
+    if not account_id or _cr.is_free_key(account_id):
+        # Anonymous or free key -- fall through to existing auth gate
+        return await call_next(request)
+
+    # Grandfather: ensure account exists (idempotent, fail-open)
+    try:
+        await _cr.ensure_grandfather(account_id)
+    except Exception:
+        pass
+
+    # Reserve MAX credits (fail closed on Supabase error)
+    import uuid as _uuid
+    import json as _json_c
+    import logging as _log_mod
+    _log_c = _log_mod.getLogger("smb_broker.credits_rest")
+
+    max_credits_val = _max_cr(tool)
+    hold_id = f"hold_{_uuid.uuid4().hex}"
+
+    try:
+        reserve_res = await _cr.reserve(
+            account_id=account_id,
+            amount=max_credits_val,
+            hold_id=hold_id,
+            operation=tool,
+        )
+    except RuntimeError:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "failure",
+                "reason_code": "billing_unavailable",
+                "human_message": "Credits billing temporarily unavailable. Please retry.",
+            },
+        )
+
+    if not reserve_res.get("ok"):
+        balance = reserve_res.get("balance", reserve_res.get("balance_after", 0))
+        return JSONResponse(
+            status_code=402,
+            content={
+                "status": "failure",
+                "reason_code": "insufficient_credits",
+                "human_message": (
+                    f"Insufficient credits to call {tool!r}. "
+                    f"Required: {max_credits_val}, balance: {balance}. "
+                    f"Top up at https://hatchloop.dev/portal#topup"
+                ),
+                "credits": {"charged": 0, "balance": balance},
+            },
+        )
+
+    # Dispatch the actual /ops handler
+    response = await call_next(request)
+
+    # Read body to check success/failure (needed for commit vs release decision)
+    body_chunks: list[bytes] = []
+    async for chunk in response.body_iterator:
+        body_chunks.append(chunk)
+    body_bytes = b"".join(body_chunks)
+
+    try:
+        receipt = _json_c.loads(body_bytes.decode("utf-8"))
+    except Exception:
+        receipt = {}
+
+    from billing.x402_gate import _receipt_is_error as _is_err
+    is_failure = _is_err(receipt) if isinstance(receipt, dict) else True
+    if response.status_code >= 400:
+        is_failure = True
+
+    if is_failure:
+        try:
+            await _cr.release(hold_id, reason="tool_failure")
+        except Exception as e:
+            _log_c.error("credits_rest release failed hold=%s err=%s", hold_id, e)
+        # Return original response unchanged
+    else:
+        # Commit actual cost from receipt.cost.amount, else fixed price
+        cost_rec = receipt.get("cost") if isinstance(receipt, dict) else None
+        if isinstance(cost_rec, dict) and cost_rec.get("amount") is not None:
+            actual_cr = round(float(cost_rec["amount"]) * 100)
+        else:
+            actual_cr = _cc(tool)
+        actual_cr = max(0, min(actual_cr, max_credits_val))
+
+        try:
+            commit_res = await _cr.commit(hold_id, actual_cr)
+            bal_after = commit_res.get("balance_after", 0)
+        except Exception as e:
+            _log_c.error("credits_rest commit failed hold=%s err=%s", hold_id, e)
+            try:
+                await _cr.release(hold_id, reason="commit_failed")
+            except Exception:
+                pass
+            bal_after = 0
+            actual_cr = 0
+
+        # Inject credits metadata into response body
+        if isinstance(receipt, dict):
+            receipt["credits"] = {"charged": actual_cr, "balance": bal_after}
+            body_bytes = _json_c.dumps(receipt, default=str).encode("utf-8")
+
+    # Reconstruct response (drop Content-Length -- body may have changed)
+    from starlette.responses import Response as _SR
+    safe_headers = {
+        k: v for k, v in dict(response.headers).items()
+        if k.lower() != "content-length"
+    }
+    return _SR(
+        content=body_bytes,
+        status_code=response.status_code,
+        media_type=response.media_type or "application/json",
+        headers=safe_headers,
+    )
 
 
 # ---------------------------------------------------------------------------
