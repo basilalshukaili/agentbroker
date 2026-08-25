@@ -47,10 +47,27 @@ def _build_tool_list() -> list[dict]:
     manifest = get_full_manifest()
     tools = []
     for op in manifest.get("operations", []):
+        input_schema = op.get("input_schema", {"type": "object"})
+        if op["name"] in _WRITE_TOOLS_REQUIRING_AUTH:
+            # Advertise the retry contract on every write tool: optional
+            # idempotency_key -> replaying the same key within 24h returns the
+            # original receipt with no re-execution and no second charge.
+            import copy as _copy
+            input_schema = _copy.deepcopy(input_schema)
+            props = input_schema.setdefault("properties", {})
+            props.setdefault("idempotency_key", {
+                "type": "string",
+                "maxLength": 128,
+                "description": (
+                    "Optional client-supplied key for safe retries. Replaying "
+                    "the same key within 24h returns the original receipt - "
+                    "the operation is NOT re-executed and NOT re-charged."
+                ),
+            })
         tool = {
             "name": op["name"],
             "description": _format_description_for_llm(op),
-            "inputSchema": op.get("input_schema", {"type": "object"}),
+            "inputSchema": input_schema,
         }
         # MCP annotations help client UIs render tools better. idempotentHint
         # must be tool-specific — retrying a non-idempotent write tool would
@@ -341,6 +358,66 @@ async def _h_tools_list(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
+    """Idempotency wrapper around the real tools/call handler.
+
+    Delivers the advertised retry contract: a write tool called with an
+    `idempotency_key` (argument, popped before handler validation, or an
+    X-Idempotency-Key header) is deduped per (agent scope, tool, key).
+    Replay -> the ORIGINAL response verbatim (no re-execution, no second
+    side effect, NO second charge). Same key + different args ->
+    idempotency_conflict. Only successful responses are stored, so retries
+    after transient failures run again. Wrapping here (above the impl)
+    covers every billing branch: bypass, x402, credits, quota, free.
+    """
+    name = params.get("name")
+    arguments = params.get("arguments")
+    idem_key: Optional[str] = None
+    if isinstance(arguments, dict) and "idempotency_key" in arguments:
+        _v = arguments.pop("idempotency_key")  # pop -> handlers never see it
+        idem_key = str(_v)[:128] if _v else None
+    if not idem_key:
+        _hv = (headers or {}).get("x-idempotency-key", "")
+        idem_key = str(_hv)[:128] if _hv else None
+
+    _scope: Optional[str] = None
+    if idem_key and name in _WRITE_TOOLS_REQUIRING_AUTH:
+        _raw_tok = (headers or {}).get("x-agent-identity", "")
+        if _raw_tok:
+            _aid = _agent_id_from_token(_raw_tok)
+            if _aid != "anonymous":
+                _scope = _aid
+            else:
+                import hashlib as _hl
+                _scope = "tok_" + _hl.sha256(_raw_tok.encode()).hexdigest()[:16]
+
+    if _scope and idem_key:
+        from agent_interface import idempotency_gate as _ig
+        _ah = _ig.args_hash(arguments if isinstance(arguments, dict) else {})
+        _hit = await _ig.get(_scope, name, idem_key)
+        if _hit is not None:
+            if _hit.get("args_hash") != _ah:
+                return {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "status": "failure",
+                        "reason_code": "idempotency_conflict",
+                        "human_message": (
+                            "This idempotency_key was already used with different "
+                            "parameters. Use a new key for a different request."
+                        ),
+                        "retriable": False,
+                    }, indent=2)}],
+                    "isError": True,
+                }
+            return _hit["response"]
+        resp = await _h_tools_call_impl(params, headers)
+        if isinstance(resp, dict) and not resp.get("isError"):
+            await _ig.put(_scope, name, idem_key, _ah, resp)
+        return resp
+
+    return await _h_tools_call_impl(params, headers)
+
+
+async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> dict:
     name = params.get("name")
     arguments = params.get("arguments", {}) or {}
     if not name:
