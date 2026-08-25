@@ -27,6 +27,29 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 _STOP_WORDS = {"stop", "unsubscribe", "cancel", "quit", "end", "revoke"}
 
 
+async def _ask(to: str, question: str) -> None:
+    """Send a clarifying question back on the same channel (service window =
+    free-form text is allowed and free). Best-effort; never raises."""
+    try:
+        from channels.whatsapp.cloud_api import WhatsAppCloudAdapter
+        import os as _os
+        import httpx
+        token = _os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+        phone_id = _os.getenv("WHATSAPP_PHONE_ID", "")
+        if not (token and phone_id):
+            return
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"https://graph.facebook.com/v21.0/{phone_id}/messages",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"},
+                json={"messaging_product": "whatsapp", "to": to,
+                      "type": "text", "text": {"body": question[:4000]}},
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("wa_clarify_send_failed: %s", exc)
+
+
 @router.get("/whatsapp")
 async def verify(
     hub_mode: str = Query("", alias="hub.mode"),
@@ -53,6 +76,8 @@ async def receive(request: Request):
                 value = change.get("value", {}) or {}
                 contacts = {c.get("wa_id"): c.get("profile", {}).get("name")
                             for c in value.get("contacts", []) or []}
+                our_number = ((value.get("metadata") or {})
+                              .get("display_phone_number") or "").replace("+", "")
                 for msg in value.get("messages", []) or []:
                     sender = msg.get("from", "")
                     mtype = msg.get("type", "")
@@ -61,6 +86,8 @@ async def receive(request: Request):
                         text = (msg.get("text") or {}).get("body", "")
                     elif mtype == "button":
                         text = (msg.get("button") or {}).get("text", "")
+                    # Layer 1 substrate: Meta echoes the replied-to message id.
+                    context_wamid = (msg.get("context") or {}).get("id")
                     row = {
                         "wa_message_id": msg.get("id"),
                         "sender": sender,
@@ -91,6 +118,29 @@ async def receive(request: Request):
                             })
                         except Exception as exc:  # noqa: BLE001
                             logger.warning("wa_optout_failed: %s", exc)
+                    # 3. Correlate this reply to the RIGHT conversation.
+                    #    Never guess: ambiguity asks one clarifying question.
+                    try:
+                        from core import conversations as _conv
+                        match = await _conv.correlate_inbound(
+                            business_number=sender, our_number=our_number,
+                            body=text, context_wamid=context_wamid,
+                        )
+                        if match.matched:
+                            await _conv.record_inbound(
+                                match.conversation["conversation_id"],
+                                msg.get("id"), text)
+                            logger.info(
+                                "wa_correlated conv=%s method=%s confidence=%s",
+                                match.conversation["conversation_id"],
+                                match.method, match.confidence)
+                        elif match.ambiguous:
+                            logger.info("wa_ambiguous candidates=%d from=%s",
+                                        len(match.candidates), sender)
+                            await _ask(sender, _conv.clarifying_question(match.candidates))
+                    except Exception as exc:  # noqa: BLE001 - never break intake
+                        logger.warning("wa_correlate_failed: %s", exc)
+
                     stored += 1
                     logger.info("wa_inbound from=%s type=%s len=%d",
                                 sender, mtype, len(text))
