@@ -94,6 +94,17 @@ class WhatsAppCloudAdapter(ChannelAdapter):
                 )
             err = (data.get("error") or {})
             code: Optional[int] = err.get("code")
+            if code == 190:
+                # Meta's Getting-Started token lasts ~24h. Name it precisely so
+                # it is never mistaken for a delivery problem (2026-08-26).
+                return ChannelResponse(
+                    success=False, error_code="whatsapp_token_expired",
+                    error_message=(
+                        "WhatsApp access token expired or invalid. A permanent "
+                        "System User token is required (temporary tokens last 24h)."
+                    ),
+                    raw_response=data,
+                )
             if code in _NEEDS_TEMPLATE_CODES:
                 return ChannelResponse(
                     success=False, error_code="needs_template",
