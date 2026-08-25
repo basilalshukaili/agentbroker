@@ -103,8 +103,8 @@ export function manifestVersion(snapshots: Snapshots): unknown {
   return {
     version: m.service?.version ?? "0.1.0",
     last_updated: "2026-05-05T05:00:00Z",
-    service_name: "smb-broker",
-    operation_count: Array.isArray(m.operations) ? m.operations.length : 13,
+    service_name: "agent-broker",
+    operation_count: Array.isArray(m.operations) ? m.operations.length : 19,
   };
 }
 
