@@ -159,6 +159,7 @@ class ChannelPreference(str, Enum):
     SMS = "sms"
     EMAIL = "email"
     VOICE = "voice"
+    WHATSAPP = "whatsapp"
     AUTO = "auto"
 
 

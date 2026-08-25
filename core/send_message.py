@@ -18,12 +18,14 @@ from channels.sms_email.twilio_sms import TwilioSMSAdapter
 from channels.sms_email.sendgrid_email import SendGridEmailAdapter
 from channels.sms_email.resend_email import ResendEmailAdapter
 from channels.voice_ai.vapi import VapiVoiceAdapter
+from channels.whatsapp.cloud_api import WhatsAppCloudAdapter
 from channels.adapter_interface import ChannelRequest
 from telemetry.metrics import increment_messages_sent
 
 
 _SMS_ADAPTER = TwilioSMSAdapter()
 _VOICE_ADAPTER = VapiVoiceAdapter()
+_WHATSAPP_ADAPTER = WhatsAppCloudAdapter()
 
 # Email provider: Resend is the one we actually own a verified domain on
 # (hatchloop.dev). SendGrid stays as the fallback name for deployments that
@@ -44,6 +46,7 @@ _CHANNEL_COSTS = {
     "email:sendgrid": 0.02,
     "email:resend": 0.02,
     "voice_ai:vapi": 0.30,
+    "whatsapp:cloud_api": 0.01,
 }
 
 
@@ -63,6 +66,8 @@ def _build_channel_chain(preference: ChannelPreference, recipient_id: str) -> li
         chain = [(_EMAIL_CHANNEL, _EMAIL_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
     elif preference == ChannelPreference.VOICE:
         chain = [("voice_ai:vapi", _VOICE_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
+    elif preference == ChannelPreference.WHATSAPP:
+        chain = [("whatsapp:cloud_api", _WHATSAPP_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
     elif is_email:
         chain = [(_EMAIL_CHANNEL, _EMAIL_ADAPTER), ("sms:twilio", _SMS_ADAPTER)]
     else:
@@ -70,7 +75,7 @@ def _build_channel_chain(preference: ChannelPreference, recipient_id: str) -> li
 
     def reachable(channel_name: str) -> bool:
         kind = channel_name.split(":")[0]
-        return (kind == "email") if is_email else (kind in ("sms", "voice_ai"))
+        return (kind == "email") if is_email else (kind in ("sms", "voice_ai", "whatsapp"))
 
     filtered = [c for c in chain if reachable(c[0])]
     return filtered or chain[:1]

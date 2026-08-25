@@ -17,7 +17,7 @@
 
 There are ~60 million long-tail small businesses in the US  -  barbers, plumbers, accountants, home cleaners  -  and they have **no API surface**. AI agents that need to schedule a haircut, get a quote, or send a confirmation today must either drive a browser, cold-call by voice, or give up.
 
-This server is the missing middle layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest  -  Cal.com -> SMS -> voice AI -> email  -  with full TCPA / GDPR / CASL / 10DLC compliance enforced as a non-bypassable gate.
+This server is the missing middle layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest  -  Cal.com -> WhatsApp -> SMS -> voice AI -> email  -  with full TCPA / GDPR / CASL / 10DLC compliance enforced as a non-bypassable gate.
 
 ---
 
@@ -55,7 +55,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
 | 10 | `screen_sanctions` | Check a name or entity against OFAC SDN, EU Consolidated, UN, UK HM Treasury + 40+ lists via OpenSanctions | **free up to daily limit** |
 | 11 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
-| 12 | `send_message` | Send SMS, email, or voice with compliance pre-check enforced | key |
+| 12 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
 | 13 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
 | 14 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
 | 15 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |

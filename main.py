@@ -88,6 +88,10 @@ app.include_router(key_requests_router)
 # Register portal routes (/portal/*)
 app.include_router(portal_router)
 
+# WhatsApp Cloud API webhook (/webhooks/whatsapp) — inbound messages + STOP
+from agent_interface.whatsapp_webhook import router as whatsapp_webhook_router
+app.include_router(whatsapp_webhook_router)
+
 
 # ---------------------------------------------------------------------------
 # Telemetry middleware — single source of truth for request/op counters.

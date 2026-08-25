@@ -12,7 +12,7 @@
   "operations": [
     {
       "name": "find_business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses \u2014 not raw directory results.",
+      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses — not raw directory results.",
       "when_to_use": "Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.",
       "when_not_to_use": "Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.",
       "execution_profile": "sync",
@@ -154,7 +154,7 @@
         "availability_30d": null,
         "supply_network_coverage_by_vertical": null
       },
-      "idempotency": "read-only \u2014 idempotency key not required",
+      "idempotency": "read-only — idempotency key not required",
       "failure_modes": [
         "bad_input",
         "missing_capability",
@@ -165,7 +165,7 @@
       ],
       "examples": [
         {
-          "label": "Happy path \u2014 find hair salon near Atlanta",
+          "label": "Happy path — find hair salon near Atlanta",
           "input": {
             "vertical": "personal_services",
             "location": {
@@ -247,7 +247,7 @@
                 ]
               }
             ],
-            "supply_coverage_note": "This business is reachable via voice AI or SMS only \u2014 no direct scheduling API."
+            "supply_coverage_note": "This business is reachable via voice AI or SMS only — no direct scheduling API."
           }
         }
       ],
@@ -297,7 +297,7 @@
       "name": "verify_business",
       "description": "Confirm that an SMB is real, currently operating, and capable of the requested service. Performs a live capability probe against the business's channel.",
       "when_to_use": "Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').",
-      "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours \u2014 those results are already verified.",
+      "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -349,7 +349,7 @@
         "p50_ms": 500,
         "p95_ms": 2000
       },
-      "idempotency": "read-only \u2014 idempotency key not required",
+      "idempotency": "read-only — idempotency key not required",
       "failure_modes": [
         "bad_input",
         "supply_unreachable",
@@ -394,13 +394,13 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content \u2014 marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp, SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
       "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
-      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations \u2014 use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in \u2014 the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach \u2014 those are out of scope and the rate limiter will throttle abuse.",
+      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
         "Permitted message types: transactional, marketing, reminder, follow_up, notification.",
-        "Marketing messages require a valid consent_record_id at send time \u2014 the gate looks it up in the consent_store and rejects if missing, expired, or revoked.",
+        "Marketing messages require a valid consent_record_id at send time — the gate looks it up in the consent_store and rejects if missing, expired, or revoked.",
         "US SMS marketing requires TCPA prior express written consent + 10DLC campaign registration.",
         "EU/UK recipients require explicit GDPR lawful basis (contract or freely-given consent) for marketing messages.",
         "Canadian recipients require CASL express consent for commercial electronic messages.",
@@ -476,6 +476,7 @@
           "preferred_channel": {
             "type": "string",
             "enum": [
+              "whatsapp",
               "sms",
               "email",
               "voice",
@@ -502,7 +503,7 @@
         "p50_ms": 800,
         "p95_ms": 4000
       },
-      "idempotency": "required \u2014 use Idempotency-Key header to prevent duplicate sends",
+      "idempotency": "required — use Idempotency-Key header to prevent duplicate sends",
       "failure_modes": [
         "bad_input",
         "compliance_violation",
@@ -514,7 +515,7 @@
       ],
       "examples": [
         {
-          "label": "SMS appointment reminder \u2014 happy path",
+          "label": "SMS appointment reminder — happy path",
           "input": {
             "recipient": {
               "id_type": "phone",
@@ -546,7 +547,7 @@
             },
             "message_type": "follow_up",
             "content": {
-              "body": "Hi \u2014 checking back on the plumbing quote I requested yesterday for Maple St. Could you share availability for Thursday?"
+              "body": "Hi — checking back on the plumbing quote I requested yesterday for Maple St. Could you share availability for Thursday?"
             }
           },
           "output": {
@@ -559,7 +560,7 @@
           }
         },
         {
-          "label": "Marketing SMS blocked \u2014 no recorded consent",
+          "label": "Marketing SMS blocked — no recorded consent",
           "input": {
             "recipient": {
               "id_type": "phone",
@@ -588,7 +589,7 @@
             },
             "message_type": "marketing",
             "content": {
-              "body": "Cuts & Co.: Fall sale this Saturday \u2014 20% off cuts + color. Reply STOP to opt out."
+              "body": "Cuts & Co.: Fall sale this Saturday — 20% off cuts + color. Reply STOP to opt out."
             }
           },
           "output": {
@@ -661,7 +662,7 @@
       "name": "capture_lead",
       "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.",
       "when_to_use": "Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.",
-      "when_not_to_use": "Do not use for confirmed bookings \u2014 use schedule_appointment. Do not use for bulk list imports.",
+      "when_not_to_use": "Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
         "Captured lead data is subject to GDPR data subject rights for EU residents.",
@@ -723,7 +724,7 @@
         "p50_ms": 600,
         "p95_ms": 3000
       },
-      "idempotency": "required \u2014 dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
+      "idempotency": "required — dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
       "failure_modes": [
         "bad_input",
         "idempotency_conflict",
@@ -732,7 +733,7 @@
       ],
       "examples": [
         {
-          "label": "Happy path \u2014 lead captured into Square CRM",
+          "label": "Happy path — lead captured into Square CRM",
           "input": {
             "smb_id": "smb_001",
             "prospect": {
@@ -774,11 +775,11 @@
       "name": "schedule_appointment",
       "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form.",
       "when_to_use": "Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id.",
-      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB \u2014 call find_business and verify_business first if needed.",
+      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
         "Voice channel to US recipients requires prior express consent for prerecorded calls (TCPA).",
-        "Voice recording in CA, FL, IL, MD, MA, MT, NV, NH, PA, WA requires two-party consent \u2014 recording-consent prompt fires automatically."
+        "Voice recording in CA, FL, IL, MD, MA, MT, NV, NH, PA, WA requires two-party consent — recording-consent prompt fires automatically."
       ],
       "input_schema": {
         "type": "object",
@@ -856,9 +857,9 @@
       "slo": {
         "p50_ms": 5000,
         "p95_ms": 60000,
-        "note": "async \u2014 p50/p95 reflect time to terminal outcome, not HTTP response"
+        "note": "async — p50/p95 reflect time to terminal outcome, not HTTP response"
       },
-      "idempotency": "required \u2014 prevents double-booking on network retry",
+      "idempotency": "required — prevents double-booking on network retry",
       "failure_modes": [
         "bad_input",
         "supply_unreachable",
@@ -869,7 +870,7 @@
       ],
       "examples": [
         {
-          "label": "Book haircut \u2014 direct API path",
+          "label": "Book haircut — direct API path",
           "input": {
             "smb_id": "smb_001",
             "action": "book",
@@ -894,7 +895,7 @@
           }
         },
         {
-          "label": "Book plumber \u2014 voice AI fallback",
+          "label": "Book plumber — voice AI fallback",
           "input": {
             "smb_id": "smb_044",
             "action": "book",
@@ -966,7 +967,7 @@
     {
       "name": "send_transactional_confirmation",
       "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Guaranteed delivery via redundant channels.",
-      "when_to_use": "Use for any message that MUST be delivered reliably \u2014 OTPs, booking confirmations, receipts. Do not use for marketing.",
+      "when_to_use": "Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing.",
       "when_not_to_use": "Do not use for marketing or promotional messages. Do not use for conversational messages.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
@@ -1030,7 +1031,7 @@
         "p50_ms": 500,
         "p95_ms": 2000
       },
-      "idempotency": "required \u2014 Idempotency-Key prevents double-sends of OTPs and confirmations",
+      "idempotency": "required — Idempotency-Key prevents double-sends of OTPs and confirmations",
       "failure_modes": [
         "bad_input",
         "upstream_failure",
@@ -1074,11 +1075,11 @@
     {
       "name": "handle_inbound",
       "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.",
-      "when_to_use": "Use when an SMB needs inbound message triage \u2014 classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.",
+      "when_to_use": "Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.",
       "when_not_to_use": "Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
-        "Inbound message content may contain PII \u2014 retained per jurisdiction retention policy.",
+        "Inbound message content may contain PII — retained per jurisdiction retention policy.",
         "GDPR data subject deletion requests received via inbound must be escalated immediately."
       ],
       "input_schema": {
@@ -1192,7 +1193,7 @@
       "when_not_to_use": "Do not use as a first resort. Escalate only after automated resolution attempts.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
-        "Context bundle may contain PII \u2014 handled per jurisdiction retention policy.",
+        "Context bundle may contain PII — handled per jurisdiction retention policy.",
         "Recording transcripts included in handoff must have recording consent confirmed."
       ],
       "input_schema": {
@@ -1292,7 +1293,7 @@
       ],
       "user_query_examples": [
         {
-          "user_says": "I'm stuck \u2014 get a human at smb_xyz to call me back",
+          "user_says": "I'm stuck — get a human at smb_xyz to call me back",
           "agent_call": {
             "tool": "escalate_to_human",
             "arguments": {
@@ -1308,7 +1309,7 @@
       "name": "get_status",
       "description": "Query the current state of any in-flight async operation by operation_id.",
       "when_to_use": "Use to poll the state of a pending_async operation when no webhook callback has arrived or to check progress.",
-      "when_not_to_use": "Do not poll more frequently than once per 10 seconds \u2014 use webhook delivery for real-time updates instead.",
+      "when_not_to_use": "Do not poll more frequently than once per 10 seconds — use webhook delivery for real-time updates instead.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1381,7 +1382,7 @@
       "name": "get_outcome",
       "description": "Retrieve the final OutcomeReceipt for a completed operation.",
       "when_to_use": "Use after get_status returns success/failure/partial to retrieve the full result with cost and reason codes.",
-      "when_not_to_use": "Do not use for operations still in pending/executing state \u2014 use get_status first.",
+      "when_not_to_use": "Do not use for operations still in pending/executing state — use get_status first.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1437,9 +1438,9 @@
     },
     {
       "name": "preview_cost",
-      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within \u00b15% of preview.",
+      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview.",
       "when_to_use": "Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed.",
-      "when_not_to_use": "Do not use in a hot loop \u2014 cache the result for at least 60 seconds if repeating the same preview.",
+      "when_not_to_use": "Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1491,7 +1492,7 @@
           },
           "cost_accuracy_slo": {
             "type": "string",
-            "const": "\u00b15%"
+            "const": "±5%"
           }
         }
       },
@@ -1528,7 +1529,7 @@
             "estimated_latency_p50_ms": 5000,
             "success_probability_estimate": 0.88,
             "channel_likely": "direct_api:square",
-            "cost_accuracy_slo": "\u00b15%"
+            "cost_accuracy_slo": "±5%"
           }
         }
       ],
@@ -1645,7 +1646,7 @@
       "name": "check_booking_link",
       "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.",
       "when_to_use": "Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt.",
-      "when_not_to_use": "Do not use to confirm the page is currently live/available \u2014 this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
+      "when_not_to_use": "Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1696,7 +1697,7 @@
           },
           "checked_live": {
             "type": "boolean",
-            "description": "Always false \u2014 this is an offline classification, the page is never fetched."
+            "description": "Always false — this is an offline classification, the page is never fetched."
           }
         }
       },
@@ -1769,9 +1770,9 @@
     },
     {
       "name": "import_booking_url",
-      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent \u2014 calling twice returns the same smb_id.",
+      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
       "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.",
-      "when_not_to_use": "Do not use if the user only describes a business by name without a URL \u2014 call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
+      "when_not_to_use": "Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1840,7 +1841,7 @@
           },
           "smb_id": {
             "type": "string",
-            "description": "Stable identifier \u2014 pass to schedule_appointment, send_message, or capture_lead next."
+            "description": "Stable identifier — pass to schedule_appointment, send_message, or capture_lead next."
           },
           "platform": {
             "type": "string",
@@ -1884,7 +1885,7 @@
           }
         },
         {
-          "user_says": "I want to see Dr. Dupont \u2014 https://www.doctolib.fr/dentiste/paris/jean-dupont",
+          "user_says": "I want to see Dr. Dupont — https://www.doctolib.fr/dentiste/paris/jean-dupont",
           "agent_call": {
             "tool": "import_booking_url",
             "arguments": {
@@ -1959,14 +1960,14 @@
     },
     {
       "name": "call_business",
-      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page \u2014 only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers \u2014 but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
-      "when_to_use": "Use when the target business has NO booking URL and NO API \u2014 only a phone number \u2014 and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).",
-      "when_not_to_use": "Do NOT use when the business has a booking URL \u2014 use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing \u2014 the compliance gate and the B2B-only framing reject that.",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+      "when_to_use": "Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).",
+      "when_not_to_use": "Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
         "Business-directed voice call. The opening line identifies the caller as an AI assistant acting on a consumer's behalf.",
         "Recording consent enforced per jurisdiction (two-party-consent states/countries get a spoken consent prompt before recording).",
-        "Not for consumer-directed autodialing or prerecorded marketing (TCPA) \u2014 objective must be an operational business question."
+        "Not for consumer-directed autodialing or prerecorded marketing (TCPA) — objective must be an operational business question."
       ],
       "input_schema": {
         "type": "object",
@@ -2019,7 +2020,7 @@
         "p50_ms": 45000,
         "p95_ms": 180000
       },
-      "idempotency": "NOT idempotent \u2014 each call places a new phone call. Do not retry a call_business that returned pending_async; poll get_outcome instead.",
+      "idempotency": "NOT idempotent — each call places a new phone call. Do not retry a call_business that returned pending_async; poll get_outcome instead.",
       "failure_modes": [
         "bad_input",
         "voice_not_provisioned",
@@ -2053,9 +2054,9 @@
     },
     {
       "name": "check_compliance",
-      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run \u2014 but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
-      "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated \u2014 anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
-      "when_not_to_use": "Do not treat a legal=true as a permanent license \u2014 the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+      "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
+      "when_not_to_use": "Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -2123,7 +2124,7 @@
           },
           "checked_live": {
             "type": "boolean",
-            "description": "Always false \u2014 this is a gate decision preview, not a live delivery."
+            "description": "Always false — this is a gate decision preview, not a live delivery."
           }
         }
       },
@@ -2134,7 +2135,7 @@
         "p50_ms": 15,
         "p95_ms": 80
       },
-      "idempotency": "read-only \u2014 no send, no audit write, no idempotency key required",
+      "idempotency": "read-only — no send, no audit write, no idempotency key required",
       "failure_modes": [
         "bad_input"
       ],
@@ -2159,7 +2160,7 @@
           }
         },
         {
-          "label": "Marketing SMS blocked \u2014 no recorded consent",
+          "label": "Marketing SMS blocked — no recorded consent",
           "input": {
             "recipient_id": "+14045550200",
             "content": "20% off this week only!",
@@ -2400,7 +2401,9 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -2412,7 +2415,10 @@
           },
           "type": {
             "type": "string",
-            "enum": ["person", "entity"],
+            "enum": [
+              "person",
+              "entity"
+            ],
             "description": "Optional entity type hint. 'person' for individuals, 'entity' for organizations/companies. Omit to screen both."
           }
         }
@@ -2429,23 +2435,45 @@
             "items": {
               "type": "object",
               "properties": {
-                "name": {"type": "string", "description": "Name as it appears on the sanctions list"},
-                "list": {"type": "string", "description": "Sanctions list name (e.g. OFAC-SDN, EU-Financial-Sanctions)"},
-                "match_score": {"type": "number", "description": "Match confidence 0.0-1.0 (higher = more confident)"},
-                "program": {"type": "string", "description": "Sanctions program (e.g. SDGT, IRAN, RUSSIA-EO14024)"},
-                "entity_type": {"type": "string", "description": "INDIVIDUAL, ENTITY, VESSEL, or AIRCRAFT"},
-                "source_url": {"type": "string", "description": "URL of the authoritative source record"}
+                "name": {
+                  "type": "string",
+                  "description": "Name as it appears on the sanctions list"
+                },
+                "list": {
+                  "type": "string",
+                  "description": "Sanctions list name (e.g. OFAC-SDN, EU-Financial-Sanctions)"
+                },
+                "match_score": {
+                  "type": "number",
+                  "description": "Match confidence 0.0-1.0 (higher = more confident)"
+                },
+                "program": {
+                  "type": "string",
+                  "description": "Sanctions program (e.g. SDGT, IRAN, RUSSIA-EO14024)"
+                },
+                "entity_type": {
+                  "type": "string",
+                  "description": "INDIVIDUAL, ENTITY, VESSEL, or AIRCRAFT"
+                },
+                "source_url": {
+                  "type": "string",
+                  "description": "URL of the authoritative source record"
+                }
               }
             }
           },
           "lists_screened": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "Human-readable list of which sanctions lists were actually queried."
           },
           "sources_queried": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "API/data URLs that were called during screening."
           },
           "screened_at": {
@@ -2459,7 +2487,9 @@
           },
           "sources_unavailable": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "Sources that were attempted but unavailable (fail-open: partial results returned)."
           }
         }
@@ -2496,7 +2526,11 @@
       "examples": [
         {
           "label": "Screen a known sanctioned individual",
-          "input": {"name": "Kim Jong-un", "country": "KP", "type": "person"},
+          "input": {
+            "name": "Kim Jong-un",
+            "country": "KP",
+            "type": "person"
+          },
           "output": {
             "matched": true,
             "matches": [
@@ -2515,7 +2549,9 @@
         },
         {
           "label": "Screen a clean (non-sanctioned) name",
-          "input": {"name": "Jane Smith"},
+          "input": {
+            "name": "Jane Smith"
+          },
           "output": {
             "matched": false,
             "matches": [],
@@ -2525,11 +2561,15 @@
         },
         {
           "label": "Partial result when one upstream is down",
-          "input": {"name": "ACME Trading LLC"},
+          "input": {
+            "name": "ACME Trading LLC"
+          },
           "output": {
             "matched": false,
             "matches": [],
-            "sources_unavailable": ["OpenSanctions (OPENSANCTIONS_API_KEY not set)"],
+            "sources_unavailable": [
+              "OpenSanctions (OPENSANCTIONS_API_KEY not set)"
+            ],
             "screened_at": "2026-08-23T00:00:00Z",
             "disclaimer": "Informational screening only, not legal advice; confirm against the official source before acting on any result."
           }
@@ -2540,28 +2580,44 @@
           "user_says": "Screen this vendor before we pay them: ACME Trading LLC, Russia",
           "agent_call": {
             "tool": "screen_sanctions",
-            "arguments": {"name": "ACME Trading LLC", "country": "RU", "type": "entity"}
+            "arguments": {
+              "name": "ACME Trading LLC",
+              "country": "RU",
+              "type": "entity"
+            }
           }
         },
         {
           "user_says": "Is Kim Jong-un on the OFAC list?",
           "agent_call": {
             "tool": "screen_sanctions",
-            "arguments": {"name": "Kim Jong-un", "country": "KP", "type": "person"}
+            "arguments": {
+              "name": "Kim Jong-un",
+              "country": "KP",
+              "type": "person"
+            }
           }
         },
         {
           "user_says": "Run a sanctions check on this person before onboarding",
           "agent_call": {
             "tool": "screen_sanctions",
-            "arguments": {"name": "Ivan Petrov", "country": "RU", "type": "person"}
+            "arguments": {
+              "name": "Ivan Petrov",
+              "country": "RU",
+              "type": "person"
+            }
           }
         },
         {
           "user_says": "Do a compliance check -- is this company sanctioned?",
           "agent_call": {
             "tool": "screen_sanctions",
-            "arguments": {"name": "Mahan Air", "country": "IR", "type": "entity"}
+            "arguments": {
+              "name": "Mahan Air",
+              "country": "IR",
+              "type": "entity"
+            }
           }
         }
       ]
@@ -2575,7 +2631,10 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["product", "destination_country"],
+        "required": [
+          "product",
+          "destination_country"
+        ],
         "properties": {
           "product": {
             "type": "string",
@@ -2595,7 +2654,9 @@
           },
           "parties": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "Optional list of party names to screen (exporter, importer, freight forwarder, end-user, etc.). Each name is screened against OpenSanctions (40+ official lists) and OFAC SDN."
           }
         }
@@ -2612,11 +2673,26 @@
             "items": {
               "type": "object",
               "properties": {
-                "type": {"type": "string", "description": "embargo | sanctions | export_control"},
-                "list": {"type": "string", "description": "Name of the applicable sanctions/control list"},
-                "entity": {"type": "string", "description": "The matched party name, or null for country-level restrictions"},
-                "detail": {"type": "string", "description": "Human-readable restriction detail"},
-                "source_url": {"type": "string", "description": "URL of the authoritative source record"}
+                "type": {
+                  "type": "string",
+                  "description": "embargo | sanctions | export_control"
+                },
+                "list": {
+                  "type": "string",
+                  "description": "Name of the applicable sanctions/control list"
+                },
+                "entity": {
+                  "type": "string",
+                  "description": "The matched party name, or null for country-level restrictions"
+                },
+                "detail": {
+                  "type": "string",
+                  "description": "Human-readable restriction detail"
+                },
+                "source_url": {
+                  "type": "string",
+                  "description": "URL of the authoritative source record"
+                }
               }
             }
           },
@@ -2626,7 +2702,12 @@
           },
           "destination_risk": {
             "type": "string",
-            "enum": ["comprehensive_embargo", "sectoral_sanctions", "elevated_scrutiny", "standard"],
+            "enum": [
+              "comprehensive_embargo",
+              "sectoral_sanctions",
+              "elevated_scrutiny",
+              "standard"
+            ],
             "description": "Risk level of the destination country based on OFAC and export-control programmes."
           },
           "tariff_note": {
@@ -2642,16 +2723,29 @@
             "items": {
               "type": "object",
               "properties": {
-                "party": {"type": "string"},
-                "matched": {"type": "boolean"},
-                "matches": {"type": "array"},
-                "sources_queried": {"type": "array", "items": {"type": "string"}}
+                "party": {
+                  "type": "string"
+                },
+                "matched": {
+                  "type": "boolean"
+                },
+                "matches": {
+                  "type": "array"
+                },
+                "sources_queried": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
               }
             }
           },
           "sources_queried": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "description": "Data sources that were consulted during the check."
           },
           "screened_at": {
@@ -2702,18 +2796,33 @@
       "examples": [
         {
           "label": "Embargoed destination -- Iran",
-          "input": {"product": "laptop computers", "destination_country": "IR"},
+          "input": {
+            "product": "laptop computers",
+            "destination_country": "IR"
+          },
           "output": {
             "restricted": true,
             "destination_risk": "comprehensive_embargo",
-            "restrictions": [{"type": "embargo", "list": "OFAC-Comprehensive-Sanctions-Programme", "entity": null, "detail": "Iran -- OFAC comprehensive sanctions programme...", "source_url": "https://ofac.treasury.gov/countries"}],
+            "restrictions": [
+              {
+                "type": "embargo",
+                "list": "OFAC-Comprehensive-Sanctions-Programme",
+                "entity": null,
+                "detail": "Iran -- OFAC comprehensive sanctions programme...",
+                "source_url": "https://ofac.treasury.gov/countries"
+              }
+            ],
             "tariff_source": "guidance",
             "screened_at": "2026-08-24T00:00:00Z"
           }
         },
         {
           "label": "Clean lane -- US to Canada, common product",
-          "input": {"product": "office furniture", "origin_country": "US", "destination_country": "CA"},
+          "input": {
+            "product": "office furniture",
+            "origin_country": "US",
+            "destination_country": "CA"
+          },
           "output": {
             "restricted": false,
             "destination_risk": "standard",
@@ -2724,18 +2833,39 @@
         },
         {
           "label": "Sanctioned party in the supply chain",
-          "input": {"product": "steel pipes", "destination_country": "DE", "parties": ["Kim Jong-un"]},
+          "input": {
+            "product": "steel pipes",
+            "destination_country": "DE",
+            "parties": [
+              "Kim Jong-un"
+            ]
+          },
           "output": {
             "restricted": true,
             "destination_risk": "standard",
-            "parties_screened": [{"party": "Kim Jong-un", "matched": true, "matches": [{"list": "OFAC-SDN", "match_score": 0.95}]}],
+            "parties_screened": [
+              {
+                "party": "Kim Jong-un",
+                "matched": true,
+                "matches": [
+                  {
+                    "list": "OFAC-SDN",
+                    "match_score": 0.95
+                  }
+                ]
+              }
+            ],
             "tariff_source": "guidance",
             "screened_at": "2026-08-24T00:00:00Z"
           }
         },
         {
           "label": "Russia advisory with HS code provided",
-          "input": {"product": "hydraulic pumps", "hs_code": "8413.50", "destination_country": "RU"},
+          "input": {
+            "product": "hydraulic pumps",
+            "hs_code": "8413.50",
+            "destination_country": "RU"
+          },
           "output": {
             "restricted": false,
             "destination_risk": "sectoral_sanctions",
@@ -2750,28 +2880,48 @@
           "user_says": "Can we ship laptops to Iran?",
           "agent_call": {
             "tool": "map_trade_restriction",
-            "arguments": {"product": "laptop computers", "destination_country": "IR"}
+            "arguments": {
+              "product": "laptop computers",
+              "destination_country": "IR"
+            }
           }
         },
         {
           "user_says": "Screen this supplier before we import from them: Mahan Air, Iran",
           "agent_call": {
             "tool": "map_trade_restriction",
-            "arguments": {"product": "aircraft parts", "destination_country": "US", "parties": ["Mahan Air"]}
+            "arguments": {
+              "product": "aircraft parts",
+              "destination_country": "US",
+              "parties": [
+                "Mahan Air"
+              ]
+            }
           }
         },
         {
           "user_says": "Is exporting hydraulic pumps to Russia restricted?",
           "agent_call": {
             "tool": "map_trade_restriction",
-            "arguments": {"product": "hydraulic pumps", "hs_code": "8413.50", "destination_country": "RU"}
+            "arguments": {
+              "product": "hydraulic pumps",
+              "hs_code": "8413.50",
+              "destination_country": "RU"
+            }
           }
         },
         {
           "user_says": "Check if we can sell medical devices to Germany, supplier is ACME GmbH",
           "agent_call": {
             "tool": "map_trade_restriction",
-            "arguments": {"product": "medical devices", "origin_country": "US", "destination_country": "DE", "parties": ["ACME GmbH"]}
+            "arguments": {
+              "product": "medical devices",
+              "origin_country": "US",
+              "destination_country": "DE",
+              "parties": [
+                "ACME GmbH"
+              ]
+            }
           }
         }
       ]
@@ -2849,5 +2999,5 @@
   },
   "manifest_version": "0.1.0",
   "generated_at": "2026-04-27T00:00:00Z",
-  "slo_data_freshness": "static_seed \u2014 replace with telemetry-driven values at P8"
+  "slo_data_freshness": "static_seed — replace with telemetry-driven values at P8"
 }
