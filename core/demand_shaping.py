@@ -73,11 +73,20 @@ def _parse_ts(v: Any) -> Optional[datetime]:
         return None
 
 
-async def _recent_threads(business_id: str, limit: int = 200) -> list[dict]:
+async def _recent_threads(business_id: str, since: datetime, limit: int = 500) -> list[dict]:
+    """Threads for this business created since `since`, NEWEST FIRST.
+
+    Both the time window and the ordering are pushed into the query: reading an
+    unordered 200-row slice of a repeat business's history and filtering it
+    client-side meant a busy business could escape the budget entirely, because
+    the arbitrary rows returned were mostly old (review 2026-08-26).
+    """
     from storage.supabase_client import select_rows
     try:
         rows = await asyncio.wait_for(
-            select_rows("conversations", filters={"business_id": business_id}, limit=limit),
+            select_rows("conversations", filters={"business_id": business_id},
+                        limit=limit, order="created_at.desc",
+                        gte={"created_at": since.isoformat()}),
             timeout=_SB_TIMEOUT_S,
         )
         return rows or []
@@ -99,27 +108,26 @@ async def check_budget(
     if not business_id:
         return BudgetDecision(allowed=True, limit_hour=limit_h)
 
-    rows = await _recent_threads(business_id)
+    now = _now()
+    day_ago = now - timedelta(days=1)
+    rows = await _recent_threads(business_id, since=day_ago)
     if not rows:
         return BudgetDecision(allowed=True, limit_hour=limit_h)
 
-    now = _now()
-    hour_ago, day_ago = now - timedelta(hours=1), now - timedelta(days=1)
-    used_h = used_d = 0
-    oldest_in_window = now
-    for r in rows:
-        ts = _parse_ts(r.get("created_at"))
-        if not ts:
-            continue
-        if ts > day_ago:
-            used_d += 1
-        if ts > hour_ago:
-            used_h += 1
-            oldest_in_window = min(oldest_in_window, ts)
+    hour_ago = now - timedelta(hours=1)
+    # Keep the actual timestamps: retry_after must be computed from the slot that
+    # genuinely frees capacity, not merely the oldest one (review 2026-08-26 -
+    # with used >> limit the old formula told callers to retry while still over
+    # budget, i.e. an dishonest ETA).
+    in_day = sorted(ts for ts in (_parse_ts(r.get("created_at")) for r in rows) if ts)
+    in_hour = [ts for ts in in_day if ts > hour_ago]
+    used_d, used_h = len(in_day), len(in_hour)
 
     if used_h >= limit_h:
-        # Queue, don't reject: tell the caller exactly when a slot frees up.
-        free_at = oldest_in_window + timedelta(hours=1)
+        # Queue, don't reject: the (used_h - limit_h)-th oldest in-window thread
+        # is the one whose expiry actually opens a slot.
+        idx = min(used_h - limit_h, len(in_hour) - 1)
+        free_at = in_hour[idx] + timedelta(hours=1)
         retry_ms = max(60_000, int((free_at - now).total_seconds() * 1000))
         return BudgetDecision(
             allowed=False, reason_code="business_rate_limited",
@@ -132,17 +140,34 @@ async def check_budget(
             ),
         )
     if used_d >= limit_d:
-        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Rolling 24h window, so the honest ETA is when enough of the oldest
+        # threads age out - not an arbitrary calendar midnight.
+        idx_d = min(used_d - limit_d, len(in_day) - 1)
+        free_at_d = in_day[idx_d] + timedelta(days=1)
         return BudgetDecision(
             allowed=False, reason_code="business_daily_limit",
-            retry_after_ms=int((midnight - now).total_seconds() * 1000),
+            retry_after_ms=max(60_000, int((free_at_d - now).total_seconds() * 1000)),
             used_hour=used_h, limit_hour=limit_h,
             human_message=(
-                f"This business has reached its daily request limit ({limit_d}). "
-                f"Try again tomorrow or choose another business."
+                f"This business has reached its 24h request limit ({limit_d}). "
+                f"Queued, not dropped - retry after the window frees up "
+                f"(see retry_after_ms) or choose another business."
             ),
         )
     return BudgetDecision(allowed=True, used_hour=used_h, limit_hour=limit_h)
+
+
+DIGEST_MAX = 10
+
+
+def digest_slice(requests: list[dict]) -> list[dict]:
+    """The addressable set: exactly what build_digest renders.
+
+    Callers MUST parse replies against this same slice - the header used to
+    announce len(requests) while rendering only 10, so "12 YES" was accepted for
+    an item the business never saw (review 2026-08-26).
+    """
+    return requests[:DIGEST_MAX]
 
 
 def build_digest(business_name: str, requests: list[dict]) -> str:
@@ -154,11 +179,15 @@ def build_digest(business_name: str, requests: list[dict]) -> str:
     """
     if not requests:
         return ""
+    shown = digest_slice(requests)
+    more = len(requests) - len(shown)
     lines = [
-        f"Hi {business_name} - you have {len(requests)} pending "
-        f"{'request' if len(requests) == 1 else 'requests'} via HatchLoop:"
+        f"Hi {business_name} - you have {len(shown)} pending "
+        f"{'request' if len(shown) == 1 else 'requests'} via HatchLoop"
+        + (f" (showing the first {len(shown)} of {len(requests)})" if more > 0 else "")
+        + ":"
     ]
-    for i, r in enumerate(requests[:10], start=1):
+    for i, r in enumerate(shown, start=1):
         who = r.get("end_user_ref") or "a customer"
         what = r.get("intent") or "a booking"
         ref = r.get("ref_token") or ""
@@ -178,9 +207,10 @@ def parse_digest_reply(text: str, requests: list[dict]) -> list[tuple[dict, bool
     global _DIGEST_RE
     if _DIGEST_RE is None:
         _DIGEST_RE = re.compile(r"\b(\d{1,2})\s*[.:)-]?\s*(yes|no|y|n)\b", re.I)
+    shown = digest_slice(requests)      # only what the business actually saw
     out: list[tuple[dict, bool]] = []
     for num, verdict in _DIGEST_RE.findall(text or ""):
         idx = int(num) - 1
-        if 0 <= idx < len(requests):
-            out.append((requests[idx], verdict.lower() in ("yes", "y")))
+        if 0 <= idx < len(shown):
+            out.append((shown[idx], verdict.lower() in ("yes", "y")))
     return out

@@ -32,11 +32,17 @@ class FakeSB:
         self.rows[table].append(dict(row))
         return dict(row)
 
-    async def select_rows(self, table, filters=None, limit=1000):
+    async def select_rows(self, table, filters=None, limit=1000, order=None, gte=None):
         out = []
         for r in self.rows.get(table, []):
-            if all(r.get(k) == v for k, v in (filters or {}).items()):
-                out.append(r)
+            if not all(r.get(k) == v for k, v in (filters or {}).items()):
+                continue
+            if gte and not all(str(r.get(k, "")) >= str(v) for k, v in gte.items()):
+                continue
+            out.append(r)
+        if order:
+            col, _, direction = order.partition(".")
+            out.sort(key=lambda r: str(r.get(col, "")), reverse=(direction == "desc"))
         return out[:limit]
 
 
@@ -231,3 +237,227 @@ def test_webhook_asks_instead_of_guessing_when_ambiguous(fake_sb, monkeypatch):
     assert "Which one" in asked.get("q", "")
     # and NOTHING was routed to a thread
     assert not [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "in"]
+
+
+# ==========================================================================
+# REGRESSION: the 15 defects found by adversarial review (2026-08-26).
+# Each of these routed a reply to the WRONG person, hid a flood, or let a
+# forged request in. They must never come back.
+# ==========================================================================
+
+def test_bare_numbers_are_never_treated_as_references():
+    """CRITICAL#1: "come at 1430" must NOT match ref_token 1430."""
+    assert C.parse_ref("yes, come at 1430") is None
+    assert C.parse_ref("ok, 1000 OMR") is None
+    assert C.parse_ref("booked for 2026-08-27") is None
+    assert C.parse_ref("confirmed #4821") == "4821"       # sigiled still works
+    assert C.parse_ref("sure #  4821 ok") == "4821"       # tolerant of spacing
+
+
+def test_price_before_a_real_ref_does_not_shadow_it():
+    """CRITICAL#1b: first-match-wins let a price hijack a correct reply."""
+    assert C.parse_refs("we can do 2500 for #4821") == ["4821"]
+    assert C.parse_refs("#1111 and #2222") == ["1111", "2222"]
+
+
+def test_clock_time_reply_with_two_live_threads_asks_instead_of_misrouting():
+    """CRITICAL#1 end-to-end: the exact misroute the review reproduced."""
+    sara = _open(end_user_ref="Sara")
+    _open(end_user_ref="Ali")
+    # Sara's thread happens to hold a token that looks like a time.
+    for r in fake_rows(sara["conversation_id"]):
+        r["ref_token"] = "1430"
+    m = asyncio.run(C.correlate_inbound(
+        business_number="96890000001", our_number="15556677792",
+        body="yes, come at 1430"))
+    assert m.ambiguous is True and m.conversation is None
+
+
+def fake_rows(conv_id):
+    """Helper: reach into the active FakeSB rows for a conversation."""
+    import storage.supabase_client as real
+    store = real.select_rows.__self__            # bound method -> FakeSB
+    return [r for r in store.rows["conversations"] if r["conversation_id"] == conv_id]
+
+
+def test_two_quoted_refs_are_ambiguous_not_first_wins():
+    c1 = _open(end_user_ref="Sara")
+    c2 = _open(end_user_ref="Ali")
+    m = asyncio.run(C.correlate_inbound(
+        business_number="96890000001", our_number="15556677792",
+        body=f"#{c1['ref_token']} yes and #{c2['ref_token']} no"))
+    assert m.ambiguous is True and m.conversation is None
+
+
+def test_ref_without_business_scope_never_matches():
+    """CRITICAL#4: an unscoped 4-digit token could hit another business."""
+    conv = _open()
+    assert asyncio.run(C.find_by_ref(conv["ref_token"], None)) is None
+    assert asyncio.run(C.find_by_ref(conv["ref_token"], "")) is None
+
+
+def test_truncated_pair_window_forces_ambiguous_not_false_uniqueness(fake_sb):
+    """CRITICAL#2: a full window means we cannot prove there is only one thread."""
+    for i in range(3):
+        fake_sb.rows["conversations"].append({
+            "conversation_id": f"live{i}", "our_number": "15556677792",
+            "business_number": "96890000001", "state": "open",
+            "ref_token": f"90{i}0", "expires_at": None})
+    live = asyncio.run(C.live_threads_for_pair(
+        "15556677792", "96890000001", limit=2))       # force truncation
+    assert any(r["conversation_id"] == "__truncated__" for r in live)
+    m = asyncio.run(C.correlate_inbound(
+        business_number="96890000001", our_number="15556677792", body="yes"))
+    assert m.ambiguous or not m.matched               # never a false "pair" match
+
+
+def test_reply_to_an_older_message_still_resolves(fake_sb):
+    """HIGH#3: only the LAST wamid was indexed; earlier ones fell through."""
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.FIRST", "first"))
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.SECOND", "second"))
+    m = asyncio.run(C.correlate_inbound(
+        business_number="96890000001", our_number="15556677792",
+        body="yes", context_wamid="wamid.FIRST"))
+    assert m.matched and m.method == "wamid"
+    assert m.conversation["conversation_id"] == conv["conversation_id"]
+
+
+def test_closed_thread_does_not_claim_a_reply_via_wamid(fake_sb):
+    """HIGH#5: layer 1 skipped the liveness check, so a dead thread won."""
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.OLD", "x"))
+    for r in fake_sb.rows["conversations"]:
+        r["state"] = "closed"
+    m = asyncio.run(C.correlate_inbound(
+        business_number="96890000001", our_number="15556677792",
+        body="yes", context_wamid="wamid.OLD"))
+    assert not m.matched
+
+
+def test_missing_business_number_yields_no_match():
+    assert not asyncio.run(C.correlate_inbound(
+        business_number="", our_number="15556677792", body="#1234 yes")).matched
+
+
+def test_budget_counts_recent_traffic_even_with_long_history(fake_sb):
+    """HIGH#7/#8: an unordered slice let a busy business escape the budget."""
+    now = datetime.now(timezone.utc)
+    for i in range(300):          # old noise that used to fill the window
+        fake_sb.rows["conversations"].append({
+            "conversation_id": f"old{i}", "business_id": "biz_busy",
+            "created_at": (now - timedelta(days=5)).isoformat(), "state": "closed"})
+    for i in range(6):            # recent, over the small-tier hourly limit
+        fake_sb.rows["conversations"].append({
+            "conversation_id": f"new{i}", "business_id": "biz_busy",
+            "created_at": (now - timedelta(minutes=2)).isoformat(), "state": "open"})
+    d = asyncio.run(D.check_budget("biz_busy", tier="small"))
+    assert d.allowed is False, "recent flood must still be counted"
+    assert d.reason_code == "business_rate_limited"
+
+
+def test_retry_after_actually_clears_the_window(fake_sb):
+    """MEDIUM#10: retrying exactly when told was refused again."""
+    now = datetime.now(timezone.utc)
+    for i in range(20):                       # far over the limit of 6
+        fake_sb.rows["conversations"].append({
+            "conversation_id": f"f{i}", "business_id": "biz_flood",
+            "created_at": (now - timedelta(minutes=30 - i)).isoformat(), "state": "open"})
+    d = asyncio.run(D.check_budget("biz_flood", tier="small"))
+    assert d.allowed is False
+    # At the advertised retry time, enough threads have aged out to fit one more.
+    future = now + timedelta(milliseconds=d.retry_after_ms)
+    still_in_window = [
+        r for r in fake_sb.rows["conversations"]
+        if r["business_id"] == "biz_flood"
+        and datetime.fromisoformat(r["created_at"]) > future - timedelta(hours=1)]
+    assert len(still_in_window) < 6, "advertised retry time must genuinely free a slot"
+
+
+def test_digest_reply_cannot_accept_an_unshown_item():
+    """LOW#9: header said 12, only 10 rendered, but "12 YES" was accepted."""
+    reqs = [{"ref_token": f"{1000+i}", "end_user_ref": f"U{i}", "intent": "x"}
+            for i in range(12)]
+    msg = D.build_digest("Salon", reqs)
+    assert "showing the first 10 of 12" in msg
+    assert D.parse_digest_reply("12 YES", reqs) == []      # not addressable
+    assert D.parse_digest_reply("10 YES", reqs) == [(reqs[9], True)]
+
+
+# ==========================================================================
+# REGRESSION: webhook hardening (CRITICAL#12, HIGH#11/#14, MEDIUM#13/#15)
+# ==========================================================================
+def _client():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from agent_interface.whatsapp_webhook import router
+    app = FastAPI(); app.include_router(router)
+    return TestClient(app)
+
+
+def test_forged_webhook_is_rejected(monkeypatch):
+    """CRITICAL#12: unsigned POSTs could inject fake business replies."""
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "topsecret")
+    r = _client().post("/webhooks/whatsapp", json=_wh_payload("yes"))
+    assert r.status_code == 403
+
+
+def test_correctly_signed_webhook_is_accepted(monkeypatch, fake_sb):
+    import hashlib, hmac, json as _json
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "topsecret")
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.SIG", "req"))
+    body = _json.dumps(_wh_payload("yes", context_wamid="wamid.SIG")).encode()
+    sig = "sha256=" + hmac.new(b"topsecret", body, hashlib.sha256).hexdigest()
+    r = _client().post("/webhooks/whatsapp", content=body,
+                       headers={"Content-Type": "application/json",
+                                "X-Hub-Signature-256": sig})
+    assert r.status_code == 200 and r.json()["received"] == 1
+
+
+def test_stop_does_not_fall_through_to_correlation(fake_sb, monkeypatch):
+    """HIGH#11: a STOP was recorded as a booking reply AND could trigger a send."""
+    asked = {}
+    import agent_interface.whatsapp_webhook as wh
+
+    async def fake_ask(to, q):
+        asked["hit"] = True
+    monkeypatch.setattr(wh, "_ask", fake_ask)
+    _open(end_user_ref="Sara")
+    _open(end_user_ref="Ali")                 # ambiguous pair on purpose
+    r = _client().post("/webhooks/whatsapp", json=_wh_payload("STOP"))
+    assert r.status_code == 200
+    assert not asked, "must not message a number that just opted out"
+    assert not [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "in"]
+    from compliance.consent_store import get_consent_store
+    assert get_consent_store().is_opted_out("96890000001", "whatsapp") is True
+
+
+def test_duplicate_delivery_is_ignored(fake_sb):
+    """MEDIUM#15: Meta retries; a redelivery double-recorded the reply."""
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.D1", "req"))
+    c = _client()
+    p = _wh_payload("yes", context_wamid="wamid.D1")
+    assert c.post("/webhooks/whatsapp", json=p).json()["received"] == 1
+    assert c.post("/webhooks/whatsapp", json=p).json()["received"] == 0
+    ins = [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "in"]
+    assert len(ins) == 1
+
+
+def test_malformed_message_does_not_abort_the_batch(fake_sb):
+    """MEDIUM#13: one bad message used to discard every sibling in the payload."""
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.OK1", "req"))
+    payload = {"entry": [{"changes": [{"value": {
+        "metadata": {"display_phone_number": "15556677792"},
+        "contacts": [{"wa_id": "96890000001"}],
+        "messages": [
+            "this is not a dict at all",          # genuinely malformed -> raises
+            {"id": "wamid.GOOD", "from": "96890000001", "type": "text",
+             "text": {"body": "yes"}, "context": {"id": "wamid.OK1"}},
+        ]}}]}]}
+    r = _client().post("/webhooks/whatsapp", json=payload)
+    assert r.status_code == 200
+    ins = [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "in"]
+    assert len(ins) == 1, "the good sibling must still be processed"

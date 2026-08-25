@@ -49,9 +49,16 @@ CONFIRMED = "confirmed"
 CLOSED = "closed"
 _LIVE_STATES = (OPEN, AWAITING_REPLY)
 
-# Reference token: 4 digits is enough to disambiguate concurrent threads with a
-# single business while staying trivially typeable by a human on a phone.
-_REF_RE = re.compile(r"#?\b(\d{4})\b")
+# Reference token: 4 digits, typeable by a human on a phone.
+#
+# The '#' sigil is MANDATORY (adversarial review 2026-08-26, critical): with an
+# optional sigil, ANY bare 4-digit run parsed as a reference - "come at 1430",
+# "1000 OMR", "2026-08-27" - and layer 2 returned confidence="exact", silently
+# overriding the never-guess ambiguity guard and misrouting one user's
+# confirmation onto another user's thread. reference_line() explicitly instructs
+# businesses to include the '#', so requiring it loses nothing: a bare number now
+# correctly falls through to layers 3/4 (pair match, or ask).
+_REF_RE = re.compile(r"#\s*(\d{4})\b")
 
 
 @dataclass
@@ -75,12 +82,27 @@ def new_ref_token() -> str:
     return f"{secrets.randbelow(9000) + 1000}"
 
 
-def parse_ref(text: str) -> Optional[str]:
-    """Extract a reference token from free-typed business text, if present."""
+def parse_refs(text: str) -> list[str]:
+    """ALL sigiled reference tokens in the text (order preserved, deduped).
+
+    Returns every match, not just the first: a business writing "we can do 2500
+    for #4821" must not have a price shadow the real reference.
+    """
     if not text:
-        return None
-    m = _REF_RE.search(text)
-    return m.group(1) if m else None
+        return []
+    seen, out = set(), []
+    for m in _REF_RE.finditer(text):
+        tok = m.group(1)
+        if tok not in seen:
+            seen.add(tok)
+            out.append(tok)
+    return out
+
+
+def parse_ref(text: str) -> Optional[str]:
+    """First sigiled reference token, or None. (parse_refs is preferred.)"""
+    refs = parse_refs(text)
+    return refs[0] if refs else None
 
 
 def reference_line(ref_token: str, end_user_label: str, on_behalf_of: str = "HatchLoop") -> str:
@@ -208,19 +230,51 @@ async def set_state(conversation_id: str, state: str) -> None:
 # Lookup paths (the correlation layers)
 # ---------------------------------------------------------------------------
 
-async def find_by_wamid(wamid: str) -> Optional[dict]:
+async def get_conversation(conversation_id: str) -> Optional[dict]:
     from storage.supabase_client import select_rows
-    rows = await _sb(select_rows(_TABLE, filters={"last_outbound_wamid": wamid}, limit=1), [])
+    rows = await _sb(select_rows(_TABLE, filters={"conversation_id": conversation_id},
+                                 limit=1), [])
     return (rows or [None])[0]
 
 
-async def find_by_ref(ref_token: str, business_number: Optional[str] = None) -> Optional[dict]:
+async def find_by_wamid(wamid: str) -> Optional[dict]:
+    """Resolve a replied-to message id through the MESSAGE LEDGER.
+
+    The conversation row only keeps the LAST outbound wamid, so resolving against
+    it lost every earlier message: a business replying to an older message in the
+    thread fell through to weaker layers (review 2026-08-26). The ledger has every
+    outbound wamid, so we resolve there - and still require the thread to be live,
+    or a closed thread would out-rank the live one (layer 1 runs first).
+    """
+    if not wamid:
+        return None
     from storage.supabase_client import select_rows
-    filters: dict[str, Any] = {"ref_token": ref_token}
-    if business_number:
-        filters["business_number"] = business_number
-    rows = await _sb(select_rows(_TABLE, filters=filters, limit=2), [])
-    live = [r for r in (rows or []) if _is_live(r)]
+    msgs = await _sb(select_rows(_MSG_TABLE, filters={"wamid": wamid, "direction": "out"},
+                                 limit=2), [])
+    ids = {m.get("conversation_id") for m in (msgs or []) if m.get("conversation_id")}
+    if len(ids) != 1:
+        return None                      # unknown, or ambiguous -> weaker layers
+    conv = await get_conversation(ids.pop())
+    return conv if conv and _is_live(conv) else None
+
+
+async def find_by_ref(ref_token: str, business_number: Optional[str]) -> Optional[dict]:
+    """Exact-match a reference token WITHIN one business.
+
+    business_number is MANDATORY: ref tokens are only 4 digits and are reused
+    across businesses, so an unscoped lookup could hand a reply to a completely
+    different business's thread (review 2026-08-26, critical).
+    """
+    if not ref_token or not business_number:
+        return None
+    from storage.supabase_client import select_rows
+    rows = await _sb(select_rows(_TABLE, filters={
+        "ref_token": ref_token, "business_number": business_number,
+    }, limit=25), [])
+    rows = rows or []
+    if len(rows) >= 25:
+        return None                      # truncated view -> untrustworthy
+    live = [r for r in rows if _is_live(r)]
     return live[0] if len(live) == 1 else None
 
 
@@ -229,12 +283,38 @@ async def find_live_by_pair(our_number: str, business_number: str) -> Optional[d
     return rows[0] if len(rows) == 1 else None
 
 
-async def live_threads_for_pair(our_number: str, business_number: str) -> list[dict]:
+# Sentinel row: signals "the view was truncated, so we cannot prove uniqueness".
+# Carried as an extra candidate so correlate_inbound takes the ambiguous branch
+# instead of trusting a partial result.
+_TRUNCATED = {"conversation_id": "__truncated__", "ref_token": "?"}
+
+
+async def live_threads_for_pair(our_number: str, business_number: str,
+                                limit: int = 200) -> list[dict]:
+    """Live threads on a number pair.
+
+    Filters liveness IN THE QUERY (per state) rather than truncating first and
+    filtering after: dead rows accumulate forever on a repeat business, and an
+    unordered LIMIT window silently hid the second live thread - which defeated
+    the ambiguity guard entirely (review 2026-08-26, critical). If a window comes
+    back full we cannot prove uniqueness, so we append a sentinel that forces the
+    ambiguous (ask, never guess) branch.
+    """
     from storage.supabase_client import select_rows
-    rows = await _sb(select_rows(_TABLE, filters={
-        "our_number": our_number, "business_number": business_number,
-    }, limit=25), [])
-    return [r for r in (rows or []) if _is_live(r)]
+    out: list[dict] = []
+    truncated = False
+    for state in _LIVE_STATES:
+        rows = await _sb(select_rows(_TABLE, filters={
+            "our_number": our_number, "business_number": business_number,
+            "state": state,
+        }, limit=limit), [])
+        rows = rows or []
+        if len(rows) >= limit:
+            truncated = True
+        out.extend(r for r in rows if _is_live(r))
+    if truncated and out:
+        out.append(dict(_TRUNCATED))
+    return out
 
 
 async def correlate_inbound(
@@ -245,18 +325,28 @@ async def correlate_inbound(
     context_wamid: Optional[str] = None,
 ) -> MatchResult:
     """Run the 4-layer cascade. NEVER guesses between 2+ live candidates."""
+    # Without a business identity nothing can be scoped safely -> no match.
+    if not business_number:
+        return MatchResult()
+
     # Layer 1 — exact: the business tapped reply on a specific message.
     if context_wamid:
         conv = await find_by_wamid(context_wamid)
         if conv:
             return MatchResult(conversation=conv, method="wamid", confidence="exact")
 
-    # Layer 2 — exact: the reference token appears in the text.
-    ref = parse_ref(body)
-    if ref:
+    # Layer 2 — exact: a sigiled reference appears in the text. Every quoted
+    # reference is resolved; if the message quotes two different live threads we
+    # must NOT pick one, so that also goes to the ambiguous branch.
+    resolved: list[dict] = []
+    for ref in parse_refs(body):
         conv = await find_by_ref(ref, business_number)
-        if conv:
-            return MatchResult(conversation=conv, method="ref", confidence="exact")
+        if conv and all(c["conversation_id"] != conv["conversation_id"] for c in resolved):
+            resolved.append(conv)
+    if len(resolved) == 1:
+        return MatchResult(conversation=resolved[0], method="ref", confidence="exact")
+    if len(resolved) > 1:
+        return MatchResult(method="ambiguous", confidence="none", candidates=resolved)
 
     # Layers 3/4 — the number pair, or honest ambiguity.
     live = await live_threads_for_pair(our_number, business_number)
@@ -269,9 +359,13 @@ async def correlate_inbound(
 
 def clarifying_question(candidates: list[dict]) -> str:
     """Layer 4: ask, never guess."""
-    refs = ", ".join(f"#{c.get('ref_token')}" for c in candidates[:5])
+    real = [c for c in candidates if c.get("conversation_id") != "__truncated__"]
+    if not real:
+        return ("Sorry - we could not match your reply to a specific request. "
+                "Please reply quoting the request number, e.g. \"#1234\".")
+    refs = ", ".join(f"#{c.get('ref_token')}" for c in real[:5])
     return (
         "Sorry - we have more than one open request with you right now "
         f"({refs}). Which one is this about? Reply with the number, e.g. "
-        f"\"#{candidates[0].get('ref_token')}\"."
+        f"\"#{real[0].get('ref_token')}\"."
     )

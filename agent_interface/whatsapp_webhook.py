@@ -13,6 +13,10 @@ dashboard when configuring the webhook URL).
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -26,16 +30,27 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 _STOP_WORDS = {"stop", "unsubscribe", "cancel", "quit", "end", "revoke"}
 
+# Every await on the intake path is bounded — Meta retries a slow webhook.
+_IO_TIMEOUT_S = 2.5
+
 
 async def _ask(to: str, question: str) -> None:
     """Send a clarifying question back on the same channel (service window =
-    free-form text is allowed and free). Best-effort; never raises."""
+    free-form text is allowed and free). Best-effort; never raises.
+
+    Checks opt-out FIRST: an outbound from the webhook path must respect the
+    same consent gate as every other send (review 2026-08-26)."""
     try:
-        from channels.whatsapp.cloud_api import WhatsAppCloudAdapter
-        import os as _os
+        from compliance.consent_store import get_consent_store
+        if get_consent_store().is_opted_out(to, "whatsapp"):
+            logger.info("wa_clarify_suppressed_optout to=%s", to)
+            return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         import httpx
-        token = _os.getenv("WHATSAPP_ACCESS_TOKEN", "")
-        phone_id = _os.getenv("WHATSAPP_PHONE_ID", "")
+        token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+        phone_id = os.getenv("WHATSAPP_PHONE_ID", "")
         if not (token and phone_id):
             return
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -62,10 +77,122 @@ async def verify(
     return PlainTextResponse("verification failed", status_code=403)
 
 
+def _verify_signature(raw: bytes, header: str) -> bool:
+    """Verify Meta's X-Hub-Signature-256 over the RAW body.
+
+    Without this the endpoint accepts anything: a forged POST could inject a
+    fake "business reply" into a real end-user's conversation, or a fake STOP
+    (adversarial review 2026-08-26, critical). The GET verify_token only guards
+    the one-time handshake, not ongoing deliveries.
+    """
+    secret = os.getenv("WHATSAPP_APP_SECRET", "")
+    if not secret:
+        return True                      # unconfigured: fail open (dev/test)
+    if not header or not header.startswith("sha256="):
+        return False
+    expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header.split("=", 1)[1].strip())
+
+
+async def _bounded(coro, what: str, timeout: float = _IO_TIMEOUT_S):
+    """Every await on the intake path is bounded: the webhook must 200 fast or
+    Meta retries and (worse) our reply latency compounds."""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 (includes TimeoutError)
+        logger.warning("wa_%s_failed: %s", what, exc)
+        return None
+
+
+async def _already_handled(wa_message_id: str) -> bool:
+    """Meta delivers at-least-once; without a dedupe a retry double-records the
+    reply and re-sends the clarifying question."""
+    if not wa_message_id:
+        return False
+    from storage.supabase_client import select_rows
+    rows = await _bounded(
+        select_rows("whatsapp_inbound", filters={"wa_message_id": wa_message_id}, limit=1),
+        "dedupe_check")
+    return bool(rows)
+
+
+async def _handle_message(msg: dict, contacts: dict, our_number: str) -> bool:
+    """Process ONE inbound message. Isolated so a malformed sibling cannot abort
+    the batch. Returns True if it was recorded."""
+    sender = msg.get("from") or ""
+    mtype = msg.get("type") or ""
+    wa_id = msg.get("id") or ""
+    text = ""
+    if mtype == "text":
+        text = ((msg.get("text") or {}).get("body") or "")
+    elif mtype == "button":
+        text = ((msg.get("button") or {}).get("text") or "")
+    context_wamid = (msg.get("context") or {}).get("id")
+
+    if await _already_handled(wa_id):
+        logger.info("wa_duplicate_skipped id=%s", wa_id)
+        return False
+
+    from storage.supabase_client import insert_row
+    await _bounded(insert_row("whatsapp_inbound", {
+        "wa_message_id": wa_id,
+        "sender": sender,
+        "sender_name": contacts.get(sender),
+        "msg_type": mtype,
+        "body": text[:4000],
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }), "inbound_store")
+
+    # STOP: honor it and STOP PROCESSING. A stop is not a reply to a booking,
+    # and continuing would let us message a number in the same request in which
+    # it opted out (review 2026-08-26).
+    if text.strip().lower() in _STOP_WORDS:
+        try:
+            from compliance.consent_store import get_consent_store
+            get_consent_store().mark_opted_out(sender, "whatsapp")
+            get_consent_store().revoke_consent(
+                sender, "whatsapp", "marketing", "keyword_STOP")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("wa_optout_memory_failed: %s", exc)
+        await _bounded(insert_row("consent_optouts", {
+            "recipient_id": sender, "channel": "whatsapp", "use_case": "marketing",
+            "revocation_method": "keyword_STOP", "source": "whatsapp_webhook",
+        }), "optout_store")
+        logger.info("wa_optout from=%s", sender)
+        return True
+
+    # Correlate to the RIGHT conversation. Never guess.
+    try:
+        from core import conversations as _conv
+        match = await asyncio.wait_for(
+            _conv.correlate_inbound(business_number=sender, our_number=our_number,
+                                    body=text, context_wamid=context_wamid),
+            timeout=_IO_TIMEOUT_S * 2)
+        if match.matched:
+            await _bounded(_conv.record_inbound(
+                match.conversation["conversation_id"], wa_id, text), "record_inbound")
+            logger.info("wa_correlated conv=%s method=%s confidence=%s",
+                        match.conversation["conversation_id"],
+                        match.method, match.confidence)
+        elif match.ambiguous:
+            logger.info("wa_ambiguous candidates=%d from=%s",
+                        len(match.candidates), sender)
+            await _ask(sender, _conv.clarifying_question(match.candidates))
+    except Exception as exc:  # noqa: BLE001 — never break intake
+        logger.warning("wa_correlate_failed: %s", exc)
+
+    logger.info("wa_inbound from=%s type=%s len=%d", sender, mtype, len(text))
+    return True
+
+
 @router.post("/whatsapp")
 async def receive(request: Request):
+    raw = await request.body()
+    if not _verify_signature(raw, request.headers.get("x-hub-signature-256", "")):
+        logger.warning("wa_bad_signature len=%d", len(raw))
+        return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=403)
     try:
-        payload = await request.json()
+        payload = json.loads(raw.decode("utf-8") or "{}")
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": True})
 
@@ -73,77 +200,23 @@ async def receive(request: Request):
     try:
         for entry in payload.get("entry", []) or []:
             for change in entry.get("changes", []) or []:
-                value = change.get("value", {}) or {}
-                contacts = {c.get("wa_id"): c.get("profile", {}).get("name")
-                            for c in value.get("contacts", []) or []}
+                value = change.get("value") or {}
+                contacts = {c.get("wa_id"): (c.get("profile") or {}).get("name")
+                            for c in (value.get("contacts") or [])}
                 our_number = ((value.get("metadata") or {})
                               .get("display_phone_number") or "").replace("+", "")
-                for msg in value.get("messages", []) or []:
-                    sender = msg.get("from", "")
-                    mtype = msg.get("type", "")
-                    text = ""
-                    if mtype == "text":
-                        text = (msg.get("text") or {}).get("body", "")
-                    elif mtype == "button":
-                        text = (msg.get("button") or {}).get("text", "")
-                    # Layer 1 substrate: Meta echoes the replied-to message id.
-                    context_wamid = (msg.get("context") or {}).get("id")
-                    row = {
-                        "wa_message_id": msg.get("id"),
-                        "sender": sender,
-                        "sender_name": contacts.get(sender),
-                        "msg_type": mtype,
-                        "body": text[:4000],
-                        "received_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                    # 1. durable store (best-effort)
+                for msg in (value.get("messages") or []):
                     try:
-                        from storage.supabase_client import insert_row
-                        await insert_row("whatsapp_inbound", row)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("wa_inbound_store_failed: %s", exc)
-                    # 2. STOP handling — same enforcement path as SMS STOP
-                    if text.strip().lower() in _STOP_WORDS:
-                        try:
-                            from compliance.consent_store import get_consent_store
-                            get_consent_store().mark_opted_out(sender, "whatsapp")
-                            get_consent_store().revoke_consent(
-                                sender, "whatsapp", "marketing", "keyword_STOP")
-                            from storage.supabase_client import insert_row as _ir
-                            await _ir("consent_optouts", {
-                                "recipient_id": sender, "channel": "whatsapp",
-                                "use_case": "marketing",
-                                "revocation_method": "keyword_STOP",
-                                "source": "whatsapp_webhook",
-                            })
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning("wa_optout_failed: %s", exc)
-                    # 3. Correlate this reply to the RIGHT conversation.
-                    #    Never guess: ambiguity asks one clarifying question.
-                    try:
-                        from core import conversations as _conv
-                        match = await _conv.correlate_inbound(
-                            business_number=sender, our_number=our_number,
-                            body=text, context_wamid=context_wamid,
-                        )
-                        if match.matched:
-                            await _conv.record_inbound(
-                                match.conversation["conversation_id"],
-                                msg.get("id"), text)
-                            logger.info(
-                                "wa_correlated conv=%s method=%s confidence=%s",
-                                match.conversation["conversation_id"],
-                                match.method, match.confidence)
-                        elif match.ambiguous:
-                            logger.info("wa_ambiguous candidates=%d from=%s",
-                                        len(match.candidates), sender)
-                            await _ask(sender, _conv.clarifying_question(match.candidates))
-                    except Exception as exc:  # noqa: BLE001 - never break intake
-                        logger.warning("wa_correlate_failed: %s", exc)
-
-                    stored += 1
-                    logger.info("wa_inbound from=%s type=%s len=%d",
-                                sender, mtype, len(text))
+                        if not isinstance(msg, dict):
+                            logger.warning("wa_message_not_an_object: %.60r", msg)
+                            continue
+                        if await _handle_message(msg, contacts, our_number):
+                            stored += 1
+                    except Exception as exc:  # noqa: BLE001 — isolate siblings
+                        # The handler itself must never raise: extract the id
+                        # defensively or one bad sibling aborts the batch.
+                        _mid = msg.get("id") if isinstance(msg, dict) else "?"
+                        logger.warning("wa_message_failed id=%s err=%s", _mid, exc)
     except Exception as exc:  # noqa: BLE001
         logger.warning("wa_webhook_parse_failed: %s", exc)
 

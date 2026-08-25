@@ -151,9 +151,18 @@ async def select_rows(
     table: str,
     filters: Optional[dict[str, Any]] = None,
     limit: int = 1000,
+    order: Optional[str] = None,
+    gte: Optional[dict[str, Any]] = None,
 ) -> list[dict]:
     """
     Select rows from `table` with optional equality filters.
+
+    `order` (e.g. "created_at.desc") and `gte` (e.g. {"created_at": iso}) exist
+    because a bare LIMIT without ORDER BY returns an ARBITRARY slice in
+    PostgREST - which silently broke rate-limit counting and thread-uniqueness
+    checks over large tables (adversarial review 2026-08-26). Prefer bounding the
+    query rather than filtering a truncated sample client-side.
+
     Returns list of rows (may be empty). Never raises.
     """
     url, key = _get_config()
@@ -163,6 +172,11 @@ async def select_rows(
     try:
         import httpx
         params: dict[str, Any] = {"limit": limit}
+        if order:
+            params["order"] = order
+        if gte:
+            for col, val in gte.items():
+                params[col] = f"gte.{val}"
         if filters:
             for col, val in filters.items():
                 params[col] = f"eq.{val}"
