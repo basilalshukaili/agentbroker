@@ -268,10 +268,29 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
             pass  # telemetry must never break the response
 
         return JsonRpcResponse(id=rpc_id, result=result).to_dict()
+    except _ToolError as te:
+        # Tool-execution failure -> isError RESULT (the model sees it and can
+        # branch on error_code: authenticate / pay / back off / fix args).
+        # For non-tools/call methods fall back to a typed protocol error.
+        if method == "tools/call":
+            return JsonRpcResponse(id=rpc_id, result=te.to_result()).to_dict()
+        return JsonRpcResponse(
+            id=rpc_id,
+            error=_error(ERR_INVALID_PARAMS, str(te),
+                         data={"error_code": te.error_code,
+                               "retriable": te.retriable,
+                               "how_to_resolve": te.how_to_resolve}),
+        ).to_dict()
     except _ParamError as pe:
         return JsonRpcResponse(
             id=rpc_id,
-            error=_error(ERR_INVALID_PARAMS, str(pe)),
+            error=_error(ERR_INVALID_PARAMS, str(pe),
+                         data={"error_code": "invalid_argument",
+                               "retriable": False,
+                               "how_to_resolve": {
+                                   "call": "tools/list",
+                                   "hint": "check the tool name and inputSchema; argument names are exact",
+                               }}),
         ).to_dict()
     except KeyError as ke:
         # A missing required argument is the caller's problem to fix, not an
@@ -297,6 +316,49 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
 
 class _ParamError(ValueError):
     pass
+
+
+class _ToolError(Exception):
+    """A TOOL-EXECUTION failure an agent can act on programmatically.
+
+    Unlike _ParamError (a protocol-level -32602), a _ToolError is returned as a
+    normal tools/call RESULT with isError:true plus typed fields - so the MODEL
+    sees it (many MCP clients hide raw JSON-RPC errors from the model entirely,
+    which meant an agent never saw the 'get a free key' recovery path).
+    error_code vocabulary: auth_required | payment_required | rate_limited |
+    invalid_argument | compliance_violation | upstream_unavailable.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str,
+        retriable: bool,
+        how_to_resolve: Optional[dict] = None,
+        retry_after_ms: Optional[int] = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.retriable = retriable
+        self.how_to_resolve = how_to_resolve or {}
+        self.retry_after_ms = retry_after_ms
+
+    def to_result(self) -> dict:
+        body = {
+            "status": "failure",
+            "reason_code": self.error_code,
+            "error_code": self.error_code,
+            "retriable": self.retriable,
+            "human_message": str(self),
+            "how_to_resolve": self.how_to_resolve,
+        }
+        if self.retry_after_ms is not None:
+            body["retry_after_ms"] = self.retry_after_ms
+        return {
+            "content": [{"type": "text", "text": json.dumps(body, indent=2, default=str)}],
+            "isError": True,
+        }
 
 
 def _agent_id_from_token(raw_token: str) -> str:
@@ -681,13 +743,24 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                 _midnight = (_now + _td(days=1)).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 ).strftime("%Y-%m-%dT00:00:00Z")
-                raise _ParamError(
+                _ms_to_reset = int(
+                    ((_now + _td(days=1)).replace(hour=0, minute=0, second=0,
+                                                  microsecond=0) - _now
+                     ).total_seconds() * 1000
+                )
+                raise _ToolError(
                     f"free_tier_daily_limit_exceeded for tool '{name}': "
                     f"your free key allows 50 gated operations per day. "
-                    f"quota: {{tier: free, remaining_today: {remaining}, resets: {_midnight}}}. "
-                    f"Upgrade at "
-                    f"{__import__('os').getenv('POLAR_CHECKOUT_URL', 'https://buy.polar.sh')} "
-                    f"for unlimited access."
+                    f"Remaining today: {remaining}; resets {_midnight}. "
+                    f"Buy credits at https://hatchloop.dev/pricing for no daily cap.",
+                    error_code="rate_limited",
+                    retriable=True,
+                    retry_after_ms=_ms_to_reset,
+                    how_to_resolve={
+                        "wait_until": _midnight,
+                        "upgrade": "https://hatchloop.dev/pricing",
+                        "note": "credit packages remove the daily cap; x402 per-call also available",
+                    },
                 )
             # Free key with remaining budget — skip the full gate below
             return
@@ -718,9 +791,19 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             f" Get a free API key at {free_key_url} (50 ops/day, email verification required). "
             f"Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing."
         )
-        raise _ParamError(
+        raise _ToolError(
             f"auth_required for tool '{name}' (status={he.status_code}): "
-            f"{he.detail}{how_to_buy}"
+            f"{he.detail}{how_to_buy}",
+            error_code="auth_required",
+            retriable=False,
+            how_to_resolve={
+                "free_key": {"url": free_key_url,
+                             "note": "email-verified, 50 ops/day, no payment"},
+                "credits": {"url": "https://hatchloop.dev/pricing",
+                            "note": "packages from $9/1,000 credits"},
+                "x402": {"note": "agents can pay per-call in USDC on Base"},
+                "header": "X-Agent-Identity",
+            },
         )
 
 
