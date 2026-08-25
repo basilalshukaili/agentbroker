@@ -46,7 +46,12 @@ _CHANNEL_COSTS = {
     "email:sendgrid": 0.02,
     "email:resend": 0.02,
     "voice_ai:vapi": 0.30,
-    "whatsapp:cloud_api": 0.01,
+    # FREE during launch (founder 2026-08-26: "anything that is not costing us,
+    # put on free trial"). WhatsApp costs us $0 today (test number; service-window
+    # replies are free even at production). run_metered_tool commits actual from
+    # the receipt cost, so 0.00 here = 0 credits charged, honestly. Revisit when
+    # Meta template charges apply at scale.
+    "whatsapp:cloud_api": 0.00,
 }
 
 

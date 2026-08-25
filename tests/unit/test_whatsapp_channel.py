@@ -70,3 +70,38 @@ def test_webhook_stop_registers_optout(monkeypatch):
     r = c.post("/webhooks/whatsapp", json=payload)
     assert r.status_code == 200
     assert get_consent_store().is_opted_out("96855550000", "whatsapp") is True
+
+
+def test_whatsapp_channel_cost_is_zero():
+    """Founder 2026-08-26: costs us nothing -> free trial. Receipt cost must be 0."""
+    from core.send_message import _CHANNEL_COSTS
+    assert _CHANNEL_COSTS["whatsapp:cloud_api"] == 0.00
+
+
+def test_metered_whatsapp_send_charges_zero_credits(monkeypatch):
+    """A successful whatsapp-channel send through the credits rail commits 0."""
+    import billing.credits as credits
+    committed = {}
+
+    async def fake_reserve(account_id, amount, hold_id, operation, operation_id=None):
+        return {"ok": True, "balance_after": 1000}
+
+    async def fake_commit(hold_id, actual):
+        committed["actual"] = actual
+        return {"balance_after": 1000 - actual}
+
+    async def fake_release(hold_id, reason=""):
+        return {"balance_after": 1000}
+
+    monkeypatch.setattr(credits, "reserve", fake_reserve)
+    monkeypatch.setattr(credits, "commit", fake_commit)
+    monkeypatch.setattr(credits, "release", fake_release)
+
+    async def dispatch():
+        return {"status": "success", "reason_code": "delivered",
+                "channel_used": "whatsapp:cloud_api",
+                "cost": {"amount": 0.00, "currency": "USD", "basis": "per_message"}}
+
+    receipt = asyncio.run(credits.run_metered_tool("send_message", "acct_x", dispatch))
+    assert committed.get("actual") == 0          # zero credits committed
+    assert receipt["credits"]["charged"] == 0    # receipt says charged 0
