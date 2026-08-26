@@ -39,6 +39,11 @@ class SMBEntry:
     # demo SMBs short-circuit with reason_code="demo_smb_no_live_booking"
     # rather than calling fake 555 numbers.
     is_demo: bool = False
+    # How much inbound demand this business can absorb, if we actually
+    # KNOW - ideally declared by the business itself. Only a declared
+    # tier may RAISE its demand budget above the default; anything we
+    # infer can lower it but never raise it (core/business_tier.py).
+    capacity_tier: Optional[str] = None   # micro | small | medium | large
 
 
 def _seed_smbs() -> dict[str, SMBEntry]:

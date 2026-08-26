@@ -116,7 +116,12 @@ async def handle_send_message(
     if request.business_id:
         try:
             from core.demand_shaping import check_budget
-            decision = await check_budget(request.business_id)
+            # Size the budget to the business. Until now every business
+            # got the same 'small' allowance - a one-chair barber and a
+            # 50-seat restaurant treated identically.
+            from core.business_tier import resolve_tier
+            _tier, _tier_why = await resolve_tier(request.business_id)
+            decision = await check_budget(request.business_id, tier=_tier)
             if not decision.allowed:
                 # PERSIST the deferred request. We tell the agent it is "queued";
                 # until this existed nothing stored it, so "queued" meant dropped
@@ -135,6 +140,8 @@ async def handle_send_message(
                 except Exception:  # noqa: BLE001 - queueing must never block
                     pass
                 shaping_block = decision.as_receipt_block()
+                shaping_block["business_tier"] = _tier
+                shaping_block["tier_basis"] = _tier_why
                 if queued_row:
                     shaping_block["queued"] = True
                     shaping_block["queued_request_id"] = queued_row.get("request_id")
