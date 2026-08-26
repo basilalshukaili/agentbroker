@@ -113,6 +113,50 @@ async def handle_schedule_appointment(
             trace_id=trace_id,
         ))
 
+    # OPT-OUT applies to BOOKING, not only to messaging (added 2026-08-26).
+    # Every messaging path passes through compliance/pre_check; this one never
+    # did, so a business that replied STOP could still be booked through us -
+    # and a booking is contact: Cal.com emails them, and someone turns up.
+    # Honouring "stop" on one channel while quietly using another is exactly
+    # the leak we fixed in August, wearing a different hat.
+    #
+    # Deliberately narrower than pre_check: consent, quiet hours and marketing
+    # rules describe outbound MESSAGES and do not describe a booking. The one
+    # question that does transfer is whether this business asked us to stop.
+    try:
+        from compliance.consent_store import get_consent_store
+        _store = get_consent_store()
+        _contacts = [c for c in (getattr(smb, "phone", None),
+                                 getattr(smb, "email", None)) if c]
+        _blocked = next(
+            (c for c in _contacts
+             if _store.is_opted_out(c, "sms") or _store.is_opted_out(c, "email")
+             or _store.is_opted_out(c, "whatsapp")),
+            None)
+    except Exception:  # noqa: BLE001
+        # Fail CLOSED on the opt-out question. Everywhere else in booking we
+        # degrade gracefully; here an unreadable consent store is not licence
+        # to contact someone who may have said stop.
+        _blocked = "unknown"
+    if _blocked:
+        return _store_terminal(OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="recipient_opted_out",
+            human_message=(
+                f"{smb.name} has opted out of contact through HatchLoop, so we "
+                "will not create a booking with them. This applies to every "
+                "agent on the network, not just yours."
+                if _blocked != "unknown" else
+                "Could not verify this business's contact preferences, so the "
+                "booking was not attempted. Retry shortly."
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge_opted_out"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=(_blocked == "unknown"),
+            trace_id=trace_id,
+        ))
+
     # Fast path: direct_api:calcom
     # Note: CalComAdapter raises RuntimeError when CALCOM_API_KEY is absent and
     # stubs are not allowed (production). Those exceptions are caught below and
