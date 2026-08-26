@@ -108,12 +108,43 @@ async def handle_send_message(
         trace_id=trace_id,
     )
 
+    conversation: dict | None = None
+    base_body = request.content.body
+
     for channel_name, adapter in chain:
         channel_request.channel = channel_name.split(":")[0]
         attempted.append(channel_name)
+        # Two-way channel + a named end-user -> open a tracked conversation and
+        # carry its reference in-message. That reference is what lets the
+        # business's free-typed reply be matched back to THIS end-user rather
+        # than guessed at (core/conversations.py).
+        channel_request.content = base_body
+        if channel_name == "whatsapp:cloud_api" and request.on_behalf_of:
+            try:
+                from core import conversations as _conv
+                conversation = await _conv.open_conversation(
+                    agent_id=agent_id,
+                    end_user_ref=request.on_behalf_of,
+                    business_id=request.business_id,
+                    business_number=request.recipient.id_value,
+                    our_number=os.getenv("WHATSAPP_PHONE_NUMBER", ""),
+                    intent=(request.content.subject or base_body)[:120],
+                )
+                channel_request.content = base_body + _conv.reference_line(
+                    conversation["ref_token"], request.on_behalf_of)
+            except Exception:  # noqa: BLE001 - threading must never block a send
+                conversation = None
         try:
             resp = await adapter.send(channel_request)
             if resp.success:
+                if conversation and resp.provider_message_id:
+                    try:
+                        from core import conversations as _conv2
+                        await _conv2.record_outbound(
+                            conversation["conversation_id"],
+                            resp.provider_message_id, channel_request.content)
+                    except Exception:  # noqa: BLE001
+                        pass
                 cost_amount = _CHANNEL_COSTS.get(channel_name, 0.05)
                 fallback_chain = [f"{c} (skipped)" for c in attempted[:-1]]
                 increment_messages_sent()
@@ -122,7 +153,18 @@ async def handle_send_message(
                     status=OperationStatus.SUCCESS,
                     reason_code="message_sent",
                     human_message=f"Message delivered via {channel_name}.",
-                    result={"provider_message_id": resp.provider_message_id},
+                    result={
+                        "provider_message_id": resp.provider_message_id,
+                        **({"conversation": {
+                            "conversation_id": conversation["conversation_id"],
+                            "reference": conversation["ref_token"],
+                            "note": ("The business's reply will be matched back to "
+                                     "this conversation. Poll get_outcome or handle "
+                                     "the inbound webhook to read it."),
+                            **({"pair_conflict": conversation["pair_conflict"]}
+                               if conversation.get("pair_conflict") else {}),
+                        }} if conversation else {}),
+                    },
                     cost=CostRecord(amount=cost_amount, currency="USD", basis="per_message"),
                     latency_ms=int((time.monotonic() - t0) * 1000),
                     channel_used=channel_name,

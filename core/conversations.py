@@ -130,6 +130,17 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def norm_number(n: Optional[str]) -> str:
+    """Digits only.
+
+    The send path supplies E.164 ("+96890000001") while Meta's webhook supplies
+    bare digits ("96890000001"); storing one and looking up the other silently
+    matched NOTHING, so every reply fell through to 'unknown'. Normalise at
+    every boundary (found by an end-to-end test, 2026-08-26).
+    """
+    return "".join(c for c in (n or "") if c.isdigit())
+
+
 def _is_live(row: dict) -> bool:
     if row.get("state") not in _LIVE_STATES:
         return False
@@ -166,6 +177,8 @@ async def open_conversation(
     """
     from storage.supabase_client import insert_row
 
+    business_number = norm_number(business_number)
+    our_number = norm_number(our_number)
     existing = await find_live_by_pair(our_number, business_number)
     conv = {
         "conversation_id": f"conv_{secrets.token_hex(8)}",
@@ -173,8 +186,8 @@ async def open_conversation(
         "agent_id": agent_id,
         "end_user_ref": end_user_ref,
         "business_id": business_id,
-        "business_number": business_number,
-        "our_number": our_number,
+        "business_number": norm_number(business_number),
+        "our_number": norm_number(our_number),
         "channel": channel,
         "state": OPEN,
         "intent": intent,
@@ -269,7 +282,7 @@ async def find_by_ref(ref_token: str, business_number: Optional[str]) -> Optiona
         return None
     from storage.supabase_client import select_rows
     rows = await _sb(select_rows(_TABLE, filters={
-        "ref_token": ref_token, "business_number": business_number,
+        "ref_token": ref_token, "business_number": norm_number(business_number),
     }, limit=25), [])
     rows = rows or []
     if len(rows) >= 25:
@@ -301,6 +314,7 @@ async def live_threads_for_pair(our_number: str, business_number: str,
     ambiguous (ask, never guess) branch.
     """
     from storage.supabase_client import select_rows
+    our_number, business_number = norm_number(our_number), norm_number(business_number)
     out: list[dict] = []
     truncated = False
     for state in _LIVE_STATES:
@@ -325,6 +339,8 @@ async def correlate_inbound(
     context_wamid: Optional[str] = None,
 ) -> MatchResult:
     """Run the 4-layer cascade. NEVER guesses between 2+ live candidates."""
+    business_number = norm_number(business_number)
+    our_number = norm_number(our_number)
     # Without a business identity nothing can be scoped safely -> no match.
     if not business_number:
         return MatchResult()

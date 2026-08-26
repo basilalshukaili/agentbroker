@@ -488,6 +488,14 @@
             "type": "string",
             "format": "date-time",
             "description": "Schedule for future delivery; omit for immediate"
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Who this message is FOR (your end-user's name/label). On WhatsApp this opens a tracked conversation and travels in-message as '#4821 for Sara (via HatchLoop)', so the business knows who it is talking to and their reply is matched back to this exact request instead of guessed. Strongly recommended for two-way channels."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Optional stable id for the recipient business. Enables global demand shaping (we rate-limit total inbound across ALL agents so businesses stay responsive instead of blocking us)."
           }
         }
       },

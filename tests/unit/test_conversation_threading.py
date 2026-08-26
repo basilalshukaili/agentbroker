@@ -461,3 +461,68 @@ def test_malformed_message_does_not_abort_the_batch(fake_sb):
     assert r.status_code == 200
     ins = [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "in"]
     assert len(ins) == 1, "the good sibling must still be processed"
+
+
+# ==========================================================================
+# OUTBOUND integration: sends open a thread and carry their reference.
+# ==========================================================================
+def test_whatsapp_send_opens_thread_and_carries_reference(fake_sb, monkeypatch):
+    import core.send_message as sm
+    from core.models import (SendMessageRequest, Recipient, MessageType,
+                             MessageContent, ChannelPreference)
+    from channels.adapter_interface import ChannelResponse
+
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER", "15556677792")
+    sent = {}
+
+    async def fake_send(req):
+        sent["body"] = req.content
+        return ChannelResponse(success=True, provider_message_id="wamid.OUT99")
+
+    monkeypatch.setattr(sm._WHATSAPP_ADAPTER, "send", fake_send)
+
+    receipt = asyncio.run(sm.handle_send_message(SendMessageRequest(
+        recipient=Recipient(id_type="phone", id_value="+96890000001", country_code="OM"),
+        message_type=MessageType.TRANSACTIONAL,
+        content=MessageContent(body="Can Sara book Tuesday 3pm?"),
+        preferred_channel=ChannelPreference.WHATSAPP,
+        on_behalf_of="Sara", business_id="biz_salon"), agent_id="agent_a"))
+
+    assert receipt.status.value == "success"
+    conv = receipt.result["conversation"]
+    ref = conv["reference"]
+    # identity + reference travelled in the message the business receives
+    assert f"#{ref}" in sent["body"] and "Sara" in sent["body"] and "via HatchLoop" in sent["body"]
+    # the outbound wamid was bound to the thread (layer 1 substrate)
+    outs = [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "out"]
+    assert outs and outs[0]["wamid"] == "wamid.OUT99"
+
+    # ...and the business's later free-typed reply resolves back to it exactly
+    m = asyncio.run(C.correlate_inbound(
+        business_number="96890000001", our_number="15556677792",
+        body=f"yes ok #{ref}"))
+    assert m.confidence == "exact"
+    assert m.conversation["conversation_id"] == conv["conversation_id"]
+
+
+def test_send_without_on_behalf_of_is_unchanged(fake_sb, monkeypatch):
+    """No end-user named -> no thread, body untouched (back-compat)."""
+    import core.send_message as sm
+    from core.models import (SendMessageRequest, Recipient, MessageType,
+                             MessageContent, ChannelPreference)
+    from channels.adapter_interface import ChannelResponse
+    sent = {}
+
+    async def fake_send(req):
+        sent["body"] = req.content
+        return ChannelResponse(success=True, provider_message_id="wamid.X")
+
+    monkeypatch.setattr(sm._WHATSAPP_ADAPTER, "send", fake_send)
+    receipt = asyncio.run(sm.handle_send_message(SendMessageRequest(
+        recipient=Recipient(id_type="phone", id_value="+96890000002", country_code="OM"),
+        message_type=MessageType.TRANSACTIONAL,
+        content=MessageContent(body="plain message"),
+        preferred_channel=ChannelPreference.WHATSAPP), agent_id="agent_a"))
+    assert receipt.status.value == "success"
+    assert sent["body"] == "plain message"
+    assert "conversation" not in receipt.result

@@ -419,6 +419,13 @@ class SendMessageRequest(BaseModel):
     content: MessageContent
     preferred_channel: ChannelPreference = ChannelPreference.AUTO
     send_at_iso: Optional[datetime] = None
+    # Who the message is FOR (the agent's end-user, e.g. "Sara"). On two-way
+    # channels this opens a tracked conversation and travels in-message as
+    # "#4821 for Sara (via HatchLoop)" - so the business knows who it is
+    # talking to on a shared number, and their reply is matched back exactly.
+    on_behalf_of: Optional[str] = None
+    # Optional stable id for the business, used for global demand shaping.
+    business_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
