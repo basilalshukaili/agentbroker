@@ -137,6 +137,13 @@ async def handle_send_message(
         try:
             resp = await adapter.send(channel_request)
             if resp.success:
+                # The conversation belongs to the channel that OPENED it. If
+                # WhatsApp opened a thread but then failed and SMS delivered
+                # instead, binding the SMS id to that thread — and telling the
+                # agent a reference the business never received — would be a
+                # lie. Drop it. (found via a DeepSeek review pass, 2026-08-26)
+                if conversation and channel_name != "whatsapp:cloud_api":
+                    conversation = None
                 if conversation and resp.provider_message_id:
                     try:
                         from core import conversations as _conv2

@@ -526,3 +526,37 @@ def test_send_without_on_behalf_of_is_unchanged(fake_sb, monkeypatch):
     assert receipt.status.value == "success"
     assert sent["body"] == "plain message"
     assert "conversation" not in receipt.result
+
+
+def test_fallback_to_sms_does_not_claim_the_whatsapp_thread(fake_sb, monkeypatch):
+    """WhatsApp opened a thread then failed; SMS delivered. The receipt must NOT
+    advertise a reference the business never received, and the SMS provider id
+    must not be bound to the WhatsApp thread."""
+    import core.send_message as sm
+    from core.models import (SendMessageRequest, Recipient, MessageType,
+                             MessageContent, ChannelPreference)
+    from channels.adapter_interface import ChannelResponse
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER", "15556677792")
+
+    async def wa_fails(req):
+        return ChannelResponse(success=False, error_code="whatsapp_token_expired",
+                               error_message="token expired")
+
+    async def sms_ok(req):
+        return ChannelResponse(success=True, provider_message_id="SM_sms_123")
+
+    monkeypatch.setattr(sm._WHATSAPP_ADAPTER, "send", wa_fails)
+    monkeypatch.setattr(sm._SMS_ADAPTER, "send", sms_ok)
+
+    receipt = asyncio.run(sm.handle_send_message(SendMessageRequest(
+        recipient=Recipient(id_type="phone", id_value="+96890000009", country_code="OM"),
+        message_type=MessageType.TRANSACTIONAL,
+        content=MessageContent(body="Booking?"),
+        preferred_channel=ChannelPreference.WHATSAPP,
+        on_behalf_of="Sara"), agent_id="agent_a"))
+
+    assert receipt.status.value == "success"
+    assert receipt.channel_used == "sms:twilio"
+    assert "conversation" not in receipt.result, "must not advertise an unsent reference"
+    outs = [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "out"]
+    assert not any(m["wamid"] == "SM_sms_123" for m in outs), "SMS id bound to WA thread"
