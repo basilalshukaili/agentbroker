@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import config as _config
 from agent_interface.manifest_server import get_full_manifest, get_operation
 
 
@@ -34,7 +35,10 @@ from agent_interface.manifest_server import get_full_manifest, get_operation
 # ---------------------------------------------------------------------------
 
 SERVER_NAME = "agent-broker"
-SERVER_VERSION = "0.1.0"
+# Derived, never restated. A hardcoded version here reported 0.1.0 on the
+# origin long after the build was 0.2.x - and the edge snapshot, refreshed
+# FROM the origin, would have inherited the regression (2026-08-26).
+SERVER_VERSION = _config.SERVICE_VERSION
 PROTOCOL_VERSION = "2024-11-05"
 
 
@@ -147,10 +151,17 @@ def _format_description_for_llm(op: dict) -> str:
         # Manifest uses `unit_price_usd` on most ops, `amount_usd` on one — accept either.
         cost_amount = cost.get("unit_price_usd", cost.get("amount_usd"))
         # Channel- or outcome-variable pricing (send_message, schedule_appointment): point at preview_cost.
-        has_variable = any(
-            k in cost for k in ("voice_premium_usd", "success_bonus_usd", "tiers")
+        has_variable = (
+            cost_basis == "per_call_variable"
+            or any(k in cost for k in ("voice_premium_usd", "success_bonus_usd",
+                                       "tiers", "max_price_usd"))
         )
-        if cost_basis == "free":
+        if cost_basis == "freemium_daily_quota":
+            # Neither "free" nor a flat price is true here: free within the
+            # daily quota, billed after it. Say the actual rule.
+            parts.append(
+                f"COST: free within the daily quota, then ${cost_amount} per call")
+        elif cost_basis == "free":
             parts.append("COST: free")
         elif cost_amount is not None and not has_variable:
             parts.append(f"COST: ${cost_amount} {cost_basis}")

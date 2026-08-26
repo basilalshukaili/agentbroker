@@ -1,1 +1,20 @@
-{"schema_version":"v1","name_for_human":"Agent Broker","name_for_model":"agent_broker","description_for_human":"Discover, verify, message, and schedule with millions of small businesses through a single compliance-aware API.","description_for_model":"Plugin for AI agents to interact with small/mid-sized businesses (SMBs) — the long tail of local services. Capabilities: find_business (search by vertical+location+capability), verify_business (confirm capabilities), send_message (SMS/email/voice with full TCPA/GDPR compliance), capture_lead, schedule_appointment (Cal.com direct booking → voice fallback), send_transactional_confirmation, handle_inbound (classify customer messages), escalate_to_human, get_status, get_outcome, preview_cost (free), self_test (free). ALWAYS call preview_cost before any state-changing operation. Always pass an X-Agent-Identity header for state-changing ops. WinRate is the north-star metric.","auth":{"type":"user_http","authorization_type":"bearer","verification_tokens":{}},"api":{"type":"openapi","url":"https://smb-broker.onrender.com/openapi.yaml","is_user_authenticated":true},"logo_url":"https://smb-broker.onrender.com/static/logo.png","contact_email":"basilalshukaili@gmail.com","legal_info_url":"https://smb-broker.onrender.com/legal"}
+{
+  "schema_version": "v1",
+  "name_for_human": "Agent Broker",
+  "name_for_model": "agent_broker",
+  "description_for_human": "Discover, verify, message, and schedule with millions of small businesses through a single compliance-aware API.",
+  "description_for_model": "Plugin for AI agents to interact with small/mid-sized businesses (SMBs) â€” the long tail of local services. Capabilities: find_business (search by vertical+location+capability), verify_business (confirm capabilities), send_message (SMS/email/voice with full TCPA/GDPR compliance), capture_lead, schedule_appointment (Cal.com direct booking â†’ voice fallback), send_transactional_confirmation, handle_inbound (classify customer messages), escalate_to_human, get_status, get_outcome, preview_cost (free), self_test (free). ALWAYS call preview_cost before any state-changing operation. Always pass an X-Agent-Identity header for state-changing ops. WinRate is the north-star metric.",
+  "auth": {
+    "type": "user_http",
+    "authorization_type": "bearer",
+    "verification_tokens": {}
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://api.hatchloop.dev/openapi.yaml",
+    "is_user_authenticated": true
+  },
+  "logo_url": "https://api.hatchloop.dev/static/logo.png",
+  "contact_email": "basilalshukaili@gmail.com",
+  "legal_info_url": "https://api.hatchloop.dev/legal"
+}

@@ -18,6 +18,7 @@ of which protocol they speak.
 from __future__ import annotations
 
 import json
+from config import SERVICE_VERSION
 from agent_interface.manifest_server import get_full_manifest
 
 
@@ -150,7 +151,7 @@ def get_agents_json() -> dict:
             "Discover, verify, communicate, schedule, transact — all with built-in "
             "TCPA/GDPR/CASL compliance and idempotent semantics."
         ),
-        "version": "0.1.0",
+        "version": SERVICE_VERSION,
         "protocol_version": "a2a-v0.2",
         "url": BASE_URL,
         "documentation_url": f"{BASE_URL}/docs",
@@ -252,7 +253,7 @@ def get_mcp_descriptor() -> dict:
     """Where to connect to our MCP server."""
     return {
         "name": "agent-broker",
-        "version": "0.1.0",
+        "version": SERVICE_VERSION,
         "transport": {
             "type": "streamable-http",
             "endpoint": f"{BASE_URL}/mcp",

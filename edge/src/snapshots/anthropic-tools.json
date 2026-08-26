@@ -1,1 +1,793 @@
-{"version":"1.0","service":"agent-broker","tools":[{"name":"find_business","description":"Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses — not raw directory results. Use when: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target. Do NOT use when: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.","input_schema":{"type":"object","required":["vertical","location"],"properties":{"vertical":{"type":"string","enum":["personal_services","home_services","professional_services"],"description":"Service vertical to search within"},"location":{"type":"object","required":["zip_or_city"],"properties":{"zip_or_city":{"type":"string"},"radius_miles":{"type":"number","default":10}}},"capability":{"type":"string","description":"Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"},"price_band":{"type":"object","properties":{"max_usd":{"type":"number"}}},"availability_window":{"type":"object","properties":{"start_iso":{"type":"string","format":"date-time"},"end_iso":{"type":"string","format":"date-time"}}},"max_results":{"type":"integer","default":5,"maximum":20}}}},{"name":"verify_business","description":"Confirm that an SMB is real, currently operating, and capable of the requested service. Performs a live capability probe against the business's channel. Use when: Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing'). Do NOT use when: Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.","input_schema":{"type":"object","required":["smb_id"],"properties":{"smb_id":{"type":"string"},"capability_to_verify":{"type":"string"}}}},{"name":"send_message","description":"Send a message on behalf of an agent's user or an SMB across SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels. Use when: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send. Do NOT use when: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse. Execution: sync_fast — returns pending_async.","input_schema":{"type":"object","required":["recipient","message_type","content"],"properties":{"recipient":{"type":"object","required":["id_type","id_value"],"properties":{"id_type":{"type":"string","enum":["phone","email","smb_id","customer_id"]},"id_value":{"type":"string"},"country_code":{"type":"string","description":"ISO 3166-1 alpha-2, required for compliance routing"}}},"message_type":{"type":"string","description":"Intent tag for the message. Five permitted types. 'marketing' is allowed only when paired with a valid consent_record_id; the compliance gate verifies the consent at send time and rejects (compliance_violation receipt) if it's missing, expired, or revoked.","enum":["transactional","marketing","reminder","follow_up","notification"]},"content":{"type":"object","required":["body"],"properties":{"body":{"type":"string"},"subject":{"type":"string","description":"For email channel"},"template_id":{"type":"string"},"template_vars":{"type":"object"}}},"preferred_channel":{"type":"string","enum":["sms","email","voice","auto"],"default":"auto"},"send_at_iso":{"type":"string","format":"date-time","description":"Schedule for future delivery; omit for immediate"}}}},{"name":"capture_lead","description":"Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available. Use when: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up. Do NOT use when: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports. Execution: sync_fast — returns pending_async.","input_schema":{"type":"object","required":["smb_id","prospect"],"properties":{"smb_id":{"type":"string"},"prospect":{"type":"object","required":["name"],"properties":{"name":{"type":"string"},"phone":{"type":"string"},"email":{"type":"string","format":"email"},"service_interest":{"type":"string"},"notes":{"type":"string"},"consent_record_id":{"type":"string","description":"Optional ID of a consent record proving the prospect asked to be contacted (e.g., they filled an SMB's intake form or requested a quote). Required when downstream send_message calls are anticipated."}}},"source":{"type":"string","description":"Where the consumer-initiated request originated (e.g., 'consumer_request', 'inbound_quote_form', 'agent_referral_from_find_business')."}}}},{"name":"schedule_appointment","description":"Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form. Use when: Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id. Do NOT use when: Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Execution: async_by_default — returns pending_async.","input_schema":{"type":"object","required":["smb_id","action"],"properties":{"smb_id":{"type":"string"},"action":{"type":"string","enum":["book","reschedule","cancel","check_availability"]},"service":{"type":"string"},"customer":{"type":"object","properties":{"name":{"type":"string"},"phone":{"type":"string"},"email":{"type":"string"}}},"requested_time":{"type":"object","properties":{"preferred_iso":{"type":"string","format":"date-time"},"window_start_iso":{"type":"string","format":"date-time"},"window_end_iso":{"type":"string","format":"date-time"},"duration_minutes":{"type":"integer"}}},"existing_appointment_id":{"type":"string","description":"Required for reschedule/cancel"},"notes":{"type":"string"}}}},{"name":"send_transactional_confirmation","description":"Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Guaranteed delivery via redundant channels. Use when: Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing. Do NOT use when: Do not use for marketing or promotional messages. Do not use for conversational messages. Execution: sync_fast — returns pending_async.","input_schema":{"type":"object","required":["recipient","confirmation_type","data"],"properties":{"recipient":{"type":"object","required":["phone_or_email"],"properties":{"phone_or_email":{"type":"string"},"name":{"type":"string"}}},"confirmation_type":{"type":"string","enum":["otp","booking_confirmation","payment_receipt","cancellation_notice","reminder"]},"data":{"type":"object","description":"Type-specific payload; e.g., {otp_code} for otp, {appointment_time, smb_name} for booking_confirmation"},"preferred_channel":{"type":"string","enum":["sms","email","auto"],"default":"sms"}}}},{"name":"handle_inbound","description":"Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path. Use when: Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries. Do NOT use when: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records. Execution: async_by_default — returns pending_async.","input_schema":{"type":"object","required":["smb_id","inbound_channel","raw_message"],"properties":{"smb_id":{"type":"string"},"inbound_channel":{"type":"string","enum":["sms","email","voice_voicemail","web_form","api"]},"sender":{"type":"object","properties":{"phone":{"type":"string"},"email":{"type":"string"},"name":{"type":"string"}}},"raw_message":{"type":"string"},"received_at_iso":{"type":"string","format":"date-time"},"routing_rules":{"type":"object","description":"Optional override routing policy for this SMB"}}}},{"name":"escalate_to_human","description":"Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step. Use when: Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact. Do NOT use when: Do not use as a first resort. Escalate only after automated resolution attempts. Execution: async_by_default — returns pending_async.","input_schema":{"type":"object","required":["smb_id","reason","context"],"properties":{"smb_id":{"type":"string"},"reason":{"type":"string","enum":["automation_failed","customer_requested","compliance_hold","ambiguous_intent","exception_required"]},"context":{"type":"object","properties":{"original_operation":{"type":"string"},"operation_id":{"type":"string"},"transcript":{"type":"array","items":{"type":"object"}},"prior_actions":{"type":"array","items":{"type":"object"}},"recommended_next_step":{"type":"string"}}},"priority":{"type":"string","enum":["normal","urgent"],"default":"normal"}}}},{"name":"get_status","description":"Query the current state of any in-flight async operation by operation_id. Use when: Use to poll the state of a pending_async operation when no webhook callback has arrived or to check progress. Do NOT use when: Do not poll more frequently than once per 10 seconds — use webhook delivery for real-time updates instead.","input_schema":{"type":"object","required":["operation_id"],"properties":{"operation_id":{"type":"string"}}}},{"name":"get_outcome","description":"Retrieve the final OutcomeReceipt for a completed operation. Use when: Use after get_status returns success/failure/partial to retrieve the full result with cost and reason codes. Do NOT use when: Do not use for operations still in pending/executing state — use get_status first.","input_schema":{"type":"object","required":["operation_id"],"properties":{"operation_id":{"type":"string"}}}},{"name":"preview_cost","description":"Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview. Use when: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed. Do NOT use when: Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview.","input_schema":{"type":"object","required":["operation","params"],"properties":{"operation":{"type":"string"},"params":{"type":"object","description":"The same request body you would pass to the operation"}}}},{"name":"self_test","description":"Live capability probe that verifies the service is healthy, each claimed operation is reachable, and supply network size is current. Use to verify integration before production use. Use when: Use at agent startup, before high-stakes task sequences, or after receiving unexpected errors to check if the service is degraded. Do NOT use when: Do not call more than once per minute in production.","input_schema":{"type":"object","properties":{}}},{"name":"check_booking_link","description":"Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment. Use when: Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt. Do NOT use when: Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).","input_schema":{"type":"object","required":["url"],"properties":{"url":{"type":"string","description":"Full http(s) URL to classify, e.g. 'https://cal.com/jane' or 'https://www.opentable.com/r/acme'."}}}},{"name":"import_booking_url","description":"Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id. Use when: Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment. Do NOT use when: Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12). Cost: ~$0.005 per call.","input_schema":{"type":"object","required":["booking_url"],"properties":{"booking_url":{"type":"string","format":"uri","description":"Full URL the user supplied. Must point at one of the 12 supported booking platforms; auto-detected from the host."},"business_name":{"type":"string","description":"Optional override. If omitted, the business name is auto-extracted from the page's <title> or og:title."},"vertical":{"type":"string","enum":["personal_services","home_services","professional_services","restaurants","retail","healthcare","fitness"],"description":"Best-guess vertical. If omitted, inferred from the platform (e.g., Doctolib -> healthcare, OpenTable -> restaurants)."},"country_code":{"type":"string","description":"ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."},"contact_phone":{"type":"string","description":"Optional. If omitted, the platform integration handles outreach."},"contact_email":{"type":"string","description":"Optional."},"capabilities":{"type":"array","items":{"type":"string"},"description":"Free-form capability tags (e.g., ['haircut','color','blowdry'])."}}}},{"name":"call_business","description":"Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields. Use when: Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes). Do NOT use when: Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that. Execution: async_by_default — returns pending_async.","input_schema":{"type":"object","required":["objective"],"properties":{"business_phone":{"type":"string","description":"Business phone in E.164 (e.g. +14045550123). Provide this OR smb_id."},"smb_id":{"type":"string","description":"Known SMB identifier with a phone on record. Provide this OR business_phone."},"objective":{"type":"string","description":"What the call should accomplish, in plain language."},"extract_fields":{"type":"array","items":{"type":"string"},"description":"Structured fields to pull from the answer, e.g. ['available_tomorrow','price_quote','earliest_slot']."},"country_code":{"type":"string","description":"ISO 3166-1 alpha-2 for compliance + recording-consent routing."},"on_behalf_of":{"type":"string","description":"Name of the consumer the call is placed for."},"max_duration_seconds":{"type":"integer","maximum":600,"default":180}}}},{"name":"check_compliance","description":"Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Use when: Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send. Do NOT use when: Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.","input_schema":{"type":"object","required":["recipient_id","content"],"properties":{"recipient_id":{"type":"string","description":"Phone in E.164 (e.g. '+14045550100') or email address the message would go to."},"content":{"type":"string","description":"The actual message body you intend to send. The gate classifies the real text, so a meaningful preview needs the real content."},"channel":{"type":"string","enum":["sms","email","voice"],"description":"Delivery channel. Omit to auto-infer sms/email from recipient_id; set 'voice' explicitly."},"message_type":{"type":"string","description":"Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.","default":"transactional"},"country_code":{"type":"string","description":"ISO 3166-1 alpha-2 (e.g. 'US', 'DE', 'CA'). Auto-inferred from phone if omitted; drives which jurisdiction rules apply."},"state_code":{"type":"string","description":"US state code (e.g. 'CA') for state-specific rules."}}}},{"name":"verify_company_record","description":"Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried. Use when: Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup. Do NOT use when: Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen.","input_schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string","description":"Legal company name to look up, e.g. Apple Inc or Volkswagen AG."},"country":{"type":"string","description":"Optional ISO 3166-1 alpha-2 country filter (e.g. US, DE, GB). Narrows GLEIF results to one jurisdiction."},"lei":{"type":"string","description":"Optional 20-character Legal Entity Identifier for a direct, precise lookup."}}}}],"endpoint":"https://smb-broker.onrender.com/ops/{tool_name}","auth_header":"X-Agent-Identity","mcp_endpoint":"https://smb-broker.onrender.com/mcp"}
+{
+  "version": "1.0",
+  "service": "agent-broker",
+  "tools": [
+    {
+      "name": "find_business",
+      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses â€” not raw directory results. Use when: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target. Do NOT use when: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "vertical",
+          "location"
+        ],
+        "properties": {
+          "vertical": {
+            "type": "string",
+            "enum": [
+              "personal_services",
+              "home_services",
+              "professional_services"
+            ],
+            "description": "Service vertical to search within"
+          },
+          "location": {
+            "type": "object",
+            "required": [
+              "zip_or_city"
+            ],
+            "properties": {
+              "zip_or_city": {
+                "type": "string"
+              },
+              "radius_miles": {
+                "type": "number",
+                "default": 10
+              }
+            }
+          },
+          "capability": {
+            "type": "string",
+            "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"
+          },
+          "price_band": {
+            "type": "object",
+            "properties": {
+              "max_usd": {
+                "type": "number"
+              }
+            }
+          },
+          "availability_window": {
+            "type": "object",
+            "properties": {
+              "start_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_iso": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "max_results": {
+            "type": "integer",
+            "default": 5,
+            "maximum": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "verify_business",
+      "description": "Confirm that an SMB is real, currently operating, and capable of the requested service. Performs a live capability probe against the business's channel. Use when: Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing'). Do NOT use when: Do not use if the SMB was returned from find_business within the last 24 hours â€” those results are already verified.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "smb_id"
+        ],
+        "properties": {
+          "smb_id": {
+            "type": "string"
+          },
+          "capability_to_verify": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content â€” marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels. Use when: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send. Do NOT use when: Do NOT use for OTPs or critical transactional confirmations â€” use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in â€” the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach â€” those are out of scope and the rate limiter will throttle abuse. Execution: sync_fast â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "recipient",
+          "message_type",
+          "content"
+        ],
+        "properties": {
+          "recipient": {
+            "type": "object",
+            "required": [
+              "id_type",
+              "id_value"
+            ],
+            "properties": {
+              "id_type": {
+                "type": "string",
+                "enum": [
+                  "phone",
+                  "email",
+                  "smb_id",
+                  "customer_id"
+                ]
+              },
+              "id_value": {
+                "type": "string"
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2, required for compliance routing"
+              }
+            }
+          },
+          "message_type": {
+            "type": "string",
+            "description": "Intent tag for the message. Five permitted types. 'marketing' is allowed only when paired with a valid consent_record_id; the compliance gate verifies the consent at send time and rejects (compliance_violation receipt) if it's missing, expired, or revoked.",
+            "enum": [
+              "transactional",
+              "marketing",
+              "reminder",
+              "follow_up",
+              "notification"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "required": [
+              "body"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string",
+                "description": "For email channel"
+              },
+              "template_id": {
+                "type": "string"
+              },
+              "template_vars": {
+                "type": "object"
+              }
+            }
+          },
+          "preferred_channel": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "sms",
+              "email",
+              "voice",
+              "auto"
+            ],
+            "default": "auto"
+          },
+          "send_at_iso": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Schedule for future delivery; omit for immediate"
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Who this message is FOR (your end-user's name/label). On WhatsApp this opens a tracked conversation and travels in-message as '#4821 for Sara (via HatchLoop)', so the business knows who it is talking to and their reply is matched back to this exact request instead of guessed. Strongly recommended for two-way channels."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Optional stable id for the recipient business. Enables global demand shaping (we rate-limit total inbound across ALL agents so businesses stay responsive instead of blocking us)."
+          }
+        }
+      }
+    },
+    {
+      "name": "capture_lead",
+      "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available. Use when: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up. Do NOT use when: Do not use for confirmed bookings â€” use schedule_appointment. Do not use for bulk list imports. Execution: sync_fast â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "smb_id",
+          "prospect"
+        ],
+        "properties": {
+          "smb_id": {
+            "type": "string"
+          },
+          "prospect": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              },
+              "service_interest": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "consent_record_id": {
+                "type": "string",
+                "description": "Optional ID of a consent record proving the prospect asked to be contacted (e.g., they filled an SMB's intake form or requested a quote). Required when downstream send_message calls are anticipated."
+              }
+            }
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the consumer-initiated request originated (e.g., 'consumer_request', 'inbound_quote_form', 'agent_referral_from_find_business')."
+          }
+        }
+      }
+    },
+    {
+      "name": "schedule_appointment",
+      "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form. Use when: Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id. Do NOT use when: Do not use for bulk scheduling. Do not use without a verified SMB â€” call find_business and verify_business first if needed. Execution: async_by_default â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "smb_id",
+          "action"
+        ],
+        "properties": {
+          "smb_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "book",
+              "reschedule",
+              "cancel",
+              "check_availability"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
+          "customer": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            }
+          },
+          "requested_time": {
+            "type": "object",
+            "properties": {
+              "preferred_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "window_start_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "window_end_iso": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "duration_minutes": {
+                "type": "integer"
+              }
+            }
+          },
+          "existing_appointment_id": {
+            "type": "string",
+            "description": "Required for reschedule/cancel"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "send_transactional_confirmation",
+      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Guaranteed delivery via redundant channels. Use when: Use for any message that MUST be delivered reliably â€” OTPs, booking confirmations, receipts. Do not use for marketing. Do NOT use when: Do not use for marketing or promotional messages. Do not use for conversational messages. Execution: sync_fast â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "recipient",
+          "confirmation_type",
+          "data"
+        ],
+        "properties": {
+          "recipient": {
+            "type": "object",
+            "required": [
+              "phone_or_email"
+            ],
+            "properties": {
+              "phone_or_email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "confirmation_type": {
+            "type": "string",
+            "enum": [
+              "otp",
+              "booking_confirmation",
+              "payment_receipt",
+              "cancellation_notice",
+              "reminder"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "description": "Type-specific payload; e.g., {otp_code} for otp, {appointment_time, smb_name} for booking_confirmation"
+          },
+          "preferred_channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "auto"
+            ],
+            "default": "sms"
+          }
+        }
+      }
+    },
+    {
+      "name": "handle_inbound",
+      "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path. Use when: Use when an SMB needs inbound message triage â€” classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries. Do NOT use when: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records. Execution: async_by_default â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "smb_id",
+          "inbound_channel",
+          "raw_message"
+        ],
+        "properties": {
+          "smb_id": {
+            "type": "string"
+          },
+          "inbound_channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "voice_voicemail",
+              "web_form",
+              "api"
+            ]
+          },
+          "sender": {
+            "type": "object",
+            "properties": {
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "raw_message": {
+            "type": "string"
+          },
+          "received_at_iso": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "routing_rules": {
+            "type": "object",
+            "description": "Optional override routing policy for this SMB"
+          }
+        }
+      }
+    },
+    {
+      "name": "escalate_to_human",
+      "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step. Use when: Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact. Do NOT use when: Do not use as a first resort. Escalate only after automated resolution attempts. Execution: async_by_default â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "smb_id",
+          "reason",
+          "context"
+        ],
+        "properties": {
+          "smb_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "automation_failed",
+              "customer_requested",
+              "compliance_hold",
+              "ambiguous_intent",
+              "exception_required"
+            ]
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "original_operation": {
+                "type": "string"
+              },
+              "operation_id": {
+                "type": "string"
+              },
+              "transcript": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "prior_actions": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "recommended_next_step": {
+                "type": "string"
+              }
+            }
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "urgent"
+            ],
+            "default": "normal"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_status",
+      "description": "Query the current state of any in-flight async operation by operation_id. Use when: Use to poll the state of a pending_async operation when no webhook callback has arrived or to check progress. Do NOT use when: Do not poll more frequently than once per 10 seconds â€” use webhook delivery for real-time updates instead.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "operation_id"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_outcome",
+      "description": "Retrieve the final OutcomeReceipt for a completed operation. Use when: Use after get_status returns success/failure/partial to retrieve the full result with cost and reason codes. Do NOT use when: Do not use for operations still in pending/executing state â€” use get_status first.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "operation_id"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "preview_cost",
+      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within Â±5% of preview. Use when: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed. Do NOT use when: Do not use in a hot loop â€” cache the result for at least 60 seconds if repeating the same preview.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "operation",
+          "params"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "description": "The same request body you would pass to the operation"
+          }
+        }
+      }
+    },
+    {
+      "name": "self_test",
+      "description": "Live capability probe that verifies the service is healthy, each claimed operation is reachable, and supply network size is current. Use to verify integration before production use. Use when: Use at agent startup, before high-stakes task sequences, or after receiving unexpected errors to check if the service is degraded. Do NOT use when: Do not call more than once per minute in production.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "check_booking_link",
+      "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment. Use when: Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt. Do NOT use when: Do not use to confirm the page is currently live/available â€” this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full http(s) URL to classify, e.g. 'https://cal.com/jane' or 'https://www.opentable.com/r/acme'."
+          }
+        }
+      }
+    },
+    {
+      "name": "import_booking_url",
+      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent â€” calling twice returns the same smb_id. Use when: Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment. Do NOT use when: Do not use if the user only describes a business by name without a URL â€” call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "booking_url"
+        ],
+        "properties": {
+          "booking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Full URL the user supplied. Must point at one of the 12 supported booking platforms; auto-detected from the host."
+          },
+          "business_name": {
+            "type": "string",
+            "description": "Optional override. If omitted, the business name is auto-extracted from the page's <title> or og:title."
+          },
+          "vertical": {
+            "type": "string",
+            "enum": [
+              "personal_services",
+              "home_services",
+              "professional_services",
+              "restaurants",
+              "retail",
+              "healthcare",
+              "fitness"
+            ],
+            "description": "Best-guess vertical. If omitted, inferred from the platform (e.g., Doctolib -> healthcare, OpenTable -> restaurants)."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."
+          },
+          "contact_phone": {
+            "type": "string",
+            "description": "Optional. If omitted, the platform integration handles outreach."
+          },
+          "contact_email": {
+            "type": "string",
+            "description": "Optional."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form capability tags (e.g., ['haircut','color','blowdry'])."
+          }
+        }
+      }
+    },
+    {
+      "name": "call_business",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page â€” only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers â€” but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields. Use when: Use when the target business has NO booking URL and NO API â€” only a phone number â€” and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes). Do NOT use when: Do NOT use when the business has a booking URL â€” use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing â€” the compliance gate and the B2B-only framing reject that. Execution: async_by_default â€” returns pending_async.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "objective"
+        ],
+        "properties": {
+          "business_phone": {
+            "type": "string",
+            "description": "Business phone in E.164 (e.g. +14045550123). Provide this OR smb_id."
+          },
+          "smb_id": {
+            "type": "string",
+            "description": "Known SMB identifier with a phone on record. Provide this OR business_phone."
+          },
+          "objective": {
+            "type": "string",
+            "description": "What the call should accomplish, in plain language."
+          },
+          "extract_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Structured fields to pull from the answer, e.g. ['available_tomorrow','price_quote','earliest_slot']."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 for compliance + recording-consent routing."
+          },
+          "on_behalf_of": {
+            "type": "string",
+            "description": "Name of the consumer the call is placed for."
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "maximum": 600,
+            "default": 180
+          }
+        }
+      }
+    },
+    {
+      "name": "check_compliance",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run â€” but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Use when: Call this the moment before send_message or call_business when there is any chance the send is regulated â€” anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send. Do NOT use when: Do not treat a legal=true as a permanent license â€” the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "recipient_id",
+          "content"
+        ],
+        "properties": {
+          "recipient_id": {
+            "type": "string",
+            "description": "Phone in E.164 (e.g. '+14045550100') or email address the message would go to."
+          },
+          "content": {
+            "type": "string",
+            "description": "The actual message body you intend to send. The gate classifies the real text, so a meaningful preview needs the real content."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "email",
+              "voice"
+            ],
+            "description": "Delivery channel. Omit to auto-infer sms/email from recipient_id; set 'voice' explicitly."
+          },
+          "message_type": {
+            "type": "string",
+            "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+            "default": "transactional"
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE', 'CA'). Auto-inferred from phone if omitted; drives which jurisdiction rules apply."
+          },
+          "state_code": {
+            "type": "string",
+            "description": "US state code (e.g. 'CA') for state-specific rules."
+          }
+        }
+      }
+    },
+    {
+      "name": "verify_company_record",
+      "description": "Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried. Use when: Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup. Do NOT use when: Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Legal company name to look up, e.g. Apple Inc or Volkswagen AG."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country filter (e.g. US, DE, GB). Narrows GLEIF results to one jurisdiction."
+          },
+          "lei": {
+            "type": "string",
+            "description": "Optional 20-character Legal Entity Identifier for a direct, precise lookup."
+          }
+        }
+      }
+    },
+    {
+      "name": "screen_sanctions",
+      "description": "Free, live screening of a name or entity against official sanctions and watchlists. Queries OpenSanctions (aggregates OFAC SDN, EU Consolidated Financial Sanctions, UN Security Council, UK HMT, and 40+ official lists) plus the OFAC SDN list directly from the US Treasury. Returns matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Use when: Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk. Do NOT use when: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available for best accuracy."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 country code (e.g. 'US', 'RU', 'IR'). Narrows results to entities associated with this country."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "person",
+              "entity"
+            ],
+            "description": "Optional entity type hint. 'person' for individuals, 'entity' for organizations/companies. Omit to screen both."
+          }
+        }
+      }
+    },
+    {
+      "name": "map_trade_restriction",
+      "description": "Free, live cross-border trade-compliance snapshot. Given a product and destination country (and optionally an HS code, origin country, and a list of parties to screen), returns: (a) whether the destination or any party hits an export-control or sanctions restriction, (b) the destination risk level (comprehensive_embargo / sectoral_sanctions / elevated_scrutiny / standard), (c) HS code hint if the caller provided one, (d) honest tariff guidance + official links without fabricated rates, and (e) party sanctions screening via OpenSanctions and OFAC SDN. Acts as a MIDDLEMAN -- unifies the OFAC comprehensive-embargo map, OpenSanctions (40+ official lists including BIS Entity List, EU, UN, UK), and OFAC SDN into one clean call. Never fabricates a tariff rate, a clear, or a restricted status. Use when: Use before any cross-border trade to flag embargoed destinations, screen exporters/importers/freight forwarders against sanctions lists, and get authoritative links to the applicable tariff databases. Call this as a pre-flight check before quoting, invoicing, or shipping internationally. Covers OFAC comprehensively-embargoed countries (Iran, North Korea, Cuba, Syria) and significant advisory countries (Russia, Belarus, Ukraine Crimea/DNR/LNR regions). Do NOT use when: Do NOT use as a substitute for a licensed export compliance review. Do NOT use to obtain authoritative tariff rates (this tool returns guidance links, never fabricated rates). Do NOT use for purely domestic shipments where no cross-border movement is involved.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "product",
+          "destination_country"
+        ],
+        "properties": {
+          "product": {
+            "type": "string",
+            "description": "Product name or description, e.g. 'laptop computers', 'crude oil', 'medical devices'. Used in the tariff guidance note."
+          },
+          "hs_code": {
+            "type": "string",
+            "description": "Optional Harmonized System code (e.g. '8471.30' for laptops). If provided, echoed back and included in tariff guidance. Not derived -- caller must supply the official HS code."
+          },
+          "origin_country": {
+            "type": "string",
+            "description": "Optional ISO 3166-1 alpha-2 code for the exporting country (e.g. 'US', 'DE'). Used in the tariff guidance note."
+          },
+          "destination_country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 code for the importing country (e.g. 'IR', 'CA', 'DE'). Required. Checked against the OFAC comprehensive-embargo map and sectoral-sanctions advisory list."
+          },
+          "parties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of party names to screen (exporter, importer, freight forwarder, end-user, etc.). Each name is screened against OpenSanctions (40+ official lists) and OFAC SDN."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_conversation",
+      "description": "Read a two-way conversation thread you started: its state, every message exchanged, and how many replies the business has sent. Use when: After send_message with on_behalf_of returns a conversation_id, poll this to read the business's reply. Replies are matched to the right thread exactly (never guessed), so what you read here belongs to YOUR end-user. Do NOT use when: Do not poll more often than every 10 seconds.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "From the send_message receipt (preferred)."
+          },
+          "reference": {
+            "type": "string",
+            "description": "The 4-digit request reference, e.g. '4821'. Requires business_number."
+          },
+          "business_number": {
+            "type": "string",
+            "description": "Scopes a `reference` to one business (references are reused across businesses)."
+          }
+        }
+      }
+    }
+  ],
+  "endpoint": "https://api.hatchloop.dev/ops/{tool_name}",
+  "auth_header": "X-Agent-Identity",
+  "mcp_endpoint": "https://api.hatchloop.dev/mcp"
+}

@@ -107,6 +107,45 @@ def test_service_identity_matches_config(manifest):
     assert svc["version"] == config.SERVICE_VERSION
 
 
+def test_tool_descriptions_carry_exactly_one_cost_line():
+    """The COST line is what an agent reads to decide affordability. Two lines
+    (the freemium branch falling through into the flat-price branch) would tell
+    it two different prices for the same call."""
+    from agent_interface.mcp_server import _build_tool_list
+    for tool in _build_tool_list():
+        lines = [l for l in tool["description"].splitlines() if l.startswith("COST:")]
+        assert len(lines) == 1, f"{tool['name']} has {len(lines)} COST lines: {lines}"
+
+
+def test_cost_lines_are_honest_per_class():
+    from agent_interface.mcp_server import _build_tool_list
+    got = {t["name"]: next(l for l in t["description"].splitlines()
+                           if l.startswith("COST:"))
+           for t in _build_tool_list()}
+    assert got["find_business"] == "COST: free"
+    # variable ops must not quote a flat price
+    assert "from $" in got["send_message"] and "preview_cost" in got["send_message"]
+    # premium data must not claim to be flatly free
+    assert "quota" in got["screen_sanctions"]
+    assert got["screen_sanctions"] != "COST: free"
+
+
+def test_mcp_server_version_is_derived_not_hardcoded():
+    """The origin reported serverInfo 0.1.0 while the build was 0.2.x, and the
+    edge snapshot refreshed FROM the origin would have inherited it."""
+    import config
+    from agent_interface import mcp_server
+    assert mcp_server.SERVER_VERSION == config.SERVICE_VERSION
+    src = open(mcp_server.__file__, encoding="utf-8").read()
+    assert 'SERVER_VERSION = "' not in src, "version must be derived from config"
+
+
+def test_well_known_descriptors_report_the_real_version():
+    import config
+    from agent_interface.well_known import get_mcp_descriptor
+    assert get_mcp_descriptor()["version"] == config.SERVICE_VERSION
+
+
 def test_server_json_version_matches_config():
     """server.json drives the public MCP-registry listing — a stale version
     there publishes a release that does not exist."""
