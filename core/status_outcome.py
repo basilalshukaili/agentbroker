@@ -11,6 +11,7 @@ import time
 
 from core.models import OutcomeReceipt, OperationStatus, CostRecord
 from storage.outcome_store import get_outcome_store
+from billing.pricing import receipt_usd as _receipt_usd
 
 
 async def handle_get_status(
@@ -50,7 +51,7 @@ async def handle_get_outcome(
             status=OperationStatus.FAILURE,
             reason_code="not_found",
             human_message=f"No operation found with ID {operation_id}.",
-            cost=CostRecord(amount=0.001, currency="USD", basis="per_call"),
+            cost=CostRecord(amount=_receipt_usd("get_status"), currency="USD", basis="free"),
             latency_ms=int((time.monotonic() - t0) * 1000),
             retriable=False,
             trace_id=trace_id,
@@ -62,7 +63,7 @@ async def handle_get_outcome(
             status=OperationStatus.PENDING_ASYNC,
             reason_code="still_in_progress",
             human_message="Operation is still in progress. Poll get_status or await webhook.",
-            cost=CostRecord(amount=0.001, currency="USD", basis="per_call"),
+            cost=CostRecord(amount=_receipt_usd("get_status"), currency="USD", basis="free"),
             latency_ms=int((time.monotonic() - t0) * 1000),
             retriable=False,
             trace_id=trace_id,
@@ -91,7 +92,7 @@ async def handle_get_outcome(
         status=OperationStatus.FAILURE,
         reason_code="outcome_not_stored",
         human_message="Operation completed but outcome record is missing. Contact support.",
-        cost=CostRecord(amount=0.001, currency="USD", basis="per_call"),
+        cost=CostRecord(amount=_receipt_usd("get_outcome"), currency="USD", basis="free"),
         latency_ms=int((time.monotonic() - t0) * 1000),
         retriable=False,
         trace_id=trace_id,

@@ -12,6 +12,7 @@ from core.models import (
 )
 from supply.smb_directory import get_directory
 from telemetry.metrics import increment_businesses_found
+from billing.pricing import receipt_usd as _receipt_usd
 
 
 async def handle_find_business(
@@ -128,7 +129,7 @@ async def handle_find_business(
             else "No verified businesses matched. Use import_booking_url to add a specific URL."
         ),
         result=result,
-        cost=CostRecord(amount=0.01, currency="USD", basis="per_call"),
+        cost=CostRecord(amount=_receipt_usd("find_business"), currency="USD", basis="free"),
         latency_ms=int((time.monotonic() - t0) * 1000),
         channel_used=None,
         retriable=False,

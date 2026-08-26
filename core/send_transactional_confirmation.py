@@ -23,6 +23,7 @@ from core.models import (
     CostRecord, ComplianceViolationError
 )
 from channels.adapter_interface import ChannelRequest
+from billing.pricing import receipt_usd as _receipt_usd
 
 _TEMPLATES = {
     "booking_confirmation": "Hi {name}, your appointment at {smb_name} is confirmed for {appointment_time}. Address: {address}. Reply STOP to unsubscribe.",
@@ -166,7 +167,7 @@ async def handle_send_transactional_confirmation(
                 reason_code="confirmation_sent",
                 human_message=f"{request.confirmation_type.value} sent via {channel_name}.",
                 result={"provider_message_id": resp.provider_message_id},
-                cost=CostRecord(amount=0.02, currency="USD", basis="per_message"),  # FIX 4: manifest price
+                cost=CostRecord(amount=_receipt_usd("send_transactional_confirmation"), currency="USD", basis="per_message"),  # FIX 4: manifest price
                 latency_ms=int((time.monotonic() - t0) * 1000),
                 channel_used=channel_name,
                 retriable=False,

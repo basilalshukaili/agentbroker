@@ -53,13 +53,18 @@ class TestFindBusiness:
         assert receipt.status == OperationStatus.SUCCESS
         assert any("plumbing" in b["capabilities"] for b in receipt.result["businesses"])
 
-    def test_cost_is_one_cent(self):
+    def test_cost_matches_the_price_table(self):
+        """find_business is FREE in billing/pricing.py. This test used to assert
+        the receipt reported $0.01 - pinning a defect as if it were the spec, so
+        nobody noticed a free tool claiming a charge (2026-08-26)."""
+        from billing.pricing import price_cents
         req = FindBusinessRequest(
             vertical=Vertical.PROFESSIONAL_SERVICES,
             location=LocationFilter(zip_or_city="Boston"),
         )
         receipt = run(handle_find_business(req))
-        assert receipt.cost.amount == 0.01
+        assert price_cents("find_business") == 0
+        assert receipt.cost.amount == 0.0
 
     def test_max_results_respected(self):
         req = FindBusinessRequest(

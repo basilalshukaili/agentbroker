@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from core.models import HandleInboundRequest, OutcomeReceipt, OperationStatus, CostRecord
+from billing.pricing import receipt_usd as _receipt_usd
 
 
 _INTENT_SIGNALS = {
@@ -98,7 +99,7 @@ async def handle_inbound(
         reason_code=f"inbound_classified:{intent}",
         human_message=f"Inbound message classified as '{intent}'. Suggested action: {suggested_action}.",
         result=result,
-        cost=CostRecord(amount=0.03, currency="USD", basis="per_inbound"),  # FIX 4: manifest price
+        cost=CostRecord(amount=_receipt_usd("handle_inbound"), currency="USD", basis="per_inbound"),  # FIX 4: manifest price
         latency_ms=int((time.monotonic() - t0) * 1000),
         channel_used=f"inbound:{request.inbound_channel.value}",
         estimated_completion_time=estimated if requires_async else None,

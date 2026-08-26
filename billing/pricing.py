@@ -97,6 +97,28 @@ def price_atomic(op: str) -> int:
     return price_cents(op) * 10_000
 
 
+def receipt_usd(op: str, *, at_max: bool = False) -> float:
+    """The USD figure a receipt must report for `op`.
+
+    WHY THIS EXISTS. Receipts hardcoded their own dollar amounts, and several
+    disagreed with this table (found 2026-08-26):
+      - find_business reported $0.01 and get_status/get_outcome $0.001 while
+        all three are FREE here - a receipt claiming a charge that never
+        happened;
+      - schedule_appointment reported $1.00 against a table that says 15
+        credits base / 50 max. billing/credits.py derives the actual charge
+        from receipt.cost.amount and clamps it to the max, so every successful
+        booking was charged the MAXIMUM 50 while preview_cost quoted 15 -
+        breaking this module's own stated invariant that preview_cost equals
+        the actual charge.
+
+    One source. `at_max=True` for the outcome a variable-price op reserves for
+    (a confirmed booking rather than an attempt).
+    """
+    cents = max_credits(op) if at_max else price_cents(op)
+    return round(cents / 100, 4)
+
+
 def is_paid(op: str) -> bool:
     """True if this operation costs credits (price > 0)."""
     return op in _PAID_OPS

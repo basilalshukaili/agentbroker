@@ -16,6 +16,7 @@ from core.models import (
 from storage.outcome_store import get_outcome_store
 from supply.smb_directory import get_directory
 from channels.direct_api.calcom import CalComAdapter
+from billing.pricing import receipt_usd as _receipt_usd
 
 
 def _has_celery_worker() -> bool:
@@ -153,7 +154,7 @@ async def handle_schedule_appointment(
                             "smb_name": smb.name,
                             "action": "booked",
                         },
-                        cost=CostRecord(amount=1.00, currency="USD", basis="per_booking_attempt+success_bonus"),
+                        cost=CostRecord(amount=_receipt_usd("schedule_appointment", at_max=True), currency="USD", basis="per_confirmed_booking"),
                         latency_ms=int((time.monotonic() - t0) * 1000),
                         channel_used="direct_api:calcom",
                         retriable=False,
@@ -168,7 +169,7 @@ async def handle_schedule_appointment(
                     reason_code="cancelled",
                     human_message=f"Appointment {request.existing_appointment_id} cancelled.",
                     result=result,
-                    cost=CostRecord(amount=0.25, currency="USD", basis="per_booking_attempt"),
+                    cost=CostRecord(amount=_receipt_usd("schedule_appointment"), currency="USD", basis="per_booking_attempt"),
                     latency_ms=int((time.monotonic() - t0) * 1000),
                     channel_used="direct_api:calcom",
                     retriable=False,
@@ -193,7 +194,7 @@ async def handle_schedule_appointment(
                     reason_code="availability_returned",
                     human_message=f"Found {len(slots)} available slot(s) at {smb.name}.",
                     result={"slots": slots, "smb_name": smb.name, "count": len(slots)},
-                    cost=CostRecord(amount=0.10, currency="USD", basis="per_availability_check"),
+                    cost=CostRecord(amount=_receipt_usd("schedule_appointment"), currency="USD", basis="per_availability_check"),
                     latency_ms=int((time.monotonic() - t0) * 1000),
                     channel_used="direct_api:calcom",
                     retriable=False,
@@ -241,7 +242,7 @@ async def handle_schedule_appointment(
         status=OperationStatus.PENDING_ASYNC,
         reason_code="booking_in_progress",
         human_message=f"Booking request submitted for {smb.name}. Estimated completion: {estimated.isoformat()}.",
-        cost=CostRecord(amount=0.25, currency="USD", basis="per_booking_attempt"),
+        cost=CostRecord(amount=_receipt_usd("schedule_appointment"), currency="USD", basis="per_booking_attempt"),
         latency_ms=int((time.monotonic() - t0) * 1000),
         channel_used=None,
         channel_fallback_chain=channel_chain,

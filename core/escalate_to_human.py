@@ -13,6 +13,7 @@ import time
 import uuid
 
 from core.models import EscalateToHumanRequest, OutcomeReceipt, OperationStatus, CostRecord
+from billing.pricing import receipt_usd as _receipt_usd
 
 
 async def handle_escalate_to_human(
@@ -88,7 +89,7 @@ async def handle_escalate_to_human(
             "a human will review it."
         ),
         result=result,
-        cost=CostRecord(amount=0.20, currency="USD", basis="per_escalation"),
+        cost=CostRecord(amount=_receipt_usd("escalate_to_human"), currency="USD", basis="per_escalation"),
         latency_ms=int((time.monotonic() - t0) * 1000),
         channel_used="internal:supabase_escalations",
         retriable=False,

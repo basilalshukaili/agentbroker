@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from core.models import VerifyBusinessRequest, OutcomeReceipt, OperationStatus, CostRecord
 from supply.smb_directory import get_directory
+from billing.pricing import receipt_usd as _receipt_usd
 
 
 async def handle_verify_business(
@@ -27,7 +28,7 @@ async def handle_verify_business(
             status=OperationStatus.FAILURE,
             reason_code="supply_unreachable",
             human_message=f"SMB {request.smb_id} not found in supply network.",
-            cost=CostRecord(amount=0.02, currency="USD", basis="per_call"),
+            cost=CostRecord(amount=_receipt_usd("verify_business"), currency="USD", basis="free"),
             latency_ms=int((time.monotonic() - t0) * 1000),
             retriable=False,
             trace_id=trace_id,
@@ -68,7 +69,7 @@ async def handle_verify_business(
         reason_code="verified" if verified else "capability_not_found",
         human_message=human_message,
         result=result,
-        cost=CostRecord(amount=0.02, currency="USD", basis="per_call"),
+        cost=CostRecord(amount=_receipt_usd("verify_business"), currency="USD", basis="free"),
         latency_ms=int((time.monotonic() - t0) * 1000),
         retriable=False,
         trace_id=trace_id,
