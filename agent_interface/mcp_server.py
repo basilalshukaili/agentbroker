@@ -534,7 +534,8 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     # Path: paid tool + funded non-free credit account -> run_metered_tool
     #   -> reserve(MAX) first; if insufficient return honest failure (no dispatch)
     #   -> dispatch -> commit on success / release on failure
-    # Free keys (free_*) keep the existing 50/day path unchanged.
+    # Free keys (free_*) keep the existing free-tier daily path unchanged
+    # (limit lives in FREE_TIER_DAILY_LIMIT — never restate it here).
     # Reads and zero-cost ops bypass entirely (is_credit_paid_tool guard).
     import os as _os_credits
     if _os_credits.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
@@ -684,7 +685,8 @@ def _inject_quota_block(receipt: dict, token: str) -> None:
     try:
         if not token or token in ("", "anonymous"):
             return
-        from agent_interface.key_request_logic import is_free_key, get_free_daily_remaining
+        from agent_interface.key_request_logic import (
+            is_free_key, get_free_daily_remaining, FREE_TIER_DAILY_LIMIT as _free_limit)
         from agent_interface.identity import validate_token
         from datetime import datetime, timezone, timedelta
 
@@ -704,7 +706,9 @@ def _inject_quota_block(receipt: dict, token: str) -> None:
         receipt["quota"] = {
             "tier": "free",
             "remaining_today": remaining,
-            "daily_limit": 50,
+            # Derive from the constant, never hardcode - a hardcoded quota
+            # advertises a number the server does not actually enforce.
+            "daily_limit": _free_limit,
             "resets": midnight_utc.strftime("%Y-%m-%dT00:00:00Z"),
         }
     except Exception:  # noqa: BLE001 — quota injection never breaks dispatch
@@ -722,6 +726,8 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
     """
     if name not in _WRITE_TOOLS_REQUIRING_AUTH:
         return
+    # Advertise the limit we actually enforce - never a literal.
+    from agent_interface.key_request_logic import FREE_TIER_DAILY_LIMIT as _free_limit_msg
     # Late import to avoid a hard cycle between main.py and mcp_server.py.
     from main import _get_identity
     from fastapi import HTTPException
@@ -750,7 +756,7 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                 )
                 raise _ToolError(
                     f"free_tier_daily_limit_exceeded for tool '{name}': "
-                    f"your free key allows 50 gated operations per day. "
+                    f"your free key allows {_free_limit_msg} gated operations per day. "
                     f"Remaining today: {remaining}; resets {_midnight}. "
                     f"Buy credits at https://hatchloop.dev/pricing for no daily cap.",
                     error_code="rate_limited",
@@ -773,7 +779,8 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         #
         # This error IS the storefront: it is the only moment an evaluating
         # agent is told how to become a paying one. Two paths are offered:
-        # a free email-verified key (immediate, 50 ops/day) and the paid plan.
+        # a free email-verified key (immediate, FREE_TIER_DAILY_LIMIT/day) and
+        # the paid plan.
         import os as _os
         checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
         # Use PUBLIC_BASE_URL (the Render origin) for /keys/* routes — MCP_PUBLIC_URL
@@ -781,14 +788,14 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         base_url = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
         free_key_url = f"{base_url}/keys/request"
         how_to_buy = (
-            f" To get access: Option 1 (free): get a verified free key (50 ops/day) at "
+            f" To get access: Option 1 (free): get a verified free key ({_free_limit_msg} ops/day) at "
             f"{free_key_url} (just provide your email, no payment needed). "
             f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
             f"Scale $99/13,000) at https://hatchloop.dev/pricing; or agents may pay per-call via x402. "
             f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
-            f" Get a free API key at {free_key_url} (50 ops/day, email verification required). "
+            f" Get a free API key at {free_key_url} ({_free_limit_msg} ops/day, email verification required). "
             f"Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing."
         )
         raise _ToolError(
@@ -798,7 +805,7 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             retriable=False,
             how_to_resolve={
                 "free_key": {"url": free_key_url,
-                             "note": "email-verified, 50 ops/day, no payment"},
+                             "note": f"email-verified, {_free_limit_msg} ops/day, no payment"},
                 "credits": {"url": "https://hatchloop.dev/pricing",
                             "note": "packages from $9/1,000 credits"},
                 "x402": {"note": "agents can pay per-call in USDC on Base"},

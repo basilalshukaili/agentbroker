@@ -30,11 +30,11 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  9 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (50/day with free key, 20/day anonymous), then $0.02/call via credits or x402. Write tools: free email-verified key (50 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
+| Billing | **Live**  -  9 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits or x402. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
 | x402 payment rail | **Verified** on Base mainnet (tx 0x38a0d9ec) |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. 8 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits or x402. Write tools require a free email-verified key (50 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+> The MCP server is live and callable right now. Bookings hit demo data. 8 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits or x402. Write tools require a free email-verified key (100 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ---
 
@@ -65,7 +65,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 19 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
 | 20 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
 
-Free key (50 write ops/day + 50 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
+Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
 
 ---
 
@@ -86,7 +86,7 @@ Free key (50 write ops/day + 50 premium data calls/day): https://hatchloop.dev/a
 **12 tools require no key** (find_business, verify_business, verify_company_record, screen_sanctions, map_trade_restriction, check_booking_link, check_compliance, get_conversation, get_status, get_outcome, preview_cost, self_test).
 
 **Write tools** require an `X-Agent-Identity` bearer token:
-- Free email-verified key (50 ops/day): https://hatchloop.dev/agent-broker
+- Free email-verified key (100 ops/day): https://hatchloop.dev/agent-broker
 - Credits from $9/1,000 ops: https://hatchloop.dev/pricing
 
 Add your key to the config once you have one:

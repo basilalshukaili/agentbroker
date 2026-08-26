@@ -245,10 +245,10 @@ FREE_SIGNUP_CREDITS = _env_int("FREE_SIGNUP_CREDITS", 100)
 # Go-live requires founder approval of quotas + $0.02 price, then flip to true.
 DATA_METERING_ENABLED = _env_bool("DATA_METERING_ENABLED", default=False)
 # Daily free quota for email-verified free-key holders (in-memory, per process restart).
-FREE_DATA_QUOTA_PER_DAY = _env_int("FREE_DATA_QUOTA_PER_DAY", 50)
+FREE_DATA_QUOTA_PER_DAY = _env_int("FREE_DATA_QUOTA_PER_DAY", 500)
 # Daily free quota for anonymous callers (tracked by sha256(ip)+date in Supabase,
 # best-effort: fail-open when Supabase is unavailable or IP is unknown).
-ANON_DATA_QUOTA_PER_DAY = _env_int("ANON_DATA_QUOTA_PER_DAY", 20)
+ANON_DATA_QUOTA_PER_DAY = _env_int("ANON_DATA_QUOTA_PER_DAY", 100)
 
 # ---------------------------------------------------------------------------
 # x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)

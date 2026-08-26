@@ -348,16 +348,26 @@ class TestQuotaVisibility:
         midnight_utc = (now_utc + timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         ).strftime("%Y-%m-%dT00:00:00Z")
+        # This test used to SIMULATE the quota dict with a hardcoded 50, so it
+        # silently drifted when the real limit changed (2026-08-26). Assert the
+        # real invariant instead: an untouched key's remaining == the enforced
+        # limit, and the advertised limit is never a literal.
         quota = {
             "tier": "free",
             "remaining_today": remaining,
-            "daily_limit": 50,
+            "daily_limit": FREE_TIER_DAILY_LIMIT,
             "resets": midnight_utc,
         }
         assert quota["tier"] == "free"
         assert isinstance(quota["remaining_today"], int)
-        assert quota["daily_limit"] == FREE_TIER_DAILY_LIMIT
+        assert remaining == FREE_TIER_DAILY_LIMIT, "fresh key must start at the full limit"
         assert quota["resets"].endswith("T00:00:00Z")
+        # and the production path must not hardcode it
+        src = open(
+            os.path.join(os.path.dirname(__file__), "..", "..",
+                         "agent_interface", "mcp_server.py"),
+            encoding="utf-8").read()
+        assert '"daily_limit": 50' not in src, "quota limit must be derived, not hardcoded"
 
     def test_consume_reduces_remaining(self):
         """After consuming one op, remaining decreases by 1."""

@@ -25,7 +25,7 @@ _VERIFY_SECRET = os.getenv(
 )
 _TOKEN_TTL_S = 3600  # verification link valid for 1 hour
 
-FREE_TIER_DAILY_LIMIT = int(os.getenv("FREE_TIER_DAILY_OPS", "50"))
+FREE_TIER_DAILY_LIMIT = int(os.getenv("FREE_TIER_DAILY_OPS", "100"))
 _FREE_TIER_TTL_DAYS = 90
 
 # ---------------------------------------------------------------------------
@@ -129,7 +129,7 @@ async def send_verification_email(email: str, verify_url: str) -> None:
             "html": (
                 f"<p>Hi,</p>"
                 f"<p>Click the link below to verify your email and get your free AgentBroker API key "
-                f"(50 gated operations per day).</p>"
+                f"(100 gated operations per day).</p>"
                 f"<p><a href=\"{verify_url}\">{verify_url}</a></p>"
                 f"<p>This link expires in 1 hour.</p>"
                 f"<p>If you did not request this, ignore this email.</p>"
@@ -168,7 +168,7 @@ async def send_key_email(email: str, token_value: str, expires_iso: str) -> None
                 f"<p>Hi,</p>"
                 f"<p>Your free AgentBroker API key is ready:</p>"
                 f"<pre style=\"background:#f4f4f4;padding:12px;\">{token_value}</pre>"
-                f"<p>Limits: <strong>50 gated operations per day</strong>, "
+                f"<p>Limits: <strong>100 gated operations per day</strong>, "
                 f"valid until <strong>{expires_iso}</strong>.</p>"
                 f"<p>Usage: send it as the <code>X-Agent-Identity</code> header on every call to "
                 f"<code>https://hatchloop.dev/mcp/agent-broker</code>.</p>"
@@ -262,7 +262,7 @@ def html_success(token_value: str, expires_iso: str, key_id: str, paid_url: str)
         "<p><strong>API Key</strong> (copy and keep safe &#8212; not shown again):</p>"
         f"<pre>{token_value}</pre>"
         f"<p><strong>Expires:</strong> {expires_iso} &nbsp;&bull;&nbsp;"
-        "<strong>Limit:</strong> 50 gated operations per day</p>"
+        "<strong>Limit:</strong> 100 gated operations per day</p>"
         "</div>"
         "<h2>How to use</h2>"
         "<p>Add this header to every MCP call:</p>"

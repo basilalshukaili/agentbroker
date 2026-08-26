@@ -4,14 +4,14 @@ Submit at: <https://www.producthunt.com/posts/new>
 
 ## Tagline (60 chars max)
 ```
-The agent-to-business layer. 19 tools, worldwide, free tier.
+The agent-to-business layer. 20 tools, worldwide, free tier.
 ```
 
 ## Description (260 chars max)
 ```
 SMB Broker is the horizontal MCP server that lets any AI agent
 discover, message, and schedule with small businesses worldwide.
-19 tools, TCPA/GDPR compliance built in, channel fallback Cal.com →
+20 tools, TCPA/GDPR compliance built in, channel fallback Cal.com →
 voice AI → SMS → email. Free tier for any agent.
 ```
 
@@ -29,7 +29,7 @@ to interact with the long tail of small businesses — barbers,
 plumbers, accountants — who don't have APIs.
 
 The horizontal layer they were missing:
-• 19 tools agents can call (find/schedule/message/lead/...)
+• 20 tools agents can call (find/schedule/message/lead/...)
 • Compliance gate (TCPA/GDPR/CASL/10DLC/recording consent) — non-bypassable
 • Channel fallback: direct API → voice AI → SMS → email → web form
 • Free tier: 100 ops/month, no credit card
