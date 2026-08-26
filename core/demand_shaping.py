@@ -66,6 +66,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _ceil_ms(delta: timedelta) -> int:
+    """Milliseconds, rounded UP, plus a 1s margin.
+
+    A retry_after that lands even a millisecond early gets refused again, which
+    makes our advertised ETA a lie. Round up and add margin.
+    """
+    import math
+    return int(math.ceil(delta.total_seconds() * 1000)) + 1000
+
+
 def _parse_ts(v: Any) -> Optional[datetime]:
     try:
         return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
@@ -128,7 +138,11 @@ async def check_budget(
         # is the one whose expiry actually opens a slot.
         idx = min(used_h - limit_h, len(in_hour) - 1)
         free_at = in_hour[idx] + timedelta(hours=1)
-        retry_ms = max(60_000, int((free_at - now).total_seconds() * 1000))
+        # Round UP (+1s margin): int() truncation put the advertised time a
+        # fraction BEFORE the slot actually frees, so an agent retrying exactly
+        # when told was refused again - a small but real dishonesty. Always err
+        # on the side of the retry succeeding.
+        retry_ms = max(60_000, _ceil_ms(free_at - now))
         return BudgetDecision(
             allowed=False, reason_code="business_rate_limited",
             retry_after_ms=retry_ms, used_hour=used_h, limit_hour=limit_h,
@@ -146,7 +160,7 @@ async def check_budget(
         free_at_d = in_day[idx_d] + timedelta(days=1)
         return BudgetDecision(
             allowed=False, reason_code="business_daily_limit",
-            retry_after_ms=max(60_000, int((free_at_d - now).total_seconds() * 1000)),
+            retry_after_ms=max(60_000, _ceil_ms(free_at_d - now)),
             used_hour=used_h, limit_hour=limit_h,
             human_message=(
                 f"This business has reached its 24h request limit ({limit_d}). "
