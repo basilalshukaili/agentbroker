@@ -118,12 +118,36 @@ async def handle_send_message(
             from core.demand_shaping import check_budget
             decision = await check_budget(request.business_id)
             if not decision.allowed:
+                # PERSIST the deferred request. We tell the agent it is "queued";
+                # until this existed nothing stored it, so "queued" meant dropped
+                # (audit 2026-08-26). The queue is what the digest renders from.
+                queued_row = None
+                try:
+                    from core.demand_queue import enqueue
+                    queued_row = await enqueue(
+                        business_id=request.business_id,
+                        business_number=request.recipient.id_value,
+                        agent_id=agent_id,
+                        end_user_ref=request.on_behalf_of,
+                        intent=request.content.body[:200],
+                        idempotency_key=getattr(request, "idempotency_key", None),
+                    )
+                except Exception:  # noqa: BLE001 - queueing must never block
+                    pass
+                shaping_block = decision.as_receipt_block()
+                if queued_row:
+                    shaping_block["queued"] = True
+                    shaping_block["queued_request_id"] = queued_row.get("request_id")
+                    shaping_block["reference"] = queued_row.get("ref_token")
+                else:
+                    # Say so rather than implying a queue entry that isn't there.
+                    shaping_block["queued"] = False
                 return OutcomeReceipt(
                     operation_id=operation_id,
                     status=OperationStatus.FAILURE,
                     reason_code=decision.reason_code,
                     human_message=decision.human_message,
-                    result={"demand_shaping": decision.as_receipt_block()},
+                    result={"demand_shaping": shaping_block},
                     cost=CostRecord(amount=0.0, currency="USD",
                                     basis="no_charge_rate_limited"),
                     latency_ms=int((time.monotonic() - t0) * 1000),

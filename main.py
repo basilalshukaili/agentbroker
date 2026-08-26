@@ -7,6 +7,7 @@ All responses use OutcomeReceipt schema.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -67,7 +68,42 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - never block startup on hydration
         import logging
         logging.getLogger("smb_broker").warning("optout_hydration_failed: %s", exc)
-    yield
+
+    # Demand-digest sweeper. The webhook flushes queued digests when a business
+    # messages us, but a window opened earlier stays open for 24h — without this
+    # loop, requests queued after that inbound would never reach the business
+    # inside the only period we are permitted to send.
+    _sweeper = asyncio.create_task(_digest_sweep_loop())
+    try:
+        yield
+    finally:
+        _sweeper.cancel()
+        try:
+            await _sweeper
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+
+
+async def _digest_sweep_loop(interval_s: int = 900) -> None:
+    """Every 15 min: dispatch digests for businesses whose window is open.
+
+    Bounded and self-healing — one bad pass must never kill the loop, and a
+    failure here degrades to "digest arrives on the next inbound", never to a
+    broken API.
+    """
+    import logging
+    log = logging.getLogger("smb_broker.digest_sweep")
+    while True:
+        try:
+            await asyncio.sleep(interval_s)
+            from core.demand_queue import sweep_open_windows
+            res = await asyncio.wait_for(sweep_open_windows(), timeout=60)
+            if res.get("dispatched"):
+                log.info("digest_sweep %s", res)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning("digest_sweep_failed: %s", exc)
 
 
 app = FastAPI(

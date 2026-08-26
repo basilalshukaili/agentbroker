@@ -186,6 +186,22 @@ async def _handle_message(msg: dict, contacts: dict, our_number: str) -> bool:
         logger.info("wa_optout from=%s", sender)
         return True
 
+    # DIGEST REPLY — checked BEFORE conversation correlation. "1 YES" is an
+    # answer to a numbered digest, not to a booking thread; letting correlation
+    # see it first would let _resolution_state read the "yes" and confirm an
+    # unrelated thread. Only fires when an open digest exists for this pair, so
+    # ordinary conversations are untouched.
+    try:
+        from core import demand_queue as _dq
+        resolved = await _bounded(
+            _dq.resolve_reply(our_number, sender, text), "digest_reply", timeout=3.0)
+        if resolved and resolved.get("matched"):
+            logger.info("wa_digest_reply from=%s matched=%d digest=%s",
+                        sender, resolved["matched"], resolved.get("digest_id"))
+            return True
+    except Exception as exc:  # noqa: BLE001 — never break intake
+        logger.warning("wa_digest_reply_failed: %s", exc)
+
     # Correlate to the RIGHT conversation. Never guess.
     try:
         from core import conversations as _conv
@@ -214,6 +230,21 @@ async def _handle_message(msg: dict, contacts: dict, our_number: str) -> bool:
             await _ask(sender, _conv.clarifying_question(match.candidates))
     except Exception as exc:  # noqa: BLE001 — never break intake
         logger.warning("wa_correlate_failed: %s", exc)
+
+    # This inbound just OPENED a 24h service window. If requests for this
+    # business were queued (over budget), now is the one moment we are permitted
+    # to deliver them — as ONE numbered digest rather than N interruptions.
+    try:
+        from core import demand_queue as _dq
+        sent = await _bounded(
+            _dq.dispatch_for_number(our_number, sender, contacts.get(sender) or "there"),
+            "digest_dispatch", timeout=8.0)
+        for res in (sent or []):
+            logger.info("wa_digest_dispatch business=%s dispatched=%s reason=%s",
+                        res.get("business_id"), res.get("dispatched"),
+                        res.get("reason", "ok"))
+    except Exception as exc:  # noqa: BLE001 — never break intake
+        logger.warning("wa_digest_dispatch_failed: %s", exc)
 
     logger.info("wa_inbound from=%s type=%s len=%d", sender, mtype, len(text))
     return True
