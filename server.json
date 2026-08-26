@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.hatchloop/agent-broker",
   "title": "Agent Broker",
-  "description": "Find, verify, message & book businesses via WhatsApp/SMS/email/voice. 19 tools, 11 free.",
+  "description": "Find, verify, message & book businesses via WhatsApp/SMS/email/voice. 20 tools, 11 free.",
   "websiteUrl": "https://hatchloop.dev/agent-broker/",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.2.4",
+  "version": "0.2.5",
   "remotes": [
     {
       "type": "streamable-http",

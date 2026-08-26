@@ -26,11 +26,11 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Capability | Status |
 |---|---|
 | MCP endpoint (streamable-http) | **Live**  -  `https://hatchloop.dev/mcp/agent-broker` |
-| 19 MCP tools | **Live** (callable today) |
+| 20 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  8 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (50/day with free key, 20/day anonymous), then $0.02/call via credits or x402. Write tools: free email-verified key (50 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
+| Billing | **Live**  -  9 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (50/day with free key, 20/day anonymous), then $0.02/call via credits or x402. Write tools: free email-verified key (50 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
 | x402 payment rail | **Verified** on Base mainnet (tx 0x38a0d9ec) |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
@@ -38,7 +38,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 ---
 
-## 19 MCP Tools
+## 20 MCP Tools
 
 All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
 
@@ -55,14 +55,15 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
 | 10 | `screen_sanctions` | Check a name or entity against OFAC SDN, EU Consolidated, UN, UK HM Treasury + 40+ lists via OpenSanctions | **free up to daily limit** |
 | 11 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
-| 12 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
-| 13 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
-| 14 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
-| 15 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
-| 16 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
-| 17 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
-| 18 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
-| 19 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
+| 12 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | **free** |
+| 13 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
+| 14 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
+| 15 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
+| 16 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
+| 17 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
+| 18 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
+| 19 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
+| 20 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
 
 Free key (50 write ops/day + 50 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
 
@@ -82,7 +83,7 @@ Free key (50 write ops/day + 50 premium data calls/day): https://hatchloop.dev/a
 }
 ```
 
-**11 tools require no key** (find_business, verify_business, verify_company_record, screen_sanctions, map_trade_restriction, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test).
+**12 tools require no key** (find_business, verify_business, verify_company_record, screen_sanctions, map_trade_restriction, check_booking_link, check_compliance, get_conversation, get_status, get_outcome, preview_cost, self_test).
 
 **Write tools** require an `X-Agent-Identity` bearer token:
 - Free email-verified key (50 ops/day): https://hatchloop.dev/agent-broker
@@ -219,7 +220,7 @@ Cloudflare Worker edge  (agent-broker-edge.basil-agent.workers.dev)
         Python FastAPI  (smb-broker.onrender.com)
                 |  Cron keep-alive every 2 min (eliminates Render cold starts)
                 |
-                +-- 19 operation handlers  (core/)
+                +-- 20 operation handlers  (core/)
                 +-- Compliance gate        (compliance/pre_check)
                 +-- Channel adapters       (channels/ -- Twilio, Cal.com, Vapi, SendGrid)
                 +-- Billing + outcome store
