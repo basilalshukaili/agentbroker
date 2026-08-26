@@ -1,0 +1,40 @@
+{
+  "_note": "APPEND-ONLY. Founder directive 2026-08-26: 'publish features list and when we add new release with new features add what is new, it help us prevent changing published data, instead we publish new release with new features.' Never rewrite a shipped entry - correct it in the NEXT release. Current-state facts (prices, quotas, tool count) are NOT stored here; they are derived from billing/pricing.py and the manifest so they cannot go stale. This file records only WHAT CHANGED and WHEN.",
+  "_schema": {
+    "version": "semver, matches config.SERVICE_VERSION at release time",
+    "date": "YYYY-MM-DD, the day it went live",
+    "headline": "one line a customer would care about",
+    "added": "new capability that did not exist before",
+    "changed": "behaviour that existed and now works differently",
+    "fixed": "something that was wrong and is now right - state the user-visible effect, not the internal cause"
+  },
+  "releases": [
+    {
+      "version": "0.2.6",
+      "date": "2026-08-26",
+      "headline": "Bigger free quotas, honest pricing everywhere, and a working unsubscribe.",
+      "added": [
+        "get_conversation - an agent can read back the full transcript of a thread it started, including who replied and when.",
+        "WhatsApp as a delivery channel for send_message, with reply threading. Free during launch.",
+        "Demand digest - when several agents queue requests for the same business, they arrive as ONE numbered message it can answer with '1 YES', instead of many separate threads.",
+        "Sender-number pool - concurrent conversations with the same business can run on different numbers, so a plain 'yes' stays unambiguous.",
+        "One-click unsubscribe endpoint with RFC 8058 support, linked from every commercial email."
+      ],
+      "changed": [
+        "Free write quota raised from 50 to 100 operations/day.",
+        "Premium data tools raised from 50 to 500 calls/day with a free key, and from 20 to 100/day anonymous.",
+        "Tool descriptions now state cost per class: free tools say 'free', variable-price tools quote the ceiling as well as the floor, and premium data tools state the quota rule rather than claiming to be flatly free.",
+        "Over-budget requests are now genuinely queued and later delivered, rather than only being described as queued."
+      ],
+      "fixed": [
+        "The service manifest advertised prices we do not charge - find_business at $0.01, verify_business at $0.02, call_business at $0.50 and the read tools at $0.001, all of which are free. Every cost figure is now derived from the price table.",
+        "The MCP discovery descriptor told agents 'All tools are currently free to call' while write tools spend credits, and reported 16 operations when there were 20.",
+        "Documentation advertised a $49/mo and $499/mo subscription with uptime SLAs and refund clauses that were never offered.",
+        "Commercial emails carried an unsubscribe link pointing at a domain that does not exist, and no unsubscribe endpoint existed.",
+        "An opt-out recorded before a restart could be lost, so a recipient who said STOP could be messaged again.",
+        "A reply arriving on a number pair with two live threads could be attributed to the wrong customer.",
+        "Retrying a write operation with the same idempotency key could execute and charge twice."
+      ]
+    }
+  ]
+}

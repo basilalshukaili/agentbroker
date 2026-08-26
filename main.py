@@ -816,6 +816,54 @@ async def supply_import_booking_url(
 # Manifest
 # ---------------------------------------------------------------------------
 
+@app.get("/releases", tags=["Manifest"])
+async def releases():
+    """Append-only release history plus the CURRENT feature list.
+
+    Founder directive 2026-08-26: publish what is new in each release rather
+    than editing published data in place. The two halves are deliberately
+    different in kind:
+
+      releases[]  APPEND-ONLY history, from releases.json. A shipped entry is
+                  never rewritten - a mistake is corrected in the NEXT release.
+      features{}  CURRENT state, DERIVED from the live manifest and price table
+                  on every request, so it cannot go stale the way a hand-written
+                  feature list does.
+
+    That split is the point: a changelog does not excuse a wrong price on a
+    pricing page. Current facts stay derived; history stays immutable.
+    """
+    import json as _json
+    import os as _os
+    out = {"service": "agent-broker", "version": config.SERVICE_VERSION}
+    try:
+        path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                             "releases.json")
+        with open(path, encoding="utf-8") as fh:
+            data = _json.load(fh)
+        out["releases"] = data.get("releases", [])
+    except Exception:  # noqa: BLE001
+        out["releases"] = []
+
+    try:
+        from billing.pricing import _PRICING_CENTS
+        ops = get_full_manifest().get("operations", [])
+        premium = {"verify_company_record", "screen_sanctions", "map_trade_restriction"}
+        out["features"] = {
+            "tool_count": len(ops),
+            "free_tools": sorted(o["name"] for o in ops
+                                 if _PRICING_CENTS.get(o["name"]) == 0),
+            "premium_data_tools": sorted(premium & {o["name"] for o in ops}),
+            "paid_tools": sorted(o["name"] for o in ops
+                                 if _PRICING_CENTS.get(o["name"], 0) > 0),
+            "channels": ["whatsapp", "sms", "email", "voice"],
+            "_derived": "computed per request from manifest + billing/pricing.py",
+        }
+    except Exception:  # noqa: BLE001
+        out["features"] = {}
+    return out
+
+
 @app.get("/manifest", tags=["Manifest"])
 async def manifest(x_agent_identity: Optional[str] = Header(None)):
     agent_id = None
