@@ -225,8 +225,12 @@ def test_webhook_asks_instead_of_guessing_when_ambiguous(fake_sb, monkeypatch):
     asked = {}
     import agent_interface.whatsapp_webhook as wh
 
-    async def fake_ask(to, question):
+    async def fake_ask(to, question, our_number=""):
         asked["to"], asked["q"] = to, question
+        # The clarifying question must go back out from the number that
+        # RECEIVED the message, not the default sender — with a number pool the
+        # wrong one arrives as an unrelated stranger.
+        asked["from"] = our_number
 
     monkeypatch.setattr(wh, "_ask", fake_ask)
     _open(end_user_ref="Sara")
@@ -235,6 +239,8 @@ def test_webhook_asks_instead_of_guessing_when_ambiguous(fake_sb, monkeypatch):
     assert r.status_code == 200
     assert asked.get("to") == "96890000001"
     assert "Which one" in asked.get("q", "")
+    # answered FROM the number that received it
+    assert asked.get("from") == "15556677792"
     # and NOTHING was routed to a thread
     assert not [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "in"]
 

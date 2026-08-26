@@ -77,10 +77,16 @@ class WhatsAppCloudAdapter(ChannelAdapter):
             "type": "text",
             "text": {"body": request.content[:4096]},
         }
+        # Send FROM the number the pool allocated, not always the default one.
+        # Without this the pool would open a thread on number B while the message
+        # actually went out from number A — every reply would then correlate to
+        # the wrong pair, which is worse than having no pool at all.
+        phone_id = ((request.metadata or {}).get("whatsapp_phone_id")
+                    or self._phone_id)
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
-                    f"{_GRAPH}/{self._phone_id}/messages",
+                    f"{_GRAPH}/{phone_id}/messages",
                     headers={"Authorization": f"Bearer {self._token}",
                              "Content-Type": "application/json"},
                     json=body,

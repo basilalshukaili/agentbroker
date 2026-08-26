@@ -59,7 +59,22 @@ def _resolution_state(text: str) -> Optional[str]:
     return None
 
 
-async def _ask(to: str, question: str) -> None:
+def _phone_id_for(our_number: str) -> str:
+    """Map one of OUR display numbers back to its phone_number_id."""
+    if not our_number:
+        return ""
+    try:
+        from core.number_pool import load_pool, _digits
+        want = _digits(our_number)
+        for s in load_pool():
+            if s.number == want:
+                return s.phone_id
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+async def _ask(to: str, question: str, our_number: str = "") -> None:
     """Send a clarifying question back on the same channel (service window =
     free-form text is allowed and free). Best-effort; never raises.
 
@@ -75,7 +90,11 @@ async def _ask(to: str, question: str) -> None:
     try:
         import httpx
         token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
-        phone_id = os.getenv("WHATSAPP_PHONE_ID", "")
+        # Reply FROM the number that RECEIVED the message. With a sender pool,
+        # answering a clarifying question from a different number would arrive
+        # as an unrelated thread — the business would see a stranger asking
+        # about a conversation it is having with someone else.
+        phone_id = _phone_id_for(our_number) or os.getenv("WHATSAPP_PHONE_ID", "")
         if not (token and phone_id):
             return
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -227,7 +246,7 @@ async def _handle_message(msg: dict, contacts: dict, our_number: str) -> bool:
         elif match.ambiguous:
             logger.info("wa_ambiguous candidates=%d from=%s",
                         len(match.candidates), sender)
-            await _ask(sender, _conv.clarifying_question(match.candidates))
+            await _ask(sender, _conv.clarifying_question(match.candidates), our_number)
     except Exception as exc:  # noqa: BLE001 — never break intake
         logger.warning("wa_correlate_failed: %s", exc)
 

@@ -171,21 +171,37 @@ async def handle_send_message(
         if channel_name == "whatsapp:cloud_api" and request.on_behalf_of:
             try:
                 from core import conversations as _conv
+                from core.number_pool import allocate as _allocate
+                # Prefer a sender number with NO live thread to this business:
+                # a unique pair makes a bare "yes" unambiguous, which is
+                # structurally better than making the business quote a
+                # reference. Falls back to today's behaviour with one number.
+                alloc = await _allocate(request.recipient.id_value)
+                our_number = (alloc.sender.number if alloc.sender
+                              else os.getenv("WHATSAPP_PHONE_NUMBER", ""))
+                if alloc.sender:
+                    channel_request.metadata = {
+                        **(channel_request.metadata or {}),
+                        **alloc.sender.as_metadata(),
+                    }
                 conversation = await _conv.open_conversation(
                     agent_id=agent_id,
                     end_user_ref=request.on_behalf_of,
                     business_id=request.business_id,
                     business_number=request.recipient.id_value,
-                    our_number=os.getenv("WHATSAPP_PHONE_NUMBER", ""),
+                    our_number=our_number,
                     intent=(request.content.subject or base_body)[:120],
                 )
                 # ACT on pair_conflict: with another live thread on this number
                 # pair, a bare "yes" is unattributable, so ask for the reference
                 # firmly. (Computing the flag but ignoring it was the real gap
-                # both independent reviews caught.)
+                # both independent reviews caught.) The pool may have already
+                # avoided the collision — but if it could not, or could not
+                # prove it, we still demand the reference.
+                contested = bool(conversation.get("pair_conflict")) or alloc.contested
                 channel_request.content = base_body + _conv.reference_line(
                     conversation["ref_token"], request.on_behalf_of,
-                    contested=bool(conversation.get("pair_conflict")))
+                    contested=contested)
             except Exception:  # noqa: BLE001 - threading must never block a send
                 conversation = None
         try:

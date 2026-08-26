@@ -63,8 +63,8 @@ def db(monkeypatch):
     monkeypatch.setattr(sb, "upsert_row", fake.upsert_row)
     monkeypatch.setattr(sb, "select_rows", fake.select_rows)
 
-    async def _send(to, body):
-        fake.sent.append((to, body))
+    async def _send(to, body, our_number=""):
+        fake.sent.append((to, body, our_number))
         return {"ok": True, "wamid": f"wamid_{len(fake.sent)}"}
 
     monkeypatch.setattr(dq, "_send_whatsapp", _send)
@@ -210,7 +210,7 @@ def test_optout_store_failure_fails_CLOSED(db, monkeypatch):
 
 def test_failed_send_leaves_requests_queued(db, monkeypatch):
     """A failed send must NOT mark them dispatched, or they vanish unseen."""
-    async def _fail(to, body):
+    async def _fail(to, body, our_number=""):
         return {"ok": False, "error": "needs_template: outside window"}
     monkeypatch.setattr(dq, "_send_whatsapp", _fail)
 

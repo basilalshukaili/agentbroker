@@ -248,7 +248,9 @@ async def dispatch_digest(
     if not body:
         return {"dispatched": False, "reason": "empty_digest", "pending": len(pending)}
 
-    sent = await _send_whatsapp(business_number, body)
+    # Send from the number that already talks to this business — a digest from
+    # a different number arrives as a stranger referencing their conversation.
+    sent = await _send_whatsapp(business_number, body, our_number=our_number)
     if not sent.get("ok"):
         # Requests stay QUEUED — a failed send must never mark them dispatched,
         # or they vanish from every future digest without the business ever
@@ -342,7 +344,22 @@ async def _name_for(business_id: str) -> Optional[str]:
     return (rows[0].get("name") if rows else None)
 
 
-async def _send_whatsapp(to_number: str, body: str) -> dict:
+def _sender_metadata(our_number: str) -> dict:
+    """Resolve one of our display numbers to its phone_number_id, if pooled."""
+    if not our_number:
+        return {}
+    try:
+        from core.number_pool import load_pool, _digits
+        want = _digits(our_number)
+        for s in load_pool():
+            if s.number == want:
+                return s.as_metadata()
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
+
+
+async def _send_whatsapp(to_number: str, body: str, our_number: str = "") -> dict:
     """Send the digest through the real adapter — compliance gate included.
 
     Goes through ChannelRequest/ChannelResponse rather than posting to Graph
@@ -363,6 +380,7 @@ async def _send_whatsapp(to_number: str, body: str) -> dict:
             message_type="transactional",
             content=body,
             agent_id="hatchloop:demand_digest",
+            metadata=_sender_metadata(our_number),
         )
         resp = await asyncio.wait_for(adapter.send(req), timeout=15.0)
         if getattr(resp, "success", False):
