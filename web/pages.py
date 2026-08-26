@@ -574,7 +574,9 @@ def render_privacy() -> str:
   <h2>4. How we use the data</h2>
   <ul>
     <li>To deliver the Service you requested.</li>
-    <li>To bill you accurately and produce signed receipts.</li>
+    <li>To bill you accurately. Every operation returns an itemised receipt
+        showing what was charged and why; call <code>preview_cost</code>
+        (free) to see the price before you commit.</li>
     <li>To prove compliance with TCPA, GDPR, CASL, PDPL, and equivalents on
         request from a regulator or recipient.</li>
     <li>To detect abuse and enforce the Terms of Service.</li>

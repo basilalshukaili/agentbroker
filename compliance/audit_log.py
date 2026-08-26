@@ -54,8 +54,24 @@ def _hash(value: str) -> str:
 
 class AuditLog:
     """
-    In-memory implementation for tests.
-    Production replaces with PostgreSQL-backed append-only table.
+    Compliance audit trail: in-memory for fast reads, DURABLY MIRRORED so it
+    survives a restart.
+
+    It used to be the list alone, with a docstring promising that "production
+    replaces with PostgreSQL-backed append-only table" - which nothing ever
+    did. Meanwhile the privacy policy (web/pages.py) tells users we keep this
+    data "to prove compliance with TCPA, GDPR, CASL, PDPL, and equivalents on
+    request from a regulator or recipient". A trail that dies on every deploy
+    proves nothing, and the deploy happens far more often than the regulator
+    asks (found 2026-08-26).
+
+    Mirrors to the `compliance_audit` table, same shape as the durable opt-out
+    fix: memory first so a slow database never delays a compliance DECISION,
+    the durable write fire-and-forget behind it. Losing the mirror degrades
+    evidence; blocking on it would degrade the gate itself, which is worse.
+
+    Recipient ids and tokens are hashed BEFORE they reach either store, so the
+    durable copy never holds a raw phone number, email or key.
     """
 
     def __init__(self) -> None:
@@ -100,6 +116,7 @@ class AuditLog:
             metadata=metadata or {},
         )
         self._records.append(record)
+        _mirror_durably(record)
         return record
 
     def query(
@@ -126,3 +143,62 @@ _audit_log = AuditLog()
 
 def get_audit_log() -> AuditLog:
     return _audit_log
+
+
+# ---------------------------------------------------------------------------
+# Durable mirror
+# ---------------------------------------------------------------------------
+
+_MIRROR_TABLE = "compliance_audit"
+
+
+def _mirror_durably(record: "AuditRecord") -> None:
+    """Fire-and-forget write of one audit record. NEVER raises, never blocks.
+
+    `record()` is called from inside compliance/pre_check.py on the dispatch
+    path, which is synchronous. Awaiting a database round-trip there would put
+    Supabase latency in front of every send, so the write is scheduled on the
+    running event loop when there is one and skipped when there is not (tests,
+    scripts). A dropped mirror costs evidence; a blocked gate costs delivery.
+    """
+    try:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return                      # no loop (tests/CLI) - memory only
+        loop.create_task(_write_row(record))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _write_row(record: "AuditRecord") -> None:
+    try:
+        from storage.supabase_client import insert_row
+        await asyncio.wait_for(insert_row(_MIRROR_TABLE, {
+            "audit_id": record.audit_id,
+            "event_type": getattr(record.event_type, "value", str(record.event_type)),
+            "ts": record.timestamp.isoformat(),
+            "agent_id": record.agent_id,
+            "principal_kind": record.principal_kind,
+            "principal_id": record.principal_id,
+            "operation": record.operation,
+            "smb_id": record.smb_id,
+            # already hashed by record() - no raw identifier ever lands here
+            "recipient_id_hash": record.recipient_id_hash,
+            "channel": record.channel,
+            "use_case": record.use_case,
+            "jurisdiction": record.jurisdiction,
+            "decision": record.decision,
+            "reason": record.reason,
+            "token_hash": record.token_hash,
+            "trace_id": record.trace_id,
+            "metadata": record.metadata or {},
+        }), timeout=3.0)
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("smb_broker.audit").warning(
+            "audit_mirror_failed id=%s err=%s", record.audit_id, exc)
+
+
+import asyncio  # noqa: E402  (used by _write_row's timeout)
