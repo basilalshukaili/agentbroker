@@ -22,10 +22,13 @@ _SERVICE_DESCRIPTION = (
 )
 
 _CONTACT = {
-    "support_email": "support@agent-broker-edge.basil-agent.workers.dev",
-    "docs_url": "https://agent-broker-edge.basil-agent.workers.dev/docs",
-    "openapi_url": "https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml",
-    "mcp_tools_url": "https://agent-broker-edge.basil-agent.workers.dev/manifest/mcp_tools.json",
+    # Real, monitored inbox on our own domain. This published a generic
+    # *.workers.dev address that was also not a real mailbox - anyone who
+    # replied to our own discovery descriptor reached nobody (2026-08-26).
+    "support_email": "hello@hatchloop.dev",
+    "docs_url": "https://hatchloop.dev/docs/",
+    "openapi_url": "https://hatchloop.dev/openapi.yaml",
+    "mcp_tools_url": "https://hatchloop.dev/.well-known/mcp.json",
 }
 
 

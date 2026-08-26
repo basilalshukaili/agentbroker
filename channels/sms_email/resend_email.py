@@ -26,7 +26,7 @@ from compliance.pre_check import pre_check
 
 _UNSUBSCRIBE_FOOTER = "\n\n---\nTo unsubscribe, reply UNSUBSCRIBE or click: {unsubscribe_url}"
 _PHYSICAL_ADDRESS_DEFAULT = (
-    "SMB Broker, Operations Address: contact support@your-domain.example for full address"
+    "HatchLoop - postal address on request: hello@hatchloop.dev"
 )
 
 
@@ -39,10 +39,30 @@ class ResendEmailAdapter(ChannelAdapter):
         self._physical_address = os.getenv(
             "BUSINESS_PHYSICAL_ADDRESS", _PHYSICAL_ADDRESS_DEFAULT,
         )
-        self._unsubscribe_url = os.getenv(
-            "BUSINESS_UNSUBSCRIBE_URL",
-            "https://your-domain.example/unsubscribe",
-        )
+        # No static URL: the link is signed PER RECIPIENT so one click can
+        # identify who to remove without a login. The old default pointed at
+        # your-domain.example - a domain that does not exist, so every
+        # commercial email carried a dead opt-out (fixed 2026-08-26).
+        self._unsubscribe_override = os.getenv("BUSINESS_UNSUBSCRIBE_URL", "")
+
+    def _unsubscribe_headers(self, request: ChannelRequest) -> dict:
+        """List-Unsubscribe headers for commercial mail (RFC 8058).
+
+        Returns {} for transactional mail: a booking confirmation is not
+        something to unsubscribe from, and offering it there trains people to
+        opt out of messages they asked for.
+        """
+        if request.message_type not in ("marketing", "follow_up", "notification"):
+            return {}
+        try:
+            from agent_interface.unsubscribe import unsubscribe_url as _unsub
+            link = self._unsubscribe_override or _unsub(request.recipient_id, "email")
+        except Exception:  # noqa: BLE001 - headers must never break a send
+            return {}
+        return {"headers": {
+            "List-Unsubscribe": f"<{link}>",
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        }}
 
     async def send(self, request: ChannelRequest) -> ChannelResponse:
         # Compliance pre-check — required before any send
@@ -60,7 +80,9 @@ class ResendEmailAdapter(ChannelAdapter):
         body = request.content
         # CAN-SPAM (US) + similar laws — append unsubscribe + physical address for marketing
         if request.message_type in ("marketing", "follow_up", "notification"):
-            body += _UNSUBSCRIBE_FOOTER.format(unsubscribe_url=self._unsubscribe_url)
+            from agent_interface.unsubscribe import unsubscribe_url as _unsub
+            link = self._unsubscribe_override or _unsub(request.recipient_id, "email")
+            body += _UNSUBSCRIBE_FOOTER.format(unsubscribe_url=link)
             body += f"\n{self._physical_address}"
 
         if not self._api_key:
@@ -88,6 +110,11 @@ class ResendEmailAdapter(ChannelAdapter):
                         "to": [request.recipient_id],
                         "subject": request.subject or "Message from your service provider",
                         "text": body,
+                        # RFC 8058. Gmail and Yahoo require these of bulk
+                        # senders and filter mail without them, so a footer
+                        # link alone is not enough - the client needs a
+                        # machine-readable opt-out it can action in one click.
+                        **self._unsubscribe_headers(request),
                     },
                     timeout=10.0,
                 )

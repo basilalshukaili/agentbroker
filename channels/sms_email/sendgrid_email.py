@@ -20,7 +20,7 @@ class SendGridEmailAdapter(ChannelAdapter):
 
     def __init__(self) -> None:
         self._api_key = os.getenv("SENDGRID_API_KEY", "")
-        self._from_email = os.getenv("SENDGRID_FROM_EMAIL", "noreply@smb-broker.example")
+        self._from_email = os.getenv("SENDGRID_FROM_EMAIL", "hello@hatchloop.dev")  # a real inbox: the old default was a non-existent domain
 
     async def send(self, request: ChannelRequest) -> ChannelResponse:
         pre_check(
@@ -37,7 +37,9 @@ class SendGridEmailAdapter(ChannelAdapter):
         body = request.content
         # CAN-SPAM: append unsubscribe footer + physical address for commercial emails
         if request.message_type in ("marketing", "follow_up", "notification"):
-            body += _UNSUBSCRIBE_FOOTER.format(unsubscribe_url="https://smb-broker.example/unsubscribe")
+            from agent_interface.unsubscribe import unsubscribe_url as _unsub
+            body += _UNSUBSCRIBE_FOOTER.format(
+                unsubscribe_url=_unsub(request.recipient_id, "email"))
             body += f"\n{_PHYSICAL_ADDRESS}"
 
         if not self._api_key:

@@ -53,15 +53,32 @@ RPC_ROUTES = {
 
 
 def _curl(url: str, data: str | None = None) -> str:
-    """curl, not urllib: Cloudflare 403s urllib's default agent from here."""
+    """curl, not urllib: Cloudflare 403s urllib's default agent from here.
+
+    Captures BYTES and decodes UTF-8 explicitly. text=True would decode with
+    the platform locale codec (cp1252 on Windows), which silently turns every
+    em-dash into mojibake and writes it into the snapshots we ship - it did
+    exactly that on the first run of this script, corrupting 155 strings across
+    7 files before anything noticed (2026-08-26). JSON on the wire is UTF-8 by
+    spec; never let the locale decide.
+    """
     cmd = ["curl", "-s", "--max-time", "45", url]
     if data is not None:
         cmd += ["-X", "POST",
                 "-H", "Content-Type: application/json",
                 "-H", "Accept: application/json, text/event-stream",
                 "-d", data]
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    return p.stdout
+    p = subprocess.run(cmd, capture_output=True, timeout=60)  # bytes, not text
+    return p.stdout.decode("utf-8", errors="replace")
+
+
+_MOJIBAKE = ("â€", "Ã©", "Â ")
+
+
+def _has_mojibake(doc) -> bool:
+    """Refuse to WRITE a snapshot that carries locale-corruption signatures."""
+    blob = json.dumps(doc, ensure_ascii=False)
+    return any(sig in blob for sig in _MOJIBAKE)
 
 
 def _parse_maybe_sse(raw: str) -> dict | None:
@@ -144,6 +161,12 @@ def main() -> int:
             except Exception:  # noqa: BLE001
                 old = None
         if old == doc:
+            continue
+        if _has_mojibake(doc):
+            # Never write corruption over a good snapshot. If this fires, the
+            # fetch decoded wrongly - fix the fetch, do not "clean" the text.
+            print(f"  ! REFUSED {fname}: fetched body contains mojibake "
+                  f"(encoding bug upstream of here) - snapshot left untouched")
             continue
         stale.append(fname)
         print(f"  STALE {fname}: edge[{_summarize(fname, old or {})}] "

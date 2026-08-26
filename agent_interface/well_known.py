@@ -92,7 +92,10 @@ def get_ai_plugin_manifest() -> dict:
             "is_user_authenticated": True,
         },
         "logo_url": f"{BASE_URL}/static/logo.png",
-        "contact_email": "basilalshukaili@gmail.com",
+        # A ROLE address, not a person. The founder's personal Gmail was published
+        # here and in llms-full.txt - live, public, and machine-read by plugin
+        # infrastructure (found 2026-08-26).
+        "contact_email": "hello@hatchloop.dev",
         "legal_info_url": f"{BASE_URL}/legal",
     }
 
@@ -392,7 +395,7 @@ def get_llms_txt() -> str:
         "",
         "## Contact",
         "",
-        "basilalshukaili@gmail.com",
+        "hello@hatchloop.dev",
     ]
     return "\n".join(lines) + "\n"
 

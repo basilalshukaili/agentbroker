@@ -119,7 +119,7 @@ async def _edgar_search(name: str) -> Optional[dict]:
     Sends an honest User-Agent per SEC fair-access policy.
     """
     import httpx
-    ua = "AgentBroker/1.0 (demand-probe; contact support@smb-broker.example)"
+    ua = "AgentBroker/1.0 (company-verification; contact support@hatchloop.dev)"  # SEC EDGAR requires a REAL contact; smb-broker.example is not a domain
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(

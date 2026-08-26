@@ -40,6 +40,7 @@ from agent_interface.well_known import (
 from fastapi.responses import PlainTextResponse
 from agent_interface.key_requests import router as key_requests_router
 from agent_interface.portal import router as portal_router
+from agent_interface.unsubscribe import router as unsubscribe_router
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +124,9 @@ app.include_router(key_requests_router)
 
 # Register portal routes (/portal/*)
 app.include_router(portal_router)
+# One-click unsubscribe (/unsubscribe). Every commercial email links here;
+# until 2026-08-26 that link pointed at a domain that does not exist.
+app.include_router(unsubscribe_router)
 
 # WhatsApp Cloud API webhook (/webhooks/whatsapp) — inbound messages + STOP
 from agent_interface.whatsapp_webhook import router as whatsapp_webhook_router
@@ -733,9 +737,9 @@ async def demo():
             "complete the booking flow. Or call /mcp tools/list to see all 12 tools."
         ),
         "try_yourself": {
-            "mcp_endpoint": "POST https://smb-broker.onrender.com/mcp",
-            "import_endpoint": "POST https://smb-broker.onrender.com/supply/import_booking_url",
-            "find_endpoint": "POST https://smb-broker.onrender.com/ops/find_business",
+            "mcp_endpoint": "POST https://hatchloop.dev/mcp/agent-broker",
+            "import_endpoint": "POST https://api.hatchloop.dev/supply/import_booking_url",
+            "find_endpoint": "POST https://api.hatchloop.dev/ops/find_business",
         },
     }
 
@@ -1229,7 +1233,7 @@ async def billing_checkout():
     import os as _os
     import html as _html
     from billing.providers import get_billing_provider
-    base = _os.getenv("PUBLIC_BASE_URL", "https://agent-broker-edge.basil-agent.workers.dev")
+    base = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
     try:
         prov = get_billing_provider()
         session = await prov.create_checkout(

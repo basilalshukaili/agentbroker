@@ -15,19 +15,21 @@ visually identical without a build step.
 from __future__ import annotations
 
 BRAND = "Agent Broker"
-# Single-source-of-truth for the public hostname. The default is the edge
-# worker URL — that is the canonical user-facing domain that Paddle's
-# checkout-domain approval is keyed to. PUBLIC_BASE_URL env var overrides if
-# we ever map a custom domain. The previous default pointed at the dead
-# qzz.io subdomain, which generated invalid og:url tags Paddle reviewers
-# flagged.
+# Single-source-of-truth for the public hostname. We own hatchloop.dev, so the
+# DEFAULT must be our own domain: falling back to a *.workers.dev host put a
+# generic domain into og:url on public pages whenever PUBLIC_BASE_URL was
+# unset. (The old comment justified it by a Paddle checkout-domain approval;
+# billing moved to Polar, so that reason is gone too.)
 import os as _os
 DOMAIN = _os.environ.get(
     "PUBLIC_BASE_URL",
-    "https://agent-broker-edge.basil-agent.workers.dev",
+    "https://hatchloop.dev",
 ).replace("https://", "").replace("http://", "").rstrip("/")
-SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "basilalshukaili@gmail.com")
-PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "basilalshukaili@gmail.com")
+# Role addresses on our own domain. These defaulted to the founder's PERSONAL
+# Gmail, which then appeared as the support and privacy contact on public
+# pages - a privacy exposure, and it does not survive him being unavailable.
+SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "hello@hatchloop.dev")
+PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "privacy@hatchloop.dev")
 LEGAL_ENTITY = "Agent Broker (sole proprietor: Basil Mubarak Ali Al Shukaili, Sultanate of Oman)"
 
 

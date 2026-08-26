@@ -36,7 +36,7 @@ _RESEND_TIMEOUT_S = 10.0
 
 # Public MCP URL the customer points their agent at. The web-checkout page
 # hands the same URL out; if you swap origins/CDNs, update both.
-_MCP_URL_DEFAULT = "https://smb-broker.onrender.com/mcp"
+_MCP_URL_DEFAULT = "https://api.hatchloop.dev/mcp"
 
 
 def verify_paddle_signature(header: str, body: bytes, secret: str) -> bool:

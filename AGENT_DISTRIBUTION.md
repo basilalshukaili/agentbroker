@@ -124,7 +124,7 @@ URL: <https://mcp.so/submit>
 | Endpoint URL | `https://agent-broker-edge.basil-agent.workers.dev/mcp` |
 | Description (short) | `13 MCP tools to find, message, and book appointments at small businesses worldwide. Turns any Cal.com / Calendly / Doctolib / Booksy / OpenTable / Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity URL into a Claude-bookable smb_id.` |
 | Tags | `mcp, mcp-server, scheduling, business, compliance, cal-com, calendly, doctolib` |
-| Author email | `basilalshukaili@gmail.com` |
+| Author email | `hello@hatchloop.dev` |
 
 ### 1.2 Pulse MCP
 
