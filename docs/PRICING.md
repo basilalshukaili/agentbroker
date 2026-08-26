@@ -1,137 +1,119 @@
-# Pricing Model
+# Pricing
 
-> **Five revenue streams. Per-call cost alone is a race to the bottom — sustainable revenue comes from value capture across the stack.**
+> **Single source of truth: [`billing/pricing.py`](../billing/pricing.py).**
+> Every number below is derived from it. If this file and that table ever
+> disagree, the table is right and this file is a bug — run
+> `python scripts/sync_manifest_pricing.py --check`.
 
-All numbers reproducible from `billing/pricing_tiers.py`.
-
----
-
-## 1. Agent subscription tiers
-
-| Tier | Monthly fee | Included ops | Overage | SLA uptime | SLA p50 latency | Priority queue | Support | Refund on miss |
-|------|------------:|-------------:|--------:|-----------:|----------------:|:--------------:|---------|----------------|
-| Free | $0 | 100 | $0.10 | none | 10000 ms | no | community forum | none |
-| Developer | $49 | 10,000 | $0.04 | 99.0% | 5000 ms | no | email 24h | 50% credit |
-| Business | $499 | 100,000 | $0.025 | 99.5% | 2500 ms | yes | email 4h | 100% credit |
-| Enterprise | negotiated | negotiated | $0.015 | 99.9% | 2000 ms | yes | dedicated Slack 1h | 100% + revenue share |
-
-**Why this works for agents:** an agent making 50,000 ops/month pays $499 (Business tier) instead of $5,000 at the free overage rate. Predictable, debuggable, with a refund clause that makes us responsible for our own SLA.
+**1 credit = 1 US cent.** There is no subscription, no monthly fee, and no
+minimum. Credits do not expire.
 
 ---
 
-## 2. Outcome-based premium pricing
+## What is free
 
-For high-value operations, agents pay only when value is delivered. This is the **highest-margin revenue stream** because we charge for outcomes, not attempts.
+**8 utility tools — free, no key, unmetered.**
 
-| Operation | Base cost | Success premium | Total on success | Total on failure |
-|-----------|----------:|----------------:|-----------------:|-----------------:|
-| `schedule_appointment` | $0.15 | $0.85 | **$1.00** | $0.15 |
-| `capture_lead` (SMB-accepted) | $0.02 | $0.18 | **$0.20** | $0.02 |
-| `escalate_to_human` (resolved) | $0.10 | $0.40 | **$0.50** | $0.10 |
-| `send_message` | $0.05 | n/a | $0.05 | $0.05 |
+`find_business`, `verify_business`, `check_booking_link`, `check_compliance`,
+`preview_cost`, `get_status`, `get_outcome`, `self_test`
 
-For a successful booking the agent pays $1.00 — but if the SMB doesn't accept, they only pay $0.15. Agents prefer this because **cost-per-success is bounded** even when individual call success rates wobble.
+An agent can discover businesses, pre-check a booking link, preview what an
+action would cost, and read the outcome of its own operations without ever
+authenticating or spending anything.
 
----
+`get_conversation` is also free — it just needs your key, because it returns
+only the threads you started.
 
-## 3. SMB-side listing tiers (the differentiator)
+## Premium data tools — free up to a daily quota
 
-Most agent-tool startups only charge agents. We also charge SMBs for premium discovery placement. **This is where the moat compounds:** the more agents we have, the more SMBs pay to be visible to them.
+`verify_company_record` (GLEIF LEI + SEC EDGAR) · `screen_sanctions`
+(OFAC SDN + EU + UN + UK + 40 more lists via OpenSanctions) ·
+`map_trade_restriction` (OFAC embargoes + export-control Entity List)
 
-| Tier | Monthly fee | Rank boost | Badge | Exclusivity | Description |
-|------|------------:|-----------:|-------|:-----------:|-------------|
-| Free | $0 | 1.0× | none | no | Listed at default rank |
-| Verified | $29 | 1.5× | `verified` | no | 1.5× rank boost, verified badge shown to agents |
-| Featured | $99 | 2.5× | `featured` | no | Top of list for matching searches |
-| Exclusive | $499 | 10.0× | `exclusive_partner` | **yes** | Sole result for `(vertical, zip)`. Limit 1 per zip. |
+| Caller | Free per day | Beyond the quota |
+|---|---:|---|
+| Free email-verified key | 500 | $0.02/call |
+| Anonymous (no key) | 100 | $0.02/call |
 
-The Exclusive tier is artificially scarce — there's only one slot per `(vertical, zip)` pair, so the price is justified by genuine scarcity, not marketing.
+Past the quota the tool returns an honest failure
+(`reason_code: free_quota_exceeded`, `cost: $0`) — never a silent charge.
 
----
+## Write tools — free tier, then credits
 
-## 4. Pay-as-you-go (free-tier overage)
+The 8 write tools perform real outbound actions, so they require an
+`X-Agent-Identity` key.
 
-Free-tier agents that exceed 100 ops/month pay $0.10 per op until they upgrade. This converts free → paid through usage pressure rather than feature gating.
+| Tier | Cost | Limit |
+|---|---|---|
+| Free email-verified key | $0 | 100 write ops/day |
+| Credits | see packages | no daily cap |
+| x402 | per call in USDC on Base mainnet | no account needed |
 
----
+Get a free key at <https://hatchloop.dev/agent-broker>.
 
-## 5. Analytics resale (year 2+)
+### Credit packages
 
-Anonymized agent demand data sold to SMBs and franchise networks:
-- "What capabilities are agents searching for in your zip but not finding?"
-- "What's the average price an agent paid for haircuts in 30309 last month?"
-- "What time windows have the most agent-driven booking demand?"
+| Package | Price | Credits | Effective |
+|---|---:|---:|---|
+| Starter | $9 | 1,000 | connect your first agent |
+| Growth | $29 | 3,500 (~20% bonus) | regular agent workflows |
+| Scale | $99 | 13,000 (~30% bonus) | production volume |
 
-Pricing: $99/mo per SMB tier, $999/mo per franchise/network tier. Activated in year 2 once we have ≥10k monthly searches per zip.
+Buy at <https://hatchloop.dev/pricing>.
 
----
+### Per-operation cost
 
-## Revenue forecast
+Derived from `billing/pricing.py`. Variable operations reserve the maximum and
+settle the actual cost from the receipt — call `preview_cost` for the exact
+figure before committing.
 
-Computed by `billing.pricing_tiers.forecast_revenue()`.
+| Operation | Credits | USD |
+|---|---:|---:|
+| `send_message` | 2 (up to 22) | $0.02 – $0.22 |
+| `send_transactional_confirmation` | 2 | $0.02 |
+| `handle_inbound` | 3 | $0.03 |
+| `capture_lead` | 5 | $0.05 |
+| `schedule_appointment` | 15 (up to 50) | $0.15 – $0.50 |
+| `escalate_to_human` | 20 | $0.20 |
+| `import_booking_url` | 0 | free — adoption wedge |
+| `call_business` | 0 | free until voice billing is enabled |
 
-### Year 1 (conservative — small pilot, manual SMB onboarding)
-
-| Source | Inputs | Monthly | Annual |
-|--------|--------|--------:|-------:|
-| Subscriptions | 80 dev + 15 biz + 2 ent ($5k avg) | $21,405 | $256,860 |
-| Listings | 120 verified + 30 featured + 5 exclusive | $8,945 | $107,340 |
-| Outcome premiums | 8,000 ops × $0.45 avg | $3,600 | $43,200 |
-| PAYG overage | 500 free × ~50 over × $0.10 | $2,500 | $30,000 |
-| **Total** | | **$36,450** | **$437,400** |
-
-### Year 2 (scaling — automated onboarding, first marquee agent partnerships)
-
-| Source | Inputs | Monthly | Annual |
-|--------|--------|--------:|-------:|
-| Subscriptions | 400 dev + 80 biz + 8 ent ($8k avg) | $123,520 | $1,482,240 |
-| Listings | 900 verified + 200 featured + 40 exclusive | $65,860 | $790,320 |
-| Outcome premiums | 80,000 ops × $0.55 avg | $44,000 | $528,000 |
-| PAYG overage | 3,000 free × ~50 over × $0.10 | $15,000 | $180,000 |
-| **Total** | | **$248,380** | **$2,980,560** |
-
-### Why this is conservative
-
-- Year 1 free→paid conversion assumed at 16% (industry standard for dev tools is 5-15%).
-- Year 1 SMB premium-listing rate assumed at 7.7% of onboarded SMBs (industry standard for marketplace freemium is 3-12%).
-- Year 2 agent count growth assumed at 6× (most agent platforms growing 8-15× during current land-grab phase).
-
-If outcome-based premiums attach to even 30% of state-changing operations (vs 10% modeled), Year 2 ARR is **~$5M**.
+WhatsApp sends currently cost us nothing, so they cost you nothing.
 
 ---
 
-## Unit economics
+## What we do **not** promise
 
-For a fully loaded `schedule_appointment` call:
+This section exists because an earlier version of this file advertised a
+$49/mo "Developer" tier and a $499/mo "Business" tier with uptime SLAs,
+latency targets and refund-on-miss clauses. **None of that was ever in
+effect.** A public document promising an SLA we do not honour is worse than no
+document, so it is recorded plainly here:
 
-| Component | Cost |
-|-----------|-----:|
-| Twilio voice (avg 90s) | $0.025 |
-| Cal.com API call | $0.00 (free tier) |
-| Compute (FastAPI + Celery worker) | $0.005 |
-| PostgreSQL + Redis | $0.002 |
-| Compliance audit log storage | $0.001 |
-| Observability (OTel) | $0.001 |
-| **Total cost per call** | **$0.034** |
-| **Revenue (success)** | $1.00 |
-| **Margin (success)** | **96.6%** |
-| **Revenue (failure)** | $0.15 |
-| **Margin (failure)** | 77% |
+- **No SLA.** No uptime guarantee, no latency guarantee, no refund clause.
+- **No subscription tiers.** No monthly fee at any level.
+- **No priority queue** and no paid support tier. Email
+  <hello@hatchloop.dev> — we read every message, with no response-time promise.
 
-This margin is what funds the SLO refund clause. With 88.4% measured success rate the blended margin is **94%**, which is unusually healthy for an agent-tool service.
+## Explored, not in effect
+
+Kept so the product thinking is not lost. `billing/pricing_tiers.py` models
+these; it is **not wired into any live billing path** (tests import it, nothing
+in production does):
+
+- outcome-based premiums for confirmed bookings
+- supply-side listing revenue (businesses paying for placement)
+- anonymised demand analytics sold back to businesses
+
+Reviving any of these means wiring it to `billing/pricing.py` first, so there
+is still exactly one price table.
 
 ---
 
-## Why agents will pay vs DIY
+## Direction
 
-| Cost component | DIY (browser automation) | smb-broker |
-|----------------|------------------------:|-----------:|
-| Tool development (one-time) | ~$50,000 | $0 |
-| Per-booking infra cost | $2.50 (browser instance time) | $1.00 |
-| Compliance liability | unbounded (TCPA suits up to $1500/violation) | $0 (we carry it) |
-| Maintenance per quarter | ~$15,000 (sites change) | $0 |
-| Success rate | 65% | 88% |
-
-Even ignoring the up-front $50k, the per-booking math says: at >2,778 bookings, smb-broker is cheaper *and* has higher success — and it's compliant.
-
-**Break-even for an agent platform is 2,778 bookings.** A platform doing 10,000 bookings/month saves $15,000/month and avoids unbounded TCPA exposure.
+Our standing strategy is to be **generous first**: an irresistible price that
+builds trust and reliance, raised later only with an explicit thank-you notice
+and a hardship escape hatch for anyone the change hurts. Money is not the goal
+in this phase. That is why the free quotas are large and why every read tool is
+unmetered.

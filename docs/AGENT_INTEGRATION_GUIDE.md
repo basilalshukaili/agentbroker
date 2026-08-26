@@ -14,7 +14,7 @@ Every state-changing operation requires `X-Agent-Identity`. Read-only ops (`find
 import httpx
 
 resp = httpx.post(
-    "https://agent-broker-edge.basil-agent.workers.dev/auth/token",
+    "https://api.hatchloop.dev/auth/token",
     json={
         "agent_id": "my_agent_v1",
         "principal_id": "user_123",
@@ -36,7 +36,7 @@ Store the token; it's good for 24 hours by default. Re-issue when expired.
 
 ```python
 preview = httpx.post(
-    "https://agent-broker-edge.basil-agent.workers.dev/ops/preview_cost",
+    "https://api.hatchloop.dev/ops/preview_cost",
     json={"operation": "schedule_appointment", "params": {"smb_id": "smb_001"}},
 ).json()
 print(preview)
@@ -63,7 +63,7 @@ If `success_probability_estimate < 0.5` or `estimated_cost_usd > your_budget`, a
 {
   "mcpServers": {
     "smb-broker": {
-      "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp",
+      "url": "https://hatchloop.dev/mcp/agent-broker",
       "headers": {
         "X-Agent-Identity": "YOUR_TOKEN_HERE"
       }
@@ -81,7 +81,7 @@ import httpx, openai
 
 # Fetch tools from .well-known
 tools = httpx.get(
-    "https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json"
+    "https://hatchloop.dev/.well-known/openai-tools.json"
 ).json()["tools"]
 
 client = openai.OpenAI()
@@ -97,7 +97,7 @@ tool_call = resp.choices[0].message.tool_calls[0]
 
 # Execute the tool call against the broker
 result = httpx.post(
-    f"https://agent-broker-edge.basil-agent.workers.dev/ops/{tool_call.function.name}",
+    f"https://api.hatchloop.dev/ops/{tool_call.function.name}",
     headers={"X-Agent-Identity": TOKEN},
     json=tool_call.function.arguments,
 ).json()
@@ -109,7 +109,7 @@ result = httpx.post(
 import httpx, anthropic
 
 tools = httpx.get(
-    "https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json"
+    "https://hatchloop.dev/.well-known/anthropic-tools.json"
 ).json()["tools"]
 
 client = anthropic.Anthropic()
@@ -124,7 +124,7 @@ msg = client.messages.create(
 for block in msg.content:
     if block.type == "tool_use":
         result = httpx.post(
-            f"https://agent-broker-edge.basil-agent.workers.dev/ops/{block.name}",
+            f"https://api.hatchloop.dev/ops/{block.name}",
             headers={"X-Agent-Identity": TOKEN},
             json=block.input,
         ).json()
@@ -134,7 +134,7 @@ for block in msg.content:
 ### Protocol D: Plain REST
 
 ```bash
-curl -X POST https://agent-broker-edge.basil-agent.workers.dev/ops/find_business \
+curl -X POST https://api.hatchloop.dev/ops/find_business \
   -H "Content-Type: application/json" \
   -H "X-Agent-Identity: $TOKEN" \
   -d '{
@@ -183,13 +183,13 @@ These return `status: "pending_async"` immediately with an `operation_id`. You t
 import time
 while True:
     status = httpx.get(
-        f"https://agent-broker-edge.basil-agent.workers.dev/ops/get_status/{op_id}",
+        f"https://api.hatchloop.dev/ops/get_status/{op_id}",
     ).json()
     if status["status"] in ("success", "failure"):
         break
     time.sleep(10)
 outcome = httpx.get(
-    f"https://agent-broker-edge.basil-agent.workers.dev/ops/get_outcome/{op_id}",
+    f"https://api.hatchloop.dev/ops/get_outcome/{op_id}",
 ).json()
 ```
 
@@ -198,7 +198,7 @@ outcome = httpx.get(
 ```python
 # Register once
 reg = httpx.post(
-    "https://agent-broker-edge.basil-agent.workers.dev/webhooks/register",
+    "https://hatchloop.dev/mcp/agent-broker/webhooks/register",
     headers={"X-Agent-Identity": TOKEN},
     json={
         "callback_url": "https://my-agent.example.com/webhooks/smb-broker",
@@ -242,7 +242,7 @@ key = f"book_{uuid.uuid4().hex}"
 for attempt in range(3):
     try:
         return httpx.post(
-            "https://agent-broker-edge.basil-agent.workers.dev/ops/schedule_appointment",
+            "https://api.hatchloop.dev/ops/schedule_appointment",
             headers={"X-Agent-Identity": TOKEN, "X-Idempotency-Key": key},
             json=req,
             timeout=10,
@@ -255,17 +255,42 @@ for attempt in range(3):
 
 ## Step 7: Budget & cost control
 
-Every token has a `scope.budget_cap_usd`. The service tracks rolling 30-day spend per agent and refuses operations that would exceed it with `error_code: "budget_exceeded"`.
-
-Check current usage:
+**Ask before you spend.** `preview_cost` is free and unmetered — call it on any
+write action to get the exact credit cost before committing:
 
 ```python
-usage = httpx.get(
-    "https://agent-broker-edge.basil-agent.workers.dev/billing/usage",
-    headers={"X-Agent-Identity": TOKEN},
+quote = httpx.post(
+    "https://api.hatchloop.dev/ops/preview_cost",
+    json={"operation": "schedule_appointment", "smb_id": "smb_123"},
 ).json()
-# {"agent_id": "...", "spent_30d_usd": 4.32, "budget_cap_usd": 10.00, "ops_count_30d": 412}
 ```
+
+**Your remaining quota comes back in the receipt.** Free-tier callers get a
+`quota` block injected into every receipt, so there is no second call to make:
+
+```jsonc
+{
+  "operation_id": "...",
+  "status": "success",
+  "quota": {
+    "tier": "free",
+    "remaining_today": 87,
+    "daily_limit": 100,
+    "resets": "2026-08-27T00:00:00Z"
+  }
+}
+```
+
+**When the quota runs out** the operation fails honestly — `reason_code:
+free_quota_exceeded`, `cost: $0`, and a `how_to_resolve` field naming the
+escape paths (credits, or per-call x402). Nothing is charged and nothing is
+half-executed.
+
+> **No agent-callable balance endpoint yet.** Credit balance and transaction
+> history live behind the human portal at <https://hatchloop.dev/portal>, which
+> uses a browser session rather than an `X-Agent-Identity` header. If your agent
+> needs a programmatic balance read, email <hello@hatchloop.dev> — we would
+> rather hear the requirement than have you scrape the portal.
 
 ---
 
@@ -355,7 +380,7 @@ Full catalog: [api/errors.md](../api/errors.md).
 
 ## Support & feedback
 
-- Service status: `https://agent-broker-edge.basil-agent.workers.dev/health`
+- Service status: `https://api.hatchloop.dev/health`
 - Self-test: `POST /ops/self_test`
 - Email: support@agent-broker-edge.basil-agent.workers.dev
 - File a feedback ticket: agents who flag a missing capability that we add inside 30 days get 1 month free at their tier.

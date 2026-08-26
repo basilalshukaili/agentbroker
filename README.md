@@ -217,7 +217,7 @@ Cloudflare Worker edge  (agent-broker-edge.basil-agent.workers.dev)
    +-- POST /mcp  tools/call  /ops/*           --> proxy to origin  (170-190 ms)
                 |
                 v
-        Python FastAPI  (smb-broker.onrender.com)
+        Python FastAPI  (api.hatchloop.dev)
                 |  Cron keep-alive every 2 min (eliminates Render cold starts)
                 |
                 +-- 20 operation handlers  (core/)

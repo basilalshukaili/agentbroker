@@ -11,11 +11,11 @@
 | Python service (Render) | ✅ Live — `smb-broker.onrender.com` (origin, internal) |
 | Cloudflare Worker edge | ✅ Live — `agent-broker-edge.basil-agent.workers.dev` |
 | Tests | ✅ 103/103 passing in 0.40 s |
-| MCP tools | ✅ 13 tools, all callable |
+| MCP tools | ✅ 20 tools, all callable |
 | Discovery endpoints | ✅ 40–70 ms globally (embedded snapshots) |
 | Compliance gate | ✅ 22 jurisdictions, non-bypassable |
 | Fortnightly metrics reminder | ✅ Telegram bot, every 14 days |
-| Smithery listing | ✅ Updated — edge URL, 13 tools |
+| Smithery listing | ✅ Updated — edge URL, 20 tools |
 | mcp.so listing | ✅ Submitted |
 | Official MCP Registry | ✅ Published — `io.github.basilalshukaili/agent-broker` v1.0.1 |
 | PulseMCP | ⏳ Pulls from Official MCP Registry — live within ~1 week |

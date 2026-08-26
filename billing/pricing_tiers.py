@@ -1,7 +1,21 @@
 """
-Pricing tiers — where revenue comes from, beyond raw per-call cost.
+Pricing tiers -- RETIRED MODEL, NOT WIRED TO ANY LIVE BILLING PATH.
 
-Five revenue streams:
+WARNING: nothing in production imports this module; only tests do. A test-only
+    caller is still dead in production, which is exactly how it kept looking
+    alive (audit 2026-08-26).
+
+    THE LIVE PRICE TABLE IS `billing/pricing.py`. This module models a
+    subscription shape ($49/mo Developer, $499/mo Business, uptime SLAs,
+    refund-on-miss) that HatchLoop never sold and does not sell. It is kept
+    because the revenue-stream thinking below is still worth something --
+    outcome premiums, supply-side listing revenue, demand analytics -- not
+    because any of it is in effect.
+
+    Reviving any stream means wiring it THROUGH billing/pricing.py, so there
+    stays exactly one price table. See docs/PRICING.md.
+
+Five revenue streams (EXPLORED, NOT IN EFFECT):
 
   1. PAY-AS-YOU-GO (per-call) — base unit economics. Margin: ~40-60%.
   2. AGENT SUBSCRIPTIONS — predictable monthly revenue from frequent agents.
@@ -9,8 +23,8 @@ Five revenue streams:
   4. SMB-SIDE LISTING REVENUE — SMBs pay for premium placement.
   5. ANALYTICS RESALE — anonymized agent demand data sold back to SMBs.
 
-Each tier is reflected in the manifest's cost_model.basis field so agents
-know what they'll be charged before they call.
+The manifest's cost_model is generated from billing/pricing.py, NOT from
+this module -- see scripts/sync_manifest_pricing.py.
 """
 from __future__ import annotations
 

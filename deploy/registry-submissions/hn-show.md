@@ -33,7 +33,7 @@ What's there:
 Cost model:
 - Free for any agent up to 100 ops/month
 - Outcome-based: $0.15 attempt + $0.85 only on confirmed booking
-- SMB-side: free listing, $29 verified, $99 featured, $499 exclusive
+- SMB-side listing revenue: explored, not in effect (see docs/PRICING.md)
   per (vertical, zip)
 
 What's measured (not assumed):

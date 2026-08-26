@@ -20,7 +20,7 @@ agent  →  agent-broker-edge.basil-agent.workers.dev  (Cloudflare Worker, 300+ 
             └── /api/metrics                 → KV cache (60 s) then origin
 
                           ↓  (state-changing only)
-                smb-broker.onrender.com  (Render, Python FastAPI)
+                api.hatchloop.dev  (Render, Python FastAPI)
                     cron */2  keeps Render warm → tools/call stays at ~185 ms
 ```
 
@@ -92,7 +92,7 @@ curl -s "$URL/edge/info" | jq .
 # Discovery — x-edge-source: embedded (or kv-live after cron runs)
 curl -s "$URL/manifest" -D - 2>&1 | grep -i x-edge
 
-# MCP tools/list — 13 tools in ~50 ms
+# MCP tools/list — 20 tools in ~50 ms
 curl -s -X POST "$URL/mcp" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq '.result.tools | length'
