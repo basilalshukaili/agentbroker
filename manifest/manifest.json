@@ -2933,6 +2933,141 @@
           }
         }
       ]
+    },
+    {
+      "name": "get_conversation",
+      "description": "Read a two-way conversation thread you started: its state, every message exchanged, and how many replies the business has sent.",
+      "when_to_use": "After send_message with on_behalf_of returns a conversation_id, poll this to read the business's reply. Replies are matched to the right thread exactly (never guessed), so what you read here belongs to YOUR end-user.",
+      "when_not_to_use": "Do not poll more often than every 10 seconds.",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "From the send_message receipt (preferred)."
+          },
+          "reference": {
+            "type": "string",
+            "description": "The 4-digit request reference, e.g. '4821'. Requires business_number."
+          },
+          "business_number": {
+            "type": "string",
+            "description": "Scopes a `reference` to one business (references are reused across businesses)."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "awaiting_reply",
+              "confirmed",
+              "closed"
+            ]
+          },
+          "awaiting_reply": {
+            "type": "boolean"
+          },
+          "reply_count": {
+            "type": "integer"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "cost_model": {
+        "unit_price_usd": 0,
+        "basis": "per_call"
+      },
+      "slo": {
+        "p50_ms": 300,
+        "p95_ms": 1200
+      },
+      "idempotency": {
+        "safe_to_retry": true,
+        "key": "none - read-only"
+      },
+      "failure_modes": [
+        {
+          "reason_code": "conversation_not_found",
+          "retriable": false,
+          "meaning": "No thread matched the id/reference given.",
+          "agent_action": "Use the conversation_id returned by send_message, or a reference plus business_number."
+        },
+        {
+          "reason_code": "invalid_argument",
+          "retriable": false,
+          "meaning": "A reference was supplied without business_number.",
+          "agent_action": "Add business_number - 4-digit references are reused across businesses."
+        },
+        {
+          "reason_code": "not_your_conversation",
+          "retriable": false,
+          "meaning": "The thread belongs to a different agent identity.",
+          "agent_action": "Use the identity that created the conversation."
+        }
+      ],
+      "examples": [
+        {
+          "user_says": "Did the salon reply about Sara's booking?",
+          "agent_call": {
+            "tool": "get_conversation",
+            "arguments": {
+              "conversation_id": "conv_1a2b3c4d"
+            }
+          },
+          "returns": "state=awaiting_reply, reply_count=1, messages=[out: request, in: 'yes 3pm works']"
+        },
+        {
+          "user_says": "Check request 4821 with that barber",
+          "agent_call": {
+            "tool": "get_conversation",
+            "arguments": {
+              "reference": "4821",
+              "business_number": "96890000001"
+            }
+          },
+          "returns": "the thread for reference #4821 at that business"
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Did the salon reply about Sara's booking?",
+          "agent_call": {
+            "tool": "get_conversation",
+            "arguments": {
+              "conversation_id": "conv_1a2b3c4d"
+            }
+          },
+          "returns": "state=awaiting_reply, reply_count=1, messages=[out: request, in: 'yes 3pm works']"
+        },
+        {
+          "user_says": "Check request 4821 with that barber",
+          "agent_call": {
+            "tool": "get_conversation",
+            "arguments": {
+              "reference": "4821",
+              "business_number": "96890000001"
+            }
+          },
+          "returns": "the thread for reference #4821 at that business"
+        }
+      ]
     }
   ],
   "components": {

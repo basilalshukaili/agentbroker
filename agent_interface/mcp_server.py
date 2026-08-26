@@ -79,7 +79,7 @@ def _build_tool_list() -> list[dict]:
             "readOnlyHint": op["name"] in {
                 "find_business", "verify_business", "get_status",
                 "get_outcome", "preview_cost", "self_test",
-                "check_booking_link", "check_compliance",
+                "check_booking_link", "check_compliance", "get_conversation",
                 "verify_company_record", "screen_sanctions",
                 "map_trade_restriction",
             },
@@ -927,6 +927,16 @@ async def _dispatch_operation(
     elif name == "get_status":
         from core.status_outcome import handle_get_status
         return await handle_get_status(args["operation_id"])
+
+    elif name == "get_conversation":
+        from core.get_conversation import handle_get_conversation
+        receipt = await handle_get_conversation(
+            conversation_id=args.get("conversation_id"),
+            reference=args.get("reference"),
+            business_number=args.get("business_number"),
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
+        return receipt.model_dump() if hasattr(receipt, "model_dump") else receipt
 
     elif name == "get_outcome":
         from core.status_outcome import handle_get_outcome

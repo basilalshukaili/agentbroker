@@ -250,6 +250,14 @@ async def get_conversation(conversation_id: str) -> Optional[dict]:
     return (rows or [None])[0]
 
 
+async def messages_for(conversation_id: str, limit: int = 200) -> list[dict]:
+    """Every message in a thread, oldest first (the agent-readable transcript)."""
+    from storage.supabase_client import select_rows
+    rows = await _sb(select_rows(_MSG_TABLE, filters={"conversation_id": conversation_id},
+                                 limit=limit, order="created_at.asc"), [])
+    return rows or []
+
+
 async def find_by_wamid(wamid: str) -> Optional[dict]:
     """Resolve a replied-to message id through the MESSAGE LEDGER.
 

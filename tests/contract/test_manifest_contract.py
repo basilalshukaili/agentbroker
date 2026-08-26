@@ -37,6 +37,7 @@ class TestManifestStructure:
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
+            "get_conversation",
             "verify_company_record", "screen_sanctions", "map_trade_restriction",
         }
         actual = {op["name"] for op in self.manifest["operations"]}

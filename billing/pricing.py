@@ -28,6 +28,7 @@ _PRICING_CENTS: dict[str, int] = {
     "self_test":                   0,
     "check_booking_link":          0,
     "check_compliance":            0,
+    "get_conversation":            0,   # read the thread you started - free
     "import_booking_url":          0,   # adoption wedge -- free so agents import without friction
     "call_business":               0,   # voice not provisioned; 0cr until enabled
     # PREMIUM DATA TOOLS (2cr/call when DATA_METERING_ENABLED=true; free within daily quota)
