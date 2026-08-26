@@ -1,4 +1,5 @@
 # ADR-0001: Use Python + FastAPI as the primary web framework
+<!-- historical-record: numbers are correct AS OF the date above; do not update -->
 
 **Status:** Accepted  
 **Date:** 2026-04-27  

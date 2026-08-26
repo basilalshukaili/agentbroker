@@ -72,7 +72,7 @@ If `success_probability_estimate < 0.5` or `estimated_cost_usd > your_budget`, a
 }
 ```
 
-After restart, the 12 operations appear as tools in Claude. No code needed.
+After restart, all 20 operations appear as tools in Claude. No code needed.
 
 ### Protocol B: OpenAI function calling
 

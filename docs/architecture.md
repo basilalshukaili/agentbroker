@@ -48,7 +48,7 @@ service-root/
 │   ├── webhooks.py         # Registration + signed delivery controller
 │   ├── identity.py         # Agent-Identity JWT verification + scope enforcement
 │   └── self_test.py        # Live capability probe
-├── core/                   # Business logic for all 12 operations
+├── core/                   # Business logic for all 20 operations
 │   ├── find_business.py
 │   ├── verify_business.py
 │   ├── send_message.py

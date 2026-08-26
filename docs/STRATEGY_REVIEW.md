@@ -1,4 +1,5 @@
 # Strategy Review — Honest Audit
+<!-- historical-record: numbers are correct AS OF the date above; do not update -->
 
 > Date: 2026-04-28
 > Triggered by founder feedback: "I'm in Oman. Stripe doesn't work. I want worldwide. I want facts not assumptions. You can throw away what's wrong."

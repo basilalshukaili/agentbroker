@@ -30,6 +30,47 @@ import os
 BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
 
 
+def _tool_names() -> list[str]:
+    return [op["name"] for op in get_full_manifest().get("operations", [])]
+
+
+def _mcp_description() -> str:
+    """Built from the live operation list, never a typed-out count."""
+    names = _tool_names()
+    return (f"MCP server for HatchLoop AgentBroker. Exposes {len(names)} "
+            f"operations: {', '.join(names)}.")
+
+
+def _payments_block() -> dict:
+    """What a caller actually pays. Derived from billing/pricing.py.
+
+    The old hardcoded note said billing was "not yet active" and that "All
+    tools are currently free to call". Neither is true: credits are live and
+    write tools spend them. Telling an agent everything is free is the same
+    class of defect as a manifest advertising prices we do not charge.
+    """
+    try:
+        from billing.pricing import _PRICING_CENTS
+        free = sorted(n for n, c in _PRICING_CENTS.items() if c == 0)
+        paid = sorted(n for n, c in _PRICING_CENTS.items() if c > 0)
+    except Exception:  # noqa: BLE001
+        return {"status": "see_pricing",
+                "note": "See https://hatchloop.dev/pricing for current pricing."}
+    return {
+        "status": "active",
+        "free_tools": free,
+        "paid_tools": paid,
+        "unit": "credits (1 credit = 1 US cent)",
+        "rails": ["credits", "x402 (USDC on Base mainnet)"],
+        "note": (
+            f"{len(free)} tools are free to call; {len(paid)} spend credits. "
+            "Premium data tools are free within a daily quota, then billed per "
+            "call. Call preview_cost (free) for the exact price of any "
+            "operation before committing. Pricing: https://hatchloop.dev/pricing"
+        ),
+    }
+
+
 def describe_cost(cost: dict) -> str:
     """One honest cost sentence for any cost_model class.
 
@@ -289,22 +330,14 @@ def get_mcp_descriptor() -> dict:
             "method": "POST",
             "content_type": "application/json",
         },
-        "payments": {
-            "status": "coming_soon",
-            "note": (
-                "Per-call micropayment billing (x402/USDC on Base) is in development "
-                "and not yet active. All tools are currently free to call. "
-                "This field will describe payment requirements once billing goes live."
-            ),
-        },
-        "description": (
-            "MCP server for SMB Transaction & Communication Broker. "
-            "Exposes 16 operations: find_business, verify_business, send_message, "
-            "capture_lead, schedule_appointment, send_transactional_confirmation, "
-            "handle_inbound, escalate_to_human, get_status, get_outcome, "
-            "preview_cost, self_test, import_booking_url, call_business, "
-            "check_booking_link, check_compliance."
-        ),
+        # Both fields below were HARDCODED and both were false on the live
+        # canonical host (found 2026-08-26): the description claimed "16
+        # operations" while tools/list returned 20, and the payments note told
+        # every agent that "All tools are currently free to call" while write
+        # tools spend credits and premium data tools carry a daily quota.
+        # Derived now, so neither can drift again.
+        "payments": _payments_block(),
+        "description": _mcp_description(),
         "auth": {
             "header": "X-Agent-Identity",
             "scheme": "bearer",

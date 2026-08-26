@@ -5,9 +5,9 @@
     "id": "agent-broker",
     "version": "0.2.6",
     "description": "A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.",
-    "base_url": "https://api.smb-broker.example/v1",
-    "discovery_url": "https://api.smb-broker.example/.well-known/agent-manifest.json",
-    "contact": "support@smb-broker.example"
+    "base_url": "https://api.hatchloop.dev",
+    "discovery_url": "https://api.hatchloop.dev/.well-known/mcp.json",
+    "contact": "hello@hatchloop.dev"
   },
   "operations": [
     {

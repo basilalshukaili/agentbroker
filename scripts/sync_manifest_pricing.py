@@ -85,9 +85,20 @@ def sync(check_only: bool = False) -> int:
 
     drift: list[str] = []
 
+    import os as _os
+    base = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
+
     svc = manifest.get("service", {})
+    # The service header still carried api.smb-broker.example - a domain that
+    # does not exist - in base_url, discovery_url and contact, four months
+    # stale (found 2026-08-26). It is public: /manifest serves it.
     for field, want in (("id", SERVICE_ID), ("name", SERVICE_NAME),
-                        ("version", SERVICE_VERSION)):
+                        ("version", SERVICE_VERSION),
+                        ("base_url", base),
+                        ("discovery_url", f"{base}/.well-known/mcp.json"),
+                        ("contact", "hello@hatchloop.dev")):
+        if field not in svc and field in ("base_url", "discovery_url", "contact"):
+            continue  # do not invent fields the manifest never had
         if svc.get(field) != want:
             drift.append(f"service.{field}: {svc.get(field)!r} -> {want!r}")
             svc[field] = want
