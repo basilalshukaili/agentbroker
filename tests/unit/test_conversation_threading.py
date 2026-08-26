@@ -560,3 +560,70 @@ def test_fallback_to_sms_does_not_claim_the_whatsapp_thread(fake_sb, monkeypatch
     assert "conversation" not in receipt.result, "must not advertise an unsent reference"
     outs = [m for m in fake_sb.rows["conversation_messages"] if m["direction"] == "out"]
     assert not any(m["wamid"] == "SM_sms_123" for m in outs), "SMS id bound to WA thread"
+
+
+# ==========================================================================
+# Demand shaping must be ENFORCED on the send path (it was dead code until
+# 2026-08-26 - built, described, but never called).
+# ==========================================================================
+def _send(monkeypatch, **kw):
+    import core.send_message as sm
+    from core.models import (SendMessageRequest, Recipient, MessageType,
+                             MessageContent, ChannelPreference)
+    from channels.adapter_interface import ChannelResponse
+    sent = {}
+
+    async def fake_send(req):
+        sent["hit"] = True
+        return ChannelResponse(success=True, provider_message_id="wamid.Z")
+
+    monkeypatch.setattr(sm._WHATSAPP_ADAPTER, "send", fake_send)
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER", "15556677792")
+    req = SendMessageRequest(
+        recipient=Recipient(id_type="phone", id_value="+96890000077", country_code="OM"),
+        message_type=MessageType.TRANSACTIONAL,
+        content=MessageContent(body="Booking?"),
+        preferred_channel=ChannelPreference.WHATSAPP, **kw)
+    return asyncio.run(sm.handle_send_message(req, agent_id="agent_a")), sent
+
+
+def test_flood_is_queued_not_sent(fake_sb, monkeypatch):
+    now = datetime.now(timezone.utc)
+    for i in range(6):                      # small-tier hourly limit
+        fake_sb.rows["conversations"].append({
+            "conversation_id": f"q{i}", "business_id": "biz_busy2",
+            "created_at": (now - timedelta(minutes=3)).isoformat(), "state": "open"})
+    receipt, sent = _send(monkeypatch, on_behalf_of="Sara", business_id="biz_busy2")
+    assert receipt.status.value == "failure"
+    assert receipt.reason_code == "business_rate_limited"
+    assert receipt.retriable is True                       # queued, not rejected
+    assert receipt.result["demand_shaping"]["retry_after_ms"] > 0
+    assert receipt.cost.amount == 0.0                      # never charge for a block
+    assert not sent, "the message must NOT have been dispatched"
+
+
+def test_under_budget_still_sends(fake_sb, monkeypatch):
+    receipt, sent = _send(monkeypatch, on_behalf_of="Sara", business_id="biz_quiet")
+    assert receipt.status.value == "success"
+    assert sent.get("hit") is True
+
+
+def test_no_business_id_bypasses_shaping(fake_sb, monkeypatch):
+    now = datetime.now(timezone.utc)
+    for i in range(20):
+        fake_sb.rows["conversations"].append({
+            "conversation_id": f"z{i}", "business_id": "biz_busy3",
+            "created_at": now.isoformat(), "state": "open"})
+    receipt, sent = _send(monkeypatch, on_behalf_of="Sara")   # no business_id
+    assert receipt.status.value == "success"
+    assert sent.get("hit") is True
+
+
+def test_shaping_failure_never_blocks_a_send(fake_sb, monkeypatch):
+    import core.demand_shaping as D2
+    async def boom(*a, **k):
+        raise RuntimeError("ledger down")
+    monkeypatch.setattr(D2, "check_budget", boom)
+    receipt, sent = _send(monkeypatch, on_behalf_of="Sara", business_id="biz_x")
+    assert receipt.status.value == "success", "shaping must fail OPEN"
+    assert sent.get("hit") is True

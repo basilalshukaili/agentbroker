@@ -108,6 +108,31 @@ async def handle_send_message(
         trace_id=trace_id,
     )
 
+    # DEMAND SHAPING (supply-side protection). Only the platform sees how many
+    # OTHER agents just messaged this same business, so only we can stop a
+    # flood. Over-budget requests are QUEUED with an honest retry_after, never
+    # silently dropped, and the check FAILS OPEN so throttling can never break
+    # delivery. Skipped entirely when the caller supplies no business_id.
+    if request.business_id:
+        try:
+            from core.demand_shaping import check_budget
+            decision = await check_budget(request.business_id)
+            if not decision.allowed:
+                return OutcomeReceipt(
+                    operation_id=operation_id,
+                    status=OperationStatus.FAILURE,
+                    reason_code=decision.reason_code,
+                    human_message=decision.human_message,
+                    result={"demand_shaping": decision.as_receipt_block()},
+                    cost=CostRecord(amount=0.0, currency="USD",
+                                    basis="no_charge_rate_limited"),
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                    retriable=True,
+                    trace_id=trace_id,
+                )
+        except Exception:  # noqa: BLE001 - shaping must never block a send
+            pass
+
     conversation: dict | None = None
     base_body = request.content.body
 
