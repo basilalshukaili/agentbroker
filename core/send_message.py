@@ -155,8 +155,13 @@ async def handle_send_message(
                     our_number=os.getenv("WHATSAPP_PHONE_NUMBER", ""),
                     intent=(request.content.subject or base_body)[:120],
                 )
+                # ACT on pair_conflict: with another live thread on this number
+                # pair, a bare "yes" is unattributable, so ask for the reference
+                # firmly. (Computing the flag but ignoring it was the real gap
+                # both independent reviews caught.)
                 channel_request.content = base_body + _conv.reference_line(
-                    conversation["ref_token"], request.on_behalf_of)
+                    conversation["ref_token"], request.on_behalf_of,
+                    contested=bool(conversation.get("pair_conflict")))
             except Exception:  # noqa: BLE001 - threading must never block a send
                 conversation = None
         try:

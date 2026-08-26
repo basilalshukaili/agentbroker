@@ -673,3 +673,38 @@ def test_reference_prefixed_yes_still_resolves(fake_sb):
     row = [x for x in fake_sb.rows["conversations"]
            if x["conversation_id"] == conv["conversation_id"]][0]
     assert row["state"] == C.CONFIRMED
+
+
+def test_contested_pair_asks_for_the_reference_firmly(fake_sb, monkeypatch):
+    """pair_conflict was computed but ignored - both independent model reviews
+    caught it. A second live thread means a bare 'yes' is unattributable, so the
+    outbound must demand the reference."""
+    import core.send_message as sm
+    from core.models import (SendMessageRequest, Recipient, MessageType,
+                             MessageContent, ChannelPreference)
+    from channels.adapter_interface import ChannelResponse
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER", "15556677792")
+    bodies = []
+
+    async def fake_send(req):
+        bodies.append(req.content)
+        return ChannelResponse(success=True, provider_message_id=f"wamid.{len(bodies)}")
+
+    monkeypatch.setattr(sm._WHATSAPP_ADAPTER, "send", fake_send)
+
+    def send(who):
+        return asyncio.run(sm.handle_send_message(SendMessageRequest(
+            recipient=Recipient(id_type="phone", id_value="+96890000055", country_code="OM"),
+            message_type=MessageType.TRANSACTIONAL,
+            content=MessageContent(body="Booking?"),
+            preferred_channel=ChannelPreference.WHATSAPP,
+            on_behalf_of=who), agent_id="agent_a"))
+
+    r1 = send("Sara")
+    r2 = send("Ali")               # second live thread on the same pair
+    assert "conversation" in r1.result and "conversation" in r2.result
+    assert r2.result["conversation"].get("pair_conflict"), "second thread must flag the conflict"
+    # first message: normal wording; second: firm demand for the reference
+    assert "START YOUR REPLY WITH" not in bodies[0]
+    assert "START YOUR REPLY WITH" in bodies[1]
+    assert "more than one open request" in bodies[1]

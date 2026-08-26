@@ -105,12 +105,25 @@ def parse_ref(text: str) -> Optional[str]:
     return refs[0] if refs else None
 
 
-def reference_line(ref_token: str, end_user_label: str, on_behalf_of: str = "HatchLoop") -> str:
+def reference_line(ref_token: str, end_user_label: str, on_behalf_of: str = "HatchLoop",
+                   contested: bool = False) -> str:
     """The identity+reference footer every outbound message carries.
 
     This is layer 2 AND the answer to "how does the business know who it is
     talking to" - the number is shared, but the identity travels in-message.
+
+    `contested` = another live thread already exists with this business on this
+    number, so a bare "yes" CANNOT be attributed (it goes to layer 4 and we have
+    to interrupt them with a clarifying question). We therefore ask for the
+    reference more firmly. Acting on pair_conflict this way was missed until two
+    independent model reviews both flagged it (2026-08-26).
     """
+    if contested:
+        return (
+            f"\n\n-- Request #{ref_token} for {end_user_label} (via {on_behalf_of}). "
+            f"You have more than one open request with us, so please START YOUR REPLY "
+            f"WITH #{ref_token} - otherwise we cannot tell which request you mean."
+        )
     return (
         f"\n\n-- Request #{ref_token} for {end_user_label} "
         f"(via {on_behalf_of}). Reply with #{ref_token} to keep replies matched."
