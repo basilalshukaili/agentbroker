@@ -33,6 +33,31 @@ _STOP_WORDS = {"stop", "unsubscribe", "cancel", "quit", "end", "revoke"}
 # Every await on the intake path is bounded — Meta retries a slow webhook.
 _IO_TIMEOUT_S = 2.5
 
+# Unambiguous resolutions only. A thread that stays open forever makes future
+# replies ambiguous, but guessing "resolved" from a vague reply would close a
+# live request - so anything uncertain stays open.
+_CONFIRM_WORDS = {"yes", "yep", "yes please", "confirmed", "confirm", "ok",
+                  "okay", "sure", "booked", "done", "accepted", "agreed"}
+_DECLINE_WORDS = {"no", "nope", "cannot", "can't", "cant", "unavailable",
+                  "fully booked", "declined", "sorry no", "not available"}
+
+
+def _resolution_state(text: str) -> Optional[str]:
+    """CONFIRMED / CLOSED for a clear yes-or-no, else None (stay open)."""
+    from core import conversations as _c
+    t = (text or "").strip().lower().strip(".!,")
+    # Strip a quoted reference so "#4821 yes" still resolves.
+    for ref in _c.parse_refs(t):
+        t = t.replace(f"#{ref}", "").replace(ref, "")
+    t = t.strip().strip(".!,")
+    if not t or len(t) > 40:      # long free text = judgement needed, stay open
+        return None
+    if t in _CONFIRM_WORDS:
+        return _c.CONFIRMED
+    if t in _DECLINE_WORDS:
+        return _c.CLOSED
+    return None
+
 
 async def _ask(to: str, question: str) -> None:
     """Send a clarifying question back on the same channel (service window =
@@ -169,11 +194,20 @@ async def _handle_message(msg: dict, contacts: dict, our_number: str) -> bool:
                                     body=text, context_wamid=context_wamid),
             timeout=_IO_TIMEOUT_S * 2)
         if match.matched:
-            await _bounded(_conv.record_inbound(
-                match.conversation["conversation_id"], wa_id, text), "record_inbound")
+            cid = match.conversation["conversation_id"]
+            await _bounded(_conv.record_inbound(cid, wa_id, text), "record_inbound")
+            # Close the loop: a clear yes/no RESOLVES the thread. Without this
+            # every thread stayed live until its TTL, so a business with repeat
+            # custom accumulated live threads and more replies fell into the
+            # ambiguous branch than necessary (wiring audit, 2026-08-26).
+            # Conservative: only unambiguous signals transition; anything else
+            # stays open for a human/agent to judge.
+            new_state = _resolution_state(text)
+            if new_state:
+                await _bounded(_conv.set_state(cid, new_state), "set_state")
+                logger.info("wa_thread_resolved conv=%s state=%s", cid, new_state)
             logger.info("wa_correlated conv=%s method=%s confidence=%s",
-                        match.conversation["conversation_id"],
-                        match.method, match.confidence)
+                        cid, match.method, match.confidence)
         elif match.ambiguous:
             logger.info("wa_ambiguous candidates=%d from=%s",
                         len(match.candidates), sender)

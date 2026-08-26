@@ -627,3 +627,49 @@ def test_shaping_failure_never_blocks_a_send(fake_sb, monkeypatch):
     receipt, sent = _send(monkeypatch, on_behalf_of="Sara", business_id="biz_x")
     assert receipt.status.value == "success", "shaping must fail OPEN"
     assert sent.get("hit") is True
+
+
+# ==========================================================================
+# Thread resolution: a clear yes/no must CLOSE the thread, so it stops
+# competing for future replies. (set_state was dead code until 2026-08-26.)
+# ==========================================================================
+def test_clear_yes_confirms_and_stops_competing(fake_sb):
+    conv = _open(end_user_ref="Sara")
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.R1", "req"))
+    r = _post(_wh_payload("yes", context_wamid="wamid.R1"))
+    assert r.status_code == 200
+    row = [x for x in fake_sb.rows["conversations"]
+           if x["conversation_id"] == conv["conversation_id"]][0]
+    assert row["state"] == C.CONFIRMED
+    # a resolved thread no longer claims new replies
+    live = asyncio.run(C.live_threads_for_pair("15556677792", "96890000001"))
+    assert not any(x["conversation_id"] == conv["conversation_id"] for x in live)
+
+
+def test_clear_no_closes_the_thread(fake_sb):
+    conv = _open(end_user_ref="Ali")
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.R2", "req"))
+    _post(_wh_payload("sorry no", context_wamid="wamid.R2"))
+    row = [x for x in fake_sb.rows["conversations"]
+           if x["conversation_id"] == conv["conversation_id"]][0]
+    assert row["state"] == C.CLOSED
+
+
+def test_vague_reply_leaves_thread_open(fake_sb):
+    """Guessing 'resolved' from a vague reply would close a live request."""
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.R3", "req"))
+    _post(_wh_payload("let me check with the owner and get back to you",
+                      context_wamid="wamid.R3"))
+    row = [x for x in fake_sb.rows["conversations"]
+           if x["conversation_id"] == conv["conversation_id"]][0]
+    assert row["state"] in (C.OPEN, C.AWAITING_REPLY)
+
+
+def test_reference_prefixed_yes_still_resolves(fake_sb):
+    conv = _open()
+    asyncio.run(C.record_outbound(conv["conversation_id"], "wamid.R4", "req"))
+    _post(_wh_payload(f"#{conv['ref_token']} yes", context_wamid="wamid.R4"))
+    row = [x for x in fake_sb.rows["conversations"]
+           if x["conversation_id"] == conv["conversation_id"]][0]
+    assert row["state"] == C.CONFIRMED
