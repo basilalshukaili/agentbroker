@@ -146,6 +146,42 @@ def test_well_known_descriptors_report_the_real_version():
     assert get_mcp_descriptor()["version"] == config.SERVICE_VERSION
 
 
+def test_descriptor_cost_sentences_cover_every_class():
+    """openai-tools/anthropic-tools read `amount_usd`, which the generated cost
+    models do not have — so after the regeneration they said NOTHING about
+    price. Better than the old lie ($0.005 for a free tool), worse than the
+    truth."""
+    from agent_interface.well_known import describe_cost
+    assert describe_cost({"basis": "free", "unit_price_usd": 0.0}).startswith("Cost: free")
+    assert "quota" in describe_cost(
+        {"basis": "freemium_daily_quota", "unit_price_usd": 0.02})
+    assert describe_cost({"basis": "per_call", "unit_price_usd": 0.05}) == \
+        "Cost: $0.05 per call."
+    variable = describe_cost({"basis": "per_call_variable", "unit_price_usd": 0.02,
+                              "max_price_usd": 0.22})
+    assert "up to $0.22" in variable, "must advertise the ceiling, not just the floor"
+    assert describe_cost({}) == ""
+
+
+def test_no_descriptor_prices_a_free_tool():
+    """The exact defect that shipped: import_booking_url advertised at $0.005
+    across the OpenAI and Anthropic descriptors while pricing.py charges 0."""
+    from agent_interface.well_known import get_openai_tools
+    from billing.pricing import _PRICING_CENTS
+
+    tools = get_openai_tools()
+    tools = tools.get("tools", tools) if isinstance(tools, dict) else tools
+    for entry in tools:
+        fn = entry.get("function", entry)
+        name = fn.get("name")
+        if _PRICING_CENTS.get(name) != 0:
+            continue
+        desc = fn.get("description", "")
+        assert "Cost: free" in desc or "quota" in desc, (
+            f"{name} is free but its descriptor says: "
+            f"{[s for s in desc.split('. ') if 'Cost' in s]}")
+
+
 def test_server_json_version_matches_config():
     """server.json drives the public MCP-registry listing — a stale version
     there publishes a release that does not exist."""

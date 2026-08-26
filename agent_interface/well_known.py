@@ -30,6 +30,32 @@ import os
 BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
 
 
+def describe_cost(cost: dict) -> str:
+    """One honest cost sentence for any cost_model class.
+
+    These descriptors read `amount_usd`, a key the generated cost models do not
+    have — so after the manifest was regenerated they said NOTHING about price.
+    Silence is better than the old lie ($0.005 for a tool that is free) but
+    worse than the truth: an agent choosing tools should be told "free"
+    explicitly, not left to infer it.
+    """
+    if not cost:
+        return ""
+    basis = cost.get("basis")
+    amount = cost.get("unit_price_usd", cost.get("amount_usd"))
+    if basis == "free" or amount in (0, 0.0):
+        return "Cost: free (no key required)."
+    if basis == "freemium_daily_quota":
+        return f"Cost: free within the daily quota, then ${amount} per call."
+    if amount is None:
+        return "Cost: see preview_cost."
+    max_usd = cost.get("max_price_usd")
+    if max_usd and max_usd != amount:
+        return (f"Cost: from ${amount} per call, up to ${max_usd} "
+                f"(call preview_cost for the exact price).")
+    return f"Cost: ${amount} per call."
+
+
 # ---------------------------------------------------------------------------
 # /.well-known/ai-plugin.json — ChatGPT / OpenAI plugin spec
 # ---------------------------------------------------------------------------
@@ -341,8 +367,7 @@ def get_llms_txt() -> str:
         lines.append(f"- **When to use**: {op['when_to_use']}")
         if op.get("when_not_to_use"):
             lines.append(f"- **When NOT to use**: {op['when_not_to_use']}")
-        cost = op.get("cost_model", {})
-        lines.append(f"- **Cost**: ${cost.get('amount_usd', 'varies')} {cost.get('basis', '')}")
+        lines.append(f"- **{describe_cost(op.get('cost_model', {})) or 'Cost: varies'}**")
         lines.append(f"- **Execution**: {op.get('execution_profile', 'sync')}")
         slo = op.get("slo", {})
         if slo:
@@ -431,9 +456,9 @@ def _llm_optimized_description(op: dict) -> str:
         parts.append(f"Use when: {op['when_to_use']}")
     if op.get("when_not_to_use"):
         parts.append(f"Do NOT use when: {op['when_not_to_use']}")
-    cost = op.get("cost_model", {})
-    if cost.get("amount_usd"):
-        parts.append(f"Cost: ~${cost['amount_usd']} per call.")
+    cost_line = describe_cost(op.get("cost_model", {}))
+    if cost_line:
+        parts.append(cost_line)
     profile = op.get("execution_profile")
     if profile and profile != "sync":
         parts.append(f"Execution: {profile} — returns pending_async.")
