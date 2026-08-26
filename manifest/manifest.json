@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
   "service": {
-    "name": "SMB Transaction & Communication Broker",
-    "id": "smb-broker",
-    "version": "0.1.0",
+    "name": "AgentBroker",
+    "id": "agent-broker",
+    "version": "0.2.6",
     "description": "A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.",
     "base_url": "https://api.smb-broker.example/v1",
     "discovery_url": "https://api.smb-broker.example/.well-known/agent-manifest.json",
@@ -134,18 +134,9 @@
         }
       },
       "cost_model": {
-        "basis": "per_call",
-        "unit_price_usd": 0.01,
-        "tiers": [
-          {
-            "calls_per_month": 0,
-            "price_usd": 0.01
-          },
-          {
-            "calls_per_month": 10000,
-            "price_usd": 0.005
-          }
-        ]
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 200,
@@ -342,8 +333,9 @@
         }
       },
       "cost_model": {
-        "basis": "per_call",
-        "unit_price_usd": 0.02
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 500,
@@ -503,9 +495,12 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_message",
+        "basis": "per_call_variable",
         "unit_price_usd": 0.02,
-        "voice_premium_usd": 0.2
+        "credits": 2,
+        "max_price_usd": 0.22,
+        "max_credits": 22,
+        "notes": "Reserves up to 22 credits and settles the actual cost from the receipt; minimum 2."
       },
       "slo": {
         "p50_ms": 800,
@@ -725,8 +720,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_lead",
-        "unit_price_usd": 0.05
+        "basis": "per_call",
+        "unit_price_usd": 0.05,
+        "credits": 5
       },
       "slo": {
         "p50_ms": 600,
@@ -858,9 +854,12 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_booking_attempt",
+        "basis": "per_call_variable",
         "unit_price_usd": 0.15,
-        "success_bonus_usd": 0.35
+        "credits": 15,
+        "max_price_usd": 0.5,
+        "max_credits": 50,
+        "notes": "Reserves up to 50 credits and settles the actual cost from the receipt; minimum 15."
       },
       "slo": {
         "p50_ms": 5000,
@@ -1032,8 +1031,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_message",
-        "unit_price_usd": 0.02
+        "basis": "per_call",
+        "unit_price_usd": 0.02,
+        "credits": 2
       },
       "slo": {
         "p50_ms": 500,
@@ -1142,8 +1142,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_inbound",
-        "unit_price_usd": 0.03
+        "basis": "per_call",
+        "unit_price_usd": 0.03,
+        "credits": 3
       },
       "slo": {
         "p50_ms": 3000,
@@ -1265,8 +1266,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_escalation",
-        "unit_price_usd": 0.2
+        "basis": "per_call",
+        "unit_price_usd": 0.2,
+        "credits": 20
       },
       "slo": {
         "p50_ms": 2000,
@@ -1361,8 +1363,9 @@
         }
       },
       "cost_model": {
-        "basis": "per_call",
-        "unit_price_usd": 0.001
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 50,
@@ -1408,8 +1411,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_call",
-        "unit_price_usd": 0.001
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 50,
@@ -1505,8 +1509,9 @@
         }
       },
       "cost_model": {
-        "basis": "per_call",
-        "unit_price_usd": 0.001
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 100,
@@ -1606,7 +1611,9 @@
         }
       },
       "cost_model": {
-        "basis": "free"
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 200,
@@ -1710,7 +1717,9 @@
         }
       },
       "cost_model": {
-        "basis": "free"
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 20,
@@ -1867,8 +1876,9 @@
         }
       },
       "cost_model": {
-        "basis": "per_call",
-        "amount_usd": 0.005
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_latency_ms": 600,
@@ -2021,8 +2031,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "per_call",
-        "unit_price_usd": 0.5
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 45000,
@@ -2137,7 +2148,9 @@
         }
       },
       "cost_model": {
-        "basis": "free"
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 15,
@@ -2310,7 +2323,9 @@
         }
       },
       "cost_model": {
-        "basis": "free"
+        "basis": "freemium_daily_quota",
+        "unit_price_usd": 0.02,
+        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits or x402."
       },
       "slo": {
         "p50_ms": 800,
@@ -2503,9 +2518,9 @@
         }
       },
       "cost_model": {
-        "basis": "free",
-        "amount_usd": 0.0,
-        "notes": "Free read tool. OpenSanctions requires a free API key (OPENSANCTIONS_API_KEY env var); OFAC SDN is always free with no key."
+        "basis": "freemium_daily_quota",
+        "unit_price_usd": 0.02,
+        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits or x402."
       },
       "slo": {
         "p50_ms": 2000,
@@ -2768,9 +2783,9 @@
         }
       },
       "cost_model": {
-        "basis": "free",
-        "amount_usd": 0.0,
-        "notes": "Free read tool. Party screening calls OpenSanctions (requires free OPENSANCTIONS_API_KEY) and OFAC SDN bulk data (no key needed). Destination risk check is entirely hardcoded (no network)."
+        "basis": "freemium_daily_quota",
+        "unit_price_usd": 0.02,
+        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits or x402."
       },
       "slo": {
         "p50_ms": 3000,
@@ -2991,8 +3006,9 @@
         }
       },
       "cost_model": {
-        "unit_price_usd": 0,
-        "basis": "per_call"
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 300,
