@@ -841,7 +841,16 @@ async def releases():
                              "releases.json")
         with open(path, encoding="utf-8") as fh:
             data = _json.load(fh)
-        out["releases"] = data.get("releases", [])
+        # PUBLIC allow-list, not a deny-list. Founder directive 2026-08-26:
+        # "do not put what bugs we fixed not yet, put what features we added."
+        # releases.json keeps `internal_fixed` as the engineering record; it is
+        # never served. Allow-listing means a field added to the file later
+        # cannot leak by default - it has to be named here on purpose.
+        _PUBLIC = ("version", "date", "headline", "added", "changed")
+        out["releases"] = [
+            {k: r[k] for k in _PUBLIC if k in r}
+            for r in data.get("releases", [])
+        ]
     except Exception:  # noqa: BLE001
         out["releases"] = []
 

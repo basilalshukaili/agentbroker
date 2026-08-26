@@ -26,7 +26,7 @@
         "Tool descriptions now state cost per class: free tools say 'free', variable-price tools quote the ceiling as well as the floor, and premium data tools state the quota rule rather than claiming to be flatly free.",
         "Over-budget requests are now genuinely queued and later delivered, rather than only being described as queued."
       ],
-      "fixed": [
+      "internal_fixed": [
         "The service manifest advertised prices we do not charge - find_business at $0.01, verify_business at $0.02, call_business at $0.50 and the read tools at $0.001, all of which are free. Every cost figure is now derived from the price table.",
         "The MCP discovery descriptor told agents 'All tools are currently free to call' while write tools spend credits, and reported 16 operations when there were 20.",
         "Documentation advertised a $49/mo and $499/mo subscription with uptime SLAs and refund clauses that were never offered.",
@@ -36,5 +36,6 @@
         "Retrying a write operation with the same idempotency key could execute and charge twice."
       ]
     }
-  ]
+  ],
+  "_publication_rule": "Founder directive 2026-08-26: 'For change log, do not put what bugs we fixed not yet, put what features we added.' The PUBLIC /releases endpoint therefore serves `added` and `changed` only. `internal_fixed` is retained here as the engineering record and is NEVER served - deleting it would defeat the point of an append-only history. The founder's 'not yet' is noted: once we have users who could have been affected by a defect, disclosure becomes a different question and this rule should be revisited with him."
 }
