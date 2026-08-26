@@ -8,10 +8,39 @@
     "content_type": "application/json"
   },
   "payments": {
-    "status": "coming_soon",
-    "note": "Per-call micropayment billing (x402/USDC on Base) is in development and not yet active. All tools are currently free to call. This field will describe payment requirements once billing goes live."
+    "status": "active",
+    "free_tools": [
+      "call_business",
+      "check_booking_link",
+      "check_compliance",
+      "find_business",
+      "get_conversation",
+      "get_outcome",
+      "get_status",
+      "import_booking_url",
+      "preview_cost",
+      "self_test",
+      "verify_business"
+    ],
+    "paid_tools": [
+      "capture_lead",
+      "escalate_to_human",
+      "handle_inbound",
+      "map_trade_restriction",
+      "schedule_appointment",
+      "screen_sanctions",
+      "send_message",
+      "send_transactional_confirmation",
+      "verify_company_record"
+    ],
+    "unit": "credits (1 credit = 1 US cent)",
+    "rails": [
+      "credits",
+      "x402 (USDC on Base mainnet)"
+    ],
+    "note": "11 tools are free to call; 9 spend credits. Premium data tools are free within a daily quota, then billed per call. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing"
   },
-  "description": "MCP server for SMB Transaction & Communication Broker. Exposes 16 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, import_booking_url, call_business, check_booking_link, check_compliance.",
+  "description": "MCP server for HatchLoop AgentBroker. Exposes 20 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation.",
   "auth": {
     "header": "X-Agent-Identity",
     "scheme": "bearer"

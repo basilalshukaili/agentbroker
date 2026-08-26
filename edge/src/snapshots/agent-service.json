@@ -13,10 +13,10 @@
   "operations_url": "/manifest/ops",
   "health_url": "/health",
   "contact": {
-    "support_email": "support@agent-broker-edge.basil-agent.workers.dev",
-    "docs_url": "https://agent-broker-edge.basil-agent.workers.dev/docs",
-    "openapi_url": "https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml",
-    "mcp_tools_url": "https://agent-broker-edge.basil-agent.workers.dev/manifest/mcp_tools.json"
+    "support_email": "hello@hatchloop.dev",
+    "docs_url": "https://hatchloop.dev/docs/",
+    "openapi_url": "https://hatchloop.dev/openapi.yaml",
+    "mcp_tools_url": "https://hatchloop.dev/.well-known/mcp.json"
   },
   "verticals_supported": [
     "personal_services",
