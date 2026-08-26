@@ -2031,9 +2031,9 @@
         "$ref": "#/components/OutcomeReceipt"
       },
       "cost_model": {
-        "basis": "free",
-        "unit_price_usd": 0.0,
-        "notes": "No key required, unmetered."
+        "basis": "per_call",
+        "unit_price_usd": 0.2,
+        "credits": 20
       },
       "slo": {
         "p50_ms": 45000,

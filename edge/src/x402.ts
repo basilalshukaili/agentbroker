@@ -60,8 +60,13 @@ const PRICING_ATOMIC: Readonly<Record<string, number>> = {
   send_transactional_confirmation: 20000, // $0.02 (was $0.03)
   handle_inbound: 30000,                // $0.03 (was $0.08) — mostly LLM classification, ~$0.001 cost
   escalate_to_human: 200000,            // $0.20 (was $0.50) — most escalations are routing, not human-touch
-  import_booking_url: 5000,             // $0.005 (unchanged — already cheap)
-  call_business: 500000,                // $0.50 — conversational Vapi call (~$0.10-0.40 cost/2-3min) + margin
+  import_booking_url: 0,                  // FREE adoption wedge - matches
+                                        // billing/pricing.py. The edge charged
+                                        // $0.05 here while the credits rail
+                                        // charged nothing: two prices for one
+                                        // tool, depending how you paid.
+  call_business: 200000,                // $0.20 - DELIBERATE subsidy: a Vapi call costs us ~$0.30.
+                                        // Derived from billing/pricing.py; do not edit here alone.
 };
 
 export function getRequiredAmount(toolName: string): number {

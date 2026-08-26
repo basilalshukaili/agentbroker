@@ -30,7 +30,14 @@ _PRICING_CENTS: dict[str, int] = {
     "check_compliance":            0,
     "get_conversation":            0,   # read the thread you started - free
     "import_booking_url":          0,   # adoption wedge -- free so agents import without friction
-    "call_business":               0,   # voice not provisioned; 0cr until enabled
+    # VOICE. Vapi is live and a call costs us ~$0.30, so the at-cost floor is
+    # 44 credits (floor_credits(0.30)). We charge 20 - a DELIBERATE subsidy of
+    # roughly $0.10-0.14 per call, per the founder's 2026-08-26 decision to
+    # accept a loss to build trust. It is NOT zero, because a free call is the
+    # fastest route to the "huge loss" he explicitly ruled out: one enthusiastic
+    # agent could run this to tens of dollars while every single call still
+    # looks reasonable. billing/subsidy.py bounds the aggregate.
+    "call_business":              20,
     # PREMIUM DATA TOOLS (2cr/call when DATA_METERING_ENABLED=true; free within daily quota)
     # When DATA_METERING_ENABLED=false (default) these run free/unmetered via the bypass in mcp_server.py.
     "verify_company_record":       2,   # live GLEIF LEI + SEC EDGAR lookup

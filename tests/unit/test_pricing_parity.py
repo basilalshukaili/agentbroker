@@ -51,10 +51,13 @@ _SPEC_MAX_CENTS = {
     "schedule_appointment": 50,
 }
 
+# call_business LEFT this set on 2026-08-26: Vapi went live and a call costs us
+# ~$0.30, so free was an unbounded per-caller loss. It is now deliberately
+# subsidised at 20cr against a $0.44 at-cost floor - cheap, but not free.
 _SPEC_FREE = {
     "find_business", "verify_business", "get_status", "get_outcome",
     "preview_cost", "self_test", "check_booking_link", "check_compliance",
-    "import_booking_url", "call_business",
+    "import_booking_url", "get_conversation",
 }
 
 # Edge x402.ts PRICING_ATOMIC (atomic units; 1 cent = 10000 atomic).
@@ -66,11 +69,12 @@ _EDGE_ATOMIC = {
     "send_transactional_confirmation": 20000,
     "handle_inbound": 30000,
     "escalate_to_human": 200000,
-    # Edge divergences (known, not a Python regression):
-    # "import_booking_url": 5000,  -- edge charges, Python rail is FREE (spec: 0cr)
-    # "call_business": 500000,     -- edge charges, Python rail is FREE (spec: 0cr)
-    # The Python pricing.py is authoritative for credits; edge divergences are
-    # documented here and should be codegen-fixed in a later slice.
+    # Previously DIVERGENT, now aligned (2026-08-26). The edge charged $0.50 for
+    # call_business and $0.05 for import_booking_url while the credits rail
+    # charged nothing for both - two prices for one tool depending on how you
+    # paid. Listed (not commented out) so the divergence cannot return quietly.
+    "call_business": 200000,
+    "import_booking_url": 0,
 }
 
 
@@ -131,6 +135,9 @@ class TestX402GateParity:
         "send_transactional_confirmation": "0.02",
         "handle_inbound": "0.03",
         "escalate_to_human": "0.20",
+        # Newly paid 2026-08-26: Vapi is live and voice costs ~$0.30/call.
+        # Deliberately subsidised at $0.20 rather than the $0.44 at-cost floor.
+        "call_business": "0.20",
         # Premium data tools added 2026-08-24 (freemium metering slice).
         "verify_company_record": "0.02",
         "screen_sanctions": "0.02",
@@ -153,8 +160,15 @@ class TestX402GateParity:
             )
 
     def test_x402_free_ops_absent(self):
-        """import_booking_url and call_business must NOT appear in _PRICING_USD."""
-        for free_op in ("import_booking_url", "call_business"):
+        """A free tool must not appear in the x402 price map.
+
+        call_business was removed from this list on 2026-08-26: Vapi went live,
+        a call costs us ~$0.30, and free was an unbounded per-caller loss. It is
+        now subsidised at 20cr, so it BELONGS in the paid map - and the x402 and
+        credits rails finally quote the same number for it (the edge had been
+        charging $0.50 for a tool the credits rail gave away).
+        """
+        for free_op in ("import_booking_url",):
             assert free_op not in _PRICING_USD, (
                 f"{free_op} is in _PRICING_USD but should be free"
             )
