@@ -57,7 +57,14 @@ ALL_OPERATIONS: frozenset[str] = frozenset(_PRICING_CENTS)
 
 # x402 paid-tool set: those with price > 0 (import_booking_url and call_business
 # are both 0 so they are naturally excluded)
-_PAID_OPS: frozenset[str] = frozenset(op for op, c in _PRICING_CENTS.items() if c > 0)
+# Keyed off the MAXIMUM, not the minimum. is_paid() is what both billing gates
+# check (mcp_server.py x402 + credits paths), so a tool whose MINIMUM outcome is
+# free was excluded from billing on EVERY outcome - including the expensive
+# ones. That is the exact mechanism by which call_business, priced 0 as a
+# placeholder while voice was unprovisioned, kept charging nothing after Vapi
+# went live (found 2026-08-26).
+_PAID_OPS: frozenset[str] = frozenset(
+    op for op in _PRICING_CENTS if _MAX_PRICING_CENTS.get(op, _PRICING_CENTS[op]) > 0)
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +102,36 @@ def price_atomic(op: str) -> int:
     Matches the edge x402.ts PRICING_ATOMIC values for every paid op.
     Zero = free."""
     return price_cents(op) * 10_000
+
+
+# ---------------------------------------------------------------------------
+# What a credit is actually WORTH to us
+# ---------------------------------------------------------------------------
+# This module's header says "1 credit = 1 US cent". That is true when a credit
+# is SPENT and false when one is SOLD: the packages discount by volume, so the
+# realised revenue per credit is
+#     Starter $9  -> 1,000cr  = 0.90000c
+#     Growth  $29 -> 3,500cr  = 0.82857c
+#     Scale   $99 -> 13,000cr = 0.76154c   <- worst
+# A break-even computed against 1c therefore under-recovers by ~31% for our
+# LARGEST customers - the ones who spend most (found 2026-08-26).
+#
+# So any at-cost floor must be computed against the WORST realised rate, not
+# the nominal one. test_pricing_floors.py asserts this constant still equals
+# the true minimum across every package, so it cannot drift silently when a
+# package changes.
+WORST_CENTS_PER_CREDIT: float = 0.7615385   # Scale: $99 -> 13,000 credits
+
+
+def floor_credits(vendor_cost_usd: float, cushion: float = 1.10) -> int:
+    """Smallest credit price that cannot lose money at ANY package rate.
+
+    `cushion` is headroom for vendor price moves and FX, not margin.
+    """
+    import math
+    if vendor_cost_usd <= 0:
+        return 0
+    return math.ceil(vendor_cost_usd * 100 / WORST_CENTS_PER_CREDIT * cushion)
 
 
 def receipt_usd(op: str, *, at_max: bool = False) -> float:
