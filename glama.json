@@ -5,7 +5,7 @@
   ],
   "name": "agent-broker",
   "displayName": "Agent Broker",
-  "description": "19 MCP tools to find, verify, message, book, and transact at small businesses. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening, cross-border trade-restriction mapping. 11 read tools free.",
+  "description": "19 MCP tools to find, verify, message, book, and transact at small businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening, cross-border trade-restriction mapping. 11 read tools free.",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker"
   },
@@ -34,7 +34,8 @@
     "sanctions-screening",
     "verification",
     "hatchloop",
-    "ai-agents"
+    "ai-agents",
+    "whatsapp"
   ],
   "auth": {
     "type": "optional",

@@ -7,7 +7,7 @@ displayName: "Agent Broker — SMB Transactions & Bookings"
 # DEPLOY GAP (2026-08-16): the two newest tools (check_booking_link,
 # check_compliance) are merged in manifest/manifest.json but NOT yet live on
 # either Cloudflare edge or the Render origin -- both still answer tools/list
-# with 14 tools as of this writing. Trigger a fresh Render deploy + confirm the
+# with 19 tools as of this writing. Trigger a fresh Render deploy + confirm the
 # edge snapshot (edge/src/snapshots/mcp-tools-list.json, manifest/mcp_tools.json)
 # is regenerated BEFORE claiming 16 anywhere public (this file included). See
 # deploy/registry-submissions/smithery-sync-2026-08-16.md for the full audit.
@@ -22,7 +22,7 @@ description: >
   cross-border trade compliance (OFAC embargo map + party sanctions + tariff
   guidance). Built-in compliance gate (TCPA / GDPR / CASL / PDPL across 22
   jurisdictions). 11 read tools always free (100 ops/IP/day free tier) -- 8
-  write tools need a $49/mo developer key (no per-call billing, flat access).
+  write tools need a free email-verified key (50 ops/day) or credits.
 
 vendor: agent-broker-edge.techmate.workers.dev
 homepage: https://agent-broker-edge.techmate.workers.dev
@@ -61,7 +61,7 @@ connection:
   authentication:
     type: bearer
     header: X-Agent-Identity
-    description: "100 ops/IP/day free — no key required. For unlimited access, subscribe at https://buy.polar.sh/polar_cl_zRn6I67zMjFuenkjDme5RCnDYmA3vefHqX1zG3A5Phh ($49/mo flat, no per-call billing). Key arrives by email; send as X-Agent-Identity header. All 8 read tools always free."
+    description: "11 read tools are always free with no key. Write tools need a free email-verified key (50 ops/day) from https://hatchloop.dev/agent-broker, or credits from https://hatchloop.dev/pricing (Starter $9/1,000 credits); agents may also pay per-call via x402. Send the key as the X-Agent-Identity header."
 
 tools:
   - name: find_business
@@ -69,7 +69,7 @@ tools:
   - name: verify_business
     description: "Confirm an SMB has a specific capability"
   - name: send_message
-    description: "Send SMS / email / voice with full compliance pre-check"
+    description: "Send WhatsApp / SMS / email / voice with full compliance pre-check (WhatsApp free during launch)"
   - name: capture_lead
     description: "Hand off a prospect to an SMB with dedup"
   - name: schedule_appointment
@@ -119,4 +119,4 @@ documentation:
 
 pricing:
   free_tier: "100 ops/IP/day free — all 8 read tools + write-tool calls up to the daily cap with no key"
-  paid_tiers: "Unlimited — $49/mo flat (no per-call billing); key arrives by email after Polar checkout at https://buy.polar.sh/polar_cl_zRn6I67zMjFuenkjDme5RCnDYmA3vefHqX1zG3A5Phh"
+  paid_tiers: "11 read tools free with no key; write tools need a free email-verified key (50 ops/day) or credits from https://hatchloop.dev/pricing (Starter $9/1,000); agents may also pay per-call via x402"
