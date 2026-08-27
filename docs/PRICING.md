@@ -47,7 +47,7 @@ The 8 write tools perform real outbound actions, so they require an
 |---|---|---|
 | Free email-verified key | $0 | 100 write ops/day |
 | Credits | see packages | no daily cap |
-| x402 | per call in USDC on Base mainnet | no account needed |
+| Crypto | not offered - built and proven in testing, currently disabled |  |
 
 Get a free key at <https://hatchloop.dev/agent-broker>.
 

@@ -776,7 +776,7 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                     how_to_resolve={
                         "wait_until": _midnight,
                         "upgrade": "https://hatchloop.dev/pricing",
-                        "note": "credit packages remove the daily cap; x402 per-call also available",
+                        "note": "credit packages remove the daily cap",
                     },
                 )
             # Free key with remaining budget — skip the full gate below
@@ -819,7 +819,9 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                              "note": f"email-verified, {_free_limit_msg} ops/day, no payment"},
                 "credits": {"url": "https://hatchloop.dev/pricing",
                             "note": "packages from $9/1,000 credits"},
-                "x402": {"note": "agents can pay per-call in USDC on Base"},
+                # Crypto payment is NOT offered: no VASP licence exists in Oman and the
+        # CBO warns against it. The rail is built and switched off.
+
                 "header": "X-Agent-Identity",
             },
         )

@@ -50,7 +50,7 @@ def render_home() -> str:
   <h1>The agent-callable layer for SMB transactions.</h1>
   <p class="lead">
     Agent Broker is the MCP server that lets autonomous AI agents (Claude, Cursor, Continue,
-    any x402-aware client) actually <strong>do business</strong> with the long tail of small
+    any MCP client) actually <strong>do business</strong> with the long tail of small
     and mid-sized businesses worldwide &mdash; finding them, verifying them, booking
     appointments, sending messages, escalating to a human when stuck &mdash; with full
     TCPA / GDPR / CASL / PDPL compliance enforced at runtime by a non-bypassable gate.
@@ -195,7 +195,7 @@ def render_home() -> str:
     <div class="card metric"><div class="num">13</div><div class="label">Callable tools</div></div>
     <div class="card metric"><div class="num">12</div><div class="label">Booking platforms supported</div></div>
     <div class="card metric"><div class="num">22</div><div class="label">Jurisdictions with native compliance</div></div>
-    <div class="card metric"><div class="num">2</div><div class="label">Payment rails (x402 + Polar)</div></div>
+    <div class="card metric"><div class="num">1</div><div class="label">Payment rail (card via Polar)</div></div>
   </div>
   <div class="grid grid-4" style="margin-top:18px;">
     <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols</div></div>
@@ -237,7 +237,7 @@ def render_pricing() -> str:
 <header class="hero">
   <h1>Pay per call. No subscription required.</h1>
   <p class="lead">
-    Two rails. <strong>AI agents pay per-call in USDC on Base</strong> via x402
+    Credits, bought by card. <strong>Crypto payment is not offered</strong>
     micropayments &mdash; no signup, no card, no account. <strong>Human developers</strong>
     can email us for a metered plan with higher quota + SLA. Reads are free on both
     rails; writes are a few cents each. The compliance gate, not the price page,
@@ -274,20 +274,20 @@ def render_pricing() -> str:
   <h2>Per-operation cost</h2>
   <p class="lead">All prices in USD. <code class="inline">preview_cost</code> returns the same numbers programmatically (free) and is the authoritative source: any drift between this page and <code class="inline">preview_cost</code> is a bug. We price for volume, not extraction &mdash; reads are free, writes are cheap enough that any agent can afford them.</p>
   <div class="grid grid-3">
-    <div class="card"><h3>find_business</h3><p><strong>Free</strong> via x402 (anonymous evaluation). Subscription overage: ~$0.01.</p></div>
-    <div class="card"><h3>verify_business</h3><p><strong>Free</strong> via x402. Subscription overage: ~$0.02.</p></div>
+    <div class="card"><h3>find_business</h3><p><strong>Free</strong> (anonymous evaluation). Subscription overage: ~$0.01.</p></div>
+    <div class="card"><h3>verify_business</h3><p><strong>Free</strong>. Subscription overage: ~$0.02.</p></div>
     <div class="card"><h3>send_message</h3><p>~$0.02 per send (SMS / email). +$0.20 voice premium when fallback hits Vapi.</p></div>
     <div class="card"><h3>capture_lead</h3><p>~$0.05 per dedup&#8209;handoff into the SMB&rsquo;s pipeline.</p></div>
     <div class="card"><h3>schedule_appointment</h3><p>$0.15 attempt + $0.35 only on a confirmed booking. Cost-per-success bounded.</p></div>
     <div class="card"><h3>send_transactional_confirmation</h3><p>~$0.02 per send (OTP / booking confirmation / receipt).</p></div>
     <div class="card"><h3>handle_inbound</h3><p>~$0.03 per classified inbound message.</p></div>
     <div class="card"><h3>escalate_to_human</h3><p>~$0.20 per escalation (full context bundle handoff).</p></div>
-    <div class="card"><h3>get_status / get_outcome</h3><p><strong>Free</strong> via x402. Subscription overage: ~$0.001.</p></div>
+    <div class="card"><h3>get_status / get_outcome</h3><p><strong>Free</strong>. Subscription overage: ~$0.001.</p></div>
     <div class="card"><h3>import_booking_url</h3><p>~$0.005 per supported booking URL imported.</p></div>
     <div class="card"><h3>preview_cost</h3><p><strong>Free.</strong> Read-only quote, ±5% accurate.</p></div>
     <div class="card"><h3>self_test</h3><p><strong>Free.</strong> Live capability probe / health check.</p></div>
   </div>
-  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>Two payment rails:</strong> AI agents pay per-call in USDC on Base (x402 micropayments &mdash; no signup, no account, no card). Human developers can <a href="/billing/checkout">prepay by card via Polar</a> to get a pre-paid API key for higher quota + SLA &mdash; their agent then calls without per-call crypto.</p>
+  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>One payment rail:</strong> credits, bought by card through Polar. Crypto payment is not offered.</p>
 </section>
 
 <section class="section">
@@ -322,7 +322,7 @@ def render_pricing() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Checkout — Polar Merchant-of-Record (fiat prepay) + x402 explainer
+# Checkout - Polar Merchant-of-Record (card). Crypto is not offered.
 # ---------------------------------------------------------------------------
 
 _PLAN_PRICES = {
@@ -340,54 +340,22 @@ def render_checkout(plan: str | None) -> str:
 <header class="hero">
   <h1>How you pay</h1>
   <p class="lead">
-    Two rails, both live. <strong>If you're an AI agent</strong>, you don't need this
-    page &mdash; just call <code class="inline">POST /mcp</code>. We respond with
-    HTTP 402 + payment requirements; your x402 client auto-pays in USDC on Base.
-    <strong>If you're a human developer</strong> building an agent product, email us
-    and we'll set up a metered plan with higher quota and SLA.
+    One rail: credits, bought by card. Read tools are free without a key.
+    Write tools spend credits, and a tool costs what it costs us to run.
+    <strong>Crypto payment is not offered</strong> &mdash; a per-call crypto rail
+    was built and proven in testing, and is switched off.
   </p>
 </header>
 
-<section class="section">
-  <h2>Agent payment (x402, USDC on Base)</h2>
-  <p style="color:var(--text-muted);">
-    The primary rail. No signup, no card, no account. Your agent's wallet pays per call.
-  </p>
-  <ol style="color:var(--text-muted);">
-    <li><code class="inline">POST /mcp</code> with a <code class="inline">tools/call</code>
-        for any write operation (send_message, schedule_appointment, capture_lead,
-        send_transactional_confirmation, handle_inbound, escalate_to_human, import_booking_url).</li>
-    <li>If no <code class="inline">X-PAYMENT-PROOF</code> header is present, the worker
-        responds with <strong>HTTP 402</strong> and a body containing
-        <code class="inline">payment_requirements</code> (recipient address, amount in USDC
-        atomic units, chain=base, currency contract, single-use nonce, 10-min expiry).</li>
-    <li>Your x402 client (Coinbase Agent Kit, custom wallet, etc.) sends the USDC payment
-        on Base and retries the request with
-        <code class="inline">X-PAYMENT-PROOF: &lt;tx-hash&gt;</code> +
-        <code class="inline">X-PAYMENT-NONCE: &lt;nonce&gt;</code>.</li>
-    <li>We verify the on-chain transfer (6 checks: exists, confirmed, USDC Transfer event,
-        amount &ge; required, &le; 10 min old, nonce unspent) and proxy the tool call.</li>
-    <li>All reads (<code class="inline">find_business</code>, <code class="inline">verify_business</code>,
-        <code class="inline">get_status</code>, <code class="inline">get_outcome</code>,
-        <code class="inline">preview_cost</code>, <code class="inline">self_test</code>) are
-        <strong>free</strong> &mdash; no x402 gate, no payment required.</li>
-  </ol>
-  <p style="margin-top:18px;color:var(--text-muted);">
-    Prices per write op: <code class="inline">$0.02</code> (send_message, send_transactional_confirmation),
-    <code class="inline">$0.03</code> (handle_inbound), <code class="inline">$0.05</code> (capture_lead),
-    <code class="inline">$0.005</code> (import_booking_url), <code class="inline">$0.15 + $0.35</code>
-    (schedule_appointment attempt + success), <code class="inline">$0.20</code> (escalate_to_human).
-    Total cost of a full booking flow: ~$0.19.
-  </p>
-</section>
+
 
 <section class="section">
   <h2>Developer plan (fiat, prepay by card)</h2>
   <p style="color:var(--text-muted);">
-    Prefer to prepay by card instead of wiring an x402 wallet? Buy developer access
+    Buy credits
     via <strong>Polar</strong> (Merchant of Record &mdash; handles tax worldwide). On
     payment we email you a pre-paid API key (an <code class="inline">X-Agent-Identity</code>
-    token); your agent sends it as a header and calls without per-call crypto. Need a
+    token); your agent sends it as a header. Need a
     larger metered plan or human SLA? Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.
   </p>
   <div class="cta" style="margin-top:18px;">
@@ -404,7 +372,7 @@ def render_checkout(plan: str | None) -> str:
         PDPL across 22 jurisdictions. Marketing without a verified consent_record_id
         is rejected at runtime regardless of how you paid.</li>
     <li><strong>14-day refund</strong> on metered developer plans. See <a href="/refund">Refund Policy</a>.
-        x402 payments are per-call and non-refundable once verified on-chain.</li>
+
     <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
         See <a href="/privacy">Privacy Policy</a>.</li>
     <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
@@ -413,7 +381,7 @@ def render_checkout(plan: str | None) -> str:
 </section>
 """
     return page(f"How you pay", body, active="pricing",
-                description=f"Two payment rails: x402 micropayments for AI agents (primary), metered developer plans for human developers. {BRAND} does not require human signup for agents to pay.")
+                description=f"Credits, bought by card through Polar. Crypto payment is not offered. {BRAND} does not require human signup to use the free tools.")
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  9 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits or x402. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing; or agents pay per-call via x402. |
+| Billing | **Live**  -  9 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits or x402. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
 | x402 payment rail | **Verified** on Base mainnet (tx 0x38a0d9ec) |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 

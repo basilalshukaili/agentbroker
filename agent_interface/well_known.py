@@ -61,7 +61,9 @@ def _payments_block() -> dict:
         "free_tools": free,
         "paid_tools": paid,
         "unit": "credits (1 credit = 1 US cent)",
-        "rails": ["credits", "x402 (USDC on Base mainnet)"],
+        # Crypto is NOT an offered rail: no VASP licence exists in Oman and the
+        # CBO warns against it (2026-08-27). The x402 code is built and off.
+        "rails": ["credits"],
         "note": (
             f"{len(free)} tools are free to call; {len(paid)} spend credits. "
             "Premium data tools are free within a daily quota, then billed per "
@@ -256,7 +258,7 @@ def get_agents_json() -> dict:
 # previously only served the non-standard plural agents.json, so they 404'd and
 # couldn't index us. This serves a spec-shaped AgentCard (camelCase fields) so
 # those registries catalog us. Honest about transport: discovery/transaction is
-# via our MCP endpoint + x402 micropayments (we are an MCP server, not a full
+# via our MCP endpoint (we are an MCP server, not a full
 # A2A JSON-RPC server) — the card's description and _meta make that explicit so
 # a discovering agent knows exactly how to actually call us.
 
@@ -284,7 +286,7 @@ def get_agent_card() -> dict:
             "self_test, preview_cost) are free. Write tools require an "
             "X-Agent-Identity token. Built-in TCPA/GDPR/CASL compliance gate. "
             "Connect via the MCP endpoint below (streamable-http). "
-            "Note: micropayment billing (x402/USDC) is coming soon — not yet active."
+            "Note: crypto payment is not offered."
         ),
         "url": mcp_url,
         "preferredTransport": "streamable-http",
@@ -307,7 +309,7 @@ def get_agent_card() -> dict:
             "mcpEndpoint": mcp_url,
             "payments": {
                 "status": "coming_soon",
-                "note": ("Per-call micropayment billing (x402/USDC on Base) is in "
+                "note": ("Crypto payment is not offered. Billing is in "
                          "development. Currently all tools are callable at no cost. "
                          "This field will be updated when billing goes live."),
             },

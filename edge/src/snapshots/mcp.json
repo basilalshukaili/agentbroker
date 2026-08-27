@@ -35,8 +35,7 @@
     ],
     "unit": "credits (1 credit = 1 US cent)",
     "rails": [
-      "credits",
-      "x402 (USDC on Base mainnet)"
+      "credits"
     ],
     "note": "11 tools are free to call; 9 spend credits. Premium data tools are free within a daily quota, then billed per call. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing"
   },
