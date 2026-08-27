@@ -363,8 +363,31 @@ async def run_metered_tool(
             actual_cents = round(float(cost_record["amount"]) * 100)
         else:
             actual_cents = credit_cents(name)
-        # Clamp to [0, max_cr] for safety (never commit more than was held)
+        # Clamp to [0, max_cr] - never commit more than was held.
+        #
+        # THE CLAMP IS ALSO A SUBSIDY. When the real cost exceeds the reserve we
+        # charge the reserve and absorb the difference, silently. That is the
+        # right customer behaviour - we quoted a ceiling and must honour it -
+        # but it was invisible, so an unbounded loss could accumulate one
+        # reasonable-looking call at a time. A UAE SMS costs ~$0.109 against a
+        # 22-credit ceiling; the gap is ours.
+        #
+        # Surfaced by an independent DeepSeek review (2026-08-26) and confirmed
+        # in the code: the finding was real even though several of that review's
+        # other findings were not.
+        uncapped_cents = actual_cents
         actual_cents = max(0, min(actual_cents, max_cr))
+        if uncapped_cents > max_cr:
+            try:
+                from billing import subsidy as _subsidy
+                await _subsidy.record(
+                    tool=name,
+                    our_cost_usd=uncapped_cents / 100,
+                    charged_usd=actual_cents / 100,
+                    agent_id=account_id,
+                )
+            except Exception:  # noqa: BLE001 - measurement must not break billing
+                pass
 
         try:
             commit_result = await commit(hold_id, actual_cents)
