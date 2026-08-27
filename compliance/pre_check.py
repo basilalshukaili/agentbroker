@@ -134,6 +134,53 @@ def pre_check(
                 message="CASL requires express consent for commercial electronic messages to Canadian recipients.",
             )
 
+    # 3b. QUIET HOURS. TCPA restricts solicitation to 8am-9pm in the
+    # RECIPIENT'S local time (47 CFR 64.1200(c)(1)), $500-$1,500 statutory
+    # damages per message. Nothing in this codebase enforced a time window
+    # until 2026-08-26 - demand_shaping listed it as "deferred, not
+    # dropped" and it had stayed deferred, while every public surface
+    # advertised "TCPA compliance built in".
+    #
+    # Only solicitation is gated, and only on TELEPHONE channels - email is
+    # CAN-SPAM territory with no calling window.
+    #
+    # Runs AFTER the consent checks on purpose. Consent is a PERMANENT bar
+    # and quiet hours a TEMPORARY one; reporting 'wrong hour' to a caller
+    # who has no consent at all would send them back at 9am to fail again.
+    # Report the permanent problem first.
+    try:
+        from compliance.quiet_hours import check as _qh_check
+        _qh = _qh_check(message_type, country_code, state_code,
+                            recipient_id=recipient_id, channel=channel)
+    except Exception as exc:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger("smb_broker.pre_check").warning(
+            "quiet_hours_check_failed err=%s", exc)
+        _qh = None
+    if _qh is not None and not _qh.allowed:
+        _audit_violation(
+            "TCPA_quiet_hours",
+            recipient_id, channel, jurisdiction, agent_id, trace_id,
+            reason=f"{_qh.reason}; local {_qh.local_time}; window {_qh.window}",
+            preview=preview,
+        )
+        raise ComplianceViolationError(
+            rule="TCPA_quiet_hours",
+            recipient_id=recipient_id,
+            channel=channel,
+            jurisdiction=jurisdiction,
+            message=(
+                f"Solicitation is not permitted at this hour for {jurisdiction}. "
+                f"Recipient local time {_qh.local_time or 'unknown'}; permitted "
+                f"window {_qh.window}. Retry in ~{(_qh.retry_after_s or 3600)//60} "
+                f"minutes. Transactional messages are unaffected."
+                if _qh.reason == "outside_permitted_hours" else
+                f"Cannot determine the recipient's local time, so a marketing "
+                f"send is held rather than risk an unlawful hour. Supply "
+                f"country_code (and state_code for US) to enable it."
+            ),
+        )
+
     # 4. 10DLC campaign check for US SMS
     if channel == "sms" and (not country_code or country_code.upper() == "US"):
         use_case_map = {
