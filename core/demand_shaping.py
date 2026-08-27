@@ -43,6 +43,29 @@ _DEFAULT_TIER = "small"
 _DAILY_BUDGET = {"micro": 12, "small": 25, "medium": 60, "large": 160}
 
 
+class _LedgerUnavailable(RuntimeError):
+    """The conversations ledger could not be read, so a budget cannot be judged."""
+
+
+# Fail-open events, most recent last. Bounded - this is a signal, not a log.
+# The health monitor reads it so a silently-disabled protection layer becomes
+# visible instead of looking like a quiet day.
+_FAIL_OPEN: list[float] = []
+_FAIL_OPEN_MAX = 200
+
+
+def _record_fail_open() -> None:
+    _FAIL_OPEN.append(_now().timestamp())
+    if len(_FAIL_OPEN) > _FAIL_OPEN_MAX:
+        del _FAIL_OPEN[:-_FAIL_OPEN_MAX]
+
+
+def fail_open_count(window_s: int = 3600) -> int:
+    """How many budget checks ran BLIND in the last window."""
+    cut = _now().timestamp() - window_s
+    return sum(1 for ts in _FAIL_OPEN if ts >= cut)
+
+
 @dataclass
 class BudgetDecision:
     allowed: bool
@@ -51,6 +74,8 @@ class BudgetDecision:
     used_hour: int = 0
     limit_hour: int = 0
     human_message: str = ""
+    # True when we allowed the send WITHOUT being able to check the budget.
+    degraded: bool = False
 
     def as_receipt_block(self) -> dict[str, Any]:
         return {
@@ -59,6 +84,9 @@ class BudgetDecision:
             "used_this_hour": self.used_hour,
             "hourly_limit": self.limit_hour,
             "retry_after_ms": self.retry_after_ms,
+            **({"degraded": True,
+                "degraded_reason": "demand ledger unreachable - allowed without a budget check"}
+               if self.degraded else {}),
         }
 
 
@@ -101,8 +129,18 @@ async def _recent_threads(business_id: str, since: datetime, limit: int = 500) -
         )
         return rows or []
     except Exception as exc:  # noqa: BLE001
+        # An empty list used to mean TWO different things - "this business is
+        # quiet" and "we could not look" - and the caller could not tell them
+        # apart. So a ledger outage silently switched the whole protection off
+        # and looked exactly like a calm day (flagged by an independent review
+        # 2026-08-26, confirmed here).
+        #
+        # Failing open stays correct: a throttle that breaks delivery is worse
+        # than the flood it prevents. What was wrong was the SILENCE. Raising a
+        # distinct error lets check_budget still allow the send while recording
+        # that it decided blind.
         logger.warning("demand_shaping_read_failed business=%s err=%s", business_id, exc)
-        return []
+        raise _LedgerUnavailable(str(exc)) from exc
 
 
 async def check_budget(
@@ -120,7 +158,15 @@ async def check_budget(
 
     now = _now()
     day_ago = now - timedelta(days=1)
-    rows = await _recent_threads(business_id, since=day_ago)
+    try:
+        rows = await _recent_threads(business_id, since=day_ago)
+    except _LedgerUnavailable:
+        # FAIL OPEN, deliberately - but say so. The send proceeds; the receipt
+        # carries `degraded`, and the health monitor counts these so a
+        # protection layer that has quietly switched off gets noticed.
+        _record_fail_open()
+        return BudgetDecision(allowed=True, reason_code="shaping_degraded",
+                              limit_hour=limit_h, degraded=True)
     if not rows:
         return BudgetDecision(allowed=True, limit_hour=limit_h)
 
