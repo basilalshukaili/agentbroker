@@ -225,7 +225,7 @@ def render_home() -> str:
 </section>
 """ + f'<script>{_HOME_LIVE_JS}</script>'
     return page("Home", body, active="home",
-                description=f"{BRAND} — horizontal MCP server. 12 tools, 7 discovery protocols, 22 jurisdictions, free tier for AI agents.")
+                description=f"{BRAND} — horizontal MCP server. 20 tools, 7 discovery protocols, 22 jurisdictions, free tier for AI agents.")
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ def render_pricing() -> str:
 </section>
 """
     return page("Pricing", body, active="pricing",
-                description=f"{BRAND} pricing. Free tier 100 ops/month. Paid tiers from $49/month. Outcome-based premiums on bookings.")
+                description=f"{BRAND} pricing. 9 utility tools free with no key. Write tools: free email-verified key (100 ops/day), then credits from $9 per 1,000. No subscription.")
 
 
 # ---------------------------------------------------------------------------

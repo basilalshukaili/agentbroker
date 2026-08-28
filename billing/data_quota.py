@@ -249,8 +249,7 @@ async def consume_data_quota(
                     "human_message": (
                         f"Free daily limit reached ({limit}/day for email-verified keys). "
                         f"Get a free key for more daily quota at {_FREE_KEY_URL}, "
-                        f"top up credits at {_UPGRADE_URL}, "
-                        f"or pay per call via x402."
+                        f"or top up credits at {_UPGRADE_URL}."
                     ),
                     "cost": {"amount": 0.0, "currency": "USD", "basis": "per_call"},
                 },
@@ -270,8 +269,7 @@ async def consume_data_quota(
                 "human_message": (
                     f"Free daily limit reached ({limit}/day for anonymous callers). "
                     f"Get a free key for more at {_FREE_KEY_URL}, "
-                    f"top up credits at {_UPGRADE_URL}, "
-                    f"or pay per call via x402."
+                    f"or top up credits at {_UPGRADE_URL}."
                 ),
                 "cost": {"amount": 0.0, "currency": "USD", "basis": "per_call"},
             },
