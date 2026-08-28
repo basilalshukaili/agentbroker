@@ -161,9 +161,14 @@ def test_db_failure_still_enforces_in_memory(client, isolated_consent, monkeypat
 
 def test_no_adapter_ships_a_dead_domain():
     """Regression pin on the actual defect."""
+    # Resolved from THIS FILE, not the working directory - see the note in
+    # test_audit_durability.py. A dead-opt-out regression check that silently
+    # depends on cwd is one that can stop checking without anyone noticing.
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     for path in ("channels/sms_email/resend_email.py",
                  "channels/sms_email/sendgrid_email.py"):
-        src = open(path, encoding="utf-8").read()
+        src = open(os.path.join(root, *path.split("/")), encoding="utf-8").read()
         for dead in ("your-domain.example/unsubscribe",
                      "smb-broker.example/unsubscribe"):
             assert dead not in src, f"{path} still ships {dead}"

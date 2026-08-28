@@ -802,7 +802,14 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             f" To get access: Option 1 (free): get a verified free key ({_free_limit_msg} ops/day) at "
             f"{free_key_url} (just provide your email, no payment needed). "
             f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
-            f"Scale $99/13,000) at https://hatchloop.dev/pricing; or agents may pay per-call via x402. "
+            # NO CRYPTO RAIL IN THE STOREFRONT MESSAGE. This is what a live
+            # agent is told at the exact moment it hits a quota and is deciding
+            # how to pay - the most consequential payment surface we have. The
+            # x402 rail is switched off (/.well-known/x402 is 404), and the
+            # seller is an Omani-registered company with no VASP licence
+            # available, so offering it here was both untrue and the specific
+            # legal exposure we decided to avoid.
+            f"Scale $99/13,000) at https://hatchloop.dev/pricing. "
             f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else

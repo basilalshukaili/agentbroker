@@ -61,7 +61,7 @@ connection:
   authentication:
     type: bearer
     header: X-Agent-Identity
-    description: "11 read tools are always free with no key. Write tools need a free email-verified key (100 ops/day) from https://hatchloop.dev/agent-broker, or credits from https://hatchloop.dev/pricing (Starter $9/1,000 credits); agents may also pay per-call via x402. Send the key as the X-Agent-Identity header."
+    description: "9 utility tools are always free with no key. 3 premium data tools are free up to a daily limit. Write tools need a free email-verified key (100 ops/day) from https://hatchloop.dev/agent-broker, or credits from https://hatchloop.dev/pricing (Starter $9/1,000 credits). Send the key as the X-Agent-Identity header."
 
 tools:
   - name: find_business
@@ -119,4 +119,4 @@ documentation:
 
 pricing:
   free_tier: "100 ops/IP/day free — all 8 read tools + write-tool calls up to the daily cap with no key"
-  paid_tiers: "11 read tools free with no key; write tools need a free email-verified key (100 ops/day) or credits from https://hatchloop.dev/pricing (Starter $9/1,000); agents may also pay per-call via x402"
+  paid_tiers: "9 utility tools free with no key; 3 premium data tools free up to a daily limit; write tools need a free email-verified key (100 ops/day) or credits from https://hatchloop.dev/pricing (Starter $9/1,000)"

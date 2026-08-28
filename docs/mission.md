@@ -47,7 +47,7 @@ A horizontal, agent-callable broker that lets an autonomous agent discover, veri
 | Enterprise agent platforms | Salesforce Headless 360, OpenAI Workspace Agents, HubSpot Breeze | We are a tool their agents call |
 | Voice channel infrastructure | Vapi, Bland, Retell, Synthflow, Goodcall | We use them as a delivery channel |
 | Calendar/scheduling SaaS | Cal.com, Calendly, Booksy, Square Appointments | We integrate with them as a back-end |
-| Payments / agentic commerce | Stripe ACP, x402, AP2, UCP | We use them as a payment rail |
+| Payments / agentic commerce | Stripe ACP, x402, AP2, UCP | A rail we would use, not build. Today we charge by card via Polar only; the x402 plumbing exists but is switched OFF and is not offered. |
 | Business directories | Yelp, Google Business Profile | We use them as a discovery source |
 | CRM | Salesforce, HubSpot, Attio | We hand off to them when needed |
 | Vertical SaaS for SMBs | Booksy, ServiceTitan, Mindbody | We integrate as a back-end |
@@ -90,7 +90,7 @@ The service stays **horizontal and channel-agnostic**. Early GTM sales focus:
 - **Not a CRM** (HubSpot, Salesforce, Attio) — we hand off to them
 - **Not a calendar SaaS** (Calendly, Cal.com) — we integrate with them as a back-end
 - **Not voice infrastructure** (Vapi, Bland, Retell) — we use them as a delivery channel
-- **Not payments infrastructure** (Stripe ACP, x402, AP2) — we use them as a payment rail
+- **Not payments infrastructure** (Stripe ACP, x402, AP2) — a rail we would use, not build. Card via Polar is the only one switched on.
 - **Not a directory** (Yelp, Google Business Profile) — we use them as a discovery source
 - **Not a consumer agent** (Operator, Comet) — we serve them
 - **Not a vertical SaaS** for any one industry — we are horizontal across SMB types

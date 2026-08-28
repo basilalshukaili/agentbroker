@@ -1,7 +1,9 @@
 > **⚠️ HISTORICAL — NOT CURRENT STATE (stamped 2026-08-17).**
 > This file is a point-in-time snapshot kept for history. Claims about deploys,
 > pricing, endpoints, and status here may be stale or contradicted by later work.
-> The authoritative current picture is **AUDIT-2026-08-16.md** plus `git log`.
+> The authoritative current picture is **README.md** (what the service does and
+> what it costs) and **docs/PRICING.md** (every price, derived from
+> `billing/pricing.py`). Both are kept current. `git log` is the full record.
 
 # Project Overview & Strategy — Agent Broker
 

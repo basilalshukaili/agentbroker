@@ -2325,7 +2325,7 @@
       "cost_model": {
         "basis": "freemium_daily_quota",
         "unit_price_usd": 0.02,
-        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits or x402."
+        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits."
       },
       "slo": {
         "p50_ms": 800,
@@ -2520,7 +2520,7 @@
       "cost_model": {
         "basis": "freemium_daily_quota",
         "unit_price_usd": 0.02,
-        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits or x402."
+        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits."
       },
       "slo": {
         "p50_ms": 2000,
@@ -2785,7 +2785,7 @@
       "cost_model": {
         "basis": "freemium_daily_quota",
         "unit_price_usd": 0.02,
-        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits or x402."
+        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits."
       },
       "slo": {
         "p50_ms": 3000,

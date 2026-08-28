@@ -26,7 +26,7 @@ That is the whole install. On connect, the server exposes **20 tools**.
 (live GLEIF/SEC company data), `screen_sanctions` (live OFAC/EU/UN sanctions screening),
 `map_trade_restriction` (cross-border embargo/export-control mapping). Anonymous callers get
 100 calls/day; email-verified free keys get 500/day. Beyond the quota: top up credits at
-https://hatchloop.dev/pricing or pay per call via x402.
+https://hatchloop.dev/pricing. Card only - there is no crypto rail.
 
 ## Optional: unlock the write tools (free)
 

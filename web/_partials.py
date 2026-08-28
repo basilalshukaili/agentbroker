@@ -30,7 +30,34 @@ DOMAIN = _os.environ.get(
 # pages - a privacy exposure, and it does not survive him being unavailable.
 SUPPORT_EMAIL = _os.environ.get("SUPPORT_EMAIL", "hello@hatchloop.dev")
 PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "privacy@hatchloop.dev")
-LEGAL_ENTITY = "Agent Broker (sole proprietor: Basil Mubarak Ali Al Shukaili, Sultanate of Oman)"
+# THE CONTRACTING PARTY. This one string is interpolated into Terms sections 7
+# (who owns the Service), 9 (who you indemnify), 13 (the contracting party and
+# notice address), the Privacy "who we are" controller declaration, the Refund
+# policy, and the footnote on every page including /billing/checkout.
+#
+# It used to read "Agent Broker (sole proprietor: <the founder's full personal
+# name>, Sultanate of Oman)". That was wrong in two ways at once: it named a
+# legal form that holds no commercial registration, and it put the founder
+# PERSONALLY on the indemnification clause of a contract governed by Omani law
+# in the courts of Muscat - while the entity actually receiving the money,
+# Techmate, got no contractual protection at all.
+#
+# Founder's ruling (2026-08-28): "we already registered techmate, we will treat
+# techmate as legal company and hatchloop as its one of the products." So the
+# seller is always Techmate; AgentBroker and HatchLoop are product names and are
+# never a party to anything.
+LEGAL_ENTITY = _os.environ.get(
+    "LEGAL_ENTITY",
+    "Techmate (شركة رفيق التقنية), "
+    "CR 1661879, Muscat, Sultanate of Oman",
+)
+
+# The footer's merchant-of-record line used to name a payment company we never
+# onboarded: no credentials for it exist anywhere, .env.example does not list it
+# among the valid providers, and the checkout page's own body already said
+# Polar. So one page told a buyer two different things about who takes the money.
+# Kept as a Python comment, NOT an HTML comment - an HTML comment ships to the
+# reader and would put that company's name back on the page it was removed from.
 
 
 _BASE_CSS = """
@@ -175,7 +202,7 @@ def _footer() -> str:
     <a href="/docs">API docs</a>
   </p>
   <p>&copy; 2026 {BRAND}. All rights reserved.</p>
-  <p class="footnote">{LEGAL_ENTITY} &middot; Payments by Paddle.com as Merchant of Record.</p>
+  <p class="footnote">{LEGAL_ENTITY} &middot; Payments by Polar as Merchant of Record.</p>
 </footer>"""
 
 

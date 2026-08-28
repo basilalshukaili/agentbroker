@@ -106,5 +106,11 @@ def test_the_stale_docstring_promise_is_gone():
 def test_privacy_policy_no_longer_claims_signed_receipts():
     """Receipt signing (billing/receipt_signer.py) is imported by nothing in
     production, so the privacy policy must not say we produce signed receipts."""
-    src = open("web/pages.py", encoding="utf-8").read()
+    # Resolved from THIS FILE, not the working directory. Opening "web/pages.py"
+    # relative to cwd meant the test passed from inside agentbroker/ and died
+    # with FileNotFoundError from the workspace root - so whether a compliance
+    # claim got checked at all depended on where pytest happened to be invoked.
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    src = open(os.path.join(root, "web", "pages.py"), encoding="utf-8").read()
     assert "signed receipts" not in src

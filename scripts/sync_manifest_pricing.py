@@ -50,10 +50,18 @@ def build_cost_model(op_name: str) -> dict:
         return {
             "basis": "freemium_daily_quota",
             "unit_price_usd": round(cents / 100, 4),
+            # NO x402 / CRYPTO RAIL IN THIS STRING. It goes into the manifest an
+            # agent reads to decide HOW TO PAY, and the x402 rail is switched
+            # off: /.well-known/x402 is a 404 and no tool returns 402. Offering
+            # a payment method that does not answer is dishonest on its own, and
+            # the seller is an Omani-registered company with no VASP licence
+            # available to point at, so advertising crypto acceptance is the
+            # specific thing we decided not to do until a lawyer says how.
+            # Turn the rail on and verify a real payment BEFORE saying so here.
             "free_quota_note": (
                 "Free up to the daily quota (500/day with a free email-verified "
                 "key, 100/day anonymous). Beyond the quota, billed per call via "
-                "credits or x402."
+                "credits."
             ),
         }
 

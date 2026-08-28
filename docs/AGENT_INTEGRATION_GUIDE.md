@@ -283,7 +283,7 @@ quote = httpx.post(
 
 **When the quota runs out** the operation fails honestly — `reason_code:
 free_quota_exceeded`, `cost: $0`, and a `how_to_resolve` field naming the
-escape paths (credits, or per-call x402). Nothing is charged and nothing is
+escape paths (credits). Nothing is charged and nothing is
 half-executed.
 
 > **No agent-callable balance endpoint yet.** Credit balance and transaction
