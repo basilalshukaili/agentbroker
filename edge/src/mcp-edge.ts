@@ -41,6 +41,39 @@ function jsonrpcError(id: unknown, code: number, message: string): Response {
   });
 }
 
+/**
+ * Headers to send to the origin, with X-Forwarded-For set AUTHORITATIVELY.
+ *
+ * The worker used to forward `request.headers` verbatim, which broke the
+ * canonical endpoint in two different ways at once. The origin's freemium
+ * quota keys on the leftmost X-Forwarded-For entry:
+ *
+ * 1. WHEN THE CLIENT SENDS NONE - the normal case - the origin saw only the
+ *    address the request arrived from, which for everything through
+ *    hatchloop.dev is Cloudflare. So EVERY anonymous caller on Earth shared a
+ *    single 20/day bucket, and that bucket is permanently drained. A
+ *    prospect's first sanctions screen against the endpoint printed on our own
+ *    marketing page failed, every time, with a message telling them to go buy
+ *    credits. It works on api.hatchloop.dev, which is why testing against the
+ *    origin never revealed it.
+ *
+ * 2. WHEN THE CLIENT SENDS ONE - it was trusted. Anyone could send a random
+ *    X-Forwarded-For per request and mint themselves an unlimited free tier.
+ *
+ * `cf-connecting-ip` is set by Cloudflare from the real TCP peer and cannot be
+ * forged by the client, so overwriting with it fixes both: real per-caller
+ * buckets, and a value the caller does not control.
+ */
+function originHeaders(request: Request): Headers {
+  const h = new Headers(request.headers);
+  const realIp = request.headers.get("cf-connecting-ip");
+  if (realIp) {
+    h.set("x-forwarded-for", realIp);
+    h.set("x-real-ip", realIp);
+  }
+  return h;
+}
+
 // Methods served from embedded snapshots. prompts/* and resources/* used to
 // be listed here returning empty arrays — that hid the four actual prompts and
 // the cookbook resource that the Python /mcp server exposes. They now proxy to
@@ -191,7 +224,7 @@ export async function handleMcpRequest(
       // Proxy and attach rate-limit headers to the response.
       const proxyReq = new Request(request.url, {
         method: "POST",
-        headers: request.headers,
+        headers: originHeaders(request),
         body: bodyText,
       });
       const { response } = await proxyToOrigin(proxyReq, originUrl);
@@ -201,7 +234,7 @@ export async function handleMcpRequest(
     // All other non-edge methods (prompts/*, resources/*) — proxy straight through.
     const proxyReq = new Request(request.url, {
       method: "POST",
-      headers: request.headers,
+      headers: originHeaders(request),
       body: bodyText,
     });
     const { response } = await proxyToOrigin(proxyReq, originUrl);
