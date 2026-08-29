@@ -223,7 +223,8 @@ ERR_INVALID_PARAMS = -32602
 ERR_INTERNAL = -32603
 
 
-async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> dict:
+async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
+                             profile: Optional[str] = None) -> dict:
     """
     Main JSON-RPC dispatcher. Returns a dict suitable to be JSON-encoded
     and sent back to the client.
@@ -236,6 +237,12 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None) -> d
     rpc_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params", {}) or {}
+    if profile is not None:
+        # Which door this request came through. Never taken from the
+        # payload - a caller must not be able to widen its own profile
+        # by sending _profile itself, so the server-side value always
+        # overwrites whatever arrived.
+        params = {**params, "_profile": profile}
     # Normalize header keys to lower-case so callers don't have to.
     norm_headers: dict = {}
     if headers:
@@ -423,7 +430,21 @@ async def _h_initialize(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _h_tools_list(params: dict) -> dict:
-    return {"tools": _build_tool_list()}
+    """The tool list, narrowed to the door the caller came through.
+
+    The profile arrives in `params["_profile"]`, injected server-side by
+    handle_mcp_request - NOT read from the caller's payload, so nobody can widen
+    their own door by sending it themselves. The dispatcher calls this handler
+    with `params` alone, so taking it as a second argument would have meant it
+    silently never arrived and every door served all 20 tools.
+
+    `_profile` absent means the full server, byte-identical to before."""
+    from agent_interface import profiles as _profiles
+    allowed = _profiles.tools_for(params.get("_profile"))
+    tools = _build_tool_list()
+    if allowed is not None:
+        tools = [t for t in tools if t.get("name") in allowed]
+    return {"tools": tools}
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +516,16 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     arguments = params.get("arguments", {}) or {}
     if not name:
         raise _ParamError("Missing 'name' parameter")
+
+    # THE CHECK THAT MAKES A NARROW DOOR REAL. A profile that lists four tools
+    # but executes twenty is a wide server wearing a small sign.
+    _profile = params.get("_profile")
+    from agent_interface import profiles as _profiles
+    if not _profiles.allows(_profile, name):
+        raise _ParamError(
+            f"'{name}' is not available on this endpoint. This is the "
+            f"'{_profile}' server, which exposes only its own tools. The full "
+            f"server with every tool is at https://hatchloop.dev/mcp/agent-broker")
 
     op = get_operation(name)
     if not op:
