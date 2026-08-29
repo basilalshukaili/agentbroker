@@ -637,12 +637,15 @@
           "agent_call": {
             "tool": "send_message",
             "arguments": {
-              "recipient_id": "smb_xyz",
-              "channel_preference": "sms",
-              "message": {
-                "body": "Will be 10 minutes late."
+              "recipient": {
+                "id_type": "smb_id",
+                "id_value": "smb_xyz"
               },
-              "country_code": "US"
+              "message_type": "notification",
+              "content": {
+                "body": "Running about 10 minutes late for my appointment."
+              },
+              "preferred_channel": "sms"
             }
           }
         },
@@ -651,11 +654,15 @@
           "agent_call": {
             "tool": "send_message",
             "arguments": {
-              "recipient_id": "smb_xyz",
-              "channel_preference": "email",
-              "message": {
-                "body": "Do you accept Cigna?"
-              }
+              "recipient": {
+                "id_type": "email",
+                "id_value": "front-desk@example-dental.com"
+              },
+              "message_type": "transactional",
+              "content": {
+                "body": "Do you accept Cigna insurance?"
+              },
+              "preferred_channel": "email"
             }
           }
         }
@@ -1072,9 +1079,16 @@
           "agent_call": {
             "tool": "send_transactional_confirmation",
             "arguments": {
-              "recipient_id": "user@example.com",
-              "channel_preference": "email",
-              "confirmation_type": "booking"
+              "recipient": {
+                "id_type": "email",
+                "id_value": "customer@example.com"
+              },
+              "confirmation_type": "booking_confirmation",
+              "data": {
+                "appointment_time": "2026-09-03T15:00:00Z",
+                "business_name": "Salon 718"
+              },
+              "preferred_channel": "email"
             }
           }
         }
@@ -1188,8 +1202,9 @@
           "agent_call": {
             "tool": "handle_inbound",
             "arguments": {
-              "raw_message": "Yes I want to book Tuesday",
-              "channel": "sms"
+              "smb_id": "smb_xyz",
+              "inbound_channel": "sms",
+              "raw_message": "Yes I want to book Tuesday"
             }
           }
         }
@@ -1308,8 +1323,12 @@
             "tool": "escalate_to_human",
             "arguments": {
               "smb_id": "smb_xyz",
-              "reason": "agent_blocked",
-              "summary": "Cannot resolve via automated channels"
+              "reason": "automation_failed",
+              "context": {
+                "original_operation": "schedule_appointment",
+                "recommended_next_step": "Call the business directly to confirm the slot"
+              },
+              "priority": "urgent"
             }
           }
         }
@@ -1554,7 +1573,7 @@
             "arguments": {
               "operation": "send_message",
               "params": {
-                "channel_preference": "sms"
+                "preferred_channel": "sms"
               }
             }
           }
@@ -1564,7 +1583,10 @@
           "agent_call": {
             "tool": "preview_cost",
             "arguments": {
-              "operation": "schedule_appointment"
+              "operation": "schedule_appointment",
+              "params": {
+                "preferred_channel": "voice"
+              }
             }
           }
         }

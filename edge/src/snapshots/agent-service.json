@@ -1,7 +1,7 @@
 {
   "service_type": "smb_broker",
   "service_id": "smb-broker-v1",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "SMB Transaction & Communication Broker — enables AI agents to discover, verify, communicate with, and schedule appointments with long-tail small and mid-sized businesses through a single, compliance-aware tool surface.",
   "auth": {
     "scheme": "AgentIdentity",
