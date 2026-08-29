@@ -101,14 +101,38 @@ def _clean(v) -> Optional[str]:
 
 
 def _normalize_name(name: str) -> str:
-    """Normalize a name for fuzzy matching: lower, alphanum + spaces only."""
+    """Normalize a name for fuzzy matching: lower, alphanum + spaces only.
+
+    APOSTROPHES ARE DELETED, NOT SPLIT ON, and that one character was a P0.
+
+    This used to turn `'` into a space, so "Joe's Pizza LLC" tokenised to
+    ['joe', 's', 'pizza', 'llc'] and "RICA'S PIZZA" to ['rica', 's', 'pizza'].
+    The orphaned "s" counted as a distinctive word, overlapped, and the pizza
+    shop scored 0.667 - over threshold. Live result:
+
+        MATCH FOUND for 'Joe's Pizza LLC': 'RICA'S PIZZA' on OFAC-SDN
+        (program=US-NARCO)
+
+    And it did not stop there: `map_trade_restriction` runs on the same engine
+    and returned "RESTRICTED... Matched parties: Joe's Pizza LLC, Mahan Air.
+    Halt the transaction and seek legal counsel." An ordinary pizza shop named
+    beside an actual sanctioned airline, with an instruction to stop a legal
+    transaction. OpenSanctions returns nothing for that name - we invented all
+    of it, out of one apostrophe.
+
+    Deleting instead of splitting gives "joes" and "ricas", which do not match.
+    Hyphens and commas still become spaces: "Kim Jong-un" must tokenise the
+    same as "Kim Jong un", and that behaviour is load-bearing for real hits.
+
+    SINGLE CHARACTERS ARE DROPPED for the same reason - one letter is never an
+    identity, it is debris from punctuation or an initial.
+    """
     lower = name.lower()
-    # Replace hyphens and commas with space (common in SDN names like "AL-QA'IDA")
-    lower = re.sub(r"[-,']", " ", lower)
-    # Strip all non-alphanumeric chars except spaces
+    # Possessives and internal apostrophes vanish; hyphens and commas separate.
+    lower = lower.replace("'", "").replace("’", "")
+    lower = re.sub(r"[-,]", " ", lower)
     cleaned = re.sub(r"[^a-z0-9\s]", "", lower)
-    # Collapse whitespace
-    return " ".join(cleaned.split())
+    return " ".join(w for w in cleaned.split() if len(w) > 1)
 
 
 # Words that carry NO identifying information about a company.
@@ -217,6 +241,23 @@ def _word_match_score(query: str, candidate: str) -> float:
     overlap = len(q_words & c_words)
     if not overlap:
         return 0.0
+
+    # A ONE-WORD QUERY MUST EARN ITS MATCH. Screening the bare name "Al"
+    # returned score 1.00 against "Abu Usama AL-JAZA'IRI" on a US-TERR
+    # programme - because "al" is one of the query's tokens and it appears in
+    # the listed name, so recall was perfect. "Al" is an Arabic article that
+    # occurs in a large fraction of the list; a two-letter token is not an
+    # identity, and 1.00 is the top of the confidence range.
+    #
+    # "Rosneft" is also a single token and MUST still match, so this cannot be
+    # a ban on one-word queries. Length is a crude proxy for distinctiveness
+    # and it separates these two cleanly: 2 characters carries no information,
+    # 7 does. Anything shorter than 4 characters standing alone is treated as
+    # unscreenable rather than as a perfect match.
+    if len(q_words) == 1:
+        only = next(iter(q_words))
+        if len(only) < 4:
+            return 0.0
 
     # HOW MUCH OF THE SCREENED NAME APPEARS IN THE LISTED ONE.
     #

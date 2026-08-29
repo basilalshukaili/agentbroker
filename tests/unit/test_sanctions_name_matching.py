@@ -65,6 +65,13 @@ def matches(query: str, candidate: str) -> bool:
     # A place name is not an identity.
     ("Muscat Coffee House", "Muscat Trading LLC"),
     ("Coffee Bean Trading", "Muscat Coffee House"),
+    # P0 FOUND IN PRODUCTION by an external product review. The apostrophe in
+    # "Joe's" tokenised to ['joe','s'] and the orphaned "s" matched "RICA'S".
+    # Live result: MATCH FOUND on OFAC-SDN, program US-NARCO - and
+    # map_trade_restriction amplified it to "Halt the transaction and seek
+    # legal counsel", naming the pizza shop beside Mahan Air.
+    ("Joe's Pizza LLC", "RICA'S PIZZA"),
+    ("Sam's Barbershop", "SAM'S CLUB HOLDINGS"),
 ])
 def test_generic_words_alone_cannot_make_a_match(query, candidate):
     """Legal forms and activity words may APPEAR in a name; they cannot be what
@@ -125,6 +132,37 @@ def test_country_names_stay_distinctive(name):
     line.
     """
     assert matches(name, name)
+
+
+@pytest.mark.parametrize("query,candidate", [
+    ("Al", "Abu Usama AL-JAZA'IRI"),
+    ("Ali", "Ali Hassan al-Majid"),
+    ("Bin", "Osama bin Laden"),
+])
+def test_a_very_short_lone_query_is_unscreenable_not_a_perfect_match(query, candidate):
+    """Screening the bare name "Al" returned score 1.00 against a US-TERR
+    listing, because "al" is the query's only token and it appears in the
+    listed name, so recall was perfect.
+
+    "Al" is an Arabic article present in a large share of the list. A
+    two-letter token is not an identity and 1.00 is the top of the confidence
+    range - a compliance caller reading that number would treat it as certain.
+
+    This cannot be a ban on one-word queries: "Rosneft" is one word and must
+    still match, which the test below pins.
+    """
+    assert not matches(query, candidate), (
+        f"{query!r} scored {_word_match_score(query, candidate):.2f} against "
+        f"{candidate!r} - a two-letter token is not an identity")
+
+
+def test_a_single_distinctive_word_still_matches():
+    """The other side of the short-query guard. Distinctiveness, not length
+    alone, is what the rule is proxying for - and these must not be collateral
+    damage."""
+    assert matches("Rosneft", "OJSC Rosneft Oil Company")
+    assert matches("Zarubezhneft", "Zarubezhneft OAO")
+    assert matches("Gazprombank", "Joint Stock Company Gazprombank")
 
 
 def test_a_name_made_only_of_generic_words_still_behaves():

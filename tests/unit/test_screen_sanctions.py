@@ -343,8 +343,23 @@ class TestAsciiOutput:
             )
 
     def test_normalize_name_handles_hyphens(self):
+        """Hyphens separate; APOSTROPHES ARE DELETED.
+
+        This asserted "al qa ida" - the old behaviour where an apostrophe
+        became a space. That was wrong in both directions and both were real:
+
+        FALSE POSITIVE: "Joe's Pizza LLC" tokenised to ['joe','s','pizza'] and
+        the orphaned "s" matched "RICA'S PIZZA", producing a live OFAC-SDN
+        US-NARCO hit on a pizza shop.
+
+        FALSE NEGATIVE, which is worse: "AL-QA'IDA" became ['al','qa','ida'],
+        which scores 0.33 against a list entry written "Al Qaida" - a MISS on
+        one of the most-listed entities in the world. Deleting the apostrophe
+        gives "al qaida" for both spellings and they now match at 1.00.
+        """
         assert _normalize_name("Kim Jong-un") == "kim jong un"
-        assert _normalize_name("AL-QA'IDA") == "al qa ida"
+        assert _normalize_name("AL-QA'IDA") == "al qaida"
+        assert _normalize_name("Joe's Pizza") == "joes pizza"
 
 
 # ---------------------------------------------------------------------------
