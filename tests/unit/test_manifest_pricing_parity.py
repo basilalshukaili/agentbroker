@@ -122,7 +122,17 @@ def test_cost_lines_are_honest_per_class():
     got = {t["name"]: next(l for l in t["description"].splitlines()
                            if l.startswith("COST:"))
            for t in _build_tool_list()}
-    assert got["find_business"] == "COST: free"
+    # Was `== "COST: free"`. The line now also states whether a key is needed,
+    # because free and keyless are different claims and conflating them made a
+    # buyer count 13 free tools against a page saying 12 keyless ones. Assert
+    # the CLASS (free, and says so) rather than the exact wording, so the
+    # sentence can be improved without a test edit - but still pin that it does
+    # not silently start quoting a price.
+    assert got["find_business"].startswith("COST: free")
+    assert "no key" in got["find_business"], (
+        "a free, keyless tool must say so - it is the first thing an agent "
+        "evaluating us will try")
+    assert "$" not in got["find_business"]
     # variable ops must not quote a flat price
     assert "from $" in got["send_message"] and "preview_cost" in got["send_message"]
     # premium data must not claim to be flatly free

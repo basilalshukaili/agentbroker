@@ -174,7 +174,25 @@ def _format_description_for_llm(op: dict) -> str:
             parts.append(
                 f"COST: free within the daily quota, then ${cost_amount} per call")
         elif cost_basis == "free":
-            parts.append("COST: free")
+            # "COST: free" ALONE IS NOT ENOUGH, because free and keyless are two
+            # different things and we were conflating them.
+            #
+            # `import_booking_url` costs zero credits AND requires a free
+            # email-verified key. Labelled just "COST: free" it reads as "call
+            # it now", so an agent's first attempt fails on auth - and a careful
+            # buyer counting our free tools got 13 from tools/list while the
+            # pricing page said 12, concluded our surfaces contradict each
+            # other, and was right that something was wrong even though both
+            # numbers were defensible.
+            #
+            # Twelve tools need no key. Thirteen cost nothing. Say which is
+            # which on the tool itself rather than making the reader reconcile
+            # two counts.
+            if op.get("name") in _WRITE_TOOLS_REQUIRING_AUTH:
+                parts.append("COST: free (no credits) - but requires a free "
+                             "email-verified key")
+            else:
+                parts.append("COST: free - no key required")
         elif cost_amount is not None and not has_variable:
             parts.append(f"COST: ${cost_amount} {cost_basis}")
         elif cost_amount is not None and has_variable:

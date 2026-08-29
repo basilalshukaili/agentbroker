@@ -210,3 +210,49 @@ def test_snapshot_sanctions_claim_matches_the_origin():
         assert "ONLY when" in d or "only when" in d, (
             f"{f} describes OpenSanctions as unconditional. It is not: without "
             f"a configured key the screen is OFAC SDN alone.")
+
+
+def test_free_and_keyless_are_never_conflated():
+    """"Free" and "needs no key" are different claims. Say which.
+
+    `import_booking_url` costs zero credits AND requires a free email-verified
+    key. Labelled just "COST: free" it reads as "call it now", so an agent's
+    first attempt fails on auth.
+
+    It also produced the contradiction a buyer reported: counting free tools in
+    tools/list gives 13, the pricing page says "12 work with no key", and both
+    are defensible - 13 cost nothing, 12 need no key. He concluded our surfaces
+    disagree. They did not, but nothing told him which number meant what.
+    """
+    import asyncio
+    from agent_interface import mcp_server as ms
+
+    resp = asyncio.run(ms.handle_mcp_request(
+        {"jsonrpc": "2.0", "method": "tools/list", "id": 1}, {}))
+    tools = resp["result"]["tools"]
+    assert len(tools) >= 15, "tools/list returned too few tools to check"
+
+    checked = 0
+    for t in tools:
+        cost_lines = [l for l in t["description"].splitlines()
+                      if l.startswith("COST:")]
+        if not cost_lines:
+            continue
+        line = cost_lines[0]
+        if "free within the daily quota" in line:
+            continue                      # quota tools state their own rule
+        if not line.startswith("COST: free"):
+            continue
+        checked += 1
+        needs_key = t["name"] in ms._WRITE_TOOLS_REQUIRING_AUTH
+        if needs_key:
+            assert "key" in line, (
+                f"{t['name']} says {line!r} but requires a key - an agent will "
+                f"call it and fail on auth")
+        else:
+            assert "no key" in line, (
+                f"{t['name']} says {line!r} without saying no key is needed - "
+                f"that is the whole reason to try it first")
+    assert checked >= 8, (
+        f"only {checked} free tools were checked - the COST-line format "
+        f"changed and this test is no longer reading it")
