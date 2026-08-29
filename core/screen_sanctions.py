@@ -701,6 +701,64 @@ async def handle_screen_sanctions(
     if not screened_lists:
         screened_lists = ["(all sources unavailable -- see sources_unavailable field)"]
 
+    # --- WHEN THE AUTHORITATIVE SOURCE IS DARK, DO NOT ASSERT A MATCH -------
+    #
+    # This is the most important safety rule in the file, and it exists because
+    # of what the tool was doing live on 2026-08-29:
+    #
+    #   "Mohammed Ali"       -> MATCH, score 1.00, programme US-TERR
+    #   "Maria Garcia"       -> MATCH, score 1.00, programme US-NARCO
+    #   "Star Trading LLC"   -> MATCH, score 1.00, programme US-DRC
+    #   "Delta Services Group" -> MATCH, score 1.00, US-RUSHAR
+    #
+    # Ordinary names, at MAXIMUM confidence, on terrorism and narcotics
+    # programmes. Four rounds of fixes that afternoon each closed one specific
+    # false positive and none touched the cause: our local matcher compares
+    # word sets, so any short name whose distinctive words appear anywhere
+    # inside one of ~17,000 long listed names scores perfectly.
+    #
+    # A word-overlap matcher cannot do this job. Deciding that "Ali Mohammed"
+    # is a common name and "Zarubezhneft" is not requires knowing how often
+    # each token occurs across the corpus. OpenSanctions does exactly that and
+    # returns a calibrated score - which is why it is the primary source.
+    #
+    # OUR OPENSANCTIONS KEY IS OVER ITS MONTHLY LIMIT (HTTP 429), so every
+    # answer above came from the local OFAC-CSV fallback alone. The fallback is
+    # useful for confirming a name IS listed; it is not fit to assert that an
+    # ordinary name is a sanctions hit.
+    #
+    # So when the calibrated source did not answer, a local-only hit is
+    # reported as a POSSIBLE match requiring verification, and `matched` stays
+    # false unless the names are effectively identical. Under-claiming costs
+    # the caller one lookup. Over-claiming tells someone that Maria Garcia is a
+    # narcotics trafficker.
+    authoritative_ran = any("OpenSanctions" in s and "rate-limited" not in s
+                            and "error" not in s
+                            for s in all_sources_queried)
+    degraded = bool(merged) and not authoritative_ran
+
+    unverified: list = []
+    if degraded:
+        q_set = set(_normalize_name(name_clean).split())
+        confident, possible = [], []
+        for m in merged:
+            # SAME TOKEN SET, order-insensitive. Sanctions lists write names in
+            # every order - "Kim Jong Un" is listed as "Jong Un Kim" - so exact
+            # string equality misses real entities, while a subset ("Rosneft"
+            # inside "ROSNEFT TRADING S.A.") is exactly the shape that also
+            # produces "Star Trading LLC" inside "Star Dragon Corporation".
+            #
+            # Identical token sets is the one relationship a word-set matcher
+            # can assert without frequency data. It still surfaces common-name
+            # collisions like "Mohammed Ali" against a listed "Ali Mohammed" -
+            # and it SHOULD: that is a genuine collision a screener must show.
+            # What it no longer does is dress a subset overlap as a finding.
+            if q_set and set(_normalize_name(m.get("name", "")).split()) == q_set:
+                confident.append(m)
+            else:
+                possible.append(m)
+        merged, unverified = confident, possible
+
     # --- Build result payload ---------------------------------------------
     matched = len(merged) > 0
     result_payload: dict = {
@@ -713,6 +771,15 @@ async def handle_screen_sanctions(
     }
     if all_sources_unavailable:
         result_payload["sources_unavailable"] = all_sources_unavailable
+    if unverified:
+        # Surfaced, never hidden. The caller may well want to look at these -
+        # they simply must not be handed over as findings.
+        result_payload["possible_matches_unverified"] = unverified
+        result_payload["degraded"] = (
+            "The calibrated sanctions source did not answer, so these are "
+            "name-similarity candidates from a local list only. They are NOT "
+            "sanctions findings and matched=false. Check each against the "
+            "official source before acting on it.")
 
     # --- Human message ---------------------------------------------------
     if matched:
@@ -732,6 +799,15 @@ async def handle_screen_sanctions(
             + (f" (country filter: {country_upper})" if country_upper else "")
             + ". Screened: "
             + "; ".join(screened_lists)
+            # Say it in the sentence a caller actually reads, not only in a
+            # field they may not parse. "No match" from a degraded screen means
+            # something weaker than "no match" from a complete one, and an
+            # agent deciding whether to trade needs to know which it got.
+            + ("" if not degraded else
+               f". WARNING: the calibrated source did not answer, so this was a "
+               f"LOCAL-LIST CHECK ONLY and is not a complete screening. "
+               f"{len(unverified)} name-similarity candidate(s) were found and "
+               f"are in possible_matches_unverified - they are not findings.")
         )
         if all_sources_unavailable:
             no_match_detail += ". NOTE: some sources were unavailable -- screening may be incomplete."
