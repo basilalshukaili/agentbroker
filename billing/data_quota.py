@@ -56,12 +56,41 @@ def _today_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+# THE LIMITS COME FROM config.py, WHICH IS WHERE THEY WERE RAISED.
+#
+# On 2026-08-26 a deliberate generosity pass raised the premium-data quotas to
+# 500/day with a free key and 100/day anonymous, and that change was propagated
+# to every public surface - the site, the README, llms-install, the skill repo,
+# the directory listings, two open PRs.
+#
+# It landed in config.py. This module never read config.py. It re-read the same
+# two environment variables with its OWN defaults - the pre-raise 50 and 20 -
+# so unless someone also set the env vars on the host, PRODUCTION SERVED A
+# FIFTH OF WHAT WE ADVERTISED. Verified in the live quota ledger: anonymous
+# buckets cap at 20 while every public surface says 100.
+#
+# Under-delivering against your own published numbers is worse than pricing
+# badly. It is the same defect as the base-URL split fixed the same day: two
+# modules reading one variable and disagreeing about what it means. There is
+# one source now, and a test asserts these match the advertised figures.
+def _limits() -> tuple[int, int]:
+    """(free_key_limit, anonymous_limit) from the single source of truth."""
+    try:
+        import config
+        return int(config.FREE_DATA_QUOTA_PER_DAY), int(config.ANON_DATA_QUOTA_PER_DAY)
+    except Exception:  # noqa: BLE001 - never let a config import break billing
+        # Match config.py's defaults, not the retired ones. A fallback that
+        # silently reverts a published price is how this bug happened.
+        return (int(os.getenv("FREE_DATA_QUOTA_PER_DAY", "500")),
+                int(os.getenv("ANON_DATA_QUOTA_PER_DAY", "100")))
+
+
 def _get_free_limit() -> int:
-    return int(os.getenv("FREE_DATA_QUOTA_PER_DAY", "50"))
+    return _limits()[0]
 
 
 def _get_anon_limit() -> int:
-    return int(os.getenv("ANON_DATA_QUOTA_PER_DAY", "20"))
+    return _limits()[1]
 
 
 def _resolve_key_id(token: str) -> Optional[str]:
