@@ -72,11 +72,24 @@ def _release_ok(balance_after: int = 100) -> dict:
 
 
 # Minimal MCP params for a paid tool call
-def _mcp_params(name: str = "capture_lead") -> dict:
-    return {
+def _mcp_params(name: str = "capture_lead", paying: bool = False) -> dict:
+    """`paying=True` attaches an x402 payment, which is what makes a call an
+    x402-paying call.
+
+    This mattered on 2026-08-29. The x402 branch used to fire on
+    `enabled() and is_paid_tool()` alone, so merely enabling the rail captured
+    EVERY call and a test could assert the x402 path was taken without ever
+    attaching a payment. That ordering would have made the advertised free tier
+    false the instant the flag was set, so the branch now also requires a
+    payment to be present - and this helper has to be able to produce one, or
+    the test named "x402_paying_call" is not testing a paying call."""
+    params = {
         "name": name,
         "arguments": {"smb_id": "smb_test", "prospect": {"name": "Test"}},
     }
+    if paying:
+        params["_meta"] = {"x402/payment": "eyJ4NDAyVmVyc2lvbiI6MX0="}
+    return params
 
 
 # Fake X-Agent-Identity header for a paid account (not free_)
@@ -243,7 +256,7 @@ class TestMCPCreditsBranchEnabled:
                             new=AsyncMock(),
                         ) as mock_meter:
                             from agent_interface.mcp_server import _h_tools_call
-                            run(_h_tools_call(_mcp_params("capture_lead"), _PAID_HEADERS))
+                            run(_h_tools_call(_mcp_params("capture_lead", paying=True), _PAID_HEADERS))
                         mock_x402.assert_awaited_once()
                         mock_meter.assert_not_awaited()
 

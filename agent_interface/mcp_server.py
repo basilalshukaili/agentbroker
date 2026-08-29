@@ -530,14 +530,33 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     # verifies, and settles only if the tool succeeds. Read tools — and the
     # case where x402 is disabled/misconfigured — fall through to the free
     # dispatch below, so the server never breaks on an x402 problem.
+    # ONLY WHEN THE CALLER ACTUALLY PRESENTS A PAYMENT.
+    #
+    # This branch used to fire on `enabled() and is_paid_tool(name)` alone, which
+    # put x402 in FRONT of the free quota and credits. Switching the flag on
+    # would therefore have made every advertised free tier instantly false: the
+    # "free email-verified key, 100 ops/day" and the "premium data free up to
+    # 500/day" that are printed on the website, the README, the manifest and the
+    # Smithery listing. Every agent using us for free would have got a payment
+    # demand instead, with no code change and no announcement.
+    #
+    # Checked against PRODUCTION rather than the defaults, which made it worse:
+    # DATA_METERING_ENABLED is true in prod, so the bypass above does not fire
+    # and even the three data tools were exposed.
+    #
+    # x402 is what the storefront message already calls it - an ESCAPE PATH for
+    # agents that have run out of free quota or would rather pay per call. So:
+    # a caller who attaches a payment is served here; everyone else falls
+    # through to credits, then the free quota, and an agent that is genuinely
+    # out of quota gets an honest failure naming this as one way to proceed.
     from billing import x402_gate
-    if x402_gate.enabled() and x402_gate.is_paid_tool(name):
+    _meta = params.get("_meta") or {}
+    _offered_payment = bool(isinstance(_meta, dict) and _meta.get("x402/payment"))
+    if x402_gate.enabled() and x402_gate.is_paid_tool(name) and _offered_payment:
         async def _dispatch() -> dict:
             # Payment is the authorization here — bypass the identity gate.
             return await _dispatch_operation(name, arguments, headers or {}, skip_auth=True)
-        return await x402_gate.run_paid_tool(
-            name, arguments, params.get("_meta") or {}, _dispatch
-        )
+        return await x402_gate.run_paid_tool(name, arguments, _meta, _dispatch)
 
     # --- SLICE 3: Credits payment gate ---
     # Runs AFTER the x402 branch (ONE rail: x402-paying calls never reach here).
