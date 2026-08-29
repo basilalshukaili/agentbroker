@@ -3,13 +3,27 @@
 # WHY THIS FILE EXISTS. A complete seven-stage pipeline has been sitting in
 # `.ci/github-actions.yml` this whole time - lint, unit, compliance, contract,
 # fault-injection, a win-rate gate, a docker self-test and a deploy gate.
-# GitHub only runs workflows under `.github/workflows/`, so not one of those
-# stages has ever executed. The repository looked like it had CI.
+# GitHub only runs workflows under `.github/workflows/`, so none of THOSE
+# stages ever executed.
 #
-# Found 2026-08-29 by the second machine, sweeping for code that is complete
-# and never invoked. It is the same bug class as the score ledger with no
-# caller and the capability endpoints with no route - this time applied to the
-# thing whose entire job is catching that bug class.
+# BUT THE FIRST VERSION OF THIS FILE OVERSTATED IT, and the correction belongs
+# at the top rather than buried. It said no CI had ever run. That was wrong and
+# I should have looked before claiming it: `deploy.yml` was named "CI + smoke"
+# and had been running the full pytest suite plus manifest and MCP validation
+# on every push, then smoke-testing production afterwards.
+#
+# What genuinely never ran were the GATE SCRIPTS - check_gates, check_pricing,
+# check_encoding - which existed only inside that unreachable `.ci/` file. So
+# "the tests never ran" was false; "our own guard scripts only ran when a human
+# remembered" was true, and that is the part worth fixing.
+#
+# A claim about what does not run, made without checking what does, is the same
+# carelessness this pipeline exists to catch.
+#
+# The two workflows have now been merged into this one, because running the
+# same 900-test suite twice on every push doubled the queue for no benefit -
+# and with GitHub's runners backed up this afternoon, that duplication was
+# delaying the deploys it was supposed to protect.
 #
 # WHY THIS IS SHORTER THAN THE FILE IT REPLACES. Every gate below was run
 # locally first and is green right now. A pipeline that fails on its first run
@@ -79,3 +93,31 @@ jobs:
       # how the ninth happened. Its job is to stop the number growing.
       - name: No new unreachable modules
         run: python scripts/check_reachable.py
+
+  smoke:
+    name: Post-deploy smoke
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      # Carried over from deploy.yml when the two workflows merged. Every step
+      # is continue-on-error on purpose: this runs AFTER the deploy, so failing
+      # the workflow here would mark a shipped, working build red and teach
+      # everyone to ignore the colour. It reports; it does not gate.
+      - name: Wait for the deploy to settle
+        run: sleep 120
+
+      - name: Production /health
+        continue-on-error: true
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS https://api.hatchloop.dev/health; then echo; exit 0; fi
+            echo "retry $i..."; sleep 30
+          done
+          echo "Health check did not pass - verify the Render dashboard."
+          exit 0
+
+      - name: Production MCP tools/list
+        continue-on-error: true
+        run: |
+          curl -fsS -X POST https://hatchloop.dev/mcp/agent-broker             -H "Content-Type: application/json"             -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | grep -q "find_business"           && echo "MCP responding correctly"           || echo "MCP smoke did not confirm - check the Render dashboard"
