@@ -55,6 +55,9 @@ def matches(query: str, candidate: str) -> bool:
     # The exact pair observed on the live endpoint.
     ("Acme Trading LLC", "ONCU Trading L.L.C."),
     ("Bright Star Trading Company", "Star Sapphire Trading Company Limited"),
+    # Observed LIVE after the first fix deployed: the candidate reduced to a
+    # single distinctive word, so scoring from its side was perfect.
+    ("Bright Star Trading Company", "GLOBAL STAR"),
     ("Gulf General Trading LLC", "Pars General Trading Co"),
     ("Al Noor Enterprises", "Al Rayan Enterprises Ltd"),
     # A place name is not an identity.
@@ -111,12 +114,34 @@ def test_a_name_made_only_of_generic_words_still_behaves():
     assert matches("General Trading Company", "General Trading Company")
 
 
-def test_scoring_is_symmetric():
-    """Which side is the query must not change the verdict - callers pass names
-    in either order and a list entry is not privileged."""
-    for a, b in [("Rosneft", "OJSC Rosneft Oil Company"),
-                 ("Acme Trading LLC", "ONCU Trading L.L.C.")]:
-        assert abs(_word_match_score(a, b) - _word_match_score(b, a)) < 1e-9
+def test_scoring_is_asymmetric_on_purpose():
+    """The query and the candidate are NOT interchangeable, and an earlier
+    version of this test asserted they were.
+
+    The question a screener asks is "is the entity in front of me on the list",
+    not "do these two strings resemble each other". Symmetric scoring is what
+    produced the live false positive "Bright Star Trading Company" matching
+    "GLOBAL STAR": the candidate reduced to one distinctive word, so scoring
+    from the candidate's side was perfect and dragged the average over the
+    line. Measuring only how much of the QUERY appears in the listed name
+    removes that whole class.
+    """
+    forward = _word_match_score("Bright Star Trading Company", "GLOBAL STAR")
+    backward = _word_match_score("GLOBAL STAR", "Bright Star Trading Company")
+    assert forward < backward, "direction no longer matters - the asymmetry is gone"
+    assert not matches("Bright Star Trading Company", "GLOBAL STAR")
+
+
+def test_a_short_query_is_generous_and_that_is_the_intended_trade():
+    """Screening one distinctive word flags every listed name containing it.
+
+    Pinned rather than fixed, because it is a deliberate choice: for a
+    sanctions tool a flagged name costs one verification and a missed one can
+    be a sanctions breach. It is only safe because generic words are removed
+    first - the generosity applies to distinctive tokens, never to "Trading".
+    """
+    assert matches("Rosneft", "OJSC Rosneft Oil Company")
+    assert not matches("Trading", "ONCU Trading L.L.C.")
 
 
 def test_no_overlap_scores_zero():

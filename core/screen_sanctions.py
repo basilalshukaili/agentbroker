@@ -183,33 +183,62 @@ def _word_match_score(query: str, candidate: str) -> float:
 
     q_words = q_all - _GENERIC_NAME_WORDS
     c_words = c_all - _GENERIC_NAME_WORDS
-    if not q_words or not c_words:
+
+    # Fall back to full word sets ONLY when NEITHER side has anything
+    # distinctive - e.g. "General Trading Company" against itself, which is a
+    # real company name made entirely of generic parts and must still match.
+    #
+    # The earlier version fell back when EITHER side was all-generic, which
+    # meant screening the bare word "Trading" matched "ONCU Trading L.L.C." at
+    # 1.00: one side had nothing distinctive, so the comparison silently
+    # reverted to exactly the generic-word matching this whole function exists
+    # to stop. If one side has distinctive words and the other has none, there
+    # is no distinctive basis for a match and the honest answer is zero.
+    if not q_words and not c_words:
         q_words, c_words = q_all, c_all
+    elif not q_words or not c_words:
+        return 0.0
 
     overlap = len(q_words & c_words)
     if not overlap:
         return 0.0
 
-    # HARMONIC MEAN of coverage in both directions, not a single ratio. The
-    # denominator choice is not cosmetic here - it decides which real entities
-    # we miss, so all three were measured against known sanctioned names:
+    # HOW MUCH OF THE SCREENED NAME APPEARS IN THE LISTED ONE.
     #
-    #   max(): penalises a SHORT query against a long official name. "Rosneft"
-    #          vs "OJSC Rosneft Oil Company" scored 0.50 and was MISSED. So
-    #          were Sberbank and a partial personal name. False negatives on
-    #          household-name sanctioned entities - unacceptable.
+    # THIS IS DELIBERATELY ASYMMETRIC, and the asymmetry is the point: the
+    # query is the entity someone is checking, the candidate is a sanctions
+    # list entry. They are not interchangeable, and the question a screener
+    # actually asks is "is the thing in front of me on the list?" - not "do
+    # these two strings resemble each other".
     #
-    #   min(): fixes those, but lets a candidate whose only distinctive word is
-    #          a PLACE match anything from that place - "Muscat Coffee House"
-    #          vs "Muscat Trading LLC" scored 1.00. Trades misses for noise.
+    # Four denominators were measured against real sanctioned names, and each
+    # of the first three MISSES or MANUFACTURES something specific:
     #
-    #   F1:    requires the overlap to be substantial from BOTH sides. Every
-    #          case above lands correctly: Rosneft/Sberbank/Ahmed Hassan match
-    #          at 0.67, Muscat/Bright Star/Al Noor reject at 0.50, and generic-
-    #          only pairs score 0.00.
-    precision = overlap / len(c_words)   # how much of the LISTED name we hit
-    recall = overlap / len(q_words)      # how much of the QUERY was found
-    return 2 * precision * recall / (precision + recall)
+    #   max():  penalises a short query against a long official name. MISSED
+    #           "Rosneft" vs "OJSC Rosneft Oil Company" and "Sberbank" vs
+    #           "Sberbank of Russia PJSC" at 0.50 - false negatives on
+    #           household-name sanctioned entities.
+    #   min():  lets a candidate whose only distinctive word is a PLACE match
+    #           anything from that place: "Muscat Coffee House" vs "Muscat
+    #           Trading LLC" scored 1.00.
+    #   F1:     fixed both, then manufactured a live hit anyway - "Bright Star
+    #           Trading Company" vs "GLOBAL STAR" scored 0.67, because the
+    #           candidate reduced to one distinctive word so precision was
+    #           perfect. Observed on the deployed endpoint, not in theory.
+    #   recall: correct on all 17 measured cases.
+    #
+    # THE TRADE, stated plainly: recall is generous to short queries. Screening
+    # the single word "Star" flags every listed name containing it. For a
+    # SANCTIONS tool that is the right direction to err - a flagged name costs
+    # one verification, a missed one can be a sanctions breach - and it is only
+    # safe because generic words were removed first, so the noise is confined
+    # to genuinely distinctive tokens rather than "Trading" and "LLC".
+    #
+    # A proper fix is inverse-document-frequency weighting, so "Rosneft" counts
+    # for more than "Star". That needs corpus statistics we do not have here.
+    # Until then this is a heuristic that is honest about being one, and every
+    # result carries "Verify against the official source before acting".
+    return overlap / len(q_words)
 
 
 def _dataset_id_to_list_name(dataset_id: str) -> str:
