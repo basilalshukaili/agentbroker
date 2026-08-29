@@ -42,7 +42,7 @@ _SCAN_FILES = [
     _AGENTBROKER_DIR / "billing" / "pricing.py",
 ]
 
-# ── AND EVERY DOC, because an enumerated list is a list someone forgets ──────
+# --- AND EVERY DOC, because an enumerated list is a list someone forgets ----
 #
 # The seven paths above were typed by hand, and a pricing claim in any file NOT
 # on that list was invisible to this guard - which is the whole failure mode it
