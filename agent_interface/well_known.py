@@ -457,6 +457,50 @@ def get_llms_txt() -> str:
         "marketing, promotional, and unsolicited outbound communication are out of "
         "scope and rejected by `compliance/pre_check`. The gate cannot be bypassed.",
         "",
+        "## Connecting from an agent harness",
+        "",
+        # WRITTEN FROM THEIR SOURCE, not from a guess. Verified 2026-08-29 by
+        # reading packages/mcp/mcp-client/README.md in deepseek-ai/deepseek-harness:
+        # it takes `transport: streamable-http` with `url` and optional
+        # `headers`, and surfaces tools as mcp__<serverName>__<tool>. We are
+        # compatible today with no changes on either side.
+        #
+        # Their own docs say the main cost of attaching an MCP server is "the "
+        # tokens those tool definitions add to every request" - which is exactly
+        # what the narrow endpoints below are for, so the example leads with one
+        # rather than with the 20-tool server.
+        "Any client that speaks MCP over streamable HTTP can attach this server "
+        "directly; there is nothing to install and no key is needed for the free "
+        "tools.",
+        "",
+        "**DeepSeek Harness (`dsh`)** - add one entry to your config:",
+        "",
+        "```yaml",
+        "- id: mcp-hatchloop",
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        "  config:",
+        "    serverName: hatchloop",
+        "    transport: streamable-http",
+        f"    url: {BASE_URL}/mcp/sanctions-screening",
+        "```",
+        "",
+        "Tools then appear to the model as `mcp__hatchloop__screen_sanctions` "
+        "and so on.",
+        "",
+        "**Pick the narrowest endpoint that covers your use case.** Every tool "
+        "definition costs tokens on every request, so attaching 20 tools when "
+        "you need 8 is a permanent tax on each call:",
+        "",
+    ] + [
+        f"- `{BASE_URL}/mcp/{pid}` - {spec['description']} "
+        f"({len(profiles.tools_for(pid))} tools)"
+        for pid, spec in sorted(profiles.PROFILES.items())
+    ] + [
+        f"- `{BASE_URL}/mcp/agent-broker` - everything ({len(get_full_manifest().get('operations', []))} tools)",
+        "",
+        "The same rows work in Claude Code, Codex, and any other MCP client - "
+        "the transport is standard.",
+        "",
         "## Contact",
         "",
         "hello@hatchloop.dev",

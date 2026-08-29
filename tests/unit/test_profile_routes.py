@@ -179,6 +179,41 @@ def test_the_advertised_endpoints_are_the_routes_that_exist():
         assert e["endpoint"].endswith(f"/mcp/{e['name']}"), e["endpoint"]
 
 
+@pytest.mark.parametrize("profile", sorted(profiles.PROFILES))
+def test_a_door_introduces_itself_as_itself(profile):
+    """`initialize` returned `serverInfo: agent-broker` and "see all 20
+    operations" on EVERY endpoint, including one that serves 8.
+
+    Practically that reads as a broken server - promise twenty, deliver eight.
+    Seriously, it is what makes three endpoints look like one server wearing
+    three names, which is the exact thing the MCP registry's moderation policy
+    calls spam. The doors ARE distinct - different tools, different refusals,
+    different token cost - and the handshake has to say so or the listing
+    cannot honestly be made.
+    """
+    import asyncio
+    from agent_interface.mcp_server import handle_mcp_request
+    r = asyncio.run(handle_mcp_request(
+        {"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1},
+        headers={}, profile=profile))
+    info = r["result"]["serverInfo"]
+    assert info["name"] == profile, (
+        f"the {profile} door introduces itself as {info['name']!r}")
+    n = len(profiles.tools_for(profile))
+    assert f"{n} tools" in r["result"]["instructions"], (
+        "the handshake does not state this door's own tool count")
+
+
+def test_the_full_server_still_introduces_itself_as_the_full_server():
+    """profile=None must be unchanged - the wide server is not a door."""
+    import asyncio
+    from agent_interface.mcp_server import handle_mcp_request
+    r = asyncio.run(handle_mcp_request(
+        {"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1},
+        headers={}))
+    assert r["result"]["serverInfo"]["name"] == "agent-broker"
+
+
 def test_the_error_names_the_alternatives():
     """An agent probing capability names should be told what DOES exist rather
     than left guessing - the whole point of these doors is discovery."""

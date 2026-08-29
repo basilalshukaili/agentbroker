@@ -52,8 +52,17 @@ PROFILES: dict[str, dict] = {
         # Why this one ships first: every tool in it is READ-ONLY and needs no
         # smb_id, so the door works standalone; and its competence is
         # externally falsifiable in one keyless call - an agent can check our
-        # sanctions answer against OpenSanctions itself. No competitor in the
-        # registry lets a stranger verify them for free before committing.
+        # sanctions answer against OpenSanctions itself.
+        #
+        # THIS USED TO CLAIM "no competitor in the registry lets a stranger
+        # verify them for free before committing." That was FALSE and an
+        # external review caught it: pipeworx-io's open-sanctions server is
+        # free with no auth, and entia.systems gives 100 requests a month free.
+        # Writing a competitive superlative into the source is how an
+        # unverified boast ends up quoted onto a public listing - which is
+        # exactly the drift this company keeps fixing in other people's copy.
+        # The keyless read tier is a real advantage; being the ONLY one was
+        # never checked and was not true.
         "why_first": "read-only, keyless, and externally verifiable in one call",
     },
     "sms-whatsapp-messaging": {

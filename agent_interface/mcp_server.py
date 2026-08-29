@@ -403,6 +403,54 @@ def _agent_id_from_token(raw_token: str) -> str:
 # ---------------------------------------------------------------------------
 
 async def _h_initialize(params: dict) -> dict:
+    """Introduce the endpoint the caller actually reached.
+
+    A CAPABILITY DOOR MUST NOT INTRODUCE ITSELF AS THE WIDE SERVER. This
+    returned `serverInfo: agent-broker` and "use tools/list to see all 20
+    operations" on EVERY endpoint, including `/mcp/sanctions-screening`, which
+    serves 8. Two things were wrong with that, one practical and one serious:
+
+    - practical: an agent that connected to the narrow door was told to expect
+      twenty tools and then shown eight, which reads as a broken server;
+    - serious: it is what makes three endpoints look like one server wearing
+      three names. The MCP registry's moderation policy treats "the same server
+      submitted multiple times under different names" as spam, and an
+      `initialize` that says `agent-broker` on all of them is the evidence for
+      that reading. The doors ARE distinct - different tools, different
+      refusals, different token cost - and the handshake has to say so.
+
+    Found by an external review, before publishing. It would have been the one
+    detail that made an honest listing look like a duplicate.
+    """
+    from agent_interface import profiles as _profiles
+    profile = params.get("_profile") if isinstance(params, dict) else None
+    if profile:
+        try:
+            spec = _profiles.PROFILES[profile]
+            names = _profiles.tools_for(profile)
+        except (KeyError, _profiles.ProfileError):
+            profile = None
+
+    if profile:
+        return {
+            "protocolVersion": PROTOCOL_VERSION,
+            "serverInfo": {"name": profile, "version": SERVER_VERSION},
+            "capabilities": {
+                "tools": {"listChanged": False},
+                "resources": {"listChanged": False, "subscribe": False},
+                "prompts": {"listChanged": False},
+                "logging": {},
+            },
+            "instructions": (
+                f"{spec['description']} This endpoint serves {len(names)} tools; "
+                f"call tools/list to see them. It refuses anything outside that "
+                f"set - the full {len(get_full_manifest().get('operations', []))}"
+                f"-tool server is at /mcp/agent-broker. Write operations require "
+                f"an X-Agent-Identity token; call preview_cost first to confirm "
+                f"the budget impact."
+            ),
+        }
+
     op_count = len(get_full_manifest().get("operations", []))
     return {
         "protocolVersion": PROTOCOL_VERSION,
