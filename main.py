@@ -33,6 +33,7 @@ from agent_interface.identity import (
 )
 from agent_interface.self_test import run_self_test
 from agent_interface.mcp_server import handle_mcp_request
+from agent_interface import profiles
 from agent_interface.well_known import (
     get_ai_plugin_manifest, get_openai_tools, get_anthropic_tools,
     get_agents_json, get_agent_card, get_mcp_descriptor, get_llms_txt, get_llms_full_txt,
@@ -141,7 +142,11 @@ app.include_router(whatsapp_webhook_router)
 @app.middleware("http")
 async def _telemetry_counter_middleware(request: Request, call_next):
     path = request.url.path
-    is_op = path.startswith("/ops/") or path == "/mcp"
+    # `/mcp/<profile>` counts too. The capability doors are the SAME engine
+    # reached through a narrower entrance - a request through one is a request,
+    # and if it were not counted here the doors would quietly become a way to
+    # use us without appearing in our own telemetry.
+    is_op = path.startswith("/ops/") or path == "/mcp" or path.startswith("/mcp/")
     if is_op:
         from telemetry.metrics import record_agent_request
         record_agent_request()
@@ -217,8 +222,16 @@ def _rl_consume(client_ip: str, now: float) -> bool:
 
 
 def _rl_path_should_limit(path: str) -> bool:
-    """Apply only to caller-facing op surfaces. Webhooks + admin route bypass."""
-    if path == "/mcp":
+    """Apply only to caller-facing op surfaces. Webhooks + admin route bypass.
+
+    THE CAPABILITY DOORS MUST BE LIMITED IDENTICALLY. `/mcp/sanctions-screening`
+    executes the same tools against the same providers as `/mcp` - the door is
+    narrower, the engine behind it is not. Matching only the exact string
+    "/mcp" would have turned every new door into a rate-limit bypass, which is
+    the kind of hole that gets added by accident while adding a feature and
+    found by whoever notices the bill.
+    """
+    if path == "/mcp" or path.startswith("/mcp/"):
         return True
     if path.startswith("/ops/"):
         return True
@@ -512,6 +525,47 @@ async def mcp_endpoint(request: Request):
     # Pass headers down so the per-tool auth gate inside `tools/call` can
     # read x-agent-identity and enforce the same scope rules /ops/* enforces.
     response = await handle_mcp_request(payload, headers=dict(request.headers))
+    return response
+
+
+@app.post("/mcp/{profile}", tags=["MCP"])
+async def mcp_profile_endpoint(profile: str, request: Request):
+    """A capability-scoped door onto the same engine.
+
+    WHY THESE EXIST (measured 2026-08-29): the MCP registry searches server
+    NAMES, not descriptions. Searched for "sanctions", "sms" or "booking" - the
+    words an agent actually types - we did not appear at all. The registry also
+    caps a description at 100 characters, which one 20-tool server cannot spend
+    honestly. And tools/list costs ~11,000 tokens when an agent that wants one
+    tool needs about 1,000.
+
+    WHY THIS ROUTE EXISTS SEPARATELY FROM profiles.py: it did not, and that was
+    the bug. `profiles.py` and the filtering inside `handle_mcp_request` shipped
+    with 28 passing tests and no way to reach them - the only route was `/mcp`,
+    which passes no profile. Every door was closed from the outside while the
+    tests proved the locks worked.
+
+    THE PROFILE COMES FROM THE ROUTE, never from the payload. A caller that
+    could name its own profile could widen its door, which would make the
+    narrowing a suggestion rather than a boundary.
+    """
+    payload = await request.json()
+    try:
+        profiles.tools_for(profile)          # raises on an unknown door
+    except profiles.ProfileError:
+        # 404, not 400: the resource genuinely is not there, and an agent
+        # probing capability names should be able to tell the difference
+        # between "wrong door" and "malformed request".
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"no such capability endpoint: {profile}",
+                "available": sorted(profiles.PROFILES),
+                "full_server": "/mcp",
+            },
+        )
+    response = await handle_mcp_request(
+        payload, headers=dict(request.headers), profile=profile)
     return response
 
 
