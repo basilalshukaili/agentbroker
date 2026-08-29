@@ -159,6 +159,21 @@ _GENERIC_NAME_WORDS = frozenset({
     "partners", "associates", "ventures", "investment", "investments",
     "development", "projects", "contracting", "supplies", "supply", "export",
     "import", "exports", "imports", "and", "of", "the", "for",
+    # GEOGRAPHIC AND POSITIONAL WORDS - weak identifiers in a company name.
+    #
+    # Observed live after the recall fix deployed: "Gulf General Trading LLC"
+    # matched "Gulf General Contracting Limited". Both names reduce to the
+    # single distinctive token "gulf", so the query was fully covered and
+    # scored 1.00. A region is not an identity - half the companies in the
+    # Gulf have "Gulf" in their name.
+    #
+    # DELIBERATELY EXCLUDES COUNTRY NAMES. "Iran", "Korea", "Syria", "Russia"
+    # carry real sanctions signal and must stay distinctive; a regional or
+    # directional word does not. That line is the difference between removing
+    # noise and removing evidence.
+    "gulf", "middle", "east", "west", "north", "south", "central", "eastern",
+    "western", "northern", "southern", "arab", "arabian", "regional",
+    "overseas", "worldwide", "continental", "universal", "united", "national",
 })
 
 

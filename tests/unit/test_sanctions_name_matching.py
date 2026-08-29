@@ -59,6 +59,8 @@ def matches(query: str, candidate: str) -> bool:
     # single distinctive word, so scoring from its side was perfect.
     ("Bright Star Trading Company", "GLOBAL STAR"),
     ("Gulf General Trading LLC", "Pars General Trading Co"),
+    # Also observed live: both names reduced to the single place-word "Gulf".
+    ("Gulf General Trading LLC", "Gulf General Contracting Limited"),
     ("Al Noor Enterprises", "Al Rayan Enterprises Ltd"),
     # A place name is not an identity.
     ("Muscat Coffee House", "Muscat Trading LLC"),
@@ -107,6 +109,23 @@ def test_a_distinctive_name_still_matches_its_registered_form(query, candidate):
 # --------------------------------------------------------------------------
 # The properties behind those cases
 # --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", [
+    "Bank Melli Iran",
+    "Korea Mining Development Trading Corporation",
+    "Syrian Arab Airlines",
+])
+def test_country_names_stay_distinctive(name):
+    """Regional words like "Gulf" are noise; COUNTRY names are evidence.
+
+    Iran, Korea, Syria and Russia appear in the names of heavily sanctioned
+    entities and carry real signal. Sweeping them into the generic set along
+    with "Gulf" and "Eastern" would remove evidence rather than noise - so the
+    generic list stops at regional and directional words, and this pins that
+    line.
+    """
+    assert matches(name, name)
+
 
 def test_a_name_made_only_of_generic_words_still_behaves():
     """"General Trading Company" has no distinctive words at all. The scorer
