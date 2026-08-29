@@ -17,6 +17,12 @@ script is the ground-truth check you run before or after a deploy, and it can
 find things the offline test cannot - a route that was deleted, a proxy rule
 that changed, an edge that stopped forwarding something it used to forward.
 
+RUN IT A MINUTE AFTER A DEPLOY, NOT DURING ONE. The legal pages are served with
+cache headers, so for a short window the edge hands out the previous HTML while
+the origin already has the new. A run in that window reported two dead links
+that were already fixed - the fix was live, the cache was not. If a finding
+disappears on a second run, that was this, not a flake worth chasing.
+
 Usage:
     python scripts/check_public_links.py            # crawl, print, exit 1 on dead
     python scripts/check_public_links.py --quiet    # only print problems
