@@ -113,7 +113,12 @@ def test_a_common_name_collision_is_still_surfaced_as_a_match():
     a screener must show it. What changed is not that we stopped surfacing it -
     it is that we stopped dressing SUBSET overlaps as findings too. Every result
     carries the verify-before-acting disclaimer."""
-    d = screen("Mohammed Ali")
+    # WAS "Mohammed Ali". That name is on OpenSanctions' 40-list aggregate but
+    # NOT on OFAC SDN, and we now source OFAC from Treasury directly (their
+    # dataset is CC-BY-NonCommercial and we are commercial). Real coverage
+    # loss, honestly reflected: this uses a listed entity whose name we
+    # deliberately match in any word order.
+    d = screen("Jong Un Kim")
     assert d.get("matched") is True
     assert d.get("disclaimer"), "a name collision was asserted with no disclaimer"
 

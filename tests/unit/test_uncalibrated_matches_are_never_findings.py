@@ -85,7 +85,8 @@ def test_a_real_listed_entity_is_still_found():
         "a genuinely listed entity must still be found - suppressing every "
         "match is not caution, it is a broken screen")
     names = " ".join(m.get("name", "") for m in result.get("matches") or [])
-    assert "Kim" in names
+    # Treasury writes names uppercase ("KIM, Jong Un"), so compare case-insensitively.
+    assert "kim" in names.lower()
 
 
 def test_matches_carry_their_provenance():
@@ -137,10 +138,118 @@ def test_the_authoritative_predicate_is_not_silently_always_false():
     """
     import inspect
     src = inspect.getsource(ss)
-    i = src.find("authoritative_ran = any(")
+    i = src.find("authoritative_ran = ")
     assert i != -1, "predicate not found - was it renamed?"
-    expr = src[i:i + 400]
-    assert '"opensanctions" in s.lower()' in expr or "'opensanctions' in s.lower()" in expr, (
+    expr = src[max(0, i - 600):i + 400]
+    assert ".lower()" in expr, (
         "the check must be case-insensitive: sources_queried holds URLs like "
         "https://api.opensanctions.org/..., so a case-sensitive test for "
         "'OpenSanctions' can never match")
+    # AND it must distinguish attempted from answered. Testing sources_QUERIED
+    # alone is always true, because we always attempt the call; the failure is
+    # recorded in sources_UNAVAILABLE.
+    assert "all_sources_unavailable" in expr, (
+        "the predicate must consult sources_unavailable - otherwise it reports "
+        "the calibrated source as having RUN whenever we merely tried it, and "
+        "suppresses the incomplete-screen warning")
+
+
+# ---------------------------------------------------------------------------
+# THE FALSE-NEGATIVE HALF, which is the more dangerous one
+# ---------------------------------------------------------------------------
+#
+# A false positive is discovered immediately and is merely embarrassing. A
+# false negative is discovered by a regulator, or never.
+#
+# The strict token-set filter originally compared RAW tokens, so a query that
+# omitted a legal form missed a listed entity outright:
+#
+#   "Rosneft Trading" vs listed "ROSNEFT TRADING S.A."              -> MISSED
+#   "Gazprombank"     vs listed "GAZPROMBANK JOINT STOCK COMPANY"   -> MISSED
+#
+# Both are on the SDN list. The filter now strips generic corporate words
+# before comparing - the same set `_word_match_score` already used - which
+# recovers these without loosening the coincidence case above.
+
+TRUE_POSITIVES = [
+    ("Kim Jong Un", "kim"),
+    ("Rosneft Trading", "rosneft"),
+    ("Gazprombank", "gazprombank"),
+    # An ALIAS-ONLY hit: "AERO-CARIBBEAN" exists in ALT.CSV, not in SDN.CSV,
+    # so this fails outright if the alias file stops being ingested.
+    ("Aero-Caribbean", "aero"),
+]
+
+
+@pytest.mark.parametrize("query,expected_fragment", TRUE_POSITIVES,
+                         ids=[q for q, _ in TRUE_POSITIVES])
+def test_listed_entities_are_surfaced(query, expected_fragment):
+    """SURFACED, not necessarily asserted - and the distinction is the product.
+
+    Without name-frequency data we cannot tell "Rosneft Trading" matching
+    "ROSNEFT TRADING S.A." (real) from "Atlas Trading Company" matching "ATLAS
+    HOLDING" (coincidence). I briefly stripped generic corporate words to
+    recover the first and it promoted the second to a MATCH - measured.
+
+    So the contract is: a listed entity must always REACH the caller, either as
+    a match or in possible_matches_unverified. What must never happen is that
+    it is silently dropped.
+    """
+    receipt, result = screen(query)
+    surfaced = (result.get("matches") or []) + (
+        result.get("possible_matches_unverified") or [])
+    names = " ".join(m.get("name", "") for m in surfaced).lower()
+    assert expected_fragment in names, (
+        f"{query!r} is on the OFAC SDN list and did not reach the caller at "
+        f"all - neither as a match nor as a candidate. A silently dropped "
+        f"listing is the failure nobody discovers until it matters. Got: {names!r}")
+
+
+def test_the_ofac_source_is_the_us_treasury():
+    """Provenance IS the product for a compliance tool.
+
+    We used to fetch OFAC from OpenSanctions' bulk export - a CC-BY-NonCommercial
+    dataset - while telling buyers it came "directly from the US Treasury".
+    Both halves of that were a problem: the licence, and the claim.
+    """
+    import core.screen_sanctions as m
+    assert "ofac.treas.gov" in m._OFAC_SDN_CSV_URL, (
+        f"OFAC must come from Treasury, not {m._OFAC_SDN_CSV_URL}")
+    assert "ofac.treas.gov" in m._OFAC_ALT_CSV_URL
+    assert "opensanctions" not in m._OFAC_SDN_CSV_URL.lower(), (
+        "fetching their aggregated dataset in a commercial product is outside "
+        "its CC-BY-NC licence")
+
+
+def test_attempting_the_calibrated_source_is_not_the_same_as_reaching_it():
+    """"Queried" and "answered" are different, and conflating them hides a
+    warning the caller needs.
+
+    `sources_queried` always contains the OpenSanctions URL, because we always
+    attempt the call; a failure is recorded separately in
+    `sources_unavailable`. A predicate that only looked at sources_queried
+    therefore reported the calibrated source as having RUN on calls where it
+    had been rate-limited and returned nothing - suppressing the "LOCAL-LIST
+    CHECK ONLY" warning.
+
+    The safety filter survived that because it keys on match provenance, not on
+    this flag. This test guards the DISCLOSURE half.
+    """
+    receipt, result = screen("Rosneft Trading")
+    unavailable = " ".join(result.get("sources_unavailable") or []).lower()
+    if "opensanctions" not in unavailable:
+        pytest.skip("the calibrated source answered on this run; nothing to assert")
+
+    msg = receipt.human_message.lower()
+    assert "local-list check only" in msg or "did not answer" in msg, (
+        "the calibrated source did NOT answer, so the caller must be told this "
+        f"was an incomplete screen. Got: {receipt.human_message[:200]}")
+
+    # And if near-misses were found, the prose must not say a flat "no matches"
+    # while the payload holds candidates. The structured field being honest is
+    # not enough - an agent reads the sentence.
+    candidates = result.get("possible_matches_unverified") or []
+    if candidates:
+        assert "candidate" in msg, (
+            f"{len(candidates)} candidate(s) were found and the message does "
+            f"not mention them: {receipt.human_message[:200]}")

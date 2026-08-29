@@ -169,46 +169,40 @@ _OPENSANCTIONS_EMPTY_RESPONSE = {
 
 #         sanctions,phones,emails,program_ids,dataset,first_seen,last_seen,last_change
 
-_OFAC_CSV_HEADER = (
+# TREASURY'S OWN SDN.CSV FORMAT, not OpenSanctions' export.
+#
+# We now ingest https://sanctionslistservice.ofac.treas.gov (SDN.CSV + ALT.CSV)
+# rather than data.opensanctions.org, because their aggregated dataset is
+# CC-BY-NonCommercial and we are a commercial product - and because the manifest
+# claimed the list came "directly from the US Treasury" while it did not.
+#
+# Treasury's export is HEADERLESS and 12 columns:
+#   0 ent_num  1 SDN_Name  2 SDN_Type  3 Program  4 Title  5 Call_Sign
+#   6 Vess_type  7 Tonnage  8 GRT  9 Vess_flag  10 Vess_owner  11 Remarks
+# Absent fields are the literal "-0-", not empty. Names are "SURNAME, Given".
+#
+# Aliases live in a SEPARATE file, ALT.CSV: [ent_num, alt_num, alt_type,
+# alt_name, remarks].
 
-    '"id","schema","name","aliases","birth_date","countries","addresses",'
-
-    '"identifiers","sanctions","phones","emails","program_ids","dataset",'
-
-    '"first_seen","last_seen","last_change"\n'
-
-)
-
-
+_OFAC_CSV_HEADER = ""   # Treasury publishes no header row
 
 _OFAC_CSV_WITH_MATCH = (
-
-    _OFAC_CSV_HEADER +
-
-    '"NK-KIM001","Person","KIM Jong Un","Kim Jong-un;Kim Jong-un","","kp","","","'
-
-    'DPRK - Executive Order 13722","","","US-DPRK","US OFAC SDN","","2026-08-23",""\n'
-
-    '"NK-OTHER01","Organization","SOME OTHER ENTITY","","","","","","'
-
-    'SDT - Some Program","","","US-SDT","US OFAC SDN","","2026-08-23",""\n'
-
+    '"20157","KIM, Jong Un","individual","DPRK3","Chairman","-0- ","-0- ",'
+    '"-0- ","-0- ","-0- ","-0- ","-0- "\n'
+    '"99001","SOME OTHER ENTITY","-0- ","SDT","-0- ","-0- ","-0- ",'
+    '"-0- ","-0- ","-0- ","-0- ","-0- "\n'
 )
 
-
+# Alternate spellings for the entity above, in ALT.CSV shape.
+_OFAC_ALT_WITH_MATCH = (
+    '"20157","1","aka","KIM Jong-un","-0- "\n'
+    '"20157","2","aka","KIM Jong Un","-0- "\n'
+)
 
 _OFAC_CSV_NO_MATCH = (
-
-    _OFAC_CSV_HEADER +
-
-    '"NK-TEST001","Organization","TOTALLY UNRELATED CORP XYZ999","","","ir","","","'
-
-    'IRAN - Some Program","","","US-IRAN","US OFAC SDN","","2026-08-23",""\n'
-
+    '"77001","TOTALLY UNRELATED CORP XYZ999","-0- ","IRAN","-0- ","-0- ",'
+    '"-0- ","-0- ","-0- ","-0- ","-0- ","-0- "\n'
 )
-
-
-
 
 
 def _mock_os_hit():
@@ -1149,7 +1143,8 @@ class TestFuzzyMatchScoring:
 
     def test_ofac_csv_parse_finds_kim_jong_un(self):
 
-        matches = _parse_ofac_sdn(_OFAC_CSV_WITH_MATCH, "Kim Jong-un")
+        matches = _parse_ofac_sdn(_OFAC_CSV_WITH_MATCH, "Kim Jong-un",
+                                  _OFAC_ALT_WITH_MATCH)
 
         assert len(matches) >= 1
 

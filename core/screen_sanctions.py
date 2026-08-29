@@ -48,7 +48,26 @@ _OPENSANCTIONS_BASE = "https://api.opensanctions.org"
 # OpenSanctions publishes free bulk data (no API key needed) at a stable URL.
 # Updated daily. 7.5MB CSV with id, schema, name, aliases, sanctions, program_ids.
 # This is derived from the official OFAC SDN XML published by US Treasury.
-_OFAC_SDN_CSV_URL = "https://data.opensanctions.org/datasets/latest/us_ofac_sdn/targets.simple.csv"
+# THE OFAC SDN LIST, FROM THE US TREASURY ITSELF.
+#
+# This used to fetch data.opensanctions.org's bulk export. Two problems with
+# that, and the second is the serious one:
+#
+#   * their aggregated dataset is licensed CC-BY-NonCommercial and we are a
+#     commercial product, so we were using it outside its licence;
+#   * the manifest told buyers the list came "directly from the US Treasury",
+#     which was simply not true. Provenance IS the product for a compliance
+#     tool - it is the thing a customer is actually buying.
+#
+# Treasury's own publication is a US Government work in the public domain, free,
+# unauthenticated, and authoritative. Fetching it removes the licence question
+# and makes the provenance claim true rather than requiring us to soften it.
+#
+# Two files, because OFAC splits them: SDN.CSV carries primary names, ALT.CSV
+# carries the aliases. Screening only SDN would silently lose ~20,000 alternate
+# spellings - which for sanctions is a false-negative machine.
+_OFAC_SDN_CSV_URL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV"
+_OFAC_ALT_CSV_URL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ALT.CSV"
 _TIMEOUT = 10  # seconds per upstream
 
 _DISCLAIMER = (
@@ -457,14 +476,14 @@ async def _call_opensanctions(
 # OFAC SDN CSV  (free, keyless, official US Treasury source)
 # ---------------------------------------------------------------------------
 
-async def _fetch_ofac_sdn_csv() -> Optional[str]:
-    """Download OFAC SDN CSV from Treasury. Returns raw text or None on error."""
+async def _fetch_url(url: str) -> Optional[str]:
+    """GET a public list file. Returns raw text, or None on any failure."""
     import httpx
-    ua = "AgentBroker-SanctionsScreen/1.0 (compliance tool; contact support@hatchloop.dev)"
+    ua = "AgentBroker-SanctionsScreen/1.0 (compliance tool; contact hello@hatchloop.dev)"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(
-                _OFAC_SDN_CSV_URL,
+                url,
                 headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"},
                 follow_redirects=True,
             )
@@ -475,115 +494,145 @@ async def _fetch_ofac_sdn_csv() -> Optional[str]:
     return None
 
 
-def _parse_ofac_sdn(csv_text: str, query_name: str) -> list[dict]:
-    """
-    Parse OpenSanctions targets.simple.csv (OFAC SDN dataset) and return matches.
+async def _fetch_ofac_sdn_csv() -> Optional[str]:
+    """Primary SDN names. Kept as its own function for the existing tests."""
+    return await _fetch_url(_OFAC_SDN_CSV_URL)
 
-    CSV format (comma-delimited, quoted, with header row):
-      col 0: id          -- OpenSanctions entity ID (e.g. "NK-223CQDBzp8MRk...")
-      col 1: schema      -- Entity type: Person, Organization, Vessel, Aircraft
-      col 2: name        -- Primary name
-      col 3: aliases     -- Alternate names, semicolon-separated
-      col 4: birth_date
-      col 5: countries
-      col 6: addresses
-      col 7: identifiers
-      col 8: sanctions   -- Full program description (e.g. "GLOMAG - Executive Order 13818")
-      col 9: phones
-      col 10: emails
-      col 11: program_ids -- Short codes (e.g. "US-GLOMAG")
-      col 12-15: dataset, first_seen, last_seen, last_change
 
-    Searches query_name against both the primary name and all aliases.
+async def _fetch_ofac_alt_csv() -> Optional[str]:
+    """Alternate spellings (a.k.a., f.k.a., n.k.a.).
+
+    Fetched separately because OFAC publishes them separately. If this one
+    fails we still screen, on primary names alone - and say so, rather than
+    quietly screening a smaller list than the caller believes.
     """
+    return await _fetch_url(_OFAC_ALT_CSV_URL)
+
+
+def _parse_ofac_sdn(csv_text: str, query_name: str,
+                    alt_text: Optional[str] = None) -> list[dict]:
+    """Parse OFAC's own SDN.CSV (+ optional ALT.CSV) and return matches.
+
+    TREASURY'S FORMAT IS NOT THE ONE WE USED TO PARSE. SDN.CSV is a legacy
+    headerless 12-column export:
+
+        0 ent_num   1 SDN_Name   2 SDN_Type   3 Program   4 Title
+        5 Call_Sign 6 Vess_type  7 Tonnage    8 GRT       9 Vess_flag
+        10 Vess_owner   11 Remarks
+
+    Names are written "SURNAME, Given" - "KIM, Jong Un". `_normalize_name`
+    already reduces that to the same token set as "Kim Jong Un", so the comma
+    costs nothing; the ordering discipline applied downstream is what makes the
+    comparison safe.
+
+    Absent fields are the literal string "-0-", not empty, which is why every
+    read below is guarded rather than trusted.
+
+    ALT.CSV is [ent_num, alt_num, alt_type, alt_name, remarks] and holds ~20k
+    alternate spellings. Screening without it would silently miss the aliases
+    that sanctions evasion depends on.
+    """
+    def _clean(v: str) -> str:
+        v = (v or "").strip()
+        return "" if v in ("-0-", "-0- ", "") else v
+
+    # ent_num -> [alternate names]
+    aliases: dict[str, list[str]] = {}
+    if alt_text:
+        try:
+            for row in csv.reader(io.StringIO(alt_text)):
+                if len(row) < 4:
+                    continue
+                ent, alt_name = row[0].strip(), _clean(row[3])
+                if ent and alt_name:
+                    aliases.setdefault(ent, []).append(alt_name)
+        except Exception:
+            pass  # aliases are an enhancement; never fail the screen on them
+
     matches: list[dict] = []
     seen_ids: set[str] = set()
-
     try:
-        reader = csv.reader(io.StringIO(csv_text), delimiter=",", quotechar='"')
-        header_seen = False
-        for row in reader:
-            if not row:
+        for row in csv.reader(io.StringIO(csv_text)):
+            if len(row) < 4:
                 continue
-            # Skip header row
-            if not header_seen:
-                header_seen = True
-                if row[0].lower() in ("id", "#"):
-                    continue
-
-            if len(row) < 3:
+            entity_id = row[0].strip()
+            primary_name = _clean(row[1])
+            sdn_type = _clean(row[2]).lower()
+            program = _clean(row[3])
+            if not primary_name or entity_id in seen_ids:
                 continue
 
-            entity_id = row[0].strip() if len(row) > 0 else ""
-            schema = row[1].strip() if len(row) > 1 else ""
-            primary_name = row[2].strip() if len(row) > 2 else ""
-            aliases_raw = row[3].strip() if len(row) > 3 else ""
-            sanctions = row[8].strip() if len(row) > 8 else ""
-            program_ids = row[11].strip() if len(row) > 11 else ""
-
-            if not primary_name:
-                continue
-            if entity_id in seen_ids:
-                continue
-
-            # Search primary name and all aliases
-            all_names = [primary_name] + [a.strip() for a in aliases_raw.split(";") if a.strip()]
-            best_score = 0.0
-            best_match_name = primary_name
-            for candidate in all_names:
-                s = _word_match_score(query_name, candidate)
-                if s > best_score:
-                    best_score = s
-                    best_match_name = candidate
-
+            candidates = [primary_name] + aliases.get(entity_id, [])
+            best_score, best_name = 0.0, primary_name
+            for cand in candidates:
+                sc = _word_match_score(query_name, cand)
+                if sc > best_score:
+                    best_score, best_name = sc, cand
             if best_score < _MATCH_THRESHOLD_OFAC:
                 continue
 
             seen_ids.add(entity_id)
-
-            # Entity type from schema
-            schema_upper = schema.upper()
-            if schema_upper == "PERSON":
-                etype = "INDIVIDUAL"
-            elif schema_upper == "VESSEL":
-                etype = "VESSEL"
-            elif schema_upper == "AIRCRAFT":
-                etype = "AIRCRAFT"
-            else:
-                etype = "ENTITY"
-
-            # Program: prefer short program_ids, fallback to full sanctions description
-            program_str = _ascii(program_ids[:80]) if program_ids else _ascii(sanctions[:80])
-
-            source_url = (
-                f"https://www.opensanctions.org/entities/{entity_id}/"
-                if entity_id
-                else "https://ofac.treasury.gov/sanctions-list-service"
-            )
-
+            etype = ("INDIVIDUAL" if sdn_type == "individual"
+                     else "VESSEL" if sdn_type == "vessel"
+                     else "AIRCRAFT" if sdn_type == "aircraft"
+                     else "ENTITY")
             matches.append({
-                "name": _ascii(best_match_name),
+                "name": _ascii(best_name),
                 "list": "OFAC-SDN",
                 "match_score": round(best_score, 3),
-                "program": program_str or None,
+                "program": _ascii(program[:80]) or None,
                 "entity_type": etype,
-                "source_url": source_url,
+                # Treasury's own search UI, so a caller can confirm against the
+                # authority rather than against us.
+                "source_url": "https://sanctionssearch.ofac.treas.gov/",
             })
-
     except Exception:
-        pass  # fail-open: partial results are better than no results
+        pass  # fail-open: partial results beat no results
 
-    # Sort by score descending, cap at 5
     matches.sort(key=lambda m: m["match_score"], reverse=True)
     return matches[:5]
+
+
+async def _fetch_url(url: str) -> Optional[str]:
+    """GET a public list file. Returns raw text, or None on any failure."""
+    import httpx
+    ua = "AgentBroker-SanctionsScreen/1.0 (compliance tool; contact hello@hatchloop.dev)"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(
+                url,
+                headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"},
+                follow_redirects=True,
+            )
+        if resp.status_code == 200:
+            return resp.text
+    except Exception:
+        pass
+    return None
+
+
+async def _fetch_ofac_sdn_csv() -> Optional[str]:
+    """Primary SDN names. Kept as its own function for the existing tests."""
+    return await _fetch_url(_OFAC_SDN_CSV_URL)
+
+
+async def _fetch_ofac_alt_csv() -> Optional[str]:
+    """Alternate spellings (a.k.a., f.k.a., n.k.a.).
+
+    Fetched separately because OFAC publishes them separately. If this one
+    fails we still screen, on primary names alone - and say so, rather than
+    quietly screening a smaller list than the caller believes.
+    """
+    return await _fetch_url(_OFAC_ALT_CSV_URL)
 
 
 async def _call_ofac_sdn(
     name: str,
 ) -> tuple[list[dict], list[str], list[str]]:
     """
-    Query OFAC SDN list via OpenSanctions public bulk data (no API key needed).
-    Data source: data.opensanctions.org, derived from US Treasury SDN XML, updated daily.
+    Screen the OFAC SDN list published by the US Treasury itself.
+    Source: sanctionslistservice.ofac.treas.gov (SDN.CSV + ALT.CSV), a US
+    Government work in the public domain. No key, no licence question.
     Returns (matches, sources_queried, sources_unavailable).
     """
     sources_queried = [_OFAC_SDN_CSV_URL]
@@ -592,12 +641,24 @@ async def _call_ofac_sdn(
     csv_text = await _fetch_ofac_sdn_csv()
     if csv_text is None:
         sources_unavailable.append(
-            "OFAC-SDN via OpenSanctions public data (download failed; "
-            "source: data.opensanctions.org)"
+            "OFAC-SDN (download from sanctionslistservice.ofac.treas.gov failed)"
         )
         return [], sources_queried, sources_unavailable
 
-    matches = _parse_ofac_sdn(csv_text, name)
+    # Aliases are a second file. If it does not arrive we still screen, on
+    # primary names only - and SAY so, because a caller who believes aliases
+    # were checked and finds out later that they were not has been misled
+    # about the one thing they were buying.
+    alt_text = await _fetch_ofac_alt_csv()
+    if alt_text is None:
+        sources_unavailable.append(
+            "OFAC-SDN alternate spellings (ALT.CSV unavailable; primary names "
+            "only -- aliases NOT screened on this call)"
+        )
+    else:
+        sources_queried.append(_OFAC_ALT_CSV_URL)
+
+    matches = _parse_ofac_sdn(csv_text, name, alt_text)
     return matches, sources_queried, sources_unavailable
 
 
@@ -706,7 +767,7 @@ async def handle_screen_sanctions(
     if not ofac_unavail:
         screened_lists.append(
             "OFAC-SDN (US Treasury Specially Designated Nationals, "
-            "via OpenSanctions public bulk data at data.opensanctions.org)"
+            "published by sanctionslistservice.ofac.treas.gov)"
         )
 
     # Fall back to honest "partial" if everything failed
@@ -760,10 +821,23 @@ async def handle_screen_sanctions(
     #
     # So: the predicate is correct now (it means what it says), AND the filter
     # no longer depends on it - see below.
-    authoritative_ran = any("opensanctions" in s.lower()
-                            and "rate-limited" not in s
-                            and "error" not in s
-                            for s in all_sources_queried)
+    # "QUERIED" IS NOT "ANSWERED", and my first correction of this predicate
+    # conflated them. Making the test case-insensitive turned it TRUE whenever
+    # the OpenSanctions URL appeared in sources_QUERIED - which it always does,
+    # because we always attempt the call. The failure is recorded separately,
+    # in sources_UNAVAILABLE.
+    #
+    # So the flag started claiming the calibrated source had run on calls where
+    # it had been rate-limited and returned nothing, which suppressed the
+    # "LOCAL-LIST CHECK ONLY" warning a caller needs.
+    #
+    # The strict filter did not regress with it, because it is tied to match
+    # provenance rather than to this flag. That decoupling was worth doing for
+    # exactly this reason: one wrong predicate should not be able to switch off
+    # the safety AND the disclosure at once.
+    _os_failed = any("opensanctions" in u.lower() for u in all_sources_unavailable)
+    authoritative_ran = (not _os_failed) and any(
+        "opensanctions" in s.lower() for s in all_sources_queried)
     degraded = bool(merged) and not authoritative_ran
 
     unverified: list = []
@@ -781,6 +855,31 @@ async def handle_screen_sanctions(
     _needs_strict = [m for m in merged
                      if m.get("_matcher") == "local_word_overlap"]
     if degraded or _needs_strict:
+        # I TRIED STRIPPING GENERIC CORPORATE WORDS HERE AND REVERTED IT.
+        #
+        # The motive was real: comparing raw token sets misses true positives
+        # whose only difference is a legal form - "Rosneft Trading" against a
+        # listed "ROSNEFT TRADING S.A.", "Gazprombank" against "GAZPROMBANK
+        # JOINT STOCK COMPANY". Both ARE on the SDN list.
+        #
+        # But stripping collapses a multi-word name to its one distinctive
+        # token, and then unrelated companies become identical:
+        #
+        #   "Atlas Trading Company" -> {atlas} == {atlas} <- "ATLAS HOLDING"
+        #   "Horizon Group"         -> {horizon} == {horizon} <- "HORIZON"
+        #
+        # Measured, both were promoted to MATCHED. Telling a customer their
+        # counterparty is sanctioned because both names contain "Atlas" is the
+        # exact failure this filter exists to prevent, and it is worse than the
+        # miss it was meant to fix.
+        #
+        # Deciding when one shared token is evidence and when it is a
+        # coincidence requires name-frequency data, which we do not have. That
+        # is precisely the thing OpenSanctions sells and the thing we should
+        # not try to reproduce. So the conservative rule stays - and the
+        # near-misses are not lost: they are returned as possible_matches_unverified
+        # for the caller to judge, which is the honest answer from an
+        # uncalibrated matcher.
         q_set = set(_normalize_name(name_clean).split())
         confident, possible = [], []
         for m in merged:
