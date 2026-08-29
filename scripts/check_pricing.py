@@ -42,6 +42,23 @@ _SCAN_FILES = [
     _AGENTBROKER_DIR / "billing" / "pricing.py",
 ]
 
+# ── AND EVERY DOC, because an enumerated list is a list someone forgets ──────
+#
+# The seven paths above were typed by hand, and a pricing claim in any file NOT
+# on that list was invisible to this guard - which is the whole failure mode it
+# exists to prevent. `docs/` is public: PRICING.md, the integration guide and
+# SECURITY.md are all things a buyer reads, and none of them were covered.
+#
+# Globbing means a doc added next month is checked without anyone remembering
+# to add it here. Duplicates are removed rather than double-reported, and the
+# printed total is derived from what was actually scanned so the summary line
+# cannot overstate coverage the way a hardcoded count would.
+_SCAN_FILES += sorted(
+    p for p in (_AGENTBROKER_DIR / "docs").rglob("*.md")
+    if p.is_file()
+)
+_SCAN_FILES = list(dict.fromkeys(_SCAN_FILES))
+
 # ---------------------------------------------------------------------------
 # BANNED phrases (case-insensitive substrings).
 # These represent retired claims that are now false or misleading.
