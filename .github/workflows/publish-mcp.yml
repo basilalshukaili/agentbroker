@@ -30,12 +30,34 @@ jobs:
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
+      # RETRY, BECAUSE VALIDATION IS A NETWORK CALL TO SOMEONE ELSE'S SERVER.
+      #
+      # `mcp-publisher validate` POSTs to registry.modelcontextprotocol.io. On
+      # 2026-08-29 that call timed out at the TCP layer and failed the whole
+      # publish - our manifests were fine, the registry was simply unreachable
+      # for thirty seconds. The founder gets an email for every red run here, so
+      # an upstream blip costs a real interruption and teaches everyone to
+      # ignore this workflow's failures.
+      #
+      # Three attempts with backoff. A manifest that is genuinely INVALID still
+      # fails all three and still fails the build - this only absorbs the case
+      # where we never got an answer.
       - name: Validate every manifest
         run: |
           set -e
           for f in server.json registry/*/server.json; do
             echo "validating $f"
-            (cd "$(dirname "$f")" && "$OLDPWD/mcp-publisher" validate)
+            for attempt in 1 2 3; do
+              if (cd "$(dirname "$f")" && "$OLDPWD/mcp-publisher" validate); then
+                break
+              fi
+              if [ "$attempt" = "3" ]; then
+                echo "validation failed three times for $f - failing the build"
+                exit 1
+              fi
+              echo "  attempt $attempt failed; retrying in $((attempt * 10))s"
+              sleep $((attempt * 10))
+            done
           done
 
       - name: Authenticate (DNS — dev.hatchloop namespace)
