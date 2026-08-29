@@ -215,8 +215,17 @@ def test_marketing_email_embeds_a_real_per_recipient_link(monkeypatch):
     adapter = ResendEmailAdapter()
     real_send = adapter.send
 
+    # COUNTRY IS NOW REQUIRED FOR MARKETING, and this test is the reason the
+    # change is safe to make: it was sending a marketing email with no
+    # jurisdiction at all, which the gate used to resolve to INTERNATIONAL
+    # rules while labelling the decision "US" - two different answers to
+    # "which law applies" inside one call. A real US marketing email is lawful
+    # under CAN-SPAM without prior opt-in precisely BECAUSE it carries an
+    # unsubscribe link, which is what this test checks, so stating US here
+    # makes the test more faithful rather than less.
     req = ChannelRequest(recipient_id="ann@example.com", channel="email",
-                         message_type="marketing", content="Hello there")
+                         message_type="marketing", content="Hello there",
+                         country_code="US")
     # Stub mode returns before the network call, but the footer is appended
     # first - assert on the body the adapter built.
     import channels.sms_email.resend_email as mod
