@@ -93,6 +93,43 @@ _GAMBLING_AMBIGUOUS_COMPILED: list[re.Pattern] = [
 ]
 
 
+
+# --------------------------------------------------------------------------
+# Obfuscation normalisation
+# --------------------------------------------------------------------------
+#
+# EVERY PATTERN IN THIS FILE MATCHES LITERAL SPELLING, and an external
+# compliance review defeated the whole classifier with a keyboard:
+#
+#   "Join our casino! Place your bets and win big money"      -> gambling
+#   "Join our cas1no! Massive jackp0t, place your b3ts..."    -> CLEAN
+#   "Buy ciali5 and v1agra online no prescription"            -> CLEAN
+#
+# Character substitution is the oldest spam-filter evasion there is, and a
+# restricted-content gate that any sender can walk around by typing a 1 for an
+# i is decoration. Worse for us specifically: this gate is the thing we sell -
+# the compliance layer is the claimed moat, and "cas1no" got through it.
+#
+# So the text is checked TWICE: once as written, and once with the obvious
+# substitutions undone. Checking both, rather than replacing the raw check,
+# means an exact match can never be lost to a normalisation bug.
+#
+# This is a heuristic and it is not the end of the arms race - Unicode
+# homoglyphs, zero-width joiners and spaced-out letters all still get through,
+# and the real answer is a trained classifier, which the module has said since
+# it was written. It closes the cheapest attack, which is the one that was
+# actually demonstrated against us.
+_LEET = str.maketrans({
+    "0": "o", "1": "i", "3": "e", "4": "a", "5": "s",
+    "7": "t", "8": "b", "@": "a", "$": "s", "!": "i",
+})
+
+
+def _deobfuscate(text: str) -> str:
+    """Undo the cheap substitutions, leaving everything else alone."""
+    return text.translate(_LEET)
+
+
 def _check_gambling(text: str) -> list[str]:
     """
     Context-aware gambling check.  Returns a non-empty list of matched signals
@@ -104,16 +141,18 @@ def _check_gambling(text: str) -> list[str]:
        preventing lone generic words inside booking confirmations from blocking.
     """
     matched: list[str] = []
+    # Both spellings. See _deobfuscate: "cas1no" defeated this entirely.
+    variants = (text, _deobfuscate(text))
     # Definitive signals: one hit is enough.
     for pat in _GAMBLING_DEFINITIVE_COMPILED:
-        if pat.search(text):
+        if any(pat.search(v) for v in variants):
             matched.append(f"gambling:{pat.pattern}")
             return matched  # short-circuit — definitive match found
 
     # Ambiguous signals: require at least two independent matches.
     ambig_hits: list[str] = []
     for pat in _GAMBLING_AMBIGUOUS_COMPILED:
-        if pat.search(text):
+        if any(pat.search(v) for v in variants):
             ambig_hits.append(f"gambling:{pat.pattern}")
     if len(ambig_hits) >= 2:
         return ambig_hits
@@ -151,10 +190,14 @@ def classify_content(text: str) -> ClassificationResult:
             ContentCategory.SPAM,   # lowest priority — only if nothing more specific matched
         ]
 
+        # Same two-spelling check as gambling. Without it "ciali5" and "v1agra"
+        # walk past the adult/pharma patterns exactly as "cas1no" walked past
+        # the gambling ones.
+        _variants = (text, _deobfuscate(text))
         for category in priority_order:
             patterns = _COMPILED.get(category, [])
             for pattern in patterns:
-                if pattern.search(text):
+                if any(pattern.search(v) for v in _variants):
                     matched_signals.append(f"{category.value}:{pattern.pattern}")
                     detected_category = category
                     break
