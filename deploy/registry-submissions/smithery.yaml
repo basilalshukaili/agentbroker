@@ -1,3 +1,14 @@
+# NOTE (2026-08-29): every URL in this file used to point at
+# agent-broker-edge.techmate.workers.dev - a hostname on a DIFFERENT Cloudflare
+# account belonging to a separate business. Submitting it would have published
+# that account's hostname as HatchLoop's public identity, on the vendor field,
+# the homepage, the MCP endpoint and every asset link.
+#
+# It is not a dead link either: that worker is still live and still serving
+# AgentBroker content. Retiring it is the founder's call, not mine, because the
+# account is not this project's.
+#
+# All URLs now use the canonical branded host.
 # Smithery MCP server registry entry.
 # Submit this file via PR to https://github.com/smithery-ai/registry
 # Or paste the contents into the Smithery web form: https://smithery.ai/server/new
@@ -24,8 +35,8 @@ description: >
   jurisdictions). 11 read tools always free (100 ops/IP/day free tier) -- 8
   write tools need a free email-verified key (100 ops/day) or credits.
 
-vendor: agent-broker-edge.techmate.workers.dev
-homepage: https://agent-broker-edge.techmate.workers.dev
+vendor: hatchloop.dev
+homepage: https://hatchloop.dev/agent-broker/
 repository: https://github.com/basilalshukaili/agentbroker
 license: proprietary
 
@@ -57,7 +68,7 @@ connection:
   # OLD edge (agent-broker-edge.basil-agent.workers.dev, different Cloudflare
   # account, credentials unknown) -- see smithery-sync-2026-08-16.md founder
   # gate "agentbroker-smithery-url" for the fix.
-  url: https://agent-broker-edge.techmate.workers.dev/mcp
+  url: https://hatchloop.dev/mcp/agent-broker
   authentication:
     type: bearer
     header: X-Agent-Identity
@@ -104,17 +115,17 @@ tools:
     description: "Free cross-border trade compliance snapshot: OFAC embargo map + party sanctions screening + tariff guidance links for any product + destination"
 
 screenshots:
-  - url: https://agent-broker-edge.techmate.workers.dev/static/screenshot-1.png
+  - url: https://hatchloop.dev/og?title=AgentBroker
     caption: "MCP tools surface in Claude Desktop"
-  - url: https://agent-broker-edge.techmate.workers.dev/static/screenshot-2.png
+  - url: https://hatchloop.dev/og?title=AgentBroker+tools
     caption: "Live booking via Cal.com integration"
 
 documentation:
-  - url: https://agent-broker-edge.techmate.workers.dev/docs
+  - url: https://hatchloop.dev/docs
     type: getting_started
-  - url: https://agent-broker-edge.techmate.workers.dev/.well-known/mcp.json
+  - url: https://hatchloop.dev/.well-known/mcp.json
     type: mcp_descriptor
-  - url: https://agent-broker-edge.techmate.workers.dev/llms.txt
+  - url: https://hatchloop.dev/llms.txt
     type: llms_txt
 
 pricing:
