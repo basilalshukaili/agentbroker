@@ -40,10 +40,41 @@ on:
   pull_request:
     branches: [main]
 
+# ─── THE TWO SETTINGS BELOW EXIST BECAUSE THEIR ABSENCE WEDGED THE PIPELINE ───
+#
+# On 2026-08-29 CI stopped running entirely for five hours. It looked exactly
+# like a GitHub outage - runs queued, nothing executing, status page green - and
+# it was diagnosed as one, which is why four commits shipped on a local-only
+# override that afternoon.
+#
+# It was ours. Twenty `deploy.yml` runs were stuck `in_progress`, each with a
+# runner assigned and `updated_at` frozen four seconds after it started. Twenty
+# is exactly the concurrent-job cap for a public repo on the free plan, so those
+# zombies held every slot and everything else queued behind them for ever.
+# Cancelling them drained the queue within a minute.
+#
+# Neither default protects against that:
+#
+#   * a job with no `timeout-minutes` inherits SIX HOURS, so one hung job holds
+#     a slot for a working day;
+#   * with no `concurrency` group, every push adds a run and superseded runs
+#     keep occupying slots while newer commits wait behind them.
+#
+# The lesson generalises past CI, and it is the same one this repo keeps
+# relearning: "nothing is running" was read as an outage because that was the
+# comfortable reading. The queue said 20/20 the whole time - nobody looked.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     name: Tests and gates
     runs-on: ubuntu-latest
+    # The suite runs in ~50s locally and a few minutes here. Twenty is generous
+    # for a slow runner and still fails fast enough that a hang is visible in
+    # the same session that caused it.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -98,6 +129,9 @@ jobs:
     name: Post-deploy smoke
     runs-on: ubuntu-latest
     needs: verify
+    # Sleeps 120s, then up to five 30s retries. Ten minutes is well clear of
+    # the worst honest case and nowhere near the six-hour default.
+    timeout-minutes: 10
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       # Carried over from deploy.yml when the two workflows merged. Every step
