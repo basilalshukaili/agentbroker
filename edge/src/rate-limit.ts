@@ -25,13 +25,49 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Derive best-effort client IP from CF request headers. */
+/**
+ * The caller's real IP, for metering.
+ *
+ * THE ORDER HERE WAS BACKWARDS AND IT TOOK THE PUBLISHED ENDPOINT DOWN.
+ *
+ * Preferring `cf-connecting-ip` is right for traffic that reaches this Worker
+ * directly. But our documented URL is https://hatchloop.dev/mcp/agent-broker,
+ * which is a VERCEL REWRITE that proxies here - so for every real user,
+ * `cf-connecting-ip` is Vercel's proxy address, identical for all of them.
+ *
+ * The whole world therefore shared one 100/day bucket, and it was spent:
+ * measured 2026-08-29, the published endpoint returned
+ * `X-Ratelimit-Remaining: 0` and a rate_limited error to every caller, while
+ * the same request straight to the Worker showed 99 remaining. A reviewer
+ * reported "every prospect's first call fails" and I checked only the ORIGIN's
+ * quota, found it correctly per-IP, and reported the theory disproven. It was
+ * true one layer up.
+ *
+ * So: prefer what our own proxy determined the client to be, and fall back to
+ * `cf-connecting-ip` for direct traffic.
+ *
+ * THE TRADE, STATED PLAINLY. A caller hitting the Worker directly can now set
+ * `x-forwarded-for` and mint a fresh bucket. That is a real weakening and I am
+ * choosing it deliberately: this is a soft freemium cap, not a security
+ * boundary, and the alternative on the table was a meter that refuses every
+ * legitimate user in order to stop quota evasion - which is not a working
+ * meter. The durable fix is to put this Worker on a branded custom domain so
+ * requests arrive directly and `cf-connecting-ip` is trustworthy again; that
+ * also fixes the Python-urllib 403, since Cloudflare's UA rule applies to the
+ * shared *.workers.dev zone and not to custom domains.
+ */
 export function clientIp(request: Request): string {
-  return (
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
-  );
+  const h = request.headers;
+  // Set by Vercel's proxy from the real TCP peer; a direct caller cannot
+  // produce it without deliberately forging a Vercel-internal header.
+  const viaVercel = h.get("x-vercel-forwarded-for");
+  if (viaVercel) return viaVercel.split(",")[0].trim();
+
+  // Any other proxy in front of us, or a client that supplied one.
+  const fwd = h.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+
+  return h.get("cf-connecting-ip") ?? "unknown";
 }
 
 export interface RateLimitResult {

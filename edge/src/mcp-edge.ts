@@ -66,10 +66,22 @@ function jsonrpcError(id: unknown, code: number, message: string): Response {
  */
 function originHeaders(request: Request): Headers {
   const h = new Headers(request.headers);
-  const realIp = request.headers.get("cf-connecting-ip");
-  if (realIp) {
-    h.set("x-forwarded-for", realIp);
-    h.set("x-real-ip", realIp);
+  // MY EARLIER VERSION SET THIS FROM `cf-connecting-ip` AND MADE THINGS WORSE.
+  //
+  // I did it to close a spoofing hole - a caller could send any
+  // `x-forwarded-for` and mint themselves a fresh origin bucket - and it did
+  // close it. But through the Vercel rewrite `cf-connecting-ip` is Vercel's
+  // proxy address, so it replaced every real client IP with one shared value
+  // and pointed the origin's meter at a single bucket for the whole world.
+  // I traded a soft quota-evasion path for an outage of the meter itself.
+  //
+  // `clientIp()` now resolves the caller properly (see rate-limit.ts for the
+  // reasoning and the trade-off), and the origin gets that same answer, so the
+  // two layers agree about who is calling.
+  const ip = clientIp(request);
+  if (ip && ip !== "unknown") {
+    h.set("x-forwarded-for", ip);
+    h.set("x-real-ip", ip);
   }
   return h;
 }
