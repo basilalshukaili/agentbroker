@@ -124,10 +124,26 @@ class ConsentStore:
         return True
 
     def is_opted_out(self, recipient_id: str, channel: str) -> bool:
-        """Check if a recipient has opted out of ANY use case on this channel.
-        Consults the durable-mirrored opted-out set first (survives restarts),
-        then any in-memory consent record flipped to OPTED_OUT."""
-        if (recipient_id, channel) in self._opted_out:
+        """Has this recipient opted out - on THIS channel or any other?
+
+        OPT-OUT IS SCOPED TO THE PERSON, NOT THE CHANNEL, and it was not.
+
+        A STOP arriving by SMS was recorded only against SMS, so the same
+        number could still be sent a WhatsApp message or an autodialed
+        marketing call. That is not what "STOP" means to the person who sent
+        it, and it is not what regulators or the CTIA guidelines expect: a
+        suppression request covers the contact, not the transport it happened
+        to arrive on.
+
+        It was also the most likely way for this gate to produce a genuinely
+        angry customer - somebody who took the trouble to opt out, and then got
+        phoned.
+
+        Found by an external compliance review, 2026-08-29. Fixing it can only
+        ever SUPPRESS more messages, never allow one, so it is safe in the
+        direction that matters.
+        """
+        if any(r == recipient_id for r, _ch in self._opted_out):
             return True
         for key, record in self._records.items():
             if (
