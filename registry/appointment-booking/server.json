@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.hatchloop/appointment-booking",
   "title": "Appointment Booking",
-  "description": "Find real businesses and book appointments with them. 12 booking platforms supported.",
+  "description": "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms.",
   "websiteUrl": "https://hatchloop.dev/agent-broker/",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "remotes": [
     {
       "type": "streamable-http",

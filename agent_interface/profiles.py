@@ -82,7 +82,7 @@ PROFILES: dict[str, dict] = {
     },
     "appointment-booking": {
         "title": "Book with a business",
-        "description": "Find real businesses and book appointments with them. 12 booking platforms supported.",
+        "description": "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms.",
         "tools": (
             "schedule_appointment",
             "check_booking_link",
