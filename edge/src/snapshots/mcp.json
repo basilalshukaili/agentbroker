@@ -35,13 +35,34 @@
     ],
     "unit": "credits (1 credit = 1 US cent)",
     "rails": [
-      "credits"
+      "credits",
+      "x402"
     ],
-    "note": "10 tools are free to call; 10 spend credits. Premium data tools are free within a daily quota, then billed per call. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing"
+    "note": "10 tools are free to call; 10 spend credits. Premium data tools are free within a daily quota, then billed per call. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing No account needed to pay per call: attach an x402 payment in params._meta['x402/payment'] and the server returns a signed price offer (USDC on Base) for any paid tool."
   },
   "description": "MCP server for HatchLoop AgentBroker. Exposes 20 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation.",
   "auth": {
     "header": "X-Agent-Identity",
     "scheme": "bearer"
-  }
+  },
+  "capability_endpoints": [
+    {
+      "name": "appointment-booking",
+      "endpoint": "https://api.hatchloop.dev/mcp/appointment-booking",
+      "description": "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms.",
+      "tool_count": 9
+    },
+    {
+      "name": "sanctions-screening",
+      "endpoint": "https://api.hatchloop.dev/mcp/sanctions-screening",
+      "description": "Sanctions screening (OFAC/EU/UN/UK) and company verification. Free, no key, no signup.",
+      "tool_count": 8
+    },
+    {
+      "name": "sms-whatsapp-messaging",
+      "endpoint": "https://api.hatchloop.dev/mcp/sms-whatsapp-messaging",
+      "description": "Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in.",
+      "tool_count": 10
+    }
+  ]
 }

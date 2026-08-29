@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "find_business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
+      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result. Use when: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target. Do NOT use when: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -71,7 +71,7 @@
     },
     {
       "name": "verify_business",
-      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
+      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business. Use when: Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing'). Do NOT use when: Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -89,7 +89,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels. Use when: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send. Do NOT use when: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse. Cost: from $0.02 per call, up to $0.22 (call preview_cost for the exact price). Execution: sync_fast — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -184,7 +184,7 @@
     },
     {
       "name": "capture_lead",
-      "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.",
+      "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available. Use when: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up. Do NOT use when: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports. Cost: $0.05 per call. Execution: sync_fast — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -232,7 +232,7 @@
     },
     {
       "name": "schedule_appointment",
-      "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form.",
+      "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form. Use when: Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id. Do NOT use when: Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Cost: from $0.15 per call, up to $0.5 (call preview_cost for the exact price). Execution: async_by_default — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -301,7 +301,7 @@
     },
     {
       "name": "send_transactional_confirmation",
-      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen.",
+      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen. Use when: Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing. Do NOT use when: Do not use for marketing or promotional messages. Do not use for conversational messages. Cost: $0.02 per call. Execution: sync_fast — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -352,7 +352,7 @@
     },
     {
       "name": "handle_inbound",
-      "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.",
+      "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path. Use when: Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries. Do NOT use when: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records. Cost: $0.03 per call. Execution: async_by_default — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -404,7 +404,7 @@
     },
     {
       "name": "escalate_to_human",
-      "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.",
+      "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step. Use when: Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact. Do NOT use when: Do not use as a first resort. Escalate only after automated resolution attempts. Cost: $0.2 per call. Execution: async_by_default — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -465,7 +465,7 @@
     },
     {
       "name": "get_status",
-      "description": "Query the current state of any in-flight async operation by operation_id.",
+      "description": "Query the current state of any in-flight async operation by operation_id. Use when: Use to poll the state of a pending_async operation when no webhook callback has arrived or to check progress. Do NOT use when: Do not poll more frequently than once per 10 seconds — use webhook delivery for real-time updates instead. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -480,7 +480,7 @@
     },
     {
       "name": "get_outcome",
-      "description": "Retrieve the final OutcomeReceipt for a completed operation.",
+      "description": "Retrieve the final OutcomeReceipt for a completed operation. Use when: Use after get_status returns success/failure/partial to retrieve the full result with cost and reason codes. Do NOT use when: Do not use for operations still in pending/executing state — use get_status first. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -495,7 +495,7 @@
     },
     {
       "name": "preview_cost",
-      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview.",
+      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview. Use when: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed. Do NOT use when: Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -515,7 +515,7 @@
     },
     {
       "name": "self_test",
-      "description": "Service health probe: runs 6 internal checks and reports how many passed. Confirms the server is up and responding - it does NOT probe each tool individually. Use to verify connectivity before production use.",
+      "description": "Service health probe: runs 6 internal checks and reports how many passed. Confirms the server is up and responding - it does NOT probe each tool individually. Use to verify connectivity before production use. Use when: Use at agent startup, before high-stakes task sequences, or after receiving unexpected errors to check if the service is degraded. Do NOT use when: Do not call more than once per minute in production. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -523,7 +523,7 @@
     },
     {
       "name": "check_booking_link",
-      "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.",
+      "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment. Use when: Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt. Do NOT use when: Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id). Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -539,7 +539,7 @@
     },
     {
       "name": "import_booking_url",
-      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
+      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id. Use when: Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment. Do NOT use when: Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12). Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -592,7 +592,7 @@
     },
     {
       "name": "call_business",
-      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields. Use when: Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes). Do NOT use when: Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that. Cost: $0.2 per call. Execution: async_by_default — returns pending_async.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -636,7 +636,7 @@
     },
     {
       "name": "check_compliance",
-      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Use when: Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send. Do NOT use when: Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
@@ -679,7 +679,7 @@
     },
     {
       "name": "verify_company_record",
-      "description": "Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried.",
+      "description": "Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried. Use when: Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup. Do NOT use when: Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen. Cost: free within the daily quota, then $0.02 per call.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -703,7 +703,7 @@
     },
     {
       "name": "screen_sanctions",
-      "description": "Free screening of a name or entity against official sanctions and watchlists. ALWAYS queries the OFAC SDN list directly from the US Treasury. ADDITIONALLY queries OpenSanctions (EU Consolidated, UN Security Council, UK HMT and 40+ lists) ONLY when this deployment has an OpenSanctions key configured and its quota is not exhausted -- otherwise the result is OFAC SDN alone and reason_code is 'partial_screening', never 'clear'. Check lists_screened and sources_unavailable on every response: a non-US obligation is NOT met by a US-only screen. Returns matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.",
+      "description": "Free screening of a name or entity against official sanctions and watchlists. ALWAYS queries the OFAC SDN list directly from the US Treasury. ADDITIONALLY queries OpenSanctions (EU Consolidated, UN Security Council, UK HMT and 40+ lists) ONLY when this deployment has an OpenSanctions key configured and its quota is not exhausted -- otherwise the result is OFAC SDN alone and reason_code is 'partial_screening', never 'clear'. Check lists_screened and sources_unavailable on every response: a non-US obligation is NOT met by a US-only screen. Returns matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Use when: Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk. Do NOT use when: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query. Cost: free within the daily quota, then $0.02 per call.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -731,7 +731,7 @@
     },
     {
       "name": "map_trade_restriction",
-      "description": "Free, live cross-border trade-compliance snapshot. Given a product and destination country (and optionally an HS code, origin country, and a list of parties to screen), returns: (a) whether the destination or any party hits an export-control or sanctions restriction, (b) the destination risk level (comprehensive_embargo / sectoral_sanctions / elevated_scrutiny / standard), (c) HS code hint if the caller provided one, (d) honest tariff guidance + official links without fabricated rates, and (e) party sanctions screening via OpenSanctions and OFAC SDN. Acts as a MIDDLEMAN -- unifies the OFAC comprehensive-embargo map, OpenSanctions (40+ official lists including BIS Entity List, EU, UN, UK), and OFAC SDN into one clean call. Never fabricates a tariff rate, a clear, or a restricted status.",
+      "description": "Free, live cross-border trade-compliance snapshot. Given a product and destination country (and optionally an HS code, origin country, and a list of parties to screen), returns: (a) whether the destination or any party hits an export-control or sanctions restriction, (b) the destination risk level (comprehensive_embargo / sectoral_sanctions / elevated_scrutiny / standard), (c) HS code hint if the caller provided one, (d) honest tariff guidance + official links without fabricated rates, and (e) party sanctions screening via OpenSanctions and OFAC SDN. Acts as a MIDDLEMAN -- unifies the OFAC comprehensive-embargo map, OpenSanctions (40+ official lists including BIS Entity List, EU, UN, UK), and OFAC SDN into one clean call. Never fabricates a tariff rate, a clear, or a restricted status. Use when: Use before any cross-border trade to flag embargoed destinations, screen exporters/importers/freight forwarders against sanctions lists, and get authoritative links to the applicable tariff databases. Call this as a pre-flight check before quoting, invoicing, or shipping internationally. Covers OFAC comprehensively-embargoed countries (Iran, North Korea, Cuba, Syria) and significant advisory countries (Russia, Belarus, Ukraine Crimea/DNR/LNR regions). Do NOT use when: Do NOT use as a substitute for a licensed export compliance review. Do NOT use to obtain authoritative tariff rates (this tool returns guidance links, never fabricated rates). Do NOT use for purely domestic shipments where no cross-border movement is involved. Cost: free within the daily quota, then $0.02 per call.",
       "input_schema": {
         "type": "object",
         "required": [
@@ -767,7 +767,7 @@
     },
     {
       "name": "get_conversation",
-      "description": "Read a two-way conversation thread you started: its state, every message exchanged, and how many replies the business has sent.",
+      "description": "Read a two-way conversation thread you started: its state, every message exchanged, and how many replies the business has sent. Use when: After send_message with on_behalf_of returns a conversation_id, poll this to read the business's reply. Replies are matched to the right thread exactly (never guessed), so what you read here belongs to YOUR end-user. Do NOT use when: Do not poll more often than every 10 seconds. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "properties": {
