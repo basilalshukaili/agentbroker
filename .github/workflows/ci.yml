@@ -1,0 +1,70 @@
+# The gates, actually running.
+#
+# WHY THIS FILE EXISTS. A complete seven-stage pipeline has been sitting in
+# `.ci/github-actions.yml` this whole time - lint, unit, compliance, contract,
+# fault-injection, a win-rate gate, a docker self-test and a deploy gate.
+# GitHub only runs workflows under `.github/workflows/`, so not one of those
+# stages has ever executed. The repository looked like it had CI.
+#
+# Found 2026-08-29 by the second machine, sweeping for code that is complete
+# and never invoked. It is the same bug class as the score ledger with no
+# caller and the capability endpoints with no route - this time applied to the
+# thing whose entire job is catching that bug class.
+#
+# WHY THIS IS SHORTER THAN THE FILE IT REPLACES. Every gate below was run
+# locally first and is green right now. A pipeline that fails on its first run
+# gets switched off within a week, and then we are back here with an extra
+# layer of false confidence. Stages are added to this file only after they pass
+# - `.ci/github-actions.yml` stays as the roadmap for what to add next (ruff
+# and mypy in particular, neither of which is installed or verified here).
+
+name: CI
+
+on:
+  push:
+    branches: [main, "node-b/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Tests and gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The FULL requirements file, deliberately. Installing a subset is how a
+      # test came to be skipped for a missing dependency for weeks while being
+      # counted in a total quoted as "816 passed" - it failed twice over the
+      # first time it actually ran, and it was guarding the rule that an
+      # unprovisioned booking must never return a fabricated confirmation.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Fails rather than skips when a gating dependency is absent, so CI can
+      # never quietly run a smaller suite than it reports.
+      - name: Suite is fully exercised
+        run: python -m pytest tests/unit/test_suite_is_fully_exercised.py -q
+
+      - name: Tests
+        run: python -m pytest tests/ -q
+
+      # 17 release gates - the manifest/pricing/compliance invariants.
+      - name: Release gates
+        run: python check_gates.py
+
+      # Public artifacts must not carry retired pricing or a payment rail we do
+      # not offer. This one has real history: it reported CLEAN while three
+      # files carried live crypto offers, because it matched the exact old
+      # wording and "may ALSO pay" walked straight past it.
+      - name: No retired pricing or unoffered payment rails
+        run: python scripts/check_pricing.py
+
+      - name: No mojibake in public artifacts
+        run: python scripts/check_encoding.py
