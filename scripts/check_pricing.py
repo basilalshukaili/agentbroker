@@ -17,6 +17,7 @@ Or from the repo root:
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -119,18 +120,84 @@ def _check_file(path: Path) -> list[str]:
     return hits
 
 
+
+# ---------------------------------------------------------------------------
+# PAYMENT-RAIL CLAIMS MUST BE DERIVED, NEVER ASSERTED
+# ---------------------------------------------------------------------------
+#
+# This checker was built to stop us ADVERTISING a crypto rail we did not offer.
+# On 2026-08-29 the failure ran the other way and was worse: the x402 rail was
+# LIVE in production (X402_ENABLED=true, real receiver address, returning
+# complete payment offers) while every discovery surface hardcoded a denial -
+# `"rails": ["credits"]`, "the rail is built and switched off",
+# "Crypto is not offered". The one payment path an autonomous agent can
+# complete WITHOUT A HUMAN was the one we told everybody did not exist.
+#
+# Both failures have the same cause: a claim about the rail written as a
+# constant. A constant cannot track a runtime flag, so it is wrong the moment
+# the flag moves - in whichever direction it moves.
+#
+# So the rule is not "never mention x402" and not "always mention x402". It is
+# that code which GENERATES public copy must ask the gate. Documentation and
+# marketing prose may still say whatever is currently true; this only polices
+# the generators, which are the surfaces an agent actually reads.
+
+_RAIL_ASSERTIONS = [
+    (r'"rails"\s*:\s*\[[^\]]*\]',
+     'hardcodes the payment rails - derive them from x402_gate.enabled()'),
+    (r'(?i)(x402|crypto)[^\n]{0,40}(is\s+not\s+offered|switched\s+off|is\s+off\b)',
+     'asserts the crypto rail is off - it was ON for weeks while this said so'),
+    (r'(?i)all tools are (currently )?free to call',
+     'asserts everything is free - credits have been live since 2026-08-24'),
+]
+
+# Files that GENERATE what an agent reads. Prose files are excluded on purpose:
+# a doc page saying "we accept cards" is a statement of fact someone maintains,
+# not a constant masquerading as one.
+_GENERATORS = [
+    "agent_interface/well_known.py",
+    "agent_interface/mcp_server.py",
+    "agent_interface/discovery.py",
+]
+
+
+def check_rail_claims() -> list[str]:
+    problems = []
+    for rel in _GENERATORS:
+        path = _AGENTBROKER_DIR / rel
+        if not path.exists():
+            continue
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for n, line in enumerate(fh, 1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                for pat, why in _RAIL_ASSERTIONS:
+                    if re.search(pat, line):
+                        problems.append(f"{rel}:{n} {why} -> {stripped[:80]}")
+    return problems
+
+
 def main() -> int:
     all_hits: list[str] = []
     for fpath in _SCAN_FILES:
         all_hits.extend(_check_file(fpath))
 
-    if all_hits:
-        print("check_pricing FAILED -- banned pricing phrases found:")
-        for h in all_hits:
-            print(h)
+    rail_hits = check_rail_claims()
+
+    if all_hits or rail_hits:
+        if all_hits:
+            print("check_pricing FAILED -- banned pricing phrases found:")
+            for h in all_hits:
+                print(h)
+        if rail_hits:
+            print("check_pricing FAILED -- payment-rail claims are hardcoded:")
+            for h in rail_hits:
+                print(h)
         return 1
 
-    print(f"check_pricing OK -- {len(_SCAN_FILES)} files scanned, 0 violations")
+    print(f"check_pricing OK -- {len(_SCAN_FILES)} files scanned, "
+          f"{len(_GENERATORS)} generators checked, 0 violations")
     return 0
 
 

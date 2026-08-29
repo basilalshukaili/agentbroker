@@ -924,12 +924,50 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                              "note": f"email-verified, {_free_limit_msg} ops/day, no payment"},
                 "credits": {"url": "https://hatchloop.dev/pricing",
                             "note": "packages from $9/1,000 credits"},
-                # Crypto payment is NOT offered: no VASP licence exists in Oman and the
-        # CBO warns against it. The rail is built and switched off.
-
+                # THE ONLY PATH AN AUTONOMOUS AGENT CAN COMPLETE ALONE, and it
+                # was the one path this error did not mention.
+                #
+                # Both options above require an email inbox: the free key is
+                # emailed after verification, and credits need a magic-link
+                # portal and a card. An agent has neither. So the most
+                # consequential error message we serve told every stranger
+                # agent that it had two routes, and both were closed to it -
+                # while the server would, on that very call, have accepted two
+                # cents of USDC and answered.
+                #
+                # The comment that used to sit here said the rail was "built
+                # and switched off". It was ON: X402_ENABLED=true with a live
+                # receiver address, returning complete payment offers. Founder
+                # decision 2026-08-29 removed the legal block on advertising
+                # it. Derived from the gate so it disappears if the rail does.
+                **({"x402": {
+                    "note": "no account, no email: attach a signed x402 payment "
+                            "as params._meta['x402/payment'] and retry this "
+                            "call. The server replies with a priced offer "
+                            "(USDC on Base) the first time.",
+                    "how": "retry with _meta['x402/payment'] set to any value "
+                           "to receive the payment offer",
+                }} if _x402_live() else {}),
                 "header": "X-Agent-Identity",
             },
         )
+
+
+
+def _x402_live() -> bool:
+    """Is the pay-per-call rail actually accepting payment right now?
+
+    Read at call time, never cached into a message. The whole defect this
+    exists to prevent was a hardcoded claim about the payment rail that stayed
+    put while the rail changed underneath it - in both directions: it said
+    "everything is free" while credits were live, then said crypto was "built
+    and switched off" while it was on and answering.
+    """
+    try:
+        from billing import x402_gate
+        return x402_gate.enabled()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 async def _dispatch_operation(

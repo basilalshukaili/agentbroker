@@ -57,19 +57,49 @@ def _payments_block() -> dict:
     except Exception:  # noqa: BLE001
         return {"status": "see_pricing",
                 "note": "See https://hatchloop.dev/pricing for current pricing."}
+    # RAILS ARE DERIVED FROM THE GATE, not asserted.
+    #
+    # This said `["credits"]` with a comment that crypto "is built and off".
+    # It was neither off nor unbuilt: X402_ENABLED=true on the origin with a
+    # live receiver address, and attaching any payment payload to a paid tool
+    # returns a complete x402 PaymentRequired offer - USDC on Base, a real
+    # price, a real address. The rail an autonomous agent can complete WITHOUT
+    # A HUMAN was the one rail every discovery document denied existed.
+    #
+    # That is the producer-with-no-caller pattern applied to the payment
+    # funnel: the capability shipped and nothing told anyone it was there.
+    #
+    # The comment's reasoning was right when written - no VASP licence exists
+    # in Oman and the CBO warns against crypto payments, so advertising it was
+    # blocked pending legal clearance. The founder closed that on 2026-08-29:
+    # "No need for lawyer writing, anyway we will not deposit the crypto money
+    # to Oman, so it is ok you can continue without it." His decision, his
+    # exposure, recorded here so the change does not later look accidental.
+    #
+    # Derived rather than re-hardcoded to "credits, x402", because the next
+    # person to switch the gate off must not have to remember this file.
+    try:
+        from billing import x402_gate
+        x402_live = x402_gate.enabled()
+    except Exception:  # noqa: BLE001
+        x402_live = False
+
+    rails = ["credits"] + (["x402"] if x402_live else [])
     return {
         "status": "active",
         "free_tools": free,
         "paid_tools": paid,
         "unit": "credits (1 credit = 1 US cent)",
-        # Crypto is NOT an offered rail: no VASP licence exists in Oman and the
-        # CBO warns against it (2026-08-27). The x402 code is built and off.
-        "rails": ["credits"],
+        "rails": rails,
         "note": (
             f"{len(free)} tools are free to call; {len(paid)} spend credits. "
             "Premium data tools are free within a daily quota, then billed per "
             "call. Call preview_cost (free) for the exact price of any "
             "operation before committing. Pricing: https://hatchloop.dev/pricing"
+            + (" No account needed to pay per call: attach an x402 payment in "
+               "params._meta['x402/payment'] and the server returns a signed "
+               "price offer (USDC on Base) for any paid tool."
+               if x402_live else "")
         ),
     }
 
@@ -286,8 +316,7 @@ def get_agent_card() -> dict:
             "businesses worldwide. Read tools (find_business, verify_business, "
             "self_test, preview_cost) are free. Write tools require an "
             "X-Agent-Identity token. Built-in TCPA/GDPR/CASL compliance gate. "
-            "Connect via the MCP endpoint below (streamable-http). "
-            "Note: crypto payment is not offered."
+            "Connect via the MCP endpoint below (streamable-http)."
         ),
         "url": mcp_url,
         "preferredTransport": "streamable-http",
@@ -308,12 +337,14 @@ def get_agent_card() -> dict:
         "_meta": {
             "transport": "mcp",
             "mcpEndpoint": mcp_url,
-            "payments": {
-                "status": "coming_soon",
-                "note": ("Crypto payment is not offered. Billing is in "
-                         "development. Currently all tools are callable at no cost. "
-                         "This field will be updated when billing goes live."),
-            },
+            # DERIVED, not asserted. This block said status "coming_soon",
+            # "Billing is in development", "all tools are callable at no cost"
+            # and "Crypto payment is not offered" - FOUR claims, every one of
+            # them false. Credits went live 2026-08-24 and the x402 rail has
+            # been accepting payment offers in production. An agent card is
+            # read by machines deciding whether they can transact with us, so
+            # these were the most expensive wrong sentences on the site.
+            "payments": _payments_block(),
         },
     }
 
