@@ -46,8 +46,50 @@ router = APIRouter(prefix="/keys", tags=["Free Keys"])
 _FREE_TIER_TTL_DAYS = 90
 
 
+def _public_base() -> str:
+    """The branded host, not whatever the request happened to arrive on."""
+    import os
+    return (os.environ.get("PUBLIC_BASE_URL") or "https://api.hatchloop.dev").rstrip("/")
+
+
 class KeyRequestBody(BaseModel):
     email: str
+
+
+@router.get("/request")
+async def describe_free_key_flow():
+    """What to do here, for whoever followed the link.
+
+    THIS URL IS NAMED IN OUR OWN `auth_required` ERROR - it is the first thing
+    a blocked agent or a curious human is told to visit. It answered GET with a
+    bare 405 Method Not Allowed, and a POST with no body with a raw FastAPI
+    validation dump. So the one instruction we give at the moment someone hits
+    the paywall led to a dead end for both audiences.
+
+    An error that tells you where to go, to a place that refuses you, is worse
+    than no instruction: it spends the caller's remaining patience.
+    """
+    return {
+        "what": "Free API key for HatchLoop AgentBroker write tools.",
+        "how": {
+            "method": "POST",
+            "url": f"{_public_base()}/keys/request",
+            "body": {"email": "you@example.com"},
+            "curl": (f"curl -X POST {_public_base()}/keys/request "
+                     f"-H 'Content-Type: application/json' "
+                     f"-d '{{\"email\":\"you@example.com\"}}'"),
+        },
+        "then": "We email a verification link. Opening it returns your key.",
+        "note": ("You may not need one: 12 of our 20 tools work with no key at "
+                 "all, including sanctions screening and company verification."),
+        "no_email_available": {
+            "reason": "Autonomous agents often have no inbox.",
+            "alternative": ("Pay per call with x402 (USDC on Base) - no signup, "
+                            "no card, no email. Attach a signed payment as "
+                            "params._meta['x402/payment'] on any paid tool and "
+                            "retry; the server replies with a priced offer."),
+        },
+    }
 
 
 @router.post("/request")
