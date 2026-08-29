@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.hatchloop/agent-broker",
   "title": "Agent Broker",
-  "description": "Sanctions, export-control and company-registry screening, plus SMS/WhatsApp/voice. 12 tools, no key.",
+  "description": "20 tools for sanctions, export-control and company-registry screening, plus messaging. 12 keyless.",
   "websiteUrl": "https://hatchloop.dev/agent-broker/",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.2.8",
+  "version": "0.2.9",
   "remotes": [
     {
       "type": "streamable-http",

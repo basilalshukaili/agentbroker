@@ -12,7 +12,7 @@ openapi: "3.1.0"
 # machine.
 info:
   title: AgentBroker
-  version: "0.2.8"
+  version: "0.2.9"
   description: |
     A horizontal, agent-callable broker for the long-tail SMB layer.
     Lets autonomous AI agents discover, verify, screen, communicate with,
