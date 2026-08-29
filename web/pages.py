@@ -299,7 +299,7 @@ def render_pricing() -> str:
     is emailed automatically on payment.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>Free tier</h3><p>No card required. 100 ops/month, any agent.</p></div>
+    <div class="card"><h3>Free tier</h3><p>No card required. 100 gated ops per day, any agent.</p></div>
     <div class="card"><h3>Self-serve paid</h3><p><a href="/billing/checkout">Card via Polar Checkout</a> &mdash; instant API key.</p></div>
     <div class="card"><h3>Enterprise</h3><p>Wire transfer / PO. Email <a href="mailto:""" + SUPPORT_EMAIL + """">""" + SUPPORT_EMAIL + """</a>.</p></div>
   </div>
@@ -308,7 +308,7 @@ def render_pricing() -> str:
 <section class="section">
   <h2>FAQ</h2>
   <h3>Do you offer a free tier?</h3>
-  <p style="color:var(--text-muted);">Yes. 100 operations per month per agent identity, forever. No card required.</p>
+  <p style="color:var(--text-muted);">Yes. 100 gated operations per DAY per agent identity, forever. No card required, and twelve tools need no key at all.</p>
   <h3>Can I change plan at any time?</h3>
   <p style="color:var(--text-muted);">Yes. Upgrades take effect immediately and are prorated. Downgrades take effect at the end of the current billing period.</p>
   <h3>What payment methods do you accept?</h3>
@@ -402,10 +402,12 @@ def render_terms() -> str:
   <p>The Service is a Model Context Protocol (MCP) server that lets AI agents
   discover, verify, communicate with, schedule with, and transact with small
   and mid-sized businesses. It supports five message types (transactional,
-  marketing, reminder, follow_up, notification), four channels (SMS, email,
-  voice, web form), and twelve booking platforms (Cal.com, Calendly, Doctolib,
-  Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace,
-  BookMyCity).</p>
+  marketing, reminder, follow_up, notification) over WhatsApp, SMS, email and
+  voice; live booking execution via Cal.com, with eleven further booking
+  platforms recognised for import (Calendly, Doctolib, Booksy, Fresha,
+  OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity);
+  and compliance screening against live registries (GLEIF, SEC EDGAR, OFAC and
+  EU/UN sanctions lists).</p>
   <p>Every outbound communication routes through a non-bypassable compliance
   gate that enforces TCPA / GDPR / CASL / PDPL rules across 22 jurisdictions.
   Marketing messages require a verified opt-in <code>consent_record_id</code>
@@ -463,7 +465,7 @@ def render_terms() -> str:
 
   <h2>7. Intellectual property</h2>
   <p>The Service, including code, manifests, and discovery surfaces, is
-  owned by {LEGAL_ENTITY}. The 12 operations and OutcomeReceipt schema are
+  owned by {LEGAL_ENTITY}. The published tool set and OutcomeReceipt schema are
   free to call under the agreed terms; the underlying implementation is
   proprietary.</p>
 
@@ -622,21 +624,25 @@ def render_refund() -> str:
   your billing month, or if you were charged through our error, we
   refund the affected charge in full.</p>
 
-  <h2>2. 14-day satisfaction window (subscriptions)</h2>
-  <p>For monthly or annual subscription tiers (Developer, Business),
-  you may request a full refund within <strong>14 days</strong> of the
-  initial purchase, provided you have used fewer than 100 paid operations
-  during that window.</p>
+  <h2>2. 14-day satisfaction window (credit packages)</h2>
+  <p>For credit packages (Starter, Growth, Scale) you may request a full
+  refund within <strong>14 days</strong> of purchase, provided fewer than
+  100 credits have been spent. Unspent credits never expire and remain
+  usable indefinitely.</p>
+  <p>We do not sell subscriptions. Credits are the only thing that can be
+  purchased, and this section is the term that covers them.</p>
 
   <h2>3. Usage charges</h2>
-  <p>Per-operation usage charges (overage, success-based premiums on
-  <code>schedule_appointment</code> and <code>escalate_to_human</code>) are
-  consumed when the operation completes and are non-refundable, except in
-  the cases listed in section 1.</p>
+  <p>Credits are consumed when an operation completes and are non-refundable
+  once spent, except in the cases listed in section 1. Read operations are
+  free and consume nothing.</p>
+  <p>Payments settled on-chain via x402 are final and cannot be reversed by
+  us; section 1 applies only to card payments taken through Polar.</p>
 
   <h2>4. Free tier</h2>
-  <p>The free tier (100 ops/month) is provided without charge; nothing to
-  refund.</p>
+  <p>The free tier (100 gated operations per day with a verified key) is
+  provided without charge; nothing to refund. Twelve of the twenty tools
+  need no key at all.</p>
 
   <h2>5. How to request a refund</h2>
   <ol>
