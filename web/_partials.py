@@ -25,6 +25,17 @@ DOMAIN = _os.environ.get(
     "PUBLIC_BASE_URL",
     "https://hatchloop.dev",
 ).replace("https://", "").replace("http://", "").rstrip("/")
+# The API origin as a full absolute URL, for links to routes that ONLY the
+# origin serves (see ORIGIN_ONLY below). Same env var and same default as
+# well_known.BASE_URL - deliberately, and test_public_links_resolve.py asserts
+# the two never drift, because a footer pointing at a different host than the
+# agent descriptors would be its own kind of wrong.
+API_ORIGIN = _os.environ.get(
+    "PUBLIC_BASE_URL",
+    "https://api.hatchloop.dev",
+).rstrip("/")
+if not API_ORIGIN.startswith("http"):
+    API_ORIGIN = "https://" + API_ORIGIN
 # Role addresses on our own domain. These defaulted to the founder's PERSONAL
 # Gmail, which then appeared as the support and privacy contact on public
 # pages - a privacy exposure, and it does not survive him being unavailable.
@@ -185,6 +196,34 @@ def _nav(active: str) -> str:
 </nav>"""
 
 
+# These paths exist ONLY on the API origin. The edge (hatchloop.dev) proxies
+# some origin routes and not these, so a RELATIVE link to one renders fine on
+# api.hatchloop.dev and 404s on hatchloop.dev - and the legal pages, which are
+# the ones a payment processor and a cautious buyer actually read, are served
+# under BOTH. "Status" 404'd there for as long as the footer has existed.
+#
+# Absolute is the fix that survives whichever host renders the HTML. Keep this
+# set honest: tests/test_public_links_resolve.py fetches every link on every
+# public page against both hosts and fails the build on a dead one.
+ORIGIN_ONLY = ("/health", "/manifest", "/supply/platforms",
+               "/compliance/jurisdictions", "/compliance/check")
+
+
+ORIGIN_TOKEN = "__ORIGIN__"
+
+
+def link(path: str) -> str:
+    """Absolute for origin-only paths, relative for everything else.
+
+    Prefer writing `href="__ORIGIN__/health"` in page bodies over calling this:
+    `page()` substitutes the token no matter what kind of string the body is.
+    A `{link('/health')}` written into a PLAIN triple-quoted body renders as
+    that literal text - which is how the first version of this fix shipped a
+    visibly broken href into the home page and was caught only by rendering it.
+    """
+    return f"{API_ORIGIN}{path}" if path in ORIGIN_ONLY else path
+
+
 def _footer() -> str:
     return f"""<footer class="site container">
   <p>
@@ -195,10 +234,10 @@ def _footer() -> str:
     <a href="mailto:{SUPPORT_EMAIL}">Contact</a>
   </p>
   <p>
-    <a href="/manifest">Manifest</a> &middot;
+    <a href="{link('/manifest')}">Manifest</a> &middot;
     <a href="/openapi.yaml">OpenAPI</a> &middot;
     <a href="/llms.txt">llms.txt</a> &middot;
-    <a href="/health">Status</a> &middot;
+    <a href="{link('/health')}">Status</a> &middot;
     <a href="/docs">API docs</a>
   </p>
   <p>&copy; 2026 {BRAND}. All rights reserved.</p>
@@ -213,6 +252,11 @@ def page(title: str, body_html: str, *, active: str, description: str | None = N
         "schedule appointments with small businesses worldwide. Free for any "
         "agent up to 100 ops/month."
     )
+    # Resolve origin-only links LAST, after the body is built. Doing it here
+    # rather than at the call site is the whole point: a body written as a
+    # plain triple-quoted string cannot interpolate anything, and that is the
+    # form most of pages.py uses. A token survives both forms identically.
+    body_html = body_html.replace(ORIGIN_TOKEN, API_ORIGIN)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,7 +268,12 @@ def page(title: str, body_html: str, *, active: str, description: str | None = N
 <link rel="alternate" type="application/json" href="/.well-known/anthropic-tools.json" title="Anthropic tool_use" />
 <link rel="alternate" type="application/json" href="/.well-known/agents.json" title="A2A descriptor" />
 <link rel="alternate" type="application/json" href="/.well-known/mcp.json" title="MCP descriptor" />
-<link rel="manifest" href="/manifest" />
+<!-- No <link rel="manifest">. That slot means a PWA WEB APP manifest, and
+     /manifest is our API contract - the browser fetched it on every page load,
+     found no top-level name/start_url/icons, and logged a parse error; under
+     hatchloop.dev, where /manifest is not proxied, it logged a 404 instead. We
+     are not a PWA, so the correct number of web-app manifests is zero. The
+     contract is still linked from the footer, where it belongs. -->
 <meta property="og:title" content="{title} &middot; {BRAND}" />
 <meta property="og:description" content="{desc}" />
 <meta property="og:type" content="website" />

@@ -7,7 +7,8 @@ no build step, no external scripts.
 """
 from __future__ import annotations
 
-from web._partials import page, BRAND, DOMAIN, SUPPORT_EMAIL, PRIVACY_EMAIL, LEGAL_ENTITY
+from web._partials import (page, BRAND, DOMAIN, SUPPORT_EMAIL,
+                          PRIVACY_EMAIL, LEGAL_ENTITY)
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ def render_home() -> str:
     </div>
     <div class="card">
       <h3>How enforcement works</h3>
-      <p><a href="/compliance/check">/compliance/check</a> runs before every outbound
+      <p><a href="__ORIGIN__/compliance/check">/compliance/check</a> runs before every outbound
          channel call. TCPA, GDPR, CASL, PDPL rules across 22 jurisdictions, including
          GCC (UAE, SA, OM, QA, KW, BH). A request that violates returns a structured
          receipt and never reaches a carrier.</p>
@@ -205,10 +206,10 @@ def render_home() -> str:
   </div>
   <p style="margin-top:18px; font-size:14px; color:var(--text-muted);">
     Verify each: <a href="/.well-known/mcp.json">/.well-known/mcp.json</a> for tools,
-    <a href="/supply/platforms">/supply/platforms</a> for the 12 booking integrations,
-    <a href="/compliance/jurisdictions">/compliance/jurisdictions</a> for the 22 rule sets,
-    <a href="/manifest">/manifest</a> for the canonical contract,
-    <a href="/health">/health</a> for live status.
+    <a href="__ORIGIN__/supply/platforms">/supply/platforms</a> for the 12 booking integrations,
+    <a href="__ORIGIN__/compliance/jurisdictions">/compliance/jurisdictions</a> for the 22 rule sets,
+    <a href="__ORIGIN__/manifest">/manifest</a> for the canonical contract,
+    <a href="__ORIGIN__/health">/health</a> for live status.
   </p>
 </section>
 
@@ -368,7 +369,7 @@ def render_checkout(plan: str | None) -> str:
   <h2>Your rights either way</h2>
   <ul style="color:var(--text-muted);">
     <li><strong>Compliance gate.</strong> Every outbound message routes through
-        <a href="/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
+        <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
         PDPL across 22 jurisdictions. Marketing without a verified consent_record_id
         is rejected at runtime regardless of how you paid.</li>
     <li><strong>14-day refund</strong> on metered developer plans. See <a href="/refund">Refund Policy</a>.
