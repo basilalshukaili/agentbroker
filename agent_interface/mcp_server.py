@@ -26,6 +26,18 @@ import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
+# Tool arguments are parsed into pydantic models, so a caller's bad argument
+# arrives here as ValidationError. It is caught explicitly in the dispatcher -
+# see the handler below for why it must not fall through to ERR_INTERNAL. The
+# fallback keeps this module importable if pydantic ever moves; `except
+# _Unraisable` then simply never matches, which degrades to the old behaviour
+# instead of breaking every request.
+try:
+    from pydantic import ValidationError
+except Exception:  # noqa: BLE001 - pragma: no cover
+    class ValidationError(Exception):  # type: ignore[no-redef]
+        """Never raised - a placeholder so the except clause stays valid."""
+
 import config as _config
 from agent_interface.manifest_server import get_full_manifest, get_operation
 
@@ -324,6 +336,47 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
                 f"missing required argument '{missing}'. Call tools/list and use "
                 f"the inputSchema for this tool - argument names are exact.",
             ),
+        ).to_dict()
+    except ValidationError as ve:
+        # THE SAME BUG THE KeyError HANDLER ABOVE WAS WRITTEN TO FIX, through a
+        # hole that handler did not cover.
+        #
+        # Tool arguments are parsed into pydantic models. A wrong TYPE, a
+        # malformed nested object, or a field missing from a nested model
+        # raises ValidationError rather than KeyError - so it fell to the
+        # generic handler below and came back as `-32603 Internal error: 1
+        # validation error for ProspectData...`.
+        #
+        # For an agent those two codes mean opposite things. ERR_INTERNAL says
+        # "the server is broken" - back off, retry, or abandon the task. The
+        # truth was "your arguments are wrong" - fixable on the next call, and
+        # only by the caller. An agent that retries an unfixed request burns
+        # its budget and gives up on a marketplace that was working fine.
+        #
+        # So: name every bad field, and say plainly that retrying unchanged
+        # will not help.
+        try:
+            fields = []
+            for err in ve.errors():
+                loc = ".".join(str(p) for p in err.get("loc", ()))
+                fields.append(f"{loc or '<root>'} ({err.get('msg', 'invalid')})")
+        except Exception:  # noqa: BLE001 - never let error reporting itself fail
+            fields = []
+        detail = "; ".join(fields[:6]) or str(ve)[:200]
+        return JsonRpcResponse(
+            id=rpc_id,
+            error=_error(
+                ERR_INVALID_PARAMS,
+                f"invalid arguments: {detail}. Call tools/list and use the "
+                f"inputSchema for this tool - names, types and nesting are exact.",
+                data={"error_code": "invalid_argument",
+                      "retriable": False,
+                      "invalid_fields": fields[:6],
+                      "how_to_resolve": {
+                          "call": "tools/list",
+                          "hint": "fix the named fields; retrying unchanged "
+                                  "will fail identically",
+                      }}),
         ).to_dict()
     except Exception as exc:
         return JsonRpcResponse(
