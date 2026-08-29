@@ -256,3 +256,26 @@ def test_free_and_keyless_are_never_conflated():
     assert checked >= 8, (
         f"only {checked} free tools were checked - the COST-line format "
         f"changed and this test is no longer reading it")
+
+
+def test_trade_tool_says_it_does_not_classify_the_product():
+    """The description must match the verdict the code actually computes.
+
+    `map_trade_restriction` takes a `product`, echoes it back, and never checks
+    it against any export-control list - the verdict comes from the destination
+    and the party screen alone. Its reason_code was changed from "clear" to
+    "partial" for exactly that reason (core/map_trade_restriction.py), and the
+    description has to carry the same limit: an agent reading "cross-border
+    trade-compliance snapshot. Given a product..." reasonably concludes the
+    product was screened.
+
+    This is the pairing that matters - a corrected verdict under an uncorrected
+    description is still a false assurance, just a quieter one.
+    """
+    d = desc("map_trade_restriction")
+    assert "DOES NOT CLASSIFY THE PRODUCT" in d.upper(), (
+        "the tool must say plainly that it does not screen the item itself")
+    assert "not an export-control clearance" in d.lower(), (
+        "an agent must not be able to read this as a clearance")
+    assert "live cross-border trade-compliance snapshot" not in d, (
+        "'live snapshot' implies the product was checked against something")
