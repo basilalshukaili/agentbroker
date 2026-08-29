@@ -279,3 +279,64 @@ def test_trade_tool_says_it_does_not_classify_the_product():
         "an agent must not be able to read this as a clearance")
     assert "live cross-border trade-compliance snapshot" not in d, (
         "'live snapshot' implies the product was checked against something")
+
+
+# ---------------------------------------------------------------------------
+# PUBLIC SPECS MUST NOT SHIP PLACEHOLDER HOSTS
+# ---------------------------------------------------------------------------
+#
+# manifest/openapi.yaml is served at https://hatchloop.dev/openapi.yaml and is
+# one of the seven surfaces an agent can discover us through. It shipped
+# pointing at `https://api.smb-broker.example/v1` with a contact of
+# `support@smb-broker.example` - RFC 2606 reserved domains, i.e. addresses
+# guaranteed not to exist.
+#
+# Nobody reported it because the failure is silent and happens on someone
+# else's machine: an integrator follows the spec, gets nothing, and leaves.
+
+_PUBLIC_SPECS = [
+    os.path.join(ROOT, "manifest", "openapi.yaml"),
+    os.path.join(ROOT, "edge", "src", "snapshots", "openapi.yaml"),
+]
+
+_PLACEHOLDER_MARKERS = [
+    ".example",          # RFC 2606 reserved - can never resolve
+    "example.com",
+    "localhost",
+    "127.0.0.1",
+    "YOUR_",
+    "TODO",
+]
+
+
+@pytest.mark.parametrize("path", _PUBLIC_SPECS,
+                         ids=[os.path.basename(os.path.dirname(p)) for p in _PUBLIC_SPECS])
+def test_public_specs_name_hosts_that_exist(path):
+    if not os.path.exists(path):
+        pytest.skip(f"{path} not present")
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.readlines()
+    bad = []
+    for n, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue          # a comment explaining the ban is not the ban
+        for marker in _PLACEHOLDER_MARKERS:
+            if marker in line:
+                bad.append(f"{os.path.basename(path)}:{n} {stripped[:88]}")
+    assert not bad, (
+        "a public API spec names a host or address that cannot exist - an "
+        "integrator who follows it silently gets nowhere: " + "; ".join(bad))
+
+
+def test_the_spec_version_tracks_the_service():
+    """A spec version frozen at 0.1.0 against a 0.2.x service tells an
+    integrator they are reading current documentation when they are not."""
+    import config
+    path = os.path.join(ROOT, "manifest", "openapi.yaml")
+    if not os.path.exists(path):
+        pytest.skip("openapi.yaml not present")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    assert f'version: "{config.SERVICE_VERSION}"' in text, (
+        f"openapi.yaml does not declare version {config.SERVICE_VERSION}")

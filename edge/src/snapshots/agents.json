@@ -1,7 +1,7 @@
 {
   "name": "SMB Transaction & Communication Broker",
   "description": "Agent-callable service for the long tail of small businesses. Discover, verify, communicate, schedule, transact — all with built-in TCPA/GDPR/CASL compliance and idempotent semantics.",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "protocol_version": "a2a-v0.2",
   "url": "https://api.hatchloop.dev",
   "documentation_url": "https://api.hatchloop.dev/docs",

@@ -1,16 +1,34 @@
 openapi: "3.1.0"
+# THE SERVER URL AND CONTACT WERE PLACEHOLDERS ON A .example DOMAIN.
+#
+# This file is served publicly at https://hatchloop.dev/openapi.yaml and is one
+# of the seven discovery surfaces an agent can find us through. It told every
+# integrator to call `https://api.smb-broker.example/v1` - a domain that does
+# not exist - and to email `support@smb-broker.example`. It also carried the
+# pre-rename product title and version 0.1.0 against a 0.2.x service.
+#
+# Anyone who actually followed this spec got nowhere, which is probably why
+# nobody reported it: the failure is silent and happens on someone else's
+# machine.
 info:
-  title: SMB Transaction & Communication Broker
-  version: "0.1.0"
+  title: AgentBroker
+  version: "0.2.8"
   description: |
     A horizontal, agent-callable broker for the long-tail SMB layer.
-    Lets autonomous AI agents discover, verify, communicate with, schedule with,
-    and transact with small/mid businesses through one clean tool surface.
+    Lets autonomous AI agents discover, verify, screen, communicate with,
+    schedule with, and transact with small businesses through one tool surface.
+
+    The primary interface is MCP over streamable HTTP at
+    https://hatchloop.dev/mcp/agent-broker - this REST surface mirrors it.
   contact:
-    email: support@smb-broker.example
+    email: hello@hatchloop.dev
+    url: https://hatchloop.dev/agent-broker
 
 servers:
-  - url: https://api.smb-broker.example/v1
+  - url: https://api.hatchloop.dev
+    description: API origin
+  - url: https://hatchloop.dev
+    description: Canonical branded host (edge-cached discovery)
 
 security:
   - AgentIdentity: []
@@ -22,7 +40,9 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
+        Sent as the `X-Agent-Identity` header (not `Authorization`).
         Signed JWT with claims: agent_id, principal, scope, expiry, issuer.
+        Get a free email-verified key at https://hatchloop.dev/agent-broker.
         Required for all state-changing operations. Read-only operations require
         a minimal Agent-Identity with no principal claim.
 
