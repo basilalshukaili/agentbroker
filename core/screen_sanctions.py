@@ -86,11 +86,32 @@ _MATCH_THRESHOLD_OFAC = 0.60
 # ---------------------------------------------------------------------------
 
 def _ascii(s: str) -> str:
-    """Replace non-ASCII characters with '?' to ensure wire-safe output."""
+    """Normalise a name for output, PRESERVING non-Latin scripts.
+
+    This used to replace every non-ASCII character with '?', so the receipt for
+    a Cyrillic or Arabic name recorded literal nonsense:
+
+        screen_sanctions("Сбербанк")  -> "MATCH FOUND for '????????'"
+        screen_sanctions("حزب الله")   -> "MATCH FOUND for '??? ????'"
+
+    The MATCHING was fine - OpenSanctions handles those scripts upstream - but
+    the receipt is the audit artefact, and an audit record that cannot say what
+    was screened is not an audit record. "Wire-safe" was never a real
+    constraint: MCP responses are JSON, and JSON is UTF-8 by definition.
+
+    For an Oman-registered company whose home market writes in Arabic, silently
+    destroying Arabic names in its own compliance receipts is self-sabotage.
+
+    NFC rather than NFKD: compose to the canonical form so identical names
+    compare equal, without decomposing characters into pieces we then throw
+    away. Control characters are still stripped, which is the only genuine
+    wire-safety concern here.
+    """
     if not s:
         return s
-    normalized = unicodedata.normalize("NFKD", s)
-    return "".join(c if ord(c) < 128 else "?" for c in normalized)
+    normalized = unicodedata.normalize("NFC", s)
+    return "".join(c for c in normalized
+                   if unicodedata.category(c)[0] != "C" or c in "\t\n")
 
 
 def _clean(v) -> Optional[str]:

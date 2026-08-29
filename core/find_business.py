@@ -124,9 +124,26 @@ async def handle_find_business(
         operation_id=str(uuid.uuid4()),
         status=OperationStatus.SUCCESS,
         reason_code="businesses_found" if smbs else "no_results",
+        # SAY WHEN A RESULT IS SAMPLE DATA. The records already carry an
+        # `is_demo` flag and their names are prefixed [DEMO] - the data was
+        # honest and only the prose was not. Asking Atlanta for a haircut
+        # returned "[DEMO] Cuts & Co." under the sentence "Found 1 verified
+        # businesses", and an agent reads the sentence.
+        #
+        # Counting them separately rather than hiding them: a demo row is
+        # genuinely useful for testing an integration, and useless for booking
+        # an actual appointment. The caller has to be able to tell which it got.
         human_message=(
-            f"Found {len(smbs)} verified businesses." if smbs
-            else "No verified businesses matched. Use import_booking_url to add a specific URL."
+            (
+                f"Found {len(smbs)} business(es)"
+                + (f", of which {sum(1 for s in smbs if getattr(s, 'is_demo', False))} "
+                   f"are SAMPLE DATA (named [DEMO], flagged is_demo) and cannot "
+                   f"be transacted with"
+                   if any(getattr(s, "is_demo", False) for s in smbs) else "")
+                + "."
+            ) if smbs
+            else "No businesses matched in our supply network, which is still "
+                 "small. Use import_booking_url to add a specific URL."
         ),
         result=result,
         cost=CostRecord(amount=_receipt_usd("find_business"), currency="USD", basis="free"),

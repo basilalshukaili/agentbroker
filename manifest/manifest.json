@@ -12,7 +12,7 @@
   "operations": [
     {
       "name": "find_business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses — not raw directory results.",
+      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
       "when_to_use": "Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.",
       "when_not_to_use": "Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.",
       "execution_profile": "sync",
@@ -286,7 +286,7 @@
     },
     {
       "name": "verify_business",
-      "description": "Confirm that an SMB is real, currently operating, and capable of the requested service. Performs a live capability probe against the business's channel.",
+      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
       "when_to_use": "Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').",
       "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.",
       "execution_profile": "sync",
@@ -973,7 +973,7 @@
     },
     {
       "name": "send_transactional_confirmation",
-      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Guaranteed delivery via redundant channels.",
+      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen.",
       "when_to_use": "Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing.",
       "when_not_to_use": "Do not use for marketing or promotional messages. Do not use for conversational messages.",
       "execution_profile": "sync_fast",
@@ -1572,7 +1572,7 @@
     },
     {
       "name": "self_test",
-      "description": "Live capability probe that verifies the service is healthy, each claimed operation is reachable, and supply network size is current. Use to verify integration before production use.",
+      "description": "Service health probe: runs 6 internal checks and reports how many passed. Confirms the server is up and responding - it does NOT probe each tool individually. Use to verify connectivity before production use.",
       "when_to_use": "Use at agent startup, before high-stakes task sequences, or after receiving unexpected errors to check if the service is degraded.",
       "when_not_to_use": "Do not call more than once per minute in production.",
       "execution_profile": "sync",
