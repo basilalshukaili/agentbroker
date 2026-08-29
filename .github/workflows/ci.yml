@@ -68,3 +68,14 @@ jobs:
 
       - name: No mojibake in public artifacts
         run: python scripts/check_encoding.py
+
+      # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
+      # complete, tested, and never invoked. The ninth was found by an external
+      # reviewer INSIDE the guard written that morning to catch the class - so
+      # vigilance is demonstrably not the answer and this has to be mechanical.
+      #
+      # Baselined at the 15 modules that were already unreachable, because a new
+      # lint that fails on day one gets switched off, and a switched-off gate is
+      # how the ninth happened. Its job is to stop the number growing.
+      - name: No new unreachable modules
+        run: python scripts/check_reachable.py

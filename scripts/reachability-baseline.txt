@@ -1,0 +1,64 @@
+# Modules that were already unreachable when the reachability gate was added,
+# 2026-08-29. This file is DEBT, not permission.
+#
+# The gate's job is to stop this list GROWING. Every line here is a module that
+# is complete, sometimes tested, and imported by no production code - the bug
+# class that hit nine times in one day. Deleting a line requires either wiring
+# the module to something that runs or removing it; the gate FAILS if a line
+# here becomes reachable and is not removed, so the list can only shrink.
+#
+# It is a list to work down, and it should be shorter every week.
+#
+# Reviewed by an external engineering review the same day; several of these
+# were independently flagged there.
+
+# Reliability layer - complete and tested, nothing trips it at runtime.
+# error_normalizer has passing fault-injection tests and its only reference
+# anywhere outside tests is its own def.
+reliability.error_normalizer
+reliability.channel_fallback
+reliability.retry_policy
+
+# Telemetry - built, never emitted from.
+telemetry.metrics_emitter
+telemetry.tracer
+telemetry.log_redactor
+
+# Onboarding flows - complete, no route reaches them.
+onboarding.channel_capture
+onboarding.self_serve
+onboarding.verification_flow
+
+# The A/B feedback loop's reporting half. Assignment IS live
+# (optimizer.ab_router), but nothing consumes the results, so selection rate
+# and win rate are structurally empty - the same shape as the score ledger
+# that sat at zero for every contributor.
+optimizer.weekly_report
+
+# Browser automation adapter - no caller.
+channels.browser_automation.playwright_adapter
+
+# --- Found only after the gate's own matching was tightened -----------------
+# The first version accepted "a parent package was imported" as reachability,
+# so every module under billing/ and compliance/ was waved through. Proving
+# the gate could fail (by planting a fresh orphan and watching it report
+# CLEAN) is what surfaced these four.
+
+# MONEY PATH - the most concerning line in this file. A budget guard that
+# nothing calls means no budget is being guarded. Investigate before anything
+# else here: either it is genuinely superseded by billing/credits.py, or spend
+# is currently unbounded.
+billing.budget_guard
+
+# A complete revenue model - subscription tiers, listing tiers, outcome
+# premiums, a revenue forecaster - with four passing tests and no caller.
+billing.pricing_tiers
+
+# Complete sign_receipt/verify_receipt. Knowingly quarantined: its own test
+# asserts the privacy policy does NOT claim signed receipts, precisely because
+# nothing imports it. Honest, and still dead.
+billing.receipt_signer
+
+# Data-retention policy code that never runs. Worth checking against what the
+# privacy policy promises customers about retention.
+compliance.retention_policy
