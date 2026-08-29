@@ -61,10 +61,31 @@ jobs:
       #
       # Each entry is published from its own directory because mcp-publisher
       # reads ./server.json.
+      # AN ALREADY-PUBLISHED VERSION IS A SKIP, NOT A FAILURE.
+      #
+      # This workflow fires whenever ANY manifest changes, and then walks all of
+      # them - so the unchanged ones are duplicates by definition. The first run
+      # died on the root server.json ("cannot publish duplicate version") under
+      # `set -e` and never reached the two NEW entries it existed to publish.
+      # Publishing has to be idempotent or adding the fourth manifest breaks the
+      # other three.
+      #
+      # Every other error still fails the build. "Already published" is the one
+      # outcome that means the desired state is already true.
       - name: Publish every manifest
         run: |
-          set -e
+          set -uo pipefail
+          failed=0
           for f in server.json registry/*/server.json; do
-            echo "publishing $f"
-            (cd "$(dirname "$f")" && "$OLDPWD/mcp-publisher" publish)
+            name=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['name'])" "$f")
+            echo "--- $name ($f)"
+            out=$(cd "$(dirname "$f")" && "$OLDPWD/mcp-publisher" publish 2>&1) || true
+            echo "$out"
+            if echo "$out" | grep -q "duplicate version"; then
+              echo "    already published at this version - skipping"
+            elif echo "$out" | grep -qiE "^Error:|status [45][0-9][0-9]"; then
+              echo "    FAILED"
+              failed=1
+            fi
           done
+          exit $failed
