@@ -75,6 +75,18 @@ _SCAN_FILES += sorted(
     p for p in (_AGENTBROKER_DIR / "edge" / "src").rglob("*.ts")
     if p.is_file()
 )
+
+# AND THE MARKETING SITE'S PRODUCT PAGE.
+#
+# It described find_business as "Search verified businesses" and
+# verify_business as "Check listing accuracy against live sources" - the exact
+# two claims corrected in the tool descriptions this morning, still live on the
+# page a human buyer reads. The page and the tool are two copies of one claim,
+# and only one of them was being checked.
+_SCAN_FILES += [
+    _REPO_ROOT / "web_hatchloop_v2" / "src" / "app" / "agent-broker" / "page.tsx",
+    _REPO_ROOT / "web_hatchloop_v2" / "src" / "app" / "pricing" / "page.tsx",
+]
 _SCAN_FILES = list(dict.fromkeys(_SCAN_FILES))
 
 # ---------------------------------------------------------------------------
@@ -141,6 +153,23 @@ _BANNED: list[tuple[str, str]] = [
         r"(?i)\$\d+\s*/\s*mo(?:nth)?\s+subscription",
         "BANNED: names a monthly subscription. No subscription tier at any "
         "price has ever been in effect (docs/PRICING.md)."
+    ),
+    # CAPABILITY OVERCLAIMS. This linter began as a PRICING checker, but the
+    # defect class is identical - a sentence promising more than the code does -
+    # and the same sentence lives on several surfaces at once. The three below
+    # were each corrected in one place and left standing in another.
+    (
+        r"(?i)search\s+verified\s+businesses",
+        "BANNED: the supply network is small and largely [DEMO] sample data. "
+        "The tool description says so; the site must not say otherwise."
+    ),
+    (
+        r"(?i)(check listing accuracy against|live capability probe)",
+        "BANNED: verify_business is a DIRECTORY LOOKUP. It contacts nobody."
+    ),
+    (
+        r"(?i)curated,\s*verified,\s*transactable",
+        "BANNED: retired claim about the supply network."
     ),
     (
         r"(?i)buy\.polar\.sh/polar_cl_",
