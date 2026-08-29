@@ -217,7 +217,11 @@ class TestCleanLane:
         assert result.status == OperationStatus.SUCCESS
         assert result.result["restricted"] is False
         assert result.result["destination_risk"] == "standard"
-        assert result.reason_code == "clear"
+        # NOT "clear". We never classify the product, so a no-findings result
+        # is a PARTIAL one: destination and parties were screened, the item was
+        # not. Saying "clear" here answered "no significant trade restriction"
+        # for uranium enrichment centrifuges to Germany.
+        assert result.reason_code == "partial"
         # restrictions[] must be empty for a clean lane
         assert result.result["restrictions"] == []
         # tariff_note must contain official links, not fabricated rates
@@ -255,6 +259,35 @@ class TestCleanLane:
 # ---------------------------------------------------------------------------
 # Test 4: Upstream-down fail-open
 # ---------------------------------------------------------------------------
+
+
+    def test_a_controlled_item_is_never_called_clear(self):
+        """THE CASE THAT FORCED THE CHANGE.
+
+        `product` is required by this tool, echoed into its human_message, and
+        used in no other decision - the verdict comes from the destination and
+        the party screen alone. So an export-controlled item to an
+        unrestricted destination produced a clean bill of health.
+
+        The tool cannot classify goods and this test does not ask it to. It
+        asks only that the tool not claim an assurance it never computed.
+        """
+        for item in ("uranium enrichment centrifuges",
+                     "night vision goggles",
+                     "carbon fibre for rocket casings"):
+            result = run(handle_map_trade_restriction(
+                product=item,
+                origin_country="US",
+                destination_country="DE",
+            ))
+            assert result.reason_code != "clear", (
+                f"{item!r} to DE was reported as CLEAR. The product was never "
+                f"classified against any export-control list, so no clearance "
+                f"was computed and none may be implied.")
+            msg = result.human_message.lower()
+            assert "not classified" in msg or "not checked" in msg, (
+                "the response must state plainly that the product itself was "
+                "not screened - a caller cannot infer the gap from a code")
 
 class TestUpstreamDownFailOpen:
     def test_all_upstreams_down_no_exception(self):

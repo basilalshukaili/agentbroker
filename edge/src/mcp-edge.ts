@@ -139,7 +139,11 @@ export async function handleMcpRequest(
       const ip = clientIp(request);
       const rlResult = await checkRateLimit(ip, kv);
       if (!rlResult.allowed) {
-        return rateLimitExceededResponse();
+        // `id` is the caller's JSON-RPC request id, read at the top of this
+        // function. Passing it is what makes the quota response a RESPONSE
+        // rather than an unparseable body: a client correlates by id, and
+        // without one it cannot match this to the call it made.
+        return rateLimitExceededResponse(id);
       }
 
       // x402 per-call payment gate (only when receiver address configured).

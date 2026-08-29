@@ -468,15 +468,41 @@ async def handle_map_trade_restriction(
         )
         reason_code = "advisory"
     else:
+        # WE NEVER CLASSIFY THE PRODUCT, SO WE MUST NOT SAY "CLEAR".
+        #
+        # `product` is required, echoed into this sentence, and used nowhere
+        # else in the entire module - the verdict comes from the destination
+        # country and the party screen alone. That made this branch answer
+        # `clear` / `restricted: false` to:
+        #
+        #     map_trade_restriction("uranium enrichment centrifuges", "DE")
+        #     map_trade_restriction("night vision goggles", "DE")
+        #
+        # Both are export-controlled almost everywhere. An agent asking a tool
+        # that advertises "export-control ... BIS Entity List, EU, UN, UK" and
+        # being told "No significant trade restriction found" has been handed a
+        # documented false assurance, which is worse than no answer: it is the
+        # artefact someone points at afterwards. The seller of record is a named
+        # legal entity.
+        #
+        # The fix is one enum value, not new capability. We genuinely did screen
+        # the destination and the parties, and that result is worth having - so
+        # report exactly that and name what was NOT done. `partial` also keeps
+        # the honest-degradation vocabulary already used by screen_sanctions
+        # rather than inventing a fourth word for the same idea.
         human_message = (
-            f"No significant trade restriction found for "
-            f"'{_ascii(product_clean[:60])}' to {dest_clean}. "
-            f"Destination risk: {destination_risk}. "
-            f"Party screenings: {len(parties_screened)} screened, "
+            f"PARTIAL: no restriction found from the checks we ran - destination "
+            f"'{dest_clean}' (risk: {destination_risk}) and "
+            f"{len(parties_screened)} party screening(s), "
             f"{sum(1 for p in parties_screened if p.get('matched'))} matched. "
-            "Always verify with official sources before commercial decisions."
+            f"THE PRODUCT ITSELF WAS NOT CLASSIFIED: '"
+            f"{_ascii(product_clean[:60])}' was not checked against any "
+            f"export-control list, and dual-use or controlled goods can be "
+            f"restricted to an otherwise unrestricted destination. This is not "
+            f"an export-control clearance. Classify the item (HS/ECCN) against "
+            f"BIS/EU/UK controls before shipping."
         )
-        reason_code = "clear"
+        reason_code = "partial"
 
     return OutcomeReceipt(
         operation_id=op_id,

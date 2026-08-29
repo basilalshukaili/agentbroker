@@ -7,11 +7,15 @@
 // instance handles a burst before the KV write budget is exhausted.
 //
 // Free tier: 100 tool calls / IP / day.
-// Upgrade path: Polar $49/mo subscription.
+// Upgrade path: CREDIT PACKAGES, not a subscription. The previous comment here
+// said "Polar $49/mo subscription" and the code linked a hardcoded Polar
+// checkout - docs/PRICING.md states that no monthly tier at any price was ever
+// in effect. Link the pricing page, which is generated from the live packages,
+// so this can never go stale again.
 
 export const FREE_TIER_LIMIT = 100;
-export const POLAR_CHECKOUT_URL =
-  "https://buy.polar.sh/polar_cl_zRn6I67zMjFuenkjDme5RCnDYmA3vefHqX1zG3A5Phh";
+export const PRICING_URL = "https://hatchloop.dev/pricing";
+export const FREE_KEY_URL = "https://hatchloop.dev/agent-broker";
 
 // In-memory fallback (per worker instance, resets on cold-start).
 const inMemoryCounters = new Map<string, number>();
@@ -85,24 +89,80 @@ export async function checkRateLimit(
   };
 }
 
-/** Build the HTTP 429 response body and headers. */
-export function rateLimitExceededResponse(): Response {
+/** Seconds until the daily quota actually resets (midnight UTC). */
+function secondsUntilReset(now: Date = new Date()): number {
+  const midnight = Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0);
+  return Math.max(1, Math.ceil((midnight - now.getTime()) / 1000));
+}
+
+/**
+ * The free-tier quota response, in the shape an MCP client can actually read.
+ *
+ * THREE THINGS WERE WRONG HERE AT ONCE, and every one of them landed on a
+ * free-tier agent at the exact moment it was ready to become a paying one.
+ *
+ * 1. IT WAS NOT JSON-RPC. The body was a bare `{error, message, upgrade_url}`
+ *    with HTTP 429 - no `jsonrpc`, no `id`, no `error.code`. A strict MCP
+ *    client cannot parse that as a response to its call, so what it sees is not
+ *    "you are rate limited", it is a protocol violation. The request id was
+ *    available at the call site the whole time and simply was not passed in.
+ *
+ * 2. "Upgrade to unlimited" IS A PRODUCT WE DO NOT SELL. This file's own
+ *    comment called it a "$49/mo subscription"; docs/PRICING.md states plainly
+ *    that no subscription tier at any price was ever in effect. Billing is
+ *    credit packages. The hardcoded Polar link is dropped entirely rather than
+ *    corrected - a URL frozen in a worker bundle is the same "claim written as
+ *    a constant" defect that check_pricing.py exists to catch, and it would go
+ *    stale again the next time packages change. hatchloop.dev/pricing is
+ *    generated from the live packages and cannot drift.
+ *
+ * 3. `retry-after: 86400` TOLD AN AGENT TO WAIT A FULL DAY. The quota resets at
+ *    midnight UTC, so an agent hitting the cap at 23:50 was told to come back
+ *    twenty-four hours later instead of in ten minutes.
+ *
+ * The shape now matches what the ORIGIN returns for the same condition
+ * (error_code/retriable/retry_after_ms/how_to_resolve) - an agent must not get
+ * two different error contracts depending on which host answered it.
+ */
+export function rateLimitExceededResponse(id: unknown = null): Response {
+  const resetSec = secondsUntilReset();
   const body = JSON.stringify({
-    error: "rate_limit_exceeded",
-    message:
-      `Free tier limit reached (${FREE_TIER_LIMIT} ops/day). ` +
-      `Upgrade to unlimited at ${POLAR_CHECKOUT_URL}`,
-    upgrade_url: POLAR_CHECKOUT_URL,
-    tier: "free",
+    jsonrpc: "2.0",
+    id: id ?? null,
+    error: {
+      code: -32000,
+      message:
+        `Free tier limit reached (${FREE_TIER_LIMIT} ops/day). ` +
+        `The quota resets at midnight UTC. Credit packages: ${PRICING_URL}`,
+      data: {
+        error_code: "rate_limited",
+        retriable: true,
+        retry_after_ms: resetSec * 1000,
+        tier: "free",
+        how_to_resolve: {
+          wait_seconds: resetSec,
+          upgrade: PRICING_URL,
+          free_key: FREE_KEY_URL,
+          hint:
+            "A free email-verified key raises the write quota; credits are " +
+            "pay-as-you-go, not a subscription.",
+        },
+      },
+    },
   });
   return new Response(body, {
-    status: 429,
+    // 200 with a JSON-RPC error, matching jsonrpcError() in mcp-edge.ts: the
+    // failure is at the protocol layer, and a client that cannot parse the
+    // body learns nothing from the status code. The rate-limit headers stay so
+    // HTTP-aware callers still get the signal.
+    status: 200,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "access-control-allow-origin": "*",
       "x-ratelimit-limit": String(FREE_TIER_LIMIT),
       "x-ratelimit-remaining": "0",
-      "retry-after": "86400",
+      "retry-after": String(resetSec),
     },
   });
 }

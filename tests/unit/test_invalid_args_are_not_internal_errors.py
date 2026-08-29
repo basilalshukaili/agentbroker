@@ -4,24 +4,38 @@ A caller's bad arguments must never be reported as a server fault.
 WHY THE DISTINCTION IS WORTH A TEST FILE. The two JSON-RPC codes mean opposite
 things to an agent:
 
-    -32603 ERR_INTERNAL      "the server is broken"  -> back off, retry, give up
-    -32602 ERR_INVALID_PARAMS "your request is wrong" -> fix it and call again
+    -32603 ERR_INTERNAL       "the server is broken"  -> back off, retry, give up
+    -32602 ERR_INVALID_PARAMS "your request is wrong"  -> fix it and call again
 
 Report the second as the first and a working marketplace looks broken. The
 agent retries an unfixable request until its budget runs out, then abandons the
 task - and nothing on our side records an error, because there wasn't one.
 
-This was already fixed once. On 2026-08-04 a missing argument surfaced as
-`Internal error: 'vertical'` and a KeyError handler was added to name the
-argument instead. But tool arguments are parsed into PYDANTIC models, and a
-wrong type, a malformed nested object, or a field missing from a nested model
-raises ValidationError, not KeyError - so those went on falling through to
-ERR_INTERNAL for another three weeks. Found 2026-08-29 by calling capture_lead
-with a plausible-but-wrong field name while checking something else entirely.
+THIS FILE HAS NOW BEEN WRONG TWICE, WHICH IS THE POINT OF ITS CURRENT SHAPE.
 
-The lesson worth keeping: fixing ONE exception type is not fixing the class.
-Everything below is about the class - a bad argument, however it is malformed,
-is the caller's to fix and must say so.
+  * 2026-08-04: a MISSING argument surfaced as `Internal error: 'vertical'`. A
+    KeyError handler was added. One exception type fixed.
+  * 2026-08-29 (morning): pydantic ValidationError was found doing the same
+    thing and a second handler was added - with a test file asserting four
+    "malformation shapes".
+  * 2026-08-29 (afternoon): an external reviewer showed those four shapes were
+    ONE. They all sent `contact`/`channel` to capture_lead, which reads
+    `prospect` - so every case died identically on `ProspectData(**{})` before
+    reaching the thing it claimed to test, and produced byte-identical output.
+    Three of the four were duplicates and the fourth exercised the OLD handler.
+    The reviewer also found THREE more exception types still returning -32603,
+    one of them reachable with no credentials at all.
+
+So this file no longer trusts that differently-written cases are different
+cases. `test_each_case_is_a_distinct_shape` asserts that the responses actually
+differ from one another - a duplicate parameterisation now fails instead of
+inflating the count.
+
+The fix under test is not another `except` clause. Broadly catching TypeError
+or ValueError would report our OWN faults as the caller's, with
+`retriable: false`, telling an agent never to retry a transient outage. Instead
+the two failing shapes are converted at the point of use (`_as_dict`,
+`_as_enum`) and `arguments` is shape-checked before any handler reads it.
 """
 from __future__ import annotations
 
@@ -42,30 +56,29 @@ from agent_interface import mcp_server as ms  # noqa: E402
 ERR_INTERNAL = -32603
 ERR_INVALID_PARAMS = -32602
 
-# A token is required for these to reach argument parsing at all: without one
-# the auth gate answers first and the bad arguments are never seen. That is
-# also why this was invisible in production - anonymous probes get
-# `auth_required`, and only an AUTHENTICATED caller, i.e. a paying one, ever
-# reached the crash.
-HEADERS = {"x-agent-identity": "test-token-value"}
 
-
-def _call(tool: str, arguments: dict) -> dict:
+def _call(tool: str, arguments, headers: dict | None = None) -> dict:
     return asyncio.run(ms.handle_mcp_request(
         {"jsonrpc": "2.0", "method": "tools/call", "id": 1,
          "params": {"name": tool, "arguments": arguments}},
-        HEADERS))
+        headers or {}))
 
 
+# Each entry is a GENUINELY different failure mode, verified to produce a
+# different message. `arguments` itself being the wrong JSON type is listed
+# first because it is the one an unauthenticated caller can reach.
 BAD_ARGUMENTS = [
-    ("missing a field of a nested model", "capture_lead",
-     {"smb_id": "smb_x", "channel": "sms", "contact": {}}),
-    ("wrong type for a scalar", "capture_lead",
-     {"smb_id": 123, "channel": ["sms"], "contact": {"name": "n"}}),
+    ("arguments is a JSON array", "find_business", ["plumbing"]),
+    ("arguments is a JSON string", "find_business", "plumbing"),
     ("nested object sent as a string", "capture_lead",
-     {"smb_id": "smb_x", "channel": "sms", "contact": "just a name"}),
-    ("plausible but wrong field name", "capture_lead",
-     {"business_id": "smb_x", "channel": "sms"}),
+     {"smb_id": "s", "prospect": "just a name"}),
+    ("unknown enum member", "send_message",
+     {"smb_id": "s", "recipient_type": "nonsense", "recipient_id": "x",
+      "message_type": "marketing", "content": {"body": "hi"}}),
+    ("value fails model validation", "send_message",
+     {"smb_id": "s", "recipient": {"id_type": "phone", "id_value": "not-e164"},
+      "message_type": "transactional", "content": {"body": "hi"}}),
+    ("required argument absent", "verify_business", {}),
 ]
 
 
@@ -75,9 +88,6 @@ def test_bad_arguments_are_never_internal_errors(label, tool, args):
     resp = _call(tool, args)
     err = resp.get("error")
     if err is None:
-        # A typed failure RESULT is also a correct answer - some paths report
-        # tool failures as isError results rather than protocol errors. What
-        # must never happen is ERR_INTERNAL.
         assert "result" in resp, f"{label}: neither result nor error"
         return
     assert err["code"] != ERR_INTERNAL, (
@@ -88,59 +98,90 @@ def test_bad_arguments_are_never_internal_errors(label, tool, args):
         f"{label}: expected {ERR_INVALID_PARAMS}, got {err['code']}")
 
 
+def test_each_case_is_a_distinct_shape():
+    """THE GUARD THE PREVIOUS VERSION OF THIS FILE NEEDED AND DID NOT HAVE.
+
+    Its four cases produced one identical response because they all named a
+    field the tool does not read. Four parameterisations, one code path, and a
+    green suite that looked like coverage. A duplicate must fail here rather
+    than quietly inflate the count.
+    """
+    messages = {}
+    for label, tool, args in BAD_ARGUMENTS:
+        err = _call(tool, args).get("error") or {}
+        messages[label] = err.get("message", "<no error>")
+    dupes = {}
+    for label, msg in messages.items():
+        dupes.setdefault(msg, []).append(label)
+    collisions = {m: ls for m, ls in dupes.items() if len(ls) > 1}
+    assert not collisions, (
+        "these cases are the SAME case wearing different names - they produce "
+        f"identical responses, so only one path is really covered: {collisions}")
+
+
+def test_anonymous_callers_reach_this_path():
+    """THE PREMISE THE OLD VERSION OF THIS FILE GOT BACKWARDS.
+
+    It asserted that the auth gate answers before arguments are parsed, and
+    used that to claim only paying callers were affected. Both halves were
+    wrong: `_WRITE_TOOLS_REQUIRING_AUTH` covers eight write tools, so the
+    twelve READ-ONLY tools skip the gate entirely - and those are the ones an
+    evaluating agent tries first.
+
+    Pinned as a fact, not an aside: if read tools ever move behind auth, this
+    fails and the reasoning above gets re-examined instead of silently rotting.
+    """
+    assert "find_business" not in ms._WRITE_TOOLS_REQUIRING_AUTH
+    resp = _call("find_business", ["plumbing"])          # no headers at all
+    err = resp.get("error") or {}
+    assert err.get("code") == ERR_INVALID_PARAMS, (
+        f"an anonymous malformed read call returned {err.get('code')} - "
+        f"{err.get('message', '')[:100]}")
+    assert "must be a JSON object" in err.get("message", "")
+
+
 def test_the_error_names_what_to_fix():
     """An error an agent cannot act on is barely better than the wrong code."""
-    resp = _call("capture_lead",
-                 {"smb_id": "smb_x", "channel": "sms", "contact": {}})
-    err = resp.get("error")
-    if err is None:
-        pytest.skip("this path returns a typed result, covered above")
-    data = err.get("data") or {}
-    assert data.get("retriable") is False, (
-        "retrying an unfixed request must not be advertised as worth trying")
-    named = data.get("invalid_fields") or []
-    assert named or "name" in err.get("message", ""), (
-        "the response must name the offending field - 'invalid arguments' "
-        "alone leaves the agent guessing which one")
+    err = _call("send_message",
+                {"smb_id": "s", "recipient_type": "nonsense", "recipient_id": "x",
+                 "message_type": "marketing", "content": {"body": "hi"}}).get("error")
+    assert err is not None
+    msg = err.get("message", "")
+    # An enum error must LIST the permitted values. "'nonsense' is not a valid
+    # RecipientIdType" sends the agent off to fetch a schema; naming the four
+    # options lets it fix the call immediately.
+    assert "recipient_type" in msg and "phone" in msg, (
+        f"the error must name the field and its allowed values, got: {msg[:140]}")
 
 
-def test_a_genuine_server_fault_is_still_internal():
-    """THE OTHER DIRECTION, which matters just as much.
+@pytest.mark.parametrize("exc", [
+    RuntimeError("simulated backend outage"),
+    ValueError("an internal invariant broke"),
+    TypeError("internal type confusion"),
+])
+def test_genuine_server_faults_are_still_internal(exc):
+    """THE OTHER DIRECTION, and the reviewer's sharpest catch.
 
-    Widening the invalid-argument case until it swallows real faults would be
-    worse than the bug: a broken backend would report itself as the caller's
-    mistake, and nobody would ever look at our logs. A real internal failure
-    must still come back as -32603.
+    The previous version probed only RuntimeError. That let a one-word widening
+    - `except ValidationError` to `except ValueError` - pass every test while
+    reporting every internal ValueError in the stack (including the enum
+    failures this file exists over) to the caller as their own mistake, with
+    `retriable: false`.
+
+    ValueError and TypeError are the two that must NOT be swallowed, because
+    they are exactly what a careless broadening would catch.
     """
-    boom = ms._METHOD_HANDLERS["tools/call"]
+    original = ms._METHOD_HANDLERS["tools/call"]
 
     async def explode(*_a, **_k):
-        raise RuntimeError("simulated backend outage")
+        raise exc
 
     ms._METHOD_HANDLERS["tools/call"] = explode
     try:
-        resp = _call("capture_lead", {"smb_id": "x"})
+        resp = _call("verify_business", {"smb_id": "s"})
     finally:
-        ms._METHOD_HANDLERS["tools/call"] = boom
+        ms._METHOD_HANDLERS["tools/call"] = original
     assert resp.get("error", {}).get("code") == ERR_INTERNAL, (
-        "a real server fault must still be reported as one")
-
-
-def test_this_file_actually_exercises_the_handler():
-    """Guard the guard.
-
-    Every assertion above passes trivially if the auth gate answers before
-    argument parsing - which is exactly what happens WITHOUT a token, and is
-    why this bug survived every anonymous probe of production. Prove the
-    no-token path really does short-circuit, so that if it ever changes, this
-    file's premise is re-examined rather than silently voided.
-    """
-    resp = asyncio.run(ms.handle_mcp_request(
-        {"jsonrpc": "2.0", "method": "tools/call", "id": 1,
-         "params": {"name": "capture_lead", "arguments": {"contact": {}}}},
-        {}))
-    text = str(resp)
-    assert "auth_required" in text or "error" in resp, (
-        "an unauthenticated write call should be refused before its arguments "
-        "are parsed - if that changed, the HEADERS above may no longer be what "
-        "makes these tests reach the parser")
+        f"{type(exc).__name__} is a SERVER fault and must stay -32603. "
+        f"Reporting it as the caller's invalid argument tells an agent never "
+        f"to retry something that may well succeed on the next call.")

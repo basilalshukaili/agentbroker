@@ -1,22 +1,32 @@
 #!/usr/bin/env python3
 """Run EVERYTHING CI runs, before committing. One command, no judgement calls.
 
-WHY THIS EXISTS. On 2026-08-29 I pushed a commit having run pytest,
-check_gates and check_pricing - and skipped check_encoding, because the change
-was to check_pricing and encoding "wasn't relevant". Eight box-drawing
-characters in a comment separator turned CI red.
+WHY THIS EXISTS. I pushed a commit having run pytest, check_gates and
+check_pricing - and skipped check_encoding, because the change was to
+check_pricing and encoding "wasn't relevant". Eight box-drawing characters in a
+comment turned CI red. That decision cannot be made correctly from inside the
+change: if I knew what my diff touched, I would not need the gates. So this
+script removes the decision.
 
-The gate was right. The mistake was deciding which gates were relevant, which
-is a decision that cannot be made correctly from inside the change: if I knew
-what my diff touched, I would not need the gates. So this script removes the
-decision. It runs the same list, in the same order, as `.github/workflows/ci.yml`.
+THE FIRST VERSION OF THIS FILE WAS A CAUTIONARY TALE ABOUT ITS OWN THESIS.
 
-THE LIST IS DERIVED FROM THE WORKFLOW, NOT COPIED FROM IT. A hand-maintained
-second copy of CI's steps drifts, and the drift is silent and in the worst
-direction: this passes, CI fails, and the script that was supposed to prevent
-that is the reason you trusted the push. The workflow file is parsed for its
-`run:` lines instead, so a stage added to CI appears here without anyone
-remembering.
+It scraped `run:` lines with a regex. Against the real workflow it found all six
+steps, so it looked correct. An external reviewer tested it against a workflow
+using other perfectly ordinary shapes and it found TWO of six:
+
+    - run: python gate.py                 MISSED  (no `name:`, so `- ` precedes `run:`)
+    - run: |\n    python gate.py          MISSED  (same, block form)
+    run: PYTHONPATH=. python gate.py      MISSED  (env prefix defeats startswith("python"))
+    run: ./scripts/run_all.sh             MISSED  (shell wrapper that runs python)
+    working-directory: edge / run: ...    FOUND but executed from the wrong directory
+
+...and then printed "all green - safe to push". A verifier that quietly narrows
+is worse than none, because it is the reason you stopped looking.
+
+So it now parses the workflow as YAML instead of guessing at its text, honours
+`working-directory`, and - the part that matters most - REPORTS EVERY STEP IT
+CANNOT RUN rather than silently dropping it. "I ran 6 of 8, here are the 2 I
+skipped and why" is a true statement. "All green" was not.
 
 Usage:
     python scripts/preflight.py          # run everything, exit 1 on any failure
@@ -25,7 +35,6 @@ Usage:
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import sys
 
@@ -33,88 +42,98 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 WORKFLOW = os.path.join(REPO, ".github", "workflows", "ci.yml")
 
-# Steps that cannot run locally, keyed by a fragment of their command. Each one
-# is named so that skipping it is a visible decision rather than an omission.
-CANNOT_RUN_LOCALLY = {
-    "pip install": "dependency install - your working env is already set up",
-    "sleep": "post-deploy wait - there is no deploy here",
-    "curl": "post-deploy smoke - runs against production after shipping",
-}
+# Steps that genuinely cannot run here. Each is matched against the command and
+# reported by name, so a skip is a visible decision rather than an omission.
+CANNOT_RUN_LOCALLY = [
+    ("pip install", "dependency install - your working env is already set up"),
+    ("sleep ", "post-deploy wait - there is no deploy here"),
+    ("curl ", "post-deploy smoke - runs against production after shipping"),
+]
 
 
-def steps_from_workflow() -> list[str]:
-    """Every `python ...` command CI runs, in workflow order."""
+def _steps(job: dict) -> list[dict]:
+    out = []
+    for step in job.get("steps") or []:
+        if not isinstance(step, dict) or "run" not in step:
+            continue
+        run = step.get("run")
+        if not isinstance(run, str):
+            continue
+        for line in run.splitlines():
+            cmd = line.strip()
+            if not cmd or cmd.startswith("#"):
+                continue
+            out.append({
+                "cmd": cmd,
+                "cwd": step.get("working-directory") or ".",
+                "job_optional": bool(step.get("continue-on-error")),
+            })
+    return out
+
+
+def collect() -> tuple[list[dict], list[str]]:
+    """(runnable steps, reasons for everything skipped)."""
+    try:
+        import yaml
+    except ImportError:
+        return [], ["PyYAML is not installed - cannot read the workflow. "
+                    "`pip install pyyaml`, or run the gates by hand."]
     try:
         with open(WORKFLOW, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError as exc:
-        print(f"cannot read {WORKFLOW}: {exc}")
-        return []
-    # BOTH FORMS, and the second one is why this is not a one-liner.
-    #
-    #   run: python check_gates.py          <- single line
-    #   run: |                              <- block
-    #     python -m pytest tests/ -q
-    #
-    # The first version of this parser only matched the single-line form. It
-    # happened to find all six steps, so it looked correct - but the moment
-    # someone wrote a step as a block (which ci.yml already does elsewhere)
-    # this would have silently stopped checking it, while still printing "all
-    # green - safe to push". A verifier that quietly narrows is worse than no
-    # verifier, because it is the reason you stopped looking.
-    found: list[str] = []
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        m = re.match(r"^(\s*)run:\s*(.*)$", line)
-        if not m:
+            wf = yaml.safe_load(fh)
+    except Exception as exc:  # noqa: BLE001
+        return [], [f"cannot parse {WORKFLOW}: {exc}"]
+
+    runnable, skipped = [], []
+    for job_name, job in (wf.get("jobs") or {}).items():
+        if not isinstance(job, dict):
             continue
-        indent, rest = m.group(1), m.group(2).strip()
-        if rest and rest not in ("|", ">", "|-", ">-"):
-            if rest.startswith("python"):
-                found.append(rest)
-            continue
-        # Block scalar: take every deeper-indented line until the block ends.
-        for body in lines[i + 1:]:
-            if body.strip() and not body.startswith(indent + " "):
-                break
-            cmd = body.strip()
-            if cmd.startswith("python"):
-                found.append(cmd)
-    # Order-preserving dedupe: the same command in two jobs is one check.
-    return list(dict.fromkeys(found))
+        # `continue-on-error` steps report but do not gate; a whole job of them
+        # (the post-deploy smoke) is not something a pre-push check should run.
+        for st in _steps(job):
+            cmd = st["cmd"]
+            why = next((w for frag, w in CANNOT_RUN_LOCALLY if frag in cmd), None)
+            if why:
+                skipped.append(f"{cmd[:56]} ({why})")
+            elif st["job_optional"]:
+                skipped.append(f"{cmd[:56]} (continue-on-error in job '{job_name}')")
+            else:
+                st["job"] = job_name
+                runnable.append(st)
+    return runnable, skipped
 
 
 def main(argv: list[str]) -> int:
-    steps = steps_from_workflow()
-    if not steps:
-        print("FOUND NO STEPS in ci.yml - this script is not verifying anything.")
-        print("That is a failure, not a pass: fix the parser or the workflow.")
+    runnable, skipped = collect()
+
+    if not runnable:
+        print("FOUND NO RUNNABLE STEPS in ci.yml - this is verifying nothing.")
+        for s in skipped:
+            print("  skipped:", s)
+        print("That is a failure, not a pass.")
         return 2
 
-    runnable = []
-    for cmd in steps:
-        skip = next((why for frag, why in CANNOT_RUN_LOCALLY.items() if frag in cmd), None)
-        if skip:
-            print(f"  skip  {cmd[:58]:58} ({skip})")
-        else:
-            runnable.append(cmd)
+    for s in skipped:
+        print(f"  skip  {s}")
 
     if "--list" in argv:
         print(f"\nwould run {len(runnable)} step(s):")
-        for c in runnable:
-            print("   ", c)
+        for st in runnable:
+            loc = "" if st["cwd"] == "." else f"   [in {st['cwd']}]"
+            print(f"    {st['cmd']}{loc}")
         return 0
 
     print(f"\nrunning {len(runnable)} step(s) from ci.yml\n")
     failed = []
-    for cmd in runnable:
-        p = subprocess.run(cmd, cwd=REPO, shell=True, capture_output=True,
+    for st in runnable:
+        cwd = os.path.join(REPO, st["cwd"]) if st["cwd"] != "." else REPO
+        p = subprocess.run(st["cmd"], cwd=cwd, shell=True, capture_output=True,
                            text=True, encoding="utf-8", errors="replace")
         tail = ((p.stdout or p.stderr).strip().splitlines() or [""])[-1]
         ok = p.returncode == 0
-        print(f"  {'ok  ' if ok else 'FAIL'} {cmd[:44]:44} {tail[:52]}")
+        print(f"  {'ok  ' if ok else 'FAIL'} {st['cmd'][:44]:44} {tail[:50]}")
         if not ok:
-            failed.append((cmd, (p.stdout or "") + (p.stderr or "")))
+            failed.append((st["cmd"], (p.stdout or "") + (p.stderr or "")))
 
     if failed:
         print(f"\n{len(failed)} step(s) FAILED - do not push:\n")
@@ -124,7 +143,10 @@ def main(argv: list[str]) -> int:
             print()
         return 1
 
-    print("\nall green - safe to push")
+    # Deliberately NOT the words "all green". This ran what it could run, and
+    # says so with a number the reader can compare against the workflow.
+    print(f"\n{len(runnable)} gating step(s) passed, {len(skipped)} not runnable "
+          f"here (listed above). Safe to push.")
     return 0
 
 

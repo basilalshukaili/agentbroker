@@ -389,6 +389,53 @@ class _ParamError(ValueError):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Safe coercion. Bad input must not reach code that raises the wrong exception.
+# ---------------------------------------------------------------------------
+#
+# Adding another `except` clause to the dispatcher was the tempting fix and the
+# wrong one. TypeError and ValueError are raised by plenty of GENUINE internal
+# faults, so catching them broadly would report our own bugs to the caller as
+# their mistake, with `retriable: false` - telling an agent never to retry a
+# transient server fault. That trade is worse than the bug.
+#
+# So the two shapes that actually failed are converted at the point of use into
+# _ParamError, which already carries the typed invalid-argument contract:
+#
+#   Model(**value)  where value is a string -> "argument after ** must be a
+#                   mapping, not str", surfaced as -32603 Internal error
+#   Enum(value)     with an unknown member  -> "'x' is not a valid MessageType"
+#
+# `send_message` already guarded its nested objects with isinstance checks; the
+# pattern simply had not been applied to the other five construction sites.
+
+
+def _as_dict(value, field: str) -> dict:
+    """A nested object argument, or a typed error naming the field."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _ParamError(
+            f"'{field}' must be a JSON object, got {type(value).__name__}. "
+            f"Check the inputSchema for this tool - nesting is exact.")
+    return value
+
+
+def _as_enum(enum_cls, value, field: str):
+    """An enum argument, or a typed error LISTING THE VALID VALUES.
+
+    Naming the options matters more than naming the error: an agent told
+    "'marketing_blast' is not a valid MessageType" has to go and fetch the
+    schema, while one told the four permitted values can fix the call now.
+    """
+    try:
+        return enum_cls(value)
+    except (ValueError, KeyError):
+        allowed = [getattr(m, "value", m) for m in enum_cls]
+        raise _ParamError(
+            f"'{field}' must be one of {allowed}, got {value!r}.") from None
+
+
 class _ToolError(Exception):
     """A TOOL-EXECUTION failure an agent can act on programmatically.
 
@@ -617,6 +664,24 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     arguments = params.get("arguments", {}) or {}
     if not name:
         raise _ParamError("Missing 'name' parameter")
+
+    # `arguments` MUST BE AN OBJECT, and this is checked before anything reads
+    # it. Every handler below does `args["x"]` or `args.get("x")`, so a JSON
+    # array or string here raised `list indices must be integers` deep in a
+    # handler and came back as -32603 "Internal error" - the server telling the
+    # caller IT was broken over a one-character mistake in their request.
+    #
+    # And it was reachable WITH NO CREDENTIALS AT ALL. The auth gate only
+    # covers the eight write tools, so all twelve read-only tools - the ones an
+    # evaluating agent or a catalogue scorer tries first - took this path
+    # anonymously. I had claimed in a commit message that only an authenticated
+    # caller could reach it; that was wrong, and an external reviewer was right
+    # to check rather than believe it.
+    if not isinstance(arguments, dict):
+        raise _ParamError(
+            f"'arguments' must be a JSON object, got "
+            f"{type(arguments).__name__}. Pass the tool's parameters as named "
+            f"fields - see the inputSchema from tools/list.")
 
     # THE CHECK THAT MAKES A NARROW DOOR REAL. A profile that lists four tools
     # but executes twenty is a wide server wearing a small sign.
@@ -1089,7 +1154,7 @@ async def _dispatch_operation(
         prospect_data = args.get("prospect", {})
         req = CaptureLeadRequest(
             smb_id=args["smb_id"],
-            prospect=ProspectData(**prospect_data),
+            prospect=ProspectData(**_as_dict(prospect_data, "prospect")),
             source=args.get("source", "agent"),
         )
         receipt = await handle_capture_lead(req)
@@ -1176,7 +1241,7 @@ async def _dispatch_operation(
             if legacy_type == "smb":
                 legacy_type = "smb_id"
             recipient = Recipient(
-                id_type=RecipientIdType(legacy_type),
+                id_type=_as_enum(RecipientIdType, legacy_type, "recipient_type"),
                 id_value=args.get("recipient_id", ""),
                 country_code=args.get("country_code"),
             )
@@ -1185,32 +1250,35 @@ async def _dispatch_operation(
             content = {"body": str(content)}
         req = SendMessageRequest(
             recipient=recipient,
-            message_type=MessageType(args.get("message_type") or "transactional"),
-            content=MessageContent(**content),
-            preferred_channel=ChannelPreference(
+            message_type=_as_enum(MessageType,
+                                  args.get("message_type") or "transactional",
+                                  "message_type"),
+            content=MessageContent(**_as_dict(content, "content")),
+            preferred_channel=_as_enum(
+                ChannelPreference,
                 args.get("preferred_channel")
                 or args.get("channel_preference")
-                or "auto"
-            ),
+                or "auto",
+                "preferred_channel"),
         )
         receipt = await handle_send_message(req)
 
     elif name == "send_transactional_confirmation":
         from core.send_transactional_confirmation import handle_send_transactional_confirmation
         from core.models import SendTransactionalConfirmationRequest
-        req = SendTransactionalConfirmationRequest(**args)
+        req = SendTransactionalConfirmationRequest(**_as_dict(args, "arguments"))
         receipt = await handle_send_transactional_confirmation(req)
 
     elif name == "handle_inbound":
         from core.handle_inbound import handle_inbound as _handle_inbound
         from core.models import HandleInboundRequest
-        req = HandleInboundRequest(**args)
+        req = HandleInboundRequest(**_as_dict(args, "arguments"))
         receipt = await _handle_inbound(req)
 
     elif name == "escalate_to_human":
         from core.escalate_to_human import handle_escalate_to_human
         from core.models import EscalateToHumanRequest
-        req = EscalateToHumanRequest(**args)
+        req = EscalateToHumanRequest(**_as_dict(args, "arguments"))
         receipt = await handle_escalate_to_human(req)
 
     elif name == "import_booking_url":
@@ -1220,7 +1288,7 @@ async def _dispatch_operation(
         vertical = None
         if args.get("vertical"):
             try:
-                vertical = Vertical(args["vertical"])
+                vertical = _as_enum(Vertical, args["vertical"], "vertical")
             except Exception:
                 vertical = None
         req = ImportRequest(

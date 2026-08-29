@@ -280,7 +280,26 @@ CDP_API_KEY_SECRET = _env("CDP_API_KEY_SECRET", "")
 # Public MCP endpoint advertised in the Bazaar discovery `resource` so agents
 # who discover a paid tool know where to connect. Defaults to the edge worker.
 PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
-X402_PUBLIC_MCP_URL = _env("X402_PUBLIC_MCP_URL", PUBLIC_BASE_URL.rstrip("/") + "/mcp")
+
+# NORMALISED ONCE, HERE, BECAUSE THREE MODULES WERE DOING IT DIFFERENTLY.
+#
+# `web/_partials.py` read the same env var and applied `.rstrip("/")` plus a
+# scheme prefix when one was missing; `agent_interface/well_known.py` read it
+# raw and did neither. So with PUBLIC_BASE_URL set scheme-less - exactly the
+# case the _partials guard exists to handle - the site footer emitted
+# `https://api.hatchloop.dev/health` while every agent-facing descriptor
+# emitted `api.hatchloop.dev/openapi.yaml`, which is not a URL an agent can
+# fetch. Two readers of one variable disagreeing about what it means is the
+# same defect as two copies of a constant.
+#
+# Both now import this value. A trailing slash produces `//health`; a missing
+# scheme produces a relative URL in a machine-readable descriptor. Neither is
+# worth re-deriving in three places.
+if PUBLIC_BASE_URL and not PUBLIC_BASE_URL.startswith(("http://", "https://")):
+    PUBLIC_BASE_URL = "https://" + PUBLIC_BASE_URL
+PUBLIC_BASE_URL = PUBLIC_BASE_URL.rstrip("/")
+
+X402_PUBLIC_MCP_URL = _env("X402_PUBLIC_MCP_URL", PUBLIC_BASE_URL + "/mcp")
 
 # ---------------------------------------------------------------------------
 # Webhook delivery

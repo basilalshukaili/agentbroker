@@ -26,16 +26,18 @@ DOMAIN = _os.environ.get(
     "https://hatchloop.dev",
 ).replace("https://", "").replace("http://", "").rstrip("/")
 # The API origin as a full absolute URL, for links to routes that ONLY the
-# origin serves (see ORIGIN_ONLY below). Same env var and same default as
-# well_known.BASE_URL - deliberately, and test_public_links_resolve.py asserts
-# the two never drift, because a footer pointing at a different host than the
-# agent descriptors would be its own kind of wrong.
-API_ORIGIN = _os.environ.get(
-    "PUBLIC_BASE_URL",
-    "https://api.hatchloop.dev",
-).rstrip("/")
-if not API_ORIGIN.startswith("http"):
-    API_ORIGIN = "https://" + API_ORIGIN
+# origin serves (see ORIGIN_ONLY below).
+#
+# THE ONE normalised value, imported rather than re-derived. This block used to
+# read PUBLIC_BASE_URL itself and normalise it; well_known.py read the same
+# variable and did not, so the two disagreed whenever it was set scheme-less.
+# Now there is nothing to disagree about, and test_public_links_resolve.py
+# asserts the two stay identical - a claim this comment previously made about
+# a test that did not exist.
+try:
+    from config import PUBLIC_BASE_URL as API_ORIGIN
+except Exception:  # noqa: BLE001 - web pages must render even if config moves
+    API_ORIGIN = "https://api.hatchloop.dev"
 # Role addresses on our own domain. These defaulted to the founder's PERSONAL
 # Gmail, which then appeared as the support and privacy contact on public
 # pages - a privacy exposure, and it does not survive him being unavailable.

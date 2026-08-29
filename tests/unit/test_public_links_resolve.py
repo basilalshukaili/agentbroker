@@ -82,7 +82,17 @@ def test_there_are_pages_to_check():
     file passes vacuously while checking zero pages. That is the exact failure
     shape this repo keeps rediscovering, so it gets its own assertion.
     """
-    assert len(PAGES) >= 4, f"only rendered {sorted(PAGES)} - the collector is broken"
+    # The threshold was >= 4 against exactly 5 collectible pages, so ONE page
+    # could start raising inside the swallowed except and vanish silently while
+    # this stayed green - and the likeliest casualty is render_home, which
+    # carries most of the __ORIGIN__ tokens. Name the pages that must be there.
+    must_have = {"render_home", "render_pricing", "render_terms",
+                 "render_privacy", "render_refund"}
+    missing = must_have - set(PAGES)
+    assert not missing, (
+        f"these pages did not render and were silently skipped: {sorted(missing)}. "
+        f"Every assertion in this file passes vacuously for a page that is not "
+        f"in PAGES.")
 
 
 @pytest.mark.parametrize("path", ORIGIN_ONLY)
@@ -132,5 +142,37 @@ def test_absolute_links_point_at_our_own_origin():
     for name, html in LIVE.items():
         for url in re.findall(r'href="(https?://[^"]+)"', html):
             host = url.split("/")[2]
-            assert host.endswith("hatchloop.dev") or host.endswith("polar.sh"), (
-                f"{name} links off-site to {host}")
+            # endswith() alone accepts evil-hatchloop.dev. Match the apex
+            # exactly or a real subdomain of it.
+            ok = (host == "hatchloop.dev" or host.endswith(".hatchloop.dev")
+                  or host == "polar.sh" or host.endswith(".polar.sh"))
+            assert ok, f"{name} links off-site to {host}"
+
+
+def test_the_site_and_the_agent_descriptors_agree_on_the_origin():
+    """One env var, one meaning.
+
+    `web/_partials.py` and `agent_interface/well_known.py` both need the API
+    origin. They used to read PUBLIC_BASE_URL separately: _partials stripped a
+    trailing slash and prepended a scheme when one was missing, well_known did
+    neither. Set PUBLIC_BASE_URL scheme-less - exactly the case the _partials
+    handling exists for - and the footer emitted
+    `https://api.hatchloop.dev/health` while every machine-readable descriptor
+    emitted `api.hatchloop.dev/openapi.yaml`, which no agent can fetch.
+
+    A comment in _partials.py claimed THIS FILE already asserted they never
+    drift. It did not. Both now import config.PUBLIC_BASE_URL, and this is the
+    assertion that comment was describing.
+    """
+    from agent_interface.well_known import BASE_URL
+    from config import PUBLIC_BASE_URL
+
+    assert API_ORIGIN == BASE_URL, (
+        f"the website says {API_ORIGIN} and the agent descriptors say "
+        f"{BASE_URL} - one env var must not have two meanings")
+    assert API_ORIGIN == PUBLIC_BASE_URL, (
+        "both must be the canonical config value, not a re-derivation of it")
+    assert API_ORIGIN.startswith("https://"), (
+        f"{API_ORIGIN} has no scheme - descriptors would emit relative URLs")
+    assert not API_ORIGIN.endswith("/"), (
+        f"{API_ORIGIN} ends in a slash - every link becomes //path")

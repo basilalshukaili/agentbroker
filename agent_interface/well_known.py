@@ -27,8 +27,12 @@ from agent_interface import profiles
 # Base URLs (override via env in production)
 # ---------------------------------------------------------------------------
 
-import os
-BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
+import os  # noqa: F401 - other helpers in this module still read env vars
+# THE ONE normalised value (see config.PUBLIC_BASE_URL). This used to read the
+# env var directly and skip the scheme/trailing-slash handling that
+# web/_partials.py applied, so a scheme-less PUBLIC_BASE_URL made every
+# descriptor here emit URLs an agent cannot fetch while the website was fine.
+from config import PUBLIC_BASE_URL as BASE_URL
 
 
 def _tool_names() -> list[str]:

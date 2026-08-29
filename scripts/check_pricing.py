@@ -57,6 +57,24 @@ _SCAN_FILES += sorted(
     p for p in (_AGENTBROKER_DIR / "docs").rglob("*.md")
     if p.is_file()
 )
+
+# THE EDGE WORKER SOURCES, for the same reason and with a live example.
+#
+# hatchloop.dev is served by a Cloudflare worker in front of the origin, and it
+# generates its own copy. On 2026-08-29 its free-tier quota response told every
+# agent that hit the cap: "Upgrade to unlimited at <hardcoded Polar link>" -
+# a monthly subscription that docs/PRICING.md says was never in effect at any
+# price. It had been live for weeks and this guard could not see it, because
+# edge/src was not on the hand-typed list above.
+#
+# dist*/ is EXCLUDED deliberately: those are build outputs. Flagging a stale
+# claim in a bundle nobody edits produces a violation that cannot be fixed by
+# editing the file it names, which is how a guard gets marked noisy and then
+# ignored. Fix the source; the bundle follows on the next deploy.
+_SCAN_FILES += sorted(
+    p for p in (_AGENTBROKER_DIR / "edge" / "src").rglob("*.ts")
+    if p.is_file()
+)
 _SCAN_FILES = list(dict.fromkeys(_SCAN_FILES))
 
 # ---------------------------------------------------------------------------
@@ -106,6 +124,31 @@ _BANNED: list[tuple[str, str]] = [
         r"90[\s-]day\s+unlimited",
         "BANNED: retired '$9/90d unlimited' plan language"
     ),
+    # WE SELL CREDIT PACKAGES. There is no subscription at any price and there
+    # never was - docs/PRICING.md says so in a section written specifically to
+    # correct an earlier version of that file. The patterns above were all
+    # anchored to the exact retired WORDINGS, so the edge worker's "Upgrade to
+    # unlimited at <link>" walked straight past every one of them and shipped
+    # to every rate-limited agent for weeks.
+    #
+    # These match the CLAIM rather than a phrasing of it.
+    (
+        r"(?i)upgrade\s+to\s+unlimited",
+        "BANNED: 'upgrade to unlimited' - we sell credit packages, not an "
+        "unlimited tier. Link https://hatchloop.dev/pricing instead."
+    ),
+    (
+        r"(?i)\$\d+\s*/\s*mo(?:nth)?\s+subscription",
+        "BANNED: names a monthly subscription. No subscription tier at any "
+        "price has ever been in effect (docs/PRICING.md)."
+    ),
+    (
+        r"(?i)buy\.polar\.sh/polar_cl_",
+        "BANNED: a hardcoded Polar checkout link. It cannot track a package "
+        "change, so it goes stale silently and points paying customers at a "
+        "retired product. Link https://hatchloop.dev/pricing, which is "
+        "generated from the live packages."
+    ),
 ]
 
 # Pre-compile patterns (case-insensitive, dotall).
@@ -125,9 +168,22 @@ def _check_file(path: Path) -> list[str]:
     except Exception as exc:
         return [f"  WARN: cannot read {path}: {exc}"]
 
+    # In CODE, skip comment lines. A comment saying "we must never claim X"
+    # is the opposite of claiming X, and flagging it makes the guard fire on
+    # the very note explaining the ban - which is how this checker first
+    # reported three violations that were all its own documentation.
+    #
+    # NOT in Markdown or JSON: `#` starts a heading there, and a banned claim
+    # in a heading is exactly the kind that gets read.
+    is_code = path.suffix.lower() in {".py", ".ts", ".js", ".tsx", ".mjs"}
+
     hits: list[str] = []
     lines = text.splitlines()
     for lineno, line in enumerate(lines, start=1):
+        if is_code:
+            st = line.lstrip()
+            if st.startswith(("#", "//", "*", "/*")):
+                continue
         for pattern, reason in _COMPILED:
             if pattern.search(line):
                 hits.append(
