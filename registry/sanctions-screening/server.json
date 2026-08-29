@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.hatchloop/sanctions-screening",
   "title": "Sanctions Screening",
-  "description": "Sanctions screening (OFAC/EU/UN/UK) and company verification. Free, no key, no signup.",
+  "description": "Sanctions screening against OFAC SDN, company registry verification and trade-restriction checks.",
   "websiteUrl": "https://hatchloop.dev/agent-broker/",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.2.8",
   "remotes": [
     {
       "type": "streamable-http",
