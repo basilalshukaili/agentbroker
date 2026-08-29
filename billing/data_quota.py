@@ -74,15 +74,29 @@ def _today_utc() -> str:
 # modules reading one variable and disagreeing about what it means. There is
 # one source now, and a test asserts these match the advertised figures.
 def _limits() -> tuple[int, int]:
-    """(free_key_limit, anonymous_limit) from the single source of truth."""
+    """(free_key_limit, anonymous_limit).
+
+    The env var still wins AT CALL TIME, and config supplies the default. That
+    ordering is not incidental:
+
+      * reading config alone would freeze the limits at import, which silently
+        broke every test that raises or lowers a quota via monkeypatched env to
+        exercise the exhaustion path - seven of them, and they failed only when
+        run together, so a single-test rerun looked fine;
+      * hardcoding the default here is the original bug.
+
+    So: env for runtime control, config for the value nobody has overridden.
+    """
     try:
         import config
-        return int(config.FREE_DATA_QUOTA_PER_DAY), int(config.ANON_DATA_QUOTA_PER_DAY)
+        free_default = int(config.FREE_DATA_QUOTA_PER_DAY)
+        anon_default = int(config.ANON_DATA_QUOTA_PER_DAY)
     except Exception:  # noqa: BLE001 - never let a config import break billing
-        # Match config.py's defaults, not the retired ones. A fallback that
-        # silently reverts a published price is how this bug happened.
-        return (int(os.getenv("FREE_DATA_QUOTA_PER_DAY", "500")),
-                int(os.getenv("ANON_DATA_QUOTA_PER_DAY", "100")))
+        # Matches config.py's defaults. A fallback that silently reverts a
+        # published number is exactly how this bug happened in the first place.
+        free_default, anon_default = 500, 100
+    return (int(os.getenv("FREE_DATA_QUOTA_PER_DAY", str(free_default))),
+            int(os.getenv("ANON_DATA_QUOTA_PER_DAY", str(anon_default))))
 
 
 def _get_free_limit() -> int:
