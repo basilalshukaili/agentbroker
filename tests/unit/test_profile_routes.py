@@ -141,6 +141,44 @@ def test_every_profile_is_reachable_on_the_canonical_host(profile):
         f"and 404 on hatchloop.dev, which is the host every listing names")
 
 
+def test_the_doors_are_advertised_where_an_agent_actually_looks():
+    """A door nothing points at is a door in a field.
+
+    We deliberately do NOT publish these as separate MCP registry entries - the
+    registry's moderation policy names "the same server submitted multiple times
+    under different names" as spam, and these share a backend. So the discovery
+    descriptor is the honest lever: an agent reading it has already found us,
+    and telling it about a cheaper door costs it nothing.
+    """
+    from agent_interface.well_known import get_mcp_descriptor
+    eps = get_mcp_descriptor().get("capability_endpoints", [])
+    assert eps, "the capability doors are not advertised in the MCP descriptor"
+    named = {e["name"] for e in eps}
+    assert named == set(profiles.PROFILES), (
+        f"descriptor advertises {named}, profiles define {set(profiles.PROFILES)}")
+
+
+def test_the_advertised_tool_counts_are_derived_not_typed():
+    """The two hardcoded fields next to this one were BOTH false on the live
+    host for weeks - "16 operations" when tools/list returned 20, and "all tools
+    are free" when writes spend credits. A hand-maintained count here would rot
+    the same way the first time a tool moves between doors."""
+    from agent_interface.well_known import get_mcp_descriptor
+    for e in get_mcp_descriptor()["capability_endpoints"]:
+        assert e["tool_count"] == len(profiles.tools_for(e["name"])), (
+            f"{e['name']} advertises {e['tool_count']} tools but serves "
+            f"{len(profiles.tools_for(e['name']))}")
+
+
+def test_the_advertised_endpoints_are_the_routes_that_exist():
+    """An advertised URL that 404s is worse than no advertisement: the agent
+    concludes we are broken rather than that we lack a feature - which is
+    exactly what PulseMCP's stale link did to us."""
+    from agent_interface.well_known import get_mcp_descriptor
+    for e in get_mcp_descriptor()["capability_endpoints"]:
+        assert e["endpoint"].endswith(f"/mcp/{e['name']}"), e["endpoint"]
+
+
 def test_the_error_names_the_alternatives():
     """An agent probing capability names should be told what DOES exist rather
     than left guessing - the whole point of these doors is discovery."""

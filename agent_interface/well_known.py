@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from config import SERVICE_VERSION
 from agent_interface.manifest_server import get_full_manifest
+from agent_interface import profiles
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +345,34 @@ def get_mcp_descriptor() -> dict:
             "header": "X-Agent-Identity",
             "scheme": "bearer",
         },
+        # NARROWER ENDPOINTS, advertised where an agent already looks.
+        #
+        # These exist because tools/list on the full server costs ~11,000
+        # tokens, and an agent that came to screen one company against sanctions
+        # needs about 1,000 of them. Each endpoint serves the SAME engine
+        # through a smaller door and refuses everything it does not list.
+        #
+        # DERIVED FROM profiles.PROFILES, never typed. The pair of hardcoded
+        # fields above were both false on the live host for weeks - "16
+        # operations" when tools/list returned 20, and "all tools are free" when
+        # writes spend credits. A hand-maintained list here would rot the same
+        # way the moment a profile is added or a tool moves between them.
+        #
+        # Deliberately advertised HERE rather than as separate MCP registry
+        # entries: the registry's moderation policy names "the same server
+        # submitted multiple times under different names" as spam, and these
+        # share a backend. This surface is ours, an agent reading it has already
+        # found us, and pointing it at a cheaper door is a courtesy rather than
+        # a second bite at discovery.
+        "capability_endpoints": [
+            {
+                "name": pid,
+                "endpoint": f"{BASE_URL}/mcp/{pid}",
+                "description": spec["description"],
+                "tool_count": len(profiles.tools_for(pid)),
+            }
+            for pid, spec in sorted(profiles.PROFILES.items())
+        ],
     }
 
 
