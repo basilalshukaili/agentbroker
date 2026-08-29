@@ -117,6 +117,30 @@ def test_every_declared_profile_is_routable(profile):
     assert "/" not in profile, f"{profile} contains a slash and cannot be a path segment"
 
 
+@pytest.mark.parametrize("profile", sorted(profiles.PROFILES))
+def test_every_profile_is_reachable_on_the_canonical_host(profile):
+    """A door live on the origin and 404 on hatchloop.dev is not a door.
+
+    The registry entries, the README examples and every listing point at
+    hatchloop.dev, which is a Vercel app that REWRITES /mcp/* through to the
+    edge worker. A profile with no rewrite there resolves to the marketing SPA
+    and returns 404 to any agent that follows a listing - while every test here
+    and every check against the origin says it works.
+
+    That is the same failure as the missing route, one layer out, and it would
+    be invisible from inside this repo. Hence a test in the Python suite that
+    reads the Next config: the two things have to be edited together, so they
+    should fail together.
+    """
+    cfg_path = os.path.join(os.path.dirname(ROOT), "web_hatchloop_v2", "next.config.ts")
+    if not os.path.exists(cfg_path):
+        pytest.skip("web_hatchloop_v2 not present in this checkout")
+    cfg = open(cfg_path, encoding="utf-8", errors="replace").read()
+    assert f'"/mcp/{profile}"' in cfg, (
+        f"{profile} has no rewrite in next.config.ts - it is live on the origin "
+        f"and 404 on hatchloop.dev, which is the host every listing names")
+
+
 def test_the_error_names_the_alternatives():
     """An agent probing capability names should be told what DOES exist rather
     than left guessing - the whole point of these doors is discovery."""

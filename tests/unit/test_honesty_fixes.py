@@ -183,7 +183,22 @@ class TestAsyncRunnerNoVoiceStub:
             def get(self, smb_id):
                 return smb if smb_id == "smb_voice_test" else None
 
-        with patch("reliability.async_runner.get_directory", return_value=_FakeDirectory()), \
+        # PATCH THE SOURCE MODULE, not `reliability.async_runner`.
+        #
+        # `enqueue_booking` imports get_directory INSIDE the function body
+        # (async_runner.py, in the `from supply.smb_directory import
+        # get_directory` line), so it is never a module attribute of
+        # async_runner - and mock.patch raises AttributeError before the test
+        # body runs. The local import resolves the name at CALL time, so
+        # patching where it is DEFINED is both correct and what actually works.
+        #
+        # THIS TEST HAD NEVER RUN. Celery is not installed on the founder's
+        # laptop, so it skipped there every single time; it only executed once a
+        # second machine installed requirements.txt in full and reported
+        # 815 passed / 1 failed against the same commit that reads 816 passed
+        # here. Production has Celery, so this test was guarding a LIVE path
+        # while being broken - the skip made it look green.
+        with patch("supply.smb_directory.get_directory", return_value=_FakeDirectory()), \
              patch("reliability.async_runner._fire_webhook"):
             # Run the inner logic directly; Celery .delay is not called
             from reliability import async_runner as ar
@@ -191,8 +206,14 @@ class TestAsyncRunnerNoVoiceStub:
                 pytest.skip("Celery not available")
 
             loop = asyncio.new_event_loop()
+            # NO explicit `self`. The task is declared with bind=True, and
+            # Celery's `__wrapped__` already carries the task instance - passing
+            # a MagicMock for self made this a 7-argument call to a 6-argument
+            # function. That was the SECOND bug in this test, underneath the
+            # patch target, which is how you can tell it had never been run:
+            # one broken line can be an oversight, two stacked means nobody ever
+            # got past the first.
             result = ar.enqueue_booking.__wrapped__(
-                MagicMock(),  # self (task)
                 op_id,
                 {"smb_id": "smb_voice_test", "action": "book"},
                 "smb_voice_test",
