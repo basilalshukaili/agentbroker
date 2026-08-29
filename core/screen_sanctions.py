@@ -381,7 +381,7 @@ async def _call_opensanctions(
             return [], sources_queried, sources_unavailable
 
         if resp.status_code == 429:
-            sources_unavailable.append("OpenSanctions (rate-limited; set OPENSANCTIONS_API_KEY)")
+            sources_unavailable.append("OpenSanctions (rate-limited or quota exhausted -- EU/UN/UK lists NOT screened on this call)")
             return [], sources_queried, sources_unavailable
 
         if resp.status_code != 200:
@@ -672,6 +672,18 @@ async def handle_screen_sanctions(
     merged: list[dict] = []
     seen_keys: set[tuple[str, str]] = set()
 
+    # TAG EACH MATCH WITH WHICH MATCHER FOUND IT. Without this the two are
+    # indistinguishable downstream, and they must not be treated alike:
+    # `os_matches` come from OpenSanctions' CALIBRATED scorer, which knows that
+    # "Ali Mohammed" is a common name and "Zarubezhneft" is not. `ofac_matches`
+    # come from our own word-overlap function, which has no frequency data at
+    # all and scores "Star Trading LLC" against "Star Dragon Corporation" at
+    # 1.00. One of those numbers is evidence; the other is a coincidence.
+    for m in os_matches:
+        m["_matcher"] = "opensanctions_calibrated"
+    for m in ofac_matches:
+        m["_matcher"] = "local_word_overlap"
+
     for m in os_matches + ofac_matches:
         key = (_normalize_name(m.get("name", "")), m.get("list", ""))
         if key not in seen_keys:
@@ -732,16 +744,50 @@ async def handle_screen_sanctions(
     # false unless the names are effectively identical. Under-claiming costs
     # the caller one lookup. Over-claiming tells someone that Maria Garcia is a
     # narcotics trafficker.
-    authoritative_ran = any("OpenSanctions" in s and "rate-limited" not in s
+    # THIS PREDICATE WAS ALWAYS FALSE, AND THAT ACCIDENT WAS THE ONLY THING
+    # KEEPING THE TOOL HONEST.
+    #
+    # `all_sources_queried` holds URLs - "https://api.opensanctions.org/..." -
+    # and the test was case-SENSITIVE for "OpenSanctions", which never appears
+    # in a lowercase URL. So `authoritative_ran` was False on every call,
+    # `degraded` was True on every call, and the strict token-set filter below
+    # ran on every call. The tool behaved well for a reason nobody intended.
+    #
+    # That made it a booby trap: the obvious one-line fix to the casing would
+    # have silently switched the filter OFF whenever OpenSanctions answered,
+    # exposing raw word-overlap scores as findings. A safety that depends on a
+    # bug is not a safety.
+    #
+    # So: the predicate is correct now (it means what it says), AND the filter
+    # no longer depends on it - see below.
+    authoritative_ran = any("opensanctions" in s.lower()
+                            and "rate-limited" not in s
                             and "error" not in s
                             for s in all_sources_queried)
     degraded = bool(merged) and not authoritative_ran
 
     unverified: list = []
-    if degraded:
+    # THE FILTER NOW APPLIES TO OUR OWN MATCHER ALWAYS, not only when degraded.
+    #
+    # It used to run only under `degraded`, which was accidentally always true.
+    # Tie it to the thing that actually justifies it instead: a match found by
+    # OUR word-overlap function has no frequency calibration behind it and must
+    # never be presented as a finding on a subset overlap - whether or not
+    # OpenSanctions also answered on this call.
+    #
+    # Calibrated matches from the OpenSanctions API pass through on their own
+    # score, because that score means something. This is the whole distinction
+    # the `_matcher` tag was added to preserve.
+    _needs_strict = [m for m in merged
+                     if m.get("_matcher") == "local_word_overlap"]
+    if degraded or _needs_strict:
         q_set = set(_normalize_name(name_clean).split())
         confident, possible = [], []
         for m in merged:
+            # A calibrated match is evidence on its own; do not re-filter it.
+            if m.get("_matcher") == "opensanctions_calibrated" and not degraded:
+                confident.append(m)
+                continue
             # SAME TOKEN SET, order-insensitive. Sanctions lists write names in
             # every order - "Kim Jong Un" is listed as "Jong Un Kim" - so exact
             # string equality misses real entities, while a subset ("Rosneft"
