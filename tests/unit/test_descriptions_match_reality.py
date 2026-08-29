@@ -115,3 +115,98 @@ def test_sample_results_are_named_as_sample_in_the_human_message():
         "cannot, while the directory is mostly sample data")
     assert "is_demo" in src, (
         "the human_message does not distinguish sample data from real results")
+
+
+# ---------------------------------------------------------------------------
+# THE SURFACE AGENTS ACTUALLY READ
+# ---------------------------------------------------------------------------
+#
+# Everything above checks manifest/manifest.json - the ORIGIN's descriptions.
+# That file was honest and these tests passed, while the canonical endpoint
+# every agent connects to served the opposite:
+#
+#     find_business    origin: says the network is small and partly sample data
+#                      edge:   "curated, verified, transactable businesses"
+#     verify_business  origin: "directory lookup"
+#                      edge:   "Performs a live capability probe"
+#
+# hatchloop.dev serves initialize and tools/list from EMBEDDED SNAPSHOTS in the
+# Cloudflare worker. They are generated copies, and a generated copy that
+# nothing re-checks is just a second source of truth with a longer fuse. A
+# buyer evaluating us read the stale one, because it is the only one on the
+# marketing page.
+#
+# So the honesty rules are now applied to the snapshots too. If they drift,
+# the build fails and `python scripts/refresh_edge_snapshots.py` is the fix.
+
+_SNAPSHOT_FILES = [
+    os.path.join(ROOT, "edge", "src", "snapshots", n)
+    for n in ("mcp-tools-list.json", "agents.json", "openai-tools.json",
+              "anthropic-tools.json", "manifest.json")
+]
+
+
+def _snapshot_descriptions():
+    """(file, tool_name, description) for every tool in every snapshot."""
+    out = []
+    for path in _SNAPSHOT_FILES:
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            try:
+                blob = json.load(fh)
+            except Exception:  # noqa: BLE001
+                continue
+        stack, seen = [blob], 0
+        while stack and seen < 5000:
+            node = stack.pop()
+            seen += 1
+            if isinstance(node, dict):
+                nm, ds = node.get("name"), node.get("description")
+                if isinstance(nm, str) and isinstance(ds, str):
+                    out.append((os.path.basename(path), nm, ds))
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    return out
+
+
+SNAPSHOT_DESCRIPTIONS = _snapshot_descriptions()
+
+
+def test_the_snapshots_were_actually_read():
+    """Guard the guard: an empty list would pass every test below."""
+    assert len(SNAPSHOT_DESCRIPTIONS) >= 20, (
+        f"only found {len(SNAPSHOT_DESCRIPTIONS)} snapshot description(s) - "
+        f"the collector is broken, and the tests below prove nothing")
+
+
+@pytest.mark.parametrize("banned,why", [
+    ("curated, verified, transactable",
+     "the supply network is small and largely [DEMO] sample data"),
+    ("live capability probe",
+     "verify_business does a directory lookup; it contacts nobody"),
+    ("guaranteed delivery",
+     "no channel we operate guarantees delivery"),
+])
+def test_snapshots_do_not_carry_retired_overclaims(banned, why):
+    hits = [f"{f}:{n}" for f, n, d in SNAPSHOT_DESCRIPTIONS if banned in d]
+    assert not hits, (
+        f"{hits} still claim {banned!r} - {why}. The origin manifest was "
+        f"corrected but the snapshot was not, so hatchloop.dev serves the old "
+        f"text to every agent. Run scripts/refresh_edge_snapshots.py.")
+
+
+def test_snapshot_sanctions_claim_matches_the_origin():
+    """The conditional in the sanctions description must survive the copy.
+
+    OpenSanctions is queried only when a key is configured. Production has no
+    key, so an unconditional "queries OpenSanctions ... 40+ lists" tells an EU
+    buyer their obligation was met by a screen that never touched an EU list.
+    """
+    for f, n, d in SNAPSHOT_DESCRIPTIONS:
+        if n != "screen_sanctions":
+            continue
+        assert "ONLY when" in d or "only when" in d, (
+            f"{f} describes OpenSanctions as unconditional. It is not: without "
+            f"a configured key the screen is OFAC SDN alone.")

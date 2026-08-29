@@ -28,7 +28,7 @@
     {
       "id": "find_business",
       "name": "Find Business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate SMBs from the verified supply network. Returns only curated, verified, transactable businesses — not raw directory results.",
+      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
       "tags": [
         "sync",
         "read_only"
@@ -47,7 +47,7 @@
     {
       "id": "verify_business",
       "name": "Verify Business",
-      "description": "Confirm that an SMB is real, currently operating, and capable of the requested service. Performs a live capability probe against the business's channel.",
+      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
       "tags": [
         "sync",
         "read_only"
@@ -124,7 +124,7 @@
     {
       "id": "send_transactional_confirmation",
       "name": "Send Transactional Confirmation",
-      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Guaranteed delivery via redundant channels.",
+      "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen.",
       "tags": [
         "sync_fast",
         "write",
@@ -231,7 +231,7 @@
     {
       "id": "self_test",
       "name": "Self Test",
-      "description": "Live capability probe that verifies the service is healthy, each claimed operation is reachable, and supply network size is current. Use to verify integration before production use.",
+      "description": "Service health probe: runs 6 internal checks and reports how many passed. Confirms the server is up and responding - it does NOT probe each tool individually. Use to verify connectivity before production use.",
       "tags": [
         "sync"
       ],
@@ -339,7 +339,7 @@
     {
       "id": "screen_sanctions",
       "name": "Screen Sanctions",
-      "description": "Free, live screening of a name or entity against official sanctions and watchlists. Queries OpenSanctions (aggregates OFAC SDN, EU Consolidated Financial Sanctions, UN Security Council, UK HMT, and 40+ official lists) plus the OFAC SDN list directly from the US Treasury. Returns matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.",
+      "description": "Free screening of a name or entity against official sanctions and watchlists. ALWAYS queries the OFAC SDN list directly from the US Treasury. ADDITIONALLY queries OpenSanctions (EU Consolidated, UN Security Council, UK HMT and 40+ lists) ONLY when this deployment has an OpenSanctions key configured and its quota is not exhausted -- otherwise the result is OFAC SDN alone and reason_code is 'partial_screening', never 'clear'. Check lists_screened and sources_unavailable on every response: a non-US obligation is NOT met by a US-only screen. Returns matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.",
       "tags": [
         "sync"
       ],
