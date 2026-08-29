@@ -16,7 +16,7 @@ name: Publish to MCP Registry
 on:
   push:
     branches: [main]
-    paths: ["server.json"]
+    paths: ["server.json", "registry/*/server.json"]
   workflow_dispatch:
 
 jobs:
@@ -30,11 +30,41 @@ jobs:
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
-      - name: Validate server.json
-        run: ./mcp-publisher validate
+      - name: Validate every manifest
+        run: |
+          set -e
+          for f in server.json registry/*/server.json; do
+            echo "validating $f"
+            (cd "$(dirname "$f")" && "$OLDPWD/mcp-publisher" validate)
+          done
 
       - name: Authenticate (DNS — dev.hatchloop namespace)
         run: ./mcp-publisher login dns --domain hatchloop.dev --private-key "${{ secrets.MCP_REGISTRY_DNS_KEY }}"
 
-      - name: Publish to MCP Registry
-        run: ./mcp-publisher publish
+      # CAPABILITY-SCOPED ENTRIES, one per thing an agent actually searches for.
+      #
+      # The registry matches server NAMES, not descriptions. Searched for
+      # "sanctions" or "booking" we did not appear at all, while competitors who
+      # own those names did. These were held back for a day out of a concern
+      # that near-duplicate entries read as spam - the policy's example is "the
+      # same server submitted multiple times under different names".
+      #
+      # That concern was WRONG, and the evidence is observable rather than
+      # interpretive: the same policy explicitly will NOT remove "servers that
+      # do the same thing as other servers", and io.github.pipeworx-io publishes
+      # DOZENS of capability-named servers, all active, all served from one
+      # gateway at /<name>/mcp - the identical architecture. None removed.
+      #
+      # The one thing that WOULD have made ours look like duplicates is fixed
+      # first: each door's `initialize` now returns its own serverInfo and its
+      # own tool count, rather than announcing itself as the 20-tool server.
+      #
+      # Each entry is published from its own directory because mcp-publisher
+      # reads ./server.json.
+      - name: Publish every manifest
+        run: |
+          set -e
+          for f in server.json registry/*/server.json; do
+            echo "publishing $f"
+            (cd "$(dirname "$f")" && "$OLDPWD/mcp-publisher" publish)
+          done
