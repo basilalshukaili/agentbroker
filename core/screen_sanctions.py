@@ -111,18 +111,105 @@ def _normalize_name(name: str) -> str:
     return " ".join(cleaned.split())
 
 
-def _word_match_score(query: str, candidate: str) -> float:
-    """Compute word-overlap score between normalized query and candidate name.
+# Words that carry NO identifying information about a company.
+#
+# MEASURED FALSE POSITIVE (2026-08-29). Screening the invented name "Acme
+# Trading LLC" returned "MATCH FOUND ... 'ONCU Trading L.L.C.' on OFAC-SDN
+# (score=0.67, program=US-IRAN)". OpenSanctions itself returns ZERO results for
+# "Acme Trading" - we manufactured that hit.
+#
+# The arithmetic: {acme, trading, llc} vs {oncu, trading, llc} overlaps on
+# `trading` and `llc`, which is 2 of 3 words = 0.67, comfortably over the 0.60
+# threshold. The two matching tokens were a generic activity word and a legal
+# form. NOTHING about the actual identity matched.
+#
+# This is the worst failure mode a compliance tool has. A false negative lets
+# one bad actor through; a false positive that fires on "<anything> Trading LLC"
+# tells an agent that an ordinary business appears on a US-Iran sanctions
+# programme - and an agent acting on that may refuse a legitimate customer.
+# Being wrong in that direction, at scale, is how a screening tool becomes
+# worse than no screening tool.
+#
+# So these words may still APPEAR in a name; they simply cannot be what a match
+# is made of.
+_GENERIC_NAME_WORDS = frozenset({
+    # legal forms
+    "llc", "l", "c", "ltd", "limited", "inc", "incorporated", "corp",
+    "corporation", "co", "company", "plc", "gmbh", "ag", "sa", "sas", "sarl",
+    "bv", "nv", "ab", "as", "oy", "kft", "srl", "spa", "pte", "pty", "kk",
+    "llp", "lp", "est", "establishment", "fze", "fzc", "fzco", "wll", "psc",
+    # RUSSIAN / CIS LEGAL FORMS - the most load-bearing entries in this set.
+    #
+    # Without them, "Zarubezhneft" vs "Zarubezhneft OAO" scored 0.50 and fell
+    # under the 0.60 threshold: one distinctive word against {distinctive,
+    # legal-form}. Russian and CIS entities are among the most heavily
+    # sanctioned in the world, so leaving their legal forms as "distinctive"
+    # would have turned a false-positive fix into a FALSE-NEGATIVE generator
+    # aimed squarely at the entities that matter most. Caught only by testing
+    # a real sanctioned name against its own registered form.
+    "oao", "zao", "ooo", "pao", "ao", "jsc", "ojsc", "cjsc", "pjsc", "joint",
+    "stock", "fgup", "gup", "mup", "nko", "too", "chp", "ip",
+    # other common forms seen on sanctions lists
+    "bhd", "sdn", "tbk", "pt", "cv", "kg", "ohg", "se", "scs", "snc",
+    "eurl", "sasu", "aps", "asa", "oyj", "doo", "dooel", "ad", "ead",
+    # generic descriptors
+    "trading", "trade", "group", "holding", "holdings", "international",
+    "enterprise", "enterprises", "services", "service", "general", "global",
+    "industries", "industrial", "commercial", "business", "solutions",
+    "partners", "associates", "ventures", "investment", "investments",
+    "development", "projects", "contracting", "supplies", "supply", "export",
+    "import", "exports", "imports", "and", "of", "the", "for",
+})
 
-    score = |query_words & candidate_words| / max(|query_words|, |candidate_words|)
-    Returns 0.0-1.0. Higher = better match.
+
+def _word_match_score(query: str, candidate: str) -> float:
+    """Word-overlap score, computed on DISTINCTIVE words only.
+
+    score = |distinctive overlap| / max(|distinctive query|, |distinctive candidate|)
+
+    A name is identified by what is unusual about it. Two companies sharing
+    "Trading" and "LLC" have nothing in common; two sharing "Zarubezh" do.
+
+    If either side has no distinctive words at all (a name made entirely of
+    generic terms, e.g. "General Trading Company"), fall back to the full word
+    sets rather than dividing by zero - such a name genuinely cannot be
+    discriminated on, and the honest behaviour is to score it as the plain
+    overlap and let the threshold and the human caveat do their work.
     """
-    q_words = set(_normalize_name(query).split())
-    c_words = set(_normalize_name(candidate).split())
-    if not q_words or not c_words:
+    q_all = set(_normalize_name(query).split())
+    c_all = set(_normalize_name(candidate).split())
+    if not q_all or not c_all:
         return 0.0
-    intersection = q_words & c_words
-    return len(intersection) / max(len(q_words), len(c_words))
+
+    q_words = q_all - _GENERIC_NAME_WORDS
+    c_words = c_all - _GENERIC_NAME_WORDS
+    if not q_words or not c_words:
+        q_words, c_words = q_all, c_all
+
+    overlap = len(q_words & c_words)
+    if not overlap:
+        return 0.0
+
+    # HARMONIC MEAN of coverage in both directions, not a single ratio. The
+    # denominator choice is not cosmetic here - it decides which real entities
+    # we miss, so all three were measured against known sanctioned names:
+    #
+    #   max(): penalises a SHORT query against a long official name. "Rosneft"
+    #          vs "OJSC Rosneft Oil Company" scored 0.50 and was MISSED. So
+    #          were Sberbank and a partial personal name. False negatives on
+    #          household-name sanctioned entities - unacceptable.
+    #
+    #   min(): fixes those, but lets a candidate whose only distinctive word is
+    #          a PLACE match anything from that place - "Muscat Coffee House"
+    #          vs "Muscat Trading LLC" scored 1.00. Trades misses for noise.
+    #
+    #   F1:    requires the overlap to be substantial from BOTH sides. Every
+    #          case above lands correctly: Rosneft/Sberbank/Ahmed Hassan match
+    #          at 0.67, Muscat/Bright Star/Al Noor reject at 0.50, and generic-
+    #          only pairs score 0.00.
+    precision = overlap / len(c_words)   # how much of the LISTED name we hit
+    recall = overlap / len(q_words)      # how much of the QUERY was found
+    return 2 * precision * recall / (precision + recall)
 
 
 def _dataset_id_to_list_name(dataset_id: str) -> str:
