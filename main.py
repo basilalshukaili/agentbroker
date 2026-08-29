@@ -1272,14 +1272,44 @@ from web.pages import (
 _PAGE_CACHE_HEADERS = {"Cache-Control": "public, max-age=300, s-maxage=300"}
 
 
-@app.get("/", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+# THE LEGACY STOREFRONT IS RETIRED, and this is a deletion rather than an edit.
+#
+# api.hatchloop.dev served a second, older human storefront alongside the real
+# site, and it had drifted into being the most dishonest thing this company
+# published:
+#
+#   * a price list for products that DO NOT EXIST - "Developer $49 / 10,000 ops
+#     / 99.0% SLA", "Business $499 / 100,000 ops / 99.5%", "Enterprise 99.9%" -
+#     with invented service-level guarantees, next to our own docs saying "we
+#     do not have a support SLA";
+#   * three different tool counts on one page (19, 19, 13; the real number is
+#     20);
+#   * per-operation prices contradicting billing/pricing.py, including charging
+#     for tools that are free;
+#   * "self_test - Live capability probe", the exact phrase this company's own
+#     honesty audit had already condemned;
+#   * "<50ms p50 latency, edge-served globally" from a Render origin;
+#   * PayPal and SEPA payment methods that Polar does not offer.
+#
+# Found by an external review of the public surfaces. Every one of those was
+# being served to buyers today.
+#
+# Redirecting rather than repairing, because maintaining two storefronts is
+# what produced the drift: one of them was always going to rot, and the rotten
+# one is not the site we link from every listing. hatchloop.dev is canonical;
+# this origin keeps only its machine surfaces (/docs, /health, /.well-known/*,
+# /manifest) and the legal pages that agents and Polar fetch directly.
+_SITE = "https://hatchloop.dev"
+
+
+@app.get("/", tags=["Web UI"], include_in_schema=False)
 async def web_home():
-    return HTMLResponse(content=render_home(), headers=_PAGE_CACHE_HEADERS)
+    return RedirectResponse(_SITE + "/", status_code=308)
 
 
-@app.get("/pricing", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+@app.get("/pricing", tags=["Web UI"], include_in_schema=False)
 async def web_pricing():
-    return HTMLResponse(content=render_pricing(), headers=_PAGE_CACHE_HEADERS)
+    return RedirectResponse(_SITE + "/pricing/", status_code=308)
 
 
 @app.get("/terms", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
