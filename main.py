@@ -528,8 +528,18 @@ async def discovery_card(x_agent_identity: Optional[str] = Header(None)):
     return get_discovery_card(agent_id)
 
 
-@app.get("/health", tags=["Discovery"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Discovery"])
 async def health():
+    """GET **and HEAD**.
+
+    It was GET-only, so a HEAD request got 405 Method Not Allowed. Uptime
+    monitors default to HEAD - it is the cheapest way to ask "are you up" -
+    so anyone pointing a monitor at our health endpoint was told the service
+    was broken by the endpoint whose job is to say it is not.
+
+    Found from a second machine on a different network, checking our public
+    surfaces with Invoke-WebRequest -Method Head.
+    """
     return health_check()
 
 
