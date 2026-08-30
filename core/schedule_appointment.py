@@ -31,6 +31,54 @@ def _has_celery_worker() -> bool:
     return bool(os.getenv("CELERY_BROKER_URL"))
 
 
+# How far from the requested time a slot may sit and still count as "the time
+# you asked for". Cal.com returns slot starts on the event type's own grid, so
+# an exact string match is too strict (a 14:00 request against a 14:00:00.000Z
+# slot must match, and so must a 14:00 request on a :05 grid), while anything
+# wider starts silently moving the appointment.
+_SLOT_TOLERANCE = timedelta(minutes=15)
+
+
+def _choose_slot(slots: list, preferred):
+    """Pick the slot to book, or None if the requested time is unavailable.
+
+    WITHOUT A PREFERRED TIME this is slots[0], which is what the caller means
+    when they give a window and no preference.
+
+    WITH ONE, it is the nearest slot within _SLOT_TOLERANCE - and None if
+    there isn't one. Returning None is the point: the previous code booked
+    slots[0] regardless, so an agent asking for 2pm on the 15th got a real
+    booking in a real customer's name at the first free slot (measured: 16
+    days earlier), reported as "appointment_confirmed" and charged the full
+    per_confirmed_booking fee.
+    """
+    if not slots:
+        return None
+    if preferred is None:
+        return slots[0]
+
+    def _t(s):
+        return s.get("start") or s.get("time")
+
+    best, best_gap = None, None
+    for s in slots:
+        raw = _t(s)
+        if not raw:
+            continue
+        try:
+            when = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        gap = abs(when - preferred)
+        if best_gap is None or gap < best_gap:
+            best, best_gap = s, gap
+    if best is not None and best_gap is not None and best_gap <= _SLOT_TOLERANCE:
+        return best
+    return None
+
+
 def _store_terminal(receipt: OutcomeReceipt) -> OutcomeReceipt:
     """Persist a terminal OutcomeReceipt to the outcome store keyed by operation_id.
 
@@ -165,24 +213,106 @@ async def handle_schedule_appointment(
         adapter = CalComAdapter()
         try:
             if request.action.value == "book":
+                rt = request.requested_time
+                # PREFERRED_ISO WAS READ NOWHERE, AND slots[0] WAS BOOKED.
+                #
+                # An agent asking for 2pm on the 15th got a real Cal.com
+                # booking in a real customer's name at whatever the first
+                # available slot happened to be - measured, 16 days earlier -
+                # under reason_code "appointment_confirmed" and charged the
+                # full per_confirmed_booking fee. Nothing in the receipt said
+                # the requested time had not been honoured, because nothing in
+                # the code had looked at it.
+                #
+                # So preferred_iso now drives the search window when no
+                # explicit window is given, and a slot that does not match it
+                # is NOT booked - see the honest refusal below.
+                pref = rt.preferred_iso if rt and rt.preferred_iso else None
+                default_from = pref or datetime.now(timezone.utc)
+                default_to = (
+                    (pref + timedelta(days=1)) if pref
+                    else datetime.now(timezone.utc) + timedelta(days=3)
+                )
                 date_from = (
-                    request.requested_time.window_start_iso.isoformat()
-                    if request.requested_time and request.requested_time.window_start_iso
-                    else datetime.now(timezone.utc).isoformat()
+                    rt.window_start_iso.isoformat()
+                    if rt and rt.window_start_iso else default_from.isoformat()
                 )
                 date_to = (
-                    request.requested_time.window_end_iso.isoformat()
-                    if request.requested_time and request.requested_time.window_end_iso
-                    else (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+                    rt.window_end_iso.isoformat()
+                    if rt and rt.window_end_iso else default_to.isoformat()
                 )
+
+                # AN INVERTED WINDOW IS A CALLER ERROR, NOT AN OUTAGE.
+                # window_start_iso and window_end_iso fall back independently,
+                # so supplying only a start produced date_from AFTER date_to.
+                # Cal.com 400s, get_availability returns [], and the request
+                # fell through to a message blaming absent credentials
+                # ("CALCOM_API_KEY absent") with retriable=False - naming a
+                # cause that was not true and telling the agent to give up on
+                # something one extra field would fix.
+                if date_from >= date_to:
+                    return _store_terminal(OutcomeReceipt(
+                        operation_id=operation_id,
+                        status=OperationStatus.FAILURE,
+                        reason_code="bad_request",
+                        human_message=(
+                            f"requested_time window is inverted or empty: "
+                            f"start {date_from} is not before end {date_to}. "
+                            f"Supply both window_start_iso and window_end_iso, "
+                            f"or a preferred_iso on its own."),
+                        result=None,
+                        cost=CostRecord(amount=0.0, currency="USD",
+                                        basis="no_charge"),
+                        latency_ms=int((time.monotonic() - t0) * 1000),
+                        retriable=False,
+                        trace_id=trace_id,
+                    ))
+
                 slots = await adapter.get_availability(smb.calcom_event_type_id, date_from, date_to)
                 if not slots:
                     pass  # fall through to async/sync failure path
                 else:
-                    slot = slots[0]
+                    # Cal.com has used both keys across API versions, and our
+                    # own stub emits "start" while this read "time" - a
+                    # KeyError that was swallowed and re-emerged as the false
+                    # "no booking channel configured" message.
+                    def _slot_time(s: dict):
+                        return s.get("start") or s.get("time")
+
+                    slot = _choose_slot(slots, pref)
+                    if slot is None:
+                        # THE REQUESTED TIME IS NOT AVAILABLE. Booking a
+                        # different one and calling it confirmed is the defect
+                        # this whole block exists to stop. Offer, do not book,
+                        # and charge nothing.
+                        offered = [t for t in (_slot_time(s) for s in slots[:5]) if t]
+                        return _store_terminal(OutcomeReceipt(
+                            operation_id=operation_id,
+                            status=OperationStatus.SUCCESS,
+                            reason_code="requested_time_unavailable",
+                            human_message=(
+                                f"NOT BOOKED: {smb.name} has nothing at the "
+                                f"requested time ({pref.isoformat() if pref else 'n/a'}). "
+                                f"Nothing was reserved and nothing was charged. "
+                                f"Available instead: {', '.join(offered) or 'no slots'}. "
+                                f"Re-send with one of these as preferred_iso, or "
+                                f"widen the window."),
+                            result={
+                                "booked": False,
+                                "requested_time": pref.isoformat() if pref else None,
+                                "available_slots": offered,
+                                "smb_name": smb.name,
+                            },
+                            cost=CostRecord(amount=0.0, currency="USD",
+                                            basis="no_charge"),
+                            latency_ms=int((time.monotonic() - t0) * 1000),
+                            channel_used="direct_api:calcom",
+                            retriable=False,
+                            trace_id=trace_id,
+                        ))
                     booking = await adapter.book_slot(
                         event_type_id=smb.calcom_event_type_id,
-                        start=slot["time"],
+                        start=_slot_time(slot),
                         name=request.customer.name if request.customer else "Customer",
                         email=request.customer.email if request.customer and request.customer.email else "noreply@example.com",
                         notes=request.notes,
@@ -191,10 +321,10 @@ async def handle_schedule_appointment(
                         operation_id=operation_id,
                         status=OperationStatus.SUCCESS,
                         reason_code="appointment_confirmed",
-                        human_message=f"Appointment booked at {smb.name} for {slot['time']}.",
+                        human_message=f"Appointment booked at {smb.name} for {_slot_time(slot)}.",
                         result={
                             "appointment_id": booking.get("uid", operation_id),
-                            "confirmed_time": slot["time"],
+                            "confirmed_time": _slot_time(slot),
                             "smb_name": smb.name,
                             "action": "booked",
                         },
