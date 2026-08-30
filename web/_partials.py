@@ -14,7 +14,20 @@ visually identical without a build step.
 """
 from __future__ import annotations
 
-BRAND = "Agent Broker"
+# THE LEGAL PAGES LOOKED LIKE A DIFFERENT COMPANY'S SITE.
+#
+# /terms and /refund are served from here and rewritten onto hatchloop.dev,
+# while /privacy is a page on the marketing site. So a buyer clicking "Terms"
+# immediately before paying went from HatchLoop branding to an "Agent Broker"
+# wordmark with a different nav - and an outside reviewer named that the
+# single worst moment in their evaluation, the point at which they would have
+# closed the tab.
+#
+# HatchLoop is the product line these pages govern; AgentBroker is one MCP
+# server within it, and Techmate is the contracting party named in the
+# document itself. Branding them HatchLoop is both the true hierarchy and the
+# one that matches where the visitor came from.
+BRAND = "HatchLoop"
 # Single-source-of-truth for the public hostname. We own hatchloop.dev, so the
 # DEFAULT must be our own domain: falling back to a *.workers.dev host put a
 # generic domain into og:url on public pages whenever PUBLIC_BASE_URL was
@@ -179,9 +192,10 @@ footer.site .footnote { margin-top: 12px; font-size: 12px; opacity: .7; }
 
 def _nav(active: str) -> str:
     items = [
-        ("home", "/", "Home"),
-        ("pricing", "/pricing", "Pricing"),
-        ("docs", "/docs", "API docs"),
+        ("home", "https://hatchloop.dev/", "Home"),
+        ("mcps", "https://hatchloop.dev/mcps/", "MCP servers"),
+        ("pricing", "https://hatchloop.dev/pricing/", "Pricing"),
+        ("docs", "https://hatchloop.dev/docs/", "Docs"),
         ("terms", "/terms", "Terms"),
         ("privacy", "/privacy", "Privacy"),
         ("refund", "/refund", "Refunds"),

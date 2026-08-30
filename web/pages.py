@@ -76,7 +76,7 @@ def render_home() -> str:
 </header>
 
 <section class="section" id="scope">
-  <h2>Five message types, four channels, 22 jurisdictions.</h2>
+  <h2>Five message types, four channels, 26 jurisdictions.</h2>
   <div class="grid grid-3">
     <div class="card">
       <h3 style="color:var(--accent);">What we facilitate</h3>
@@ -96,7 +96,7 @@ def render_home() -> str:
     <div class="card">
       <h3>How enforcement works</h3>
       <p><a href="__ORIGIN__/compliance/check">/compliance/check</a> runs before every outbound
-         channel call. TCPA, GDPR, CASL, PDPL rules across 22 jurisdictions, including
+         channel call. TCPA, GDPR, CASL, PDPL rules across 26 jurisdictions, including
          GCC (UAE, SA, OM, QA, KW, BH). A request that violates returns a structured
          receipt and never reaches a carrier.</p>
     </div>
@@ -131,7 +131,7 @@ def render_home() -> str:
 
 <section class="section" id="how">
   <h2>Connect in one line, in any agent ecosystem.</h2>
-  <p class="lead">We expose the same 19 tools through every protocol agents speak today.</p>
+  <p class="lead">We expose the same 20 tools through every protocol agents speak today.</p>
   <div class="grid grid-3">
     <div class="card">
       <h3>MCP &mdash; Claude Desktop / Cursor / Continue</h3>
@@ -226,7 +226,7 @@ def render_home() -> str:
 </section>
 """ + f'<script>{_HOME_LIVE_JS}</script>'
     return page("Home", body, active="home",
-                description=f"{BRAND} — horizontal MCP server. 20 tools, 7 discovery protocols, 22 jurisdictions, free tier for AI agents.")
+                description=f"{BRAND} — horizontal MCP server. 20 tools, 7 discovery protocols, 26 jurisdictions, free tier for AI agents.")
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +288,7 @@ def render_pricing() -> str:
     <div class="card"><h3>preview_cost</h3><p><strong>Free.</strong> Read-only quote, ±5% accurate.</p></div>
     <div class="card"><h3>self_test</h3><p><strong>Free.</strong> Live capability probe / health check.</p></div>
   </div>
-  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>One payment rail:</strong> credits, bought by card through Polar. Crypto payment is not offered.</p>
+  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>One payment rail:</strong> credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup.</p>
 </section>
 
 <section class="section">
@@ -375,9 +375,9 @@ def render_checkout(plan: str | None) -> str:
   <ul style="color:var(--text-muted);">
     <li><strong>Compliance gate.</strong> Every outbound message routes through
         <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
-        PDPL across 22 jurisdictions. Marketing without a verified consent_record_id
+        PDPL across 26 jurisdictions. Marketing without a verified consent_record_id
         is rejected at runtime regardless of how you paid.</li>
-    <li><strong>14-day refund</strong> on metered developer plans. See <a href="/refund">Refund Policy</a>.
+    <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.
 
     <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
         See <a href="/privacy">Privacy Policy</a>.</li>
@@ -387,7 +387,7 @@ def render_checkout(plan: str | None) -> str:
 </section>
 """
     return page(f"How you pay", body, active="pricing",
-                description=f"Credits, bought by card through Polar. Crypto payment is not offered. {BRAND} does not require human signup to use the free tools.")
+                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the free tools.")
 
 
 # ---------------------------------------------------------------------------
@@ -473,7 +473,7 @@ def render_terms() -> str:
   commercial redistribution, and screen_sanctions says so in its own
   output.</p>
   <p>Every outbound communication routes through a non-bypassable compliance
-  gate that enforces TCPA / GDPR / CASL / PDPL rules across 22 jurisdictions.
+  gate that enforces TCPA / GDPR / CASL / PDPL rules across 26 jurisdictions.
   Marketing messages require a verified opt-in <code>consent_record_id</code>
   at send time &mdash; without one, the gate rejects the send with a
   structured <code>compliance_violation</code> receipt that never reaches a
@@ -739,4 +739,4 @@ def render_refund() -> str:
 </article>
 """
     return page("Refund Policy", body, active="refund",
-                description=f"{BRAND} refund policy. 14-day window on subscriptions, full refund for outages over 24h.")
+                description=f"{BRAND} refund policy. 14-day window on credit packages, full refund for outages over 24h.")

@@ -98,6 +98,9 @@ SURFACES = [
     # by whoever edits next; both carried "22 jurisdictions" four lines from
     # a line saying 26.
     "agent_interface/mcp_server.py", "core/check_compliance.py",
+    # The storefront and legal pages. They are rewritten onto hatchloop.dev
+    # and read immediately before payment, and were in no guard at all.
+    "web/pages.py", "web/_partials.py",
 ]
 
 # A line that is deliberately about a different number, or about the past.

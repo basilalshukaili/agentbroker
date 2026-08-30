@@ -79,6 +79,9 @@ SURFACES = [
     # claims stopped anybody re-checking the thing they described.
     "core/screen_sanctions.py", "core/map_trade_restriction.py",
     "agent_interface/mcp_server.py", "agent_interface/profiles.py",
+    # The storefront and legal pages. They are rewritten onto hatchloop.dev
+    # and read immediately before payment, and were in no guard at all.
+    "web/pages.py", "web/_partials.py",
 ]
 
 # Published outside the agentbroker repo, but read by the same buyers.
