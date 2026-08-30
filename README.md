@@ -209,7 +209,7 @@ curl -X POST https://hatchloop.dev/ops/find_business \
 AI agent
    |
    v  MCP / REST / A2A
-Cloudflare Worker edge  (agent-broker-edge.basil-agent.workers.dev)
+Cloudflare Worker edge  (hatchloop.dev)
    |  300+ PoPs globally -- discovery served from edge bundle in 40-70 ms
    |
    +-- GET /.well-known/* /manifest /llms.txt  --> embedded snapshot (40-70 ms)
@@ -320,7 +320,7 @@ docker compose -f deploy/docker-compose.yml up
 
 ## Contributing
 
-Licensed under MIT. Issues and discussion are welcome  -  open a GitHub issue to report bugs or suggest features. For substantial changes, please open an issue first to discuss direction. Note: this repo is the open-source server; the hosted service at agent-broker-edge.basil-agent.workers.dev (supply index, billing rails) is operated by Hatchloop.
+Licensed under MIT. Issues and discussion are welcome  -  open a GitHub issue to report bugs or suggest features. For substantial changes, please open an issue first to discuss direction. Note: this repo is the open-source server; the hosted service at hatchloop.dev (supply index, billing rails) is operated by Hatchloop.
 
 ---
 

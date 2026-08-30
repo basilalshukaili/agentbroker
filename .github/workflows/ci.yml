@@ -114,6 +114,14 @@ jobs:
       - name: No mojibake in public artifacts
         run: python scripts/check_encoding.py
 
+      # Our own service must never be published under an infrastructure
+      # hostname. Founder, 2026-08-30: "I do not want generic urls like these,
+      # use hatchloop.dev always." Enforced rather than remembered - the Worker
+      # had been stamping its own *.workers.dev address into every discovery
+      # document as our identity.
+      - name: No generic hostnames in published files
+        run: python scripts/check_branding.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

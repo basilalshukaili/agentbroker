@@ -8,8 +8,8 @@
 # HANDOFF — Production Launch
 
 > **2026-05-05 update:** Service is live. Cloudflare Worker edge deployed.
-> Primary URL: `https://agent-broker-edge.basil-agent.workers.dev`
-> All Fly.io, Koyeb, and `agent-broker-edge.basil-agent.workers.dev` references in this doc are historical — ignore them.
+> Primary URL: `https://hatchloop.dev`
+> All Fly.io, Koyeb, and `hatchloop.dev` references in this doc are historical — ignore them.
 > See [docs/NEXT_STEPS.md](./docs/NEXT_STEPS.md) for current priorities.
 
 ---
@@ -106,7 +106,7 @@ Free tier: 3,000 emails/month, 100/day. Plenty for the first 6 months.
 
 ### 4.2 Buy a domain (15 minutes — ~$10/year)
 
-We've used `agent-broker-edge.basil-agent.workers.dev` as a placeholder everywhere. Replace it
+We've used `hatchloop.dev` as a placeholder everywhere. Replace it
 with your real domain. Recommended:
 
 - **Namecheap** (works in Oman, accepts crypto) — fastest, $9-15/year
@@ -120,7 +120,7 @@ Suggested names that aren't taken (check first):
 
 After you buy:
 1. In `.env` and in `deploy/fly.toml` and in `deploy/landing-page/index.html`,
-   replace every `agent-broker-edge.basil-agent.workers.dev` with your actual domain.
+   replace every `hatchloop.dev` with your actual domain.
    ```bash
    # PowerShell command (Windows)
    Get-ChildItem -Recurse -Include *.py,*.md,*.toml,*.yaml,*.yml,*.html,*.json | `

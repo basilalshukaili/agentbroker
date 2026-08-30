@@ -382,5 +382,5 @@ Full catalog: [api/errors.md](../api/errors.md).
 
 - Service status: `https://api.hatchloop.dev/health`
 - Self-test: `POST /ops/self_test`
-- Email: support@agent-broker-edge.basil-agent.workers.dev
+- Email: support@hatchloop.dev
 - File a feedback ticket: agents who flag a missing capability that we add inside 30 days get 1 month free at their tier.

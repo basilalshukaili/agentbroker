@@ -20,7 +20,7 @@
 
 | Channel | Status | What's needed from you |
 |---|---|---|
-| **Smithery** registry | **LIVE** ✅ pointing at agent-broker-edge.basil-agent.workers.dev | nothing — listing at https://smithery.ai/server/lordbasil147/agent-broker |
+| **Smithery** registry | **LIVE** ✅ pointing at hatchloop.dev | nothing — listing at https://smithery.ai/server/lordbasil147/agent-broker |
 | **GitHub topics** (11 set) | **LIVE** ✅ | nothing — Glama crawls within ~3 days |
 | `modelcontextprotocol/servers` PR | forks ✅, PAT scope ❌ | extend the PAT (see STEP 1 below) and re-run script |
 | `punkpeye/awesome-mcp-servers` PR | forks ✅, PAT scope ❌ | same — same script handles both |
@@ -83,12 +83,12 @@ JSON index. Submission flow:
 1. Open <https://github.com/APIs-guru/openapi-directory> in a browser.
    Click **"Fork"** (top-right).
 2. In your fork, navigate to `APIs/` and create the path:
-   `APIs/agent-broker-edge.basil-agent.workers.dev/1.0.0/openapi.yaml`.
+   `APIs/hatchloop.dev/1.0.0/openapi.yaml`.
 3. Paste the contents of our live OpenAPI:
-   `https://agent-broker-edge.basil-agent.workers.dev/openapi.yaml` (curl it, save as that file).
-4. Open `APIs/agent-broker-edge.basil-agent.workers.dev/1.0.0/openapi.yaml` in your fork's web
+   `https://hatchloop.dev/openapi.yaml` (curl it, save as that file).
+4. Open `APIs/hatchloop.dev/1.0.0/openapi.yaml` in your fork's web
    editor and ensure the top-level `info` block has `x-providerName:
-   agent-broker-edge.basil-agent.workers.dev` and `x-origin` referencing the URL.
+   hatchloop.dev` and `x-origin` referencing the URL.
 5. Commit on a branch named `add-agentbroker`, then **"Compare & pull
    request"** against `APIs-guru/openapi-directory` `main`.
 6. Their bot validates within ~10 minutes; a maintainer merges within a week.
@@ -117,17 +117,17 @@ message, and schedule appointments with small businesses worldwide.
 Live, free for any agent up to 100 ops/month, full TCPA / GDPR / CASL
 compliance gate built in.
 
-Live MCP endpoint:    https://agent-broker-edge.basil-agent.workers.dev/mcp
+Live MCP endpoint:    https://hatchloop.dev/mcp/agent-broker
 Repo (open code):     https://github.com/basilalshukaili/agentbroker
 Smithery listing:     https://smithery.ai/server/lordbasil147/agent-broker
-Anthropic-tools JSON: https://agent-broker-edge.basil-agent.workers.dev/.well-known/anthropic-tools.json
+Anthropic-tools JSON: https://hatchloop.dev/.well-known/anthropic-tools.json
 
 Test it in 30 seconds — drop this into Claude Desktop's claude_desktop_config.json:
 
   {
     "mcpServers": {
       "agent-broker": {
-        "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+        "url": "https://hatchloop.dev/mcp/agent-broker"
       }
     }
   }
@@ -148,7 +148,7 @@ Hi,
 
 Submitting Agent Broker for the Cursor MCP catalog.
 
-Endpoint:        https://agent-broker-edge.basil-agent.workers.dev/mcp
+Endpoint:        https://hatchloop.dev/mcp/agent-broker
 Repo:            https://github.com/basilalshukaili/agentbroker
 12 tools: find/verify/message/schedule across small businesses worldwide.
 Free tier 100 ops/month. No auth required for read-only ops.
@@ -157,7 +157,7 @@ Connection JSON:
   {
     "mcpServers": {
       "agent-broker": {
-        "url": "https://agent-broker-edge.basil-agent.workers.dev/mcp"
+        "url": "https://hatchloop.dev/mcp/agent-broker"
       }
     }
   }
@@ -185,7 +185,7 @@ Hi,
 
 Submitting Agent Broker for the Cline recommended-MCP-servers list:
 
-  Endpoint: https://agent-broker-edge.basil-agent.workers.dev/mcp
+  Endpoint: https://hatchloop.dev/mcp/agent-broker
   Repo:     https://github.com/basilalshukaili/agentbroker
   Tools:    12 (find_business, verify_business, send_message,
              capture_lead, schedule_appointment, send_transactional_confirmation,
@@ -210,8 +210,8 @@ Hi,
 
 Submitting Agent Broker as a tool target for Perplexity's tool-use API.
 
-Endpoint:               https://agent-broker-edge.basil-agent.workers.dev/mcp
-OpenAI-tools format:    https://agent-broker-edge.basil-agent.workers.dev/.well-known/openai-tools.json
+Endpoint:               https://hatchloop.dev/mcp/agent-broker
+OpenAI-tools format:    https://hatchloop.dev/.well-known/openai-tools.json
 12 tools, free tier 100 ops/month, MoR billing via Paddle for paid traffic.
 
 If Perplexity has a tools-marketplace, please point me to the submission
@@ -242,7 +242,7 @@ These are forms, not emails. Submit once, leave for years.
 | MCP Hub | https://mcphub.io/submit | MCP-specific catalogue |
 | Awesome AI Tools | <https://github.com/mahseema/awesome-ai-tools> README PR | community-maintained list |
 
-For each: submit `https://agent-broker-edge.basil-agent.workers.dev`, category "Developer
+For each: submit `https://hatchloop.dev`, category "Developer
 Tools" or "Productivity / Scheduling", description "12-tool MCP server
 for AI agents to interact with small businesses worldwide. Free tier."
 
@@ -268,7 +268,7 @@ Total writing time: 90 minutes once. Crawlers fetch within ~7 days.
 
 Now exposed at:
 
-> **<https://agent-broker-edge.basil-agent.workers.dev/healthz/external>**
+> **<https://hatchloop.dev/healthz/external>**
 
 It pings every upstream (Twilio, Cal.com, Vapi, Resend, Paddle) plus
 internal discovery surfaces, in parallel. Returns:
@@ -292,7 +292,7 @@ You can also have Render's free **uptime alerts** ping it once a minute
 
 | Pending | Time | Critical? |
 |---|---|---|
-| Map `agent-broker-edge.basil-agent.workers.dev` CNAME → `agent-broker-edge.basil-agent.workers.dev` | 5 min in DigitalPlat web UI | **Yes — many of the URLs above don't resolve until this is done** |
+| Map `hatchloop.dev` CNAME → `hatchloop.dev` | 5 min in DigitalPlat web UI | **Yes — many of the URLs above don't resolve until this is done** |
 | Open the two pre-fork URLs above and re-run the registry script | 3 min | High — these are the most valuable PRs |
 | Paddle business verification | 2-5 days, hands-off | Only matters when you make a sale |
 | Send the six emails | 15 min, all at once | Low (most won't reply) but free leverage |

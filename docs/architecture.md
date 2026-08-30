@@ -10,7 +10,7 @@
 AI agent
    │
    ▼
-agent-broker-edge.basil-agent.workers.dev   ← Cloudflare Worker (300+ PoPs)
+hatchloop.dev                               ← Cloudflare Worker (300+ PoPs)
    │
    ├── GET  /.well-known/*                  → embedded snapshot  (40–70 ms)
    ├── GET  /manifest*, /llms.txt, /openapi.yaml, /supply/platforms, /compliance/jurisdictions
@@ -21,9 +21,9 @@ agent-broker-edge.basil-agent.workers.dev   ← Cloudflare Worker (300+ PoPs)
    └── POST /ops/*, everything else        → proxy to origin
             │
             ▼
-   smb-broker.onrender.com                 ← Python FastAPI on Render free tier
+   api.hatchloop.dev                       ← Python FastAPI (hosted on Render)
             │
-            ├── 13 operation handlers (core/)
+            ├── 20 operation handlers (core/)
             ├── Compliance gate (compliance/pre_check)
             ├── Channel adapters (channels/)
             ├── Billing + outcome store
@@ -33,7 +33,7 @@ agent-broker-edge.basil-agent.workers.dev   ← Cloudflare Worker (300+ PoPs)
 Cron: */2 * * * *  — edge pings origin /health every 2 min (prevents 15 min idle sleep)
 ```
 
-**The public URL is the edge worker.** The Render origin URL (`smb-broker.onrender.com`)
+**The public URL is the edge worker.** The Render origin URL (`api.hatchloop.dev`)
 is an implementation detail; agents should never be given it directly.
 
 ---

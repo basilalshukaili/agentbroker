@@ -43,6 +43,21 @@ GET_ROUTES = {
     "agent-service.json": "/.well-known/agent-service",
     "supply-platforms.json": "/supply/platforms",
     "jurisdictions.json": "/compliance/jurisdictions",
+    # THESE THREE WERE MISSING, AND THIS SCRIPT REPORTED "IN SYNC" ANYWAY.
+    #
+    # They exist as snapshot files on disk and are served by the Worker, but
+    # they were absent from this map - so the refresher never fetched them,
+    # never compared them, and still printed a clean bill of health covering
+    # 11 of 14 snapshots.
+    #
+    # llms.txt was consequently stale by weeks: it carried the old
+    # *.onrender.com endpoints while the origin had long since moved to the
+    # branded host. Nobody saw it because the Worker rewrites known origin URLs
+    # at serve time, so the LIVE output looked right while the source did not -
+    # a mask over a stale file, which is the worst of both.
+    "llms.txt": "/llms.txt",
+    "llms-full.txt": "/llms-full.txt",
+    "openapi.yaml": "/openapi.yaml",
 }
 
 # JSON-RPC snapshots: file -> method
@@ -50,6 +65,21 @@ RPC_ROUTES = {
     "mcp-tools-list.json": "tools/list",
     "mcp-initialize.json": "initialize",
 }
+
+
+def _every_snapshot_is_covered() -> list[str]:
+    """Snapshot files on disk that no route in this file refreshes.
+
+    A map maintained by hand drifts from a directory maintained by code. This
+    turns that drift into a loud failure instead of a silent gap in a report
+    that says "IN SYNC".
+    """
+    known = set(GET_ROUTES) | set(RPC_ROUTES)
+    # Not content: TypeScript glue and type declarations live here too.
+    ignore = {"index.ts", "modules.d.ts"}
+    on_disk = {f for f in os.listdir(SNAP)
+               if f not in ignore and not f.startswith(".")}
+    return sorted(on_disk - known)
 
 
 def _curl(url: str, data: str | None = None) -> str:
@@ -100,15 +130,34 @@ def _parse_maybe_sse(raw: str) -> dict | None:
     return None
 
 
-def fetch_all() -> dict[str, dict]:
-    out: dict[str, dict] = {}
+# Snapshots that are NOT JSON. They are still published, still go stale, and
+# were skipped by a JSON-only fetcher that then reported "IN SYNC" - llms.txt
+# sat weeks out of date behind that skip.
+TEXT_SNAPSHOTS = {"llms.txt", "llms-full.txt", "openapi.yaml"}
+
+
+def fetch_all() -> dict[str, object]:
+    out: dict[str, object] = {}
+    failed: list[str] = []
     for fname, route in GET_ROUTES.items():
         body = _curl(ORIGIN + route)
+        if fname in TEXT_SNAPSHOTS:
+            if body.strip():
+                out[fname] = body
+            else:
+                failed.append(f"{fname}: empty response from {route}")
+            continue
         try:
             out[fname] = json.loads(body)
         except json.JSONDecodeError:
-            print(f"  ! skip {fname}: origin returned non-JSON "
-                  f"({len(body)}B) from {route}")
+            # A SKIP IS A FAILURE, not a shrug. Reporting "in sync" while a
+            # file was never fetched is how llms.txt stayed stale.
+            failed.append(f"{fname}: non-JSON ({len(body)}B) from {route}")
+    if failed:
+        print("  ! COULD NOT FETCH:")
+        for f in failed:
+            print(f"      {f}")
+        out["__fetch_failures__"] = failed
     for fname, method in RPC_ROUTES.items():
         payload = {"jsonrpc": "2.0", "id": 1, "method": method}
         if method == "initialize":
@@ -145,7 +194,20 @@ def main() -> int:
     args = ap.parse_args()
 
     print(f"origin: {ORIGIN}")
+
+    # Refuse to claim "in sync" while a snapshot exists that we never look at.
+    uncovered = _every_snapshot_is_covered()
+    if uncovered:
+        print("refresh_edge_snapshots: THESE SNAPSHOTS ARE NOT COVERED BY ANY "
+              "ROUTE, so nothing here can tell you whether they are stale:")
+        for f in uncovered:
+            print(f"    {f}")
+        print("Add each to GET_ROUTES or RPC_ROUTES, or delete it if the Worker "
+              "no longer serves it.")
+        return 2
+
     fresh = fetch_all()
+    fetch_failures = fresh.pop("__fetch_failures__", [])
     if not fresh:
         print("refresh_edge_snapshots: FAILED - origin unreachable")
         return 2
@@ -153,11 +215,15 @@ def main() -> int:
     stale = []
     for fname, doc in fresh.items():
         path = os.path.join(SNAP, fname)
+        # llms.txt / llms-full.txt / openapi.yaml are text, not JSON. Reading
+        # them with json.load() silently yielded None, which compared unequal
+        # forever - or, before they were routed at all, never compared.
+        is_text = fname in TEXT_SNAPSHOTS
         old = None
         if os.path.exists(path):
             try:
                 with open(path, encoding="utf-8") as fh:
-                    old = json.load(fh)
+                    old = fh.read() if is_text else json.load(fh)
             except Exception:  # noqa: BLE001
                 old = None
         if old == doc:
@@ -173,11 +239,23 @@ def main() -> int:
               f"!= origin[{_summarize(fname, doc)}]")
         if not args.check:
             with open(path, "w", encoding="utf-8", newline="") as fh:
-                json.dump(doc, fh, indent=2, ensure_ascii=False)
-                fh.write("\n")
+                if is_text:
+                    fh.write(doc)
+                else:
+                    json.dump(doc, fh, indent=2, ensure_ascii=False)
+                    fh.write("\n")
+
+    # A FETCH FAILURE IS NOT "IN SYNC". Saying so while a file was never
+    # compared is how llms.txt stayed weeks out of date behind a "! skip"
+    # line that changed nothing about the verdict.
+    if fetch_failures:
+        print(f"refresh_edge_snapshots: {len(fetch_failures)} snapshot(s) could "
+              f"not be fetched - their freshness is UNKNOWN, not verified")
+        return 2
 
     if not stale:
-        print("refresh_edge_snapshots: IN SYNC with origin")
+        print(f"refresh_edge_snapshots: IN SYNC with origin "
+              f"({len(fresh)} snapshot(s) compared)")
         return 0
     if args.check:
         print(f"refresh_edge_snapshots: {len(stale)} snapshot(s) STALE "

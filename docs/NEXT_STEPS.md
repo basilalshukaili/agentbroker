@@ -8,8 +8,8 @@
 
 | Item | Status |
 |------|--------|
-| Python service (Render) | ✅ Live — `smb-broker.onrender.com` (origin, internal) |
-| Cloudflare Worker edge | ✅ Live — `agent-broker-edge.basil-agent.workers.dev` |
+| Python service (Render) | ✅ Live — `hatchloop.dev` (origin, internal) |
+| Cloudflare Worker edge | ✅ Live — `hatchloop.dev` |
 | Tests | ✅ 103/103 passing in 0.40 s |
 | MCP tools | ✅ 20 tools, all callable |
 | Discovery endpoints | ✅ 40–70 ms globally (embedded snapshots) |
@@ -37,7 +37,7 @@
 
 1. Go to <https://uptimerobot.com> → create free account
 2. Add HTTP monitor:
-   - URL: `https://agent-broker-edge.basil-agent.workers.dev/edge/health`
+   - URL: `https://hatchloop.dev/edge/health`
    - Interval: 5 minutes
    - Alert email: your address
 
@@ -62,7 +62,7 @@ question.
 **Check `total_agents_requested` every 2 weeks** (Telegram reminder is already set):
 
 ```bash
-curl -s https://agent-broker-edge.basil-agent.workers.dev/api/metrics | python -m json.tool
+curl -s https://hatchloop.dev/api/metrics | python -m json.tool
 ```
 
 ---

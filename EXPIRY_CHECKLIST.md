@@ -20,11 +20,11 @@ Last updated: 2026-05-05.
 | Service | What it does | Free limit | Hard expiry | Watch this |
 |---------|--------------|-----------|-------------|------------|
 | **UptimeRobot** | Uptime monitoring + public status page | 50 monitors, 5 min interval | none (free tier stable 10+ years) | Dashboard — no action needed |
-| **Cloudflare Workers** | Edge layer — serves discovery + MCP reads globally | 100k req/day, 10ms CPU | none | `agent-broker-edge.basil-agent.workers.dev/edge/health` |
+| **Cloudflare Workers** | Edge layer — serves discovery + MCP reads globally | 100k req/day, 10ms CPU | none | `hatchloop.dev/edge/health` |
 | **Cloudflare KV** | Live overlay for discovery payloads | 100k reads/day, 1k writes/day | none | Dashboard → KV namespace |
-| **Render** | Origin — Python FastAPI, tool execution | free web service, 512 MB RAM | none (free until deleted or suspended) | service dashboard + `smb-broker.onrender.com` |
-| **Render domain** | Origin URL (internal use only) | `smb-broker.onrender.com` | none (free, managed by Render) | onrender dashboard + service health |
-| **DigitalPlat (qzz.io)** | `agent-broker-edge.basil-agent.workers.dev` — currently NXDOMAIN, not in use | unlimited | annual renewal (free) | Not used — workers.dev is primary |
+| **Render** | Origin — Python FastAPI, tool execution | free web service, 512 MB RAM | none (free until deleted or suspended) | service dashboard + `hatchloop.dev` |
+| **Render domain** | Origin URL (internal use only) | `hatchloop.dev` | none (free, managed by Render) | onrender dashboard + service health |
+| **DigitalPlat (qzz.io)** | `hatchloop.dev` — currently NXDOMAIN, not in use | unlimited | annual renewal (free) | Not used — workers.dev is primary |
 | **GitHub** | Repo + Actions | unlimited public repos · 2,000 Action min/mo | none | Action minutes only |
 | **Twilio** | SMS + voice | $15.50 trial credit | depleted on first 200 SMS | When credit hits $0 |
 | **Cal.com** | Booking direct API | unlimited on free plan | none | None |
@@ -76,7 +76,7 @@ Last updated: 2026-05-05.
 
 **Switch by:** running a feature flag — alternate adapters per request based on which quota has remaining headroom.
 
-### Render free web service (`smb-broker.onrender.com`)
+### Render free web service (`hatchloop.dev`)
 
 **Note:** Render is now the **origin** behind the Cloudflare Worker edge. Agents never hit it
 directly. Cold starts are prevented by the edge cron (`*/2`).
@@ -85,12 +85,12 @@ directly. Cold starts are prevented by the edge cron (`*/2`).
 Discovery endpoints (well-known, manifest, llms.txt, tools/list) still work from the edge.
 
 **Free details:**
-1. **Render free web service** — live at `smb-broker.onrender.com`. 512 MB RAM. No hard expiry.
+1. **Render free web service** — live at `hatchloop.dev`. 512 MB RAM. No hard expiry.
 2. **Cold start eliminated** — the Cloudflare Worker cron pings `/health` every 2 min so the dyno never reaches the 15 min idle threshold.
 3. **If Render goes down permanently** — discovery still works from embedded edge snapshots indefinitely. Only tool execution breaks. Migrate to Workers + D1 when traffic justifies it (see Phase 2 in `edge/README.md`).
 4. **Alternative backup** — `deploy/railway.json` for quick migration if needed.
 
-**Monitoring:** use the Render dashboard and the live URL health check. Add a weekly reminder to confirm `https://smb-broker.onrender.com/health` returns 200 and the service is `Live` in Render.
+**Monitoring:** use the Render dashboard and the live URL health check. Add a weekly reminder to confirm `https://hatchloop.dev/health` returns 200 and the service is `Live` in Render.
 
 ### DigitalPlat domain — annual renewal
 

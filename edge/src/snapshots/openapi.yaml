@@ -1,20 +1,15 @@
 openapi: "3.1.0"
-# THE SERVER URL AND CONTACT WERE RFC 2606 PLACEHOLDER DOMAINS.
+# THE SERVER URL AND CONTACT WERE PLACEHOLDERS ON A .example DOMAIN.
 #
-# This file is served publicly and is one of the seven discovery surfaces an
-# agent can find us through. It used to point integrators at a reserved
-# example domain that can never resolve, and at a support address on the same
-# domain. It also carried the pre-rename product title and version 0.1.0
-# against a 0.2.x service.
+# This file is served publicly at https://hatchloop.dev/openapi.yaml and is one
+# of the seven discovery surfaces an agent can find us through. It told every
+# integrator to call `https://api.smb-broker.example/v1` - a domain that does
+# not exist - and to email `support@smb-broker.example`. It also carried the
+# pre-rename product title and version 0.1.0 against a 0.2.x service.
 #
 # Anyone who actually followed this spec got nowhere, which is probably why
 # nobody reported it: the failure is silent and happens on someone else's
 # machine.
-#
-# The old hostnames are deliberately NOT written out here. The edge worker
-# rewrites known origin URLs to the public base URL as it serves this file, so
-# quoting one in a comment turns the explanation into nonsense - it briefly
-# read "call https://hatchloop.dev - a domain that does not exist".
 info:
   title: AgentBroker
   version: "0.2.9"
