@@ -1,7 +1,7 @@
 {
   "name": "SMB Transaction & Communication Broker",
   "description": "Agent-callable service for the long tail of small businesses. Discover, verify, communicate, schedule, transact — all with built-in TCPA/GDPR/CASL compliance and idempotent semantics.",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "protocol_version": "a2a-v0.2",
   "url": "https://api.hatchloop.dev",
   "documentation_url": "https://api.hatchloop.dev/docs",
@@ -65,7 +65,7 @@
     {
       "id": "send_message",
       "name": "Send Message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 22 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
       "tags": [
         "sync_fast",
         "write",

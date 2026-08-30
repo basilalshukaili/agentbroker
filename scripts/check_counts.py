@@ -113,6 +113,16 @@ SUBSET = re.compile(
 RATE = re.compile(r"\s*(?:/|per\s)\s*(?:day|hour|month|min|second)",
                   re.IGNORECASE)
 
+# A COUNT FOR A DIFFERENT SERVER IS NOT OUR COUNT.
+#
+# We publish several MCP servers. llms.txt lists each with its own tool count
+# - "appointment-booking ... 9 tools", "sms-whatsapp-messaging ... 10 tools" -
+# and those are correct statements about those servers. Reporting them as
+# disagreeing with AgentBroker's 20 is the guard crying wolf, which gets it
+# switched off and then it protects nothing.
+OTHER_SERVER = re.compile(
+    r"/mcp/(?!agent-broker)[a-z0-9-]+", re.IGNORECASE)
+
 
 def main(argv: list[str]) -> int:
     truth = _derive()
@@ -164,6 +174,8 @@ def main(argv: list[str]) -> int:
                     window = line[max(0, m.start() - 40):m.end() + 40]
                     if SUBSET.search(window):
                         continue
+                    if OTHER_SERVER.search(line):
+                        continue                # a different server's count
                     wrong.append((rel, n, found, noun, truth[key],
                                   line.strip()[:70]))
 

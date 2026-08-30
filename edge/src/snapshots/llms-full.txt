@@ -270,9 +270,9 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 
 **Pick the narrowest endpoint that covers your use case.** Every tool definition costs tokens on every request, so attaching 20 tools when you need 8 is a permanent tax on each call:
 
-- `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (20 tools)
+- `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
-- `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (20 tools)
+- `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
 - `https://api.hatchloop.dev/mcp/agent-broker` - everything (20 tools)
 
 The same rows work in Claude Code, Codex, and any other MCP client - the transport is standard.
@@ -290,7 +290,7 @@ hello@hatchloop.dev
   "service": {
     "name": "AgentBroker",
     "id": "agent-broker",
-    "version": "0.2.9",
+    "version": "0.2.10",
     "description": "A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.",
     "base_url": "https://api.hatchloop.dev",
     "discovery_url": "https://api.hatchloop.dev/.well-known/mcp.json",
@@ -653,7 +653,7 @@ hello@hatchloop.dev
               "channels_reachable": [
                 "direct_api:square"
               ],
-              "verification_method": "direct_api_probe"
+              "verification_method": "directory_lookup"
             }
           }
         }
@@ -1898,30 +1898,48 @@ hello@hatchloop.dev
         "type": "object",
         "properties": {
           "healthy": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True when every internal check passed. This is the field to branch on."
           },
-          "capabilities_verified": {
+          "all_passed": {
+            "type": "boolean",
+            "description": "Alias of healthy."
+          },
+          "passed": {
+            "type": "integer",
+            "description": "Checks that passed."
+          },
+          "failed": {
+            "type": "integer",
+            "description": "Checks that failed."
+          },
+          "total": {
+            "type": "integer",
+            "description": "Number of checks run. Derived from the check list, not a fixed number."
+          },
+          "latency_ms": {
+            "type": "number",
+            "description": "How long the checks took."
+          },
+          "failed_checks": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Names of the checks that failed. Absent when none did."
           },
           "version": {
-            "type": "string"
-          },
-          "supply_network_size": {
-            "type": "integer"
-          },
-          "channel_status": {
-            "type": "object"
-          },
-          "degraded_channels": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string",
+            "description": "Manifest version."
           }
-        }
+        },
+        "required": [
+          "healthy",
+          "all_passed",
+          "passed",
+          "failed",
+          "total"
+        ]
       },
       "cost_model": {
         "basis": "free",
@@ -1943,20 +1961,11 @@ hello@hatchloop.dev
           "input": {},
           "output": {
             "healthy": true,
-            "capabilities_verified": [
-              "find_business",
-              "schedule_appointment",
-              "send_message",
-              "preview_cost"
-            ],
-            "version": "0.1.0",
-            "supply_network_size": 47,
-            "channel_status": {
-              "sms": "operational",
-              "voice_ai": "operational",
-              "direct_api": "operational"
-            },
-            "degraded_channels": []
+            "all_passed": true,
+            "passed": 6,
+            "failed": 0,
+            "total": 6,
+            "latency_ms": 10.45
           }
         }
       ],
@@ -3471,7 +3480,8 @@ hello@hatchloop.dev
   },
   "manifest_version": "0.1.0",
   "generated_at": "2026-04-27T00:00:00Z",
-  "slo_data_freshness": "static_seed \u2014 replace with telemetry-driven values at P8"
+  "slo_data_freshness": "static_seed \u2014 replace with telemetry-driven values at P8",
+  "version": "0.2.10"
 }
 ```
 
@@ -3779,7 +3789,7 @@ hello@hatchloop.dev
       "channels_reachable": [
         "direct_api:square"
       ],
-      "verification_method": "direct_api_probe"
+      "verification_method": "directory_lookup"
     }
   }
 }
@@ -4749,30 +4759,48 @@ hello@hatchloop.dev
   "type": "object",
   "properties": {
     "healthy": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "True when every internal check passed. This is the field to branch on."
     },
-    "capabilities_verified": {
+    "all_passed": {
+      "type": "boolean",
+      "description": "Alias of healthy."
+    },
+    "passed": {
+      "type": "integer",
+      "description": "Checks that passed."
+    },
+    "failed": {
+      "type": "integer",
+      "description": "Checks that failed."
+    },
+    "total": {
+      "type": "integer",
+      "description": "Number of checks run. Derived from the check list, not a fixed number."
+    },
+    "latency_ms": {
+      "type": "number",
+      "description": "How long the checks took."
+    },
+    "failed_checks": {
       "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "description": "Names of the checks that failed. Absent when none did."
     },
     "version": {
-      "type": "string"
-    },
-    "supply_network_size": {
-      "type": "integer"
-    },
-    "channel_status": {
-      "type": "object"
-    },
-    "degraded_channels": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
+      "type": "string",
+      "description": "Manifest version."
     }
-  }
+  },
+  "required": [
+    "healthy",
+    "all_passed",
+    "passed",
+    "failed",
+    "total"
+  ]
 }
 ```
 
@@ -4784,20 +4812,11 @@ hello@hatchloop.dev
   "input": {},
   "output": {
     "healthy": true,
-    "capabilities_verified": [
-      "find_business",
-      "schedule_appointment",
-      "send_message",
-      "preview_cost"
-    ],
-    "version": "0.1.0",
-    "supply_network_size": 47,
-    "channel_status": {
-      "sms": "operational",
-      "voice_ai": "operational",
-      "direct_api": "operational"
-    },
-    "degraded_channels": []
+    "all_passed": true,
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "latency_ms": 10.45
   }
 }
 ```
