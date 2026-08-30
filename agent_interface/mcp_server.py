@@ -1036,14 +1036,27 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             f" To get access: Option 1 (free): get a verified free key ({_free_limit_msg} ops/day) at "
             f"{free_key_url} (just provide your email, no payment needed). "
             f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
-            # NO CRYPTO RAIL IN THE STOREFRONT MESSAGE. This is what a live
-            # agent is told at the exact moment it hits a quota and is deciding
-            # how to pay - the most consequential payment surface we have. The
-            # x402 rail is switched off (/.well-known/x402 is 404), and the
-            # seller is an Omani-registered company with no VASP licence
-            # available, so offering it here was both untrue and the specific
-            # legal exposure we decided to avoid.
+            # THE CRYPTO RAIL BELONGS HERE, and its absence was the defect.
+            #
+            # This is what a live agent is told at the exact moment it hits a
+            # quota and is deciding how to pay - the most consequential payment
+            # surface we have. x402 is the ONLY option on this list an
+            # autonomous agent can complete without a human: the other two need
+            # someone to read an email or type a card.
+            #
+            # The comment that used to sit here said the rail was "switched
+            # off" for a legal reason. The founder lifted that restriction on
+            # 2026-08-29 and the rail is enabled on this service (all four
+            # x402 variables are set, and mcp_server dispatches through
+            # x402_gate.run_paid_tool for any call that attaches payment). The
+            # discovery document has advertised it since. This message did not,
+            # so the one self-serve path was hidden at the only moment it
+            # mattered.
             f"Scale $99/13,000) at https://hatchloop.dev/pricing. "
+            f"Option 3 (pay per call, no signup): attach an x402 payment in "
+            f"params._meta['x402/payment'] and this call is served without "
+            f"a key - USDC on Base. This is the only option that needs no "
+            f"human. "
             f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
@@ -1194,13 +1207,39 @@ async def _dispatch_operation(
     elif name == "self_test":
         from agent_interface.self_test import run_self_test
         report = await run_self_test()
-        return {
+        # THE PUBLISHED SCHEMA DECLARED SIX FIELDS AND THIS RETURNED NONE OF
+        # THEM. It advertised healthy, capabilities_verified, version,
+        # supply_network_size, channel_status and degraded_channels; an agent
+        # reading tools/list and branching on `r["healthy"]` got a KeyError,
+        # and one checking degraded_channels to route around an SMS outage got
+        # nothing at all. Four of those names appeared nowhere in the codebase
+        # except the manifest.
+        #
+        # The schema now describes this shape - and `healthy` is included,
+        # because it is the field an agent actually branches on and it is
+        # derivable rather than invented. The ones we cannot compute honestly
+        # are gone from the schema rather than faked here.
+        from agent_interface.manifest_server import get_manifest_version
+        out = {
+            "healthy": report.all_passed,
             "all_passed": report.all_passed,
             "passed": report.passed_checks,
             "failed": report.failed_checks,
             "total": report.total_checks,
             "latency_ms": report.latency_ms,
         }
+        try:
+            _v = get_manifest_version()
+            # get_manifest_version returns a DICT. The schema says string, and
+            # an agent reading version as a string would get an object - the
+            # same shape mismatch this block was written to remove.
+            out["version"] = _v.get("version") if isinstance(_v, dict) else str(_v)
+        except Exception:                       # noqa: BLE001
+            pass
+        failed = [c.name for c in (report.checks or []) if not c.passed]
+        if failed:
+            out["failed_checks"] = failed
+        return out
 
     elif name == "check_booking_link":
         # Read-only pre-flight: classify a booking URL before the agent spends

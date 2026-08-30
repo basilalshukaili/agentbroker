@@ -1611,30 +1611,48 @@
         "type": "object",
         "properties": {
           "healthy": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True when every internal check passed. This is the field to branch on."
           },
-          "capabilities_verified": {
+          "all_passed": {
+            "type": "boolean",
+            "description": "Alias of healthy."
+          },
+          "passed": {
+            "type": "integer",
+            "description": "Checks that passed."
+          },
+          "failed": {
+            "type": "integer",
+            "description": "Checks that failed."
+          },
+          "total": {
+            "type": "integer",
+            "description": "Number of checks run. Derived from the check list, not a fixed number."
+          },
+          "latency_ms": {
+            "type": "number",
+            "description": "How long the checks took."
+          },
+          "failed_checks": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Names of the checks that failed. Absent when none did."
           },
           "version": {
-            "type": "string"
-          },
-          "supply_network_size": {
-            "type": "integer"
-          },
-          "channel_status": {
-            "type": "object"
-          },
-          "degraded_channels": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string",
+            "description": "Manifest version."
           }
-        }
+        },
+        "required": [
+          "healthy",
+          "all_passed",
+          "passed",
+          "failed",
+          "total"
+        ]
       },
       "cost_model": {
         "basis": "free",
@@ -1656,20 +1674,11 @@
           "input": {},
           "output": {
             "healthy": true,
-            "capabilities_verified": [
-              "find_business",
-              "schedule_appointment",
-              "send_message",
-              "preview_cost"
-            ],
-            "version": "0.1.0",
-            "supply_network_size": 47,
-            "channel_status": {
-              "sms": "operational",
-              "voice_ai": "operational",
-              "direct_api": "operational"
-            },
-            "degraded_channels": []
+            "all_passed": true,
+            "passed": 6,
+            "failed": 0,
+            "total": 6,
+            "latency_ms": 10.45
           }
         }
       ],

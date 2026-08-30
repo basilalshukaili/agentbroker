@@ -70,17 +70,44 @@ async def lifespan(app: FastAPI):
     # Hydrate durable opt-outs (STOP requests) into the compliance enforcement
     # set so a recorded opt-out survives a process restart. Without this the
     # "non-bypassable" gate would leak to opted-out recipients after any redeploy.
+    import logging
+    _log = logging.getLogger("smb_broker")
     try:
-        from storage.supabase_client import select_rows
+        # STRICT, and ORDERED. Two separate defects lived in these four lines.
+        #
+        # select_rows returns [] on ANY failure and cannot raise, so the
+        # handler below was dead code and a Supabase blip logged "hydrated 0
+        # durable opt-outs" - indistinguishable from "there are none". The
+        # comment directly above says this hydration exists so the
+        # non-bypassable gate does not leak after a redeploy. It leaked
+        # silently, exactly as described, whenever the read failed.
+        #
+        # And a bare limit=10000 with no ORDER BY returns an ARBITRARY
+        # PostgREST slice - supabase_client's own docstring warns about it -
+        # so past 10k opt-outs we would hydrate a random subset and suppress
+        # the wrong people.
+        from storage.supabase_client import select_rows_strict, SupabaseUnavailable
         from compliance.consent_store import get_consent_store
-        rows = await select_rows("consent_optouts", limit=10000)
-        pairs = [(r.get("recipient_id"), r.get("channel")) for r in (rows or [])]
+        rows = await select_rows_strict("consent_optouts", limit=10000,
+                                        order="created_at.desc")
+        pairs = [(r.get("recipient_id"), r.get("channel")) for r in rows]
         loaded = get_consent_store().hydrate_opted_out(pairs)
-        import logging
-        logging.getLogger("smb_broker").info("hydrated %d durable opt-outs", loaded)
+        _log.info("hydrated %d durable opt-outs", loaded)
+        if len(rows) >= 10000:
+            _log.error(
+                "OPTOUT_HYDRATION_TRUNCATED at %d rows - opt-outs beyond this "
+                "page are NOT suppressed in memory. Paginate this read.",
+                len(rows))
+    except SupabaseUnavailable as exc:
+        # NEVER BLOCK STARTUP - a service that will not boot is worse. But this
+        # must not read as "there were none": until it succeeds, previously
+        # opted-out recipients are unsuppressed in this process.
+        _log.error(
+            "OPTOUT_HYDRATION_FAILED err=%s -- the consent gate is running "
+            "WITHOUT durable opt-outs. Recipients who opted out before this "
+            "restart are not suppressed until a write re-adds them.", exc)
     except Exception as exc:  # noqa: BLE001 - never block startup on hydration
-        import logging
-        logging.getLogger("smb_broker").warning("optout_hydration_failed: %s", exc)
+        _log.warning("optout_hydration_failed: %s", exc)
 
     # Demand-digest sweeper. The webhook flushes queued digests when a business
     # messages us, but a window opened earlier stays open for 24h — without this
