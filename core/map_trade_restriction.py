@@ -283,6 +283,12 @@ async def _screen_party(party_name: str) -> dict:
             "sources_unavailable": res.get("sources_unavailable", []),
             "possible_matches_unverified": res.get(
                 "possible_matches_unverified", []),
+            # The authoritative one-word answer from screen_sanctions:
+            # hit / clean / candidates / not_screened. `matched` alone is
+            # false both for "screened and clean" and for "nothing screened",
+            # which is why that field exists - so pass it through rather than
+            # making every caller re-derive it from sources_unavailable.
+            "screening_status": res.get("screening_status"),
             "screening_complete": not res.get("sources_unavailable"),
             "reason_code": getattr(receipt, "reason_code", None),
         }
@@ -292,6 +298,13 @@ async def _screen_party(party_name: str) -> dict:
             "matched": False,
             "matches": [],
             "sources_queried": [],
+            # NOT SCREENED, and it must say so in the same vocabulary as the
+            # success path. Without these keys this branch produced a party
+            # dict indistinguishable from a clean screen except for `error`,
+            # which nothing downstream had to read.
+            "screening_status": "not_screened",
+            "possible_matches_unverified": [],
+            "screening_complete": False,
             "error": _ascii(str(exc)[:120]),
         }
 
@@ -439,6 +452,21 @@ async def handle_map_trade_restriction(
                 f"{pr.get('party')}: screening failed ({pr['error']})")
     parties_fully_screened = not party_screening_gaps
 
+    # AND THE CANDIDATES WE DID FIND, which are the most actionable thing on
+    # the receipt and were reported nowhere in the sentence.
+    #
+    # Screening the party "GRU" surfaces exact whole-name matches on the EU and
+    # UK lists. They are not findings - the name is three characters, so
+    # screen_sanctions demotes them on purpose - but this receipt said "No
+    # party matches found", then described the screening GAP, and never
+    # mentioned that two sanctions lists carry that exact name. A shipper
+    # reading it learns that something was incomplete and not what was in it.
+    party_candidates: list[str] = []
+    for pr in parties_screened:
+        n = len(pr.get("possible_matches_unverified") or [])
+        if n:
+            party_candidates.append(f"{pr.get('party')} ({n})")
+
     # --- 4. HS code hint ----------------------------------------------------
     # We do NOT derive HS codes from text (would risk fabrication).
     # If the caller provided hs_code, echo it (caller's responsibility).
@@ -503,8 +531,16 @@ async def handle_map_trade_restriction(
         human_message = (
             f"ADVISORY: '{dest_clean}' is not comprehensively embargoed but "
             f"carries significant restrictions ({destination_risk}). "
-            f"No party matches found. "
-            f"Review the restrictions[] field and consult a trade attorney for "
+            # NOT AN UNCONDITIONAL "No party matches found". It was stated
+            # flatly even when a party could not be screened, or when exact
+            # name candidates HAD been found and demoted.
+            + ("No confirmed party matches; unverified name candidate(s) for "
+               f"{', '.join(party_candidates[:3])} - see "
+               f"parties_screened[].possible_matches_unverified. "
+               if party_candidates else
+               "No party matches found on the screens that ran. "
+               if parties_screened else "")
+            + f"Review the restrictions[] field and consult a trade attorney for "
             f"your specific product and HS code."
         )
         reason_code = "advisory"
