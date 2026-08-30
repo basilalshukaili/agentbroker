@@ -1365,6 +1365,11 @@ async def web_terms():
     return HTMLResponse(content=render_terms(), headers=_PAGE_CACHE_HEADERS)
 
 
+@app.get("/status", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
+async def web_status():
+    return HTMLResponse(content=render_status(), headers=_PAGE_CACHE_HEADERS)
+
+
 @app.get("/privacy", response_class=HTMLResponse, tags=["Web UI"], include_in_schema=False)
 async def web_privacy():
     return HTMLResponse(content=render_privacy(), headers=_PAGE_CACHE_HEADERS)

@@ -394,6 +394,61 @@ def render_checkout(plan: str | None) -> str:
 # Terms of Service
 # ---------------------------------------------------------------------------
 
+def render_status() -> str:
+    """A status page a person can read.
+
+    The footer linked "Status" straight at /health, which serves raw JSON. A
+    buyer checking whether we are up got a machine payload - and an outside
+    reviewer listed it among the things that cost us trust.
+
+    It is DERIVED FROM THE SAME health_check() the monitors and Render use, so
+    this page cannot claim "operational" while the endpoint says otherwise.
+    That is the whole point: a status page maintained separately from the
+    thing it reports on eventually lies, and a green light nobody computes is
+    the purest form of the defect this codebase keeps finding.
+    """
+    from agent_interface.discovery import health_check
+
+    h = health_check()
+    ok = h.get("status") == "healthy"
+    colour = "#10b981" if ok else "#f59e0b"
+    word = "All systems operational" if ok else "Degraded"
+
+    rows = "".join(
+        f'<tr><td style="padding:.5rem 1rem .5rem 0">{k}</td>'
+        f'<td style="padding:.5rem 0;color:'
+        f'{"#10b981" if v == "ok" else "#f59e0b"}">{v}</td></tr>'
+        for k, v in (h.get("checks") or {}).items()
+    )
+
+    body = f"""
+  <h1>Status</h1>
+  <p style="font-size:1.15rem;color:{colour};font-weight:600">{word}</p>
+  <p style="color:var(--text-muted);font-size:.9rem">Checked {h.get('timestamp')}.
+  This page runs the same checks as our monitoring - it is not a separately
+  maintained light.</p>
+
+  <h2>Service checks</h2>
+  <table style="border-collapse:collapse">{rows}</table>
+
+  <h2>What these mean</h2>
+  <ul>
+    <li><strong>manifest</strong> - the tool catalogue loads and is non-empty.</li>
+    <li><strong>directory</strong> - the supply directory loads.</li>
+    <li><strong>compliance</strong> - the jurisdiction rules are present.</li>
+  </ul>
+  <p style="color:var(--text-muted);font-size:.9rem">These are checks on THIS
+  service. A dependency being slow - a sanctions authority, a registry - does
+  not show here; every tool reports that in its own response instead, naming
+  the source that was unavailable. That is deliberate: a status page that goes
+  red when someone else's server blinks trains you to ignore it.</p>
+
+  <h2>Machine-readable</h2>
+  <p><a href="__ORIGIN__/health">__ORIGIN__/health</a> returns the same data as JSON.</p>
+"""
+    return page("Status", body, active="", description="Live service status.")
+
+
 def render_terms() -> str:
     body = f"""
 <article class="legal">

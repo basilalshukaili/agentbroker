@@ -10,6 +10,27 @@
   },
   "releases": [
     {
+      "version": "0.2.10",
+      "date": "2026-08-30",
+      "headline": "Sanctions screening now covers the EU and UK lists, not just OFAC",
+      "added": [
+        "screen_sanctions now screens the EU Consolidated financial sanctions list (European Commission) and the UK Sanctions List (FCDO) alongside OFAC SDN - roughly 39,000 additional names, from the authorities that publish them, with no API key and no per-query cost.",
+        "Every screen states how old its EU/UK data is, and refuses to answer from a copy older than seven days rather than returning a stale clean.",
+        "Matches now carry the country recorded on the listing, and a country_match flag when you pass one. It ranks results; it never removes them - our country data is the address on a listing, not everywhere a party operates.",
+        "entity_type on EU and UK matches is now real (individual vs entity), read from each authority's own type column.",
+        "x402 is documented as a self-serve option: attach a payment in params._meta['x402/payment'] and a paid tool runs with no key and no signup. It was already implemented and we were not telling anyone.",
+        "A signup form on the docs page. Getting a free key no longer requires a terminal."
+      ],
+      "changed": [
+        "preview_cost now reports whether its success-probability figure is a measurement or our own prior, and says which in words. Below 20 real calls it will tell you it is a prior.",
+        "verify_company_record matches SEC records regardless of punctuation, so 'Apple Inc' resolves the same as 'Apple Inc.'.",
+        "Tool and coverage counts across the site, the manifest and the registry are now derived from one source and gated in CI."
+      ],
+      "internal_fixed": [
+        "Kept internal per the 2026-08-26 directive: a large set of honesty and failure-reporting corrections found by adversarial review."
+      ]
+    },
+    {
       "version": "0.2.6",
       "date": "2026-08-26",
       "headline": "Bigger free quotas, honest pricing everywhere, and a working unsubscribe.",

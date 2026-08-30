@@ -239,7 +239,7 @@ def _footer() -> str:
     <a href="{link('/manifest')}">Manifest</a> &middot;
     <a href="/openapi.yaml">OpenAPI</a> &middot;
     <a href="/llms.txt">llms.txt</a> &middot;
-    <a href="{link('/health')}">Status</a> &middot;
+    <a href="{link('/status')}">Status</a> &middot;
     <a href="/docs">API docs</a>
   </p>
   <p>&copy; 2026 {BRAND}. All rights reserved.</p>
