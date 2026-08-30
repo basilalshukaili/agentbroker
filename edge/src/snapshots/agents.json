@@ -213,7 +213,7 @@
     {
       "id": "preview_cost",
       "name": "Preview Cost",
-      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview.",
+      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Returns the exact price when it is fixed, and a min/max range when the cost depends on channel or outcome. It does not promise an accuracy percentage - check cost_range.",
       "tags": [
         "sync",
         "read_only"

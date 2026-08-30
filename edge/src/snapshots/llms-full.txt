@@ -9,7 +9,7 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 - **Addressable market**: 60M+ US SMBs in the addressable market, wedge focus on personal services, home services, and professional services. Current on-platform supply is in early rollout — call `import_booking_url` with any public booking URL to add a business instantly.
 - **Compliance built in**: TCPA, GDPR, CASL, CAN-SPAM, 10DLC, and two-party recording consent are enforced as a non-bypassable gate.
 - **Idempotent**: every state-changing operation is keyed by (agent_id, operation, idempotency_key) — safe to retry.
-- **Predictable cost**: `preview_cost` is free and returns ±5% accurate estimates before you commit.
+- **Predictable cost**: `preview_cost` is free and returns the exact accurate estimates before you commit.
 - **Channel fallback**: direct API → voice AI → SMS → email → web form — automatic, transparent.
 - **Async-aware**: long-running operations return `pending_async` with a webhook callback.
 
@@ -135,7 +135,7 @@ Retrieve the final OutcomeReceipt for a completed operation.
 
 ### preview_cost
 
-Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview.
+Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Returns the exact price when it is fixed, and a min/max range when the cost depends on channel or outcome. It does not promise an accuracy percentage - check cost_range.
 
 - **When to use**: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed.
 - **When NOT to use**: Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview.
@@ -1756,7 +1756,7 @@ hello@hatchloop.dev
     },
     {
       "name": "preview_cost",
-      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within \u00b15% of preview.",
+      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Returns the exact price when it is fixed, and a min/max range when the cost depends on channel or outcome. It does not promise an accuracy percentage - check cost_range.",
       "when_to_use": "Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed.",
       "when_not_to_use": "Do not use in a hot loop \u2014 cache the result for at least 60 seconds if repeating the same preview.",
       "execution_profile": "sync",
@@ -1810,7 +1810,11 @@ hello@hatchloop.dev
           },
           "cost_accuracy_slo": {
             "type": "string",
-            "const": "\u00b15%"
+            "description": "Basis of the estimate, not a tolerance. 'exact' when the price is fixed and the preview IS the charge; otherwise a range - consult cost_range for min/max. No accuracy percentage is promised: nothing measures preview against the eventual charge.",
+            "examples": [
+              "exact",
+              "range: see cost_range (min/max)"
+            ]
           }
         }
       },
@@ -4688,7 +4692,11 @@ hello@hatchloop.dev
     },
     "cost_accuracy_slo": {
       "type": "string",
-      "const": "\u00b15%"
+      "description": "Basis of the estimate, not a tolerance. 'exact' when the price is fixed and the preview IS the charge; otherwise a range - consult cost_range for min/max. No accuracy percentage is promised: nothing measures preview against the eventual charge.",
+      "examples": [
+        "exact",
+        "range: see cost_range (min/max)"
+      ]
     }
   }
 }

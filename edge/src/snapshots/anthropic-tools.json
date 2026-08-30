@@ -495,7 +495,7 @@
     },
     {
       "name": "preview_cost",
-      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Accuracy SLO: actual cost within ±5% of preview. Use when: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed. Do NOT use when: Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview. Cost: free (no key required).",
+      "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Returns the exact price when it is fixed, and a min/max range when the cost depends on channel or outcome. It does not promise an accuracy percentage - check cost_range. Use when: Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed. Do NOT use when: Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview. Cost: free (no key required).",
       "input_schema": {
         "type": "object",
         "required": [
