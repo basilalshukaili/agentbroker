@@ -42,9 +42,40 @@ EXCLUDED = {
 }
 
 # Any run of list names joined by / or , inside a coverage claim.
-CLAIM = re.compile(
-    r"(?:sanctions[^.\n]{0,40}?)\b((?:OFAC|EU|UN|UK)(?:\s*[/,]\s*(?:OFAC|EU|UN|UK)){1,3})\b",
-    re.IGNORECASE)
+#
+# THE TRIGGER USED TO BE THE LITERAL WORD "sanctions" WITHIN 40 CHARACTERS.
+# That is one phrasing out of many, and the ones it missed are the natural
+# ones:
+#
+#     "Screened against OFAC, EU, UN and UK"      <- no "sanctions"
+#     "watchlist coverage: OFAC/EU/UN/UK"         <- no "sanctions"
+#     "we check OFAC, EU, UN, UK before sending"  <- no "sanctions"
+#
+# Every one of those claims the UN list, which we deliberately do not screen
+# because it carries no commercial licence. The guard existed to stop exactly
+# that sentence being published and could not see it written normally.
+#
+# So: find the run of list names first, then require screening CONTEXT
+# anywhere on the line. A false positive here costs one reworded sentence; a
+# false negative is a licence claim we cannot back.
+LIST_RUN = re.compile(
+    r"\b((?:OFAC|EU|UN|UK)(?:\s*[/,]\s*(?:OFAC|EU|UN|UK)){1,3})\b")
+SCREENING_CONTEXT = re.compile(
+    r"\b(?:sanction\w*|screen\w*|watch\s?list\w*|designat\w*|embargo\w*|"
+    r"denied[- ]part\w*|checked against|coverage)\b", re.IGNORECASE)
+
+
+class _Claim:
+    """Keeps the old CLAIM.findall(line) shape for the scanner below."""
+
+    @staticmethod
+    def findall(line: str) -> list:
+        if not SCREENING_CONTEXT.search(line):
+            return []
+        return [m.group(1) for m in LIST_RUN.finditer(line)]
+
+
+CLAIM = _Claim
 
 # A RETIRED VENDOR IS A CLAIM TOO. We stopped using OpenSanctions on
 # 2026-08-30; a sweep found the name still published on thirteen surfaces,

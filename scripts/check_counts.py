@@ -104,8 +104,16 @@ SURFACES = [
 ]
 
 # A line that is deliberately about a different number, or about the past.
+#
+# "was " AND "were " USED TO BE ON THIS LIST AND EXEMPTED ALMOST ANYTHING.
+# They were meant to catch past tense ("the count was 18"), but they matched
+# any sentence containing the word - "18 tools were added this week", "there
+# were 18 tools in the first release", "our API was built around 18 tools".
+# An exemption this broad is indistinguishable from not scanning the line, and
+# a guard that silently stops looking is worse than no guard, because the
+# green tick is read as coverage.
 EXEMPT_LINES = ("AUDIT-", "changelog", "used to", "previously", "no longer",
-                "grew from", "up from", "was ", "were ")
+                "grew from", "up from")
 
 # Qualifiers that make the number a SUBSET rather than our total.
 SUBSET = re.compile(
@@ -138,9 +146,18 @@ def main(argv: list[str]) -> int:
         return 0
 
     # (?<![-\d]) keeps "20-100 tools" from reading as a claim of 100.
+    #
+    # THE NUMBER AND THE NOUN ARE OFTEN NOT ADJACENT. This required them to
+    # touch, so "18 MCP tools" - the exact phrasing our own copy uses - was
+    # invisible to the guard written to catch a wrong tool count. Up to two
+    # qualifier words are allowed between them; SUBSET still exempts the
+    # phrasings that make the number a legitimate subset ("9 free tools"),
+    # and RATE still exempts "100 operations per day".
     patterns = {
-        noun: re.compile(r"(?<![-\d])\b(\d{1,4})\+?\s+" + re.escape(noun) + r"\b",
-                         re.IGNORECASE)
+        noun: re.compile(
+            r"(?<![-\d])\b(\d{1,4})\+?\s+(?:[A-Za-z][\w-]*\s+){0,2}"
+            + re.escape(noun) + r"\b",
+            re.IGNORECASE)
         for noun in NOUNS
     }
 

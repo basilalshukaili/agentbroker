@@ -124,7 +124,7 @@ URL: <https://mcp.so/submit>
 | MCP server name | `Agent Broker` |
 | GitHub URL | `https://github.com/basilalshukaili/agentbroker` |
 | Endpoint URL | `https://hatchloop.dev/mcp/agent-broker` |
-| Description (short) | `13 MCP tools to find, message, and book appointments at small businesses worldwide. Turns any Cal.com / Calendly / Doctolib / Booksy / OpenTable / Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity URL into a Claude-bookable smb_id.` |
+| Description (short) | `20 MCP tools to find, message, and book appointments at small businesses worldwide. Turns any Cal.com / Calendly / Doctolib / Booksy / OpenTable / Setmore / Square / Acuity / Schedulista / Squarespace / BookMyCity URL into a Claude-bookable smb_id.` |
 | Tags | `mcp, mcp-server, scheduling, business, compliance, cal-com, calendly, doctolib` |
 | Author email | `hello@hatchloop.dev` |
 

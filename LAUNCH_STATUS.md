@@ -195,7 +195,7 @@ You've explicitly demanded fact-based readiness, not vibes. The facts:
 
 | Fact | Evidence | What it means |
 |---|---|---|
-| 12 MCP tools respond on `/mcp` | `tools/list` returned 20 tools in this session | Claude/Cursor can connect today. |
+| 20 MCP tools respond on `/mcp` | `tools/list` returned 20 tools in this session | Claude/Cursor can connect today. |
 | Compliance gate is non-bypassable | `tests/unit/test_compliance.py` 100% pass; gate sits before all outbound channel adapters | A spam-bot agent can't smuggle through. |
 | Idempotency is 24h scoped | `core/*` handlers use `(agent_id, operation, key)` as the key | Safe to retry on flaky networks. |
 | 26 jurisdictions have native rules | `compliance/jurisdiction_rules.py` enumerates AE, SA, OM, QA, KW, BH, IN, PK, JP, SG, ID, KR, AU, NZ, BR, MX, FR, DE, IT, ES, NL, US, EU, GB, CA + INTERNATIONAL fallback | A US agent and a Japanese agent both get correct opt-in rules. |

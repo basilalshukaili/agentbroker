@@ -53,24 +53,54 @@ CANNOT_RUN_LOCALLY = [
 ]
 
 
-def _steps(job: dict) -> list[dict]:
-    out = []
+def _steps(job: dict) -> tuple[list[dict], list[str]]:
+    """(steps, reasons for anything this parser could not turn into a step).
+
+    A `run:` BLOCK IS ONE COMMAND, NOT N COMMANDS.
+
+    This used to split every block on newlines and treat each line as its own
+    step, which mangles anything that spans lines. On our own workflow it
+    produced these "steps":
+
+        for i in 1 2 3 4 5; do
+        echo "retry $i..."; sleep 30
+        done
+
+    Three fragments, none of them runnable, none of them what CI runs. A
+    line-continuation (`python x.py \\` / `  --flag`) breaks the same way, and
+    a `cd` on one line stops applying to the next. Whatever preflight reported
+    about those steps was about commands that do not exist.
+
+    So each block runs as a block, through a shell, the way the runner does.
+
+    The second half of this is the `return` that used to sit here: a step whose
+    `run` was not a plain string was silently dropped. A pre-push check that
+    quietly stops covering a step is the worst shape a check can have - the
+    output looks the same either way. Now it is reported as unparsed.
+    """
+    out: list[dict] = []
+    unparsed: list[str] = []
     for step in job.get("steps") or []:
         if not isinstance(step, dict) or "run" not in step:
-            continue
+            continue                    # `uses:` steps are actions, not commands
         run = step.get("run")
         if not isinstance(run, str):
+            unparsed.append(
+                f"{str(step.get('name') or '(unnamed step)')[:48]} "
+                f"(its `run` is {type(run).__name__}, not a string - this "
+                f"guard cannot run it and is NOT covering it)")
             continue
-        for line in run.splitlines():
-            cmd = line.strip()
-            if not cmd or cmd.startswith("#"):
-                continue
-            out.append({
-                "cmd": cmd,
-                "cwd": step.get("working-directory") or ".",
-                "job_optional": bool(step.get("continue-on-error")),
-            })
-    return out
+        block = run.strip()
+        if not block or all(l.strip().startswith("#") or not l.strip()
+                            for l in block.splitlines()):
+            continue
+        out.append({
+            "cmd": block,
+            "label": (step.get("name") or block.splitlines()[0]).strip(),
+            "cwd": step.get("working-directory") or ".",
+            "job_optional": bool(step.get("continue-on-error")),
+        })
+    return out, unparsed
 
 
 def collect() -> tuple[list[dict], list[str]]:
@@ -92,13 +122,16 @@ def collect() -> tuple[list[dict], list[str]]:
             continue
         # `continue-on-error` steps report but do not gate; a whole job of them
         # (the post-deploy smoke) is not something a pre-push check should run.
-        for st in _steps(job):
+        steps, unparsed = _steps(job)
+        skipped.extend(f"{u} [job '{job_name}']" for u in unparsed)
+        for st in steps:
             cmd = st["cmd"]
             why = next((w for frag, w in CANNOT_RUN_LOCALLY if frag in cmd), None)
             if why:
-                skipped.append(f"{cmd[:56]} ({why})")
+                skipped.append(f"{st['label'][:56]} ({why})")
             elif st["job_optional"]:
-                skipped.append(f"{cmd[:56]} (continue-on-error in job '{job_name}')")
+                skipped.append(
+                    f"{st['label'][:56]} (continue-on-error in job '{job_name}')")
             else:
                 st["job"] = job_name
                 runnable.append(st)
@@ -157,13 +190,22 @@ def main(argv: list[str]) -> int:
     failed = []
     for st in runnable:
         cwd = os.path.join(root, st["cwd"]) if st["cwd"] != "." else root
-        p = subprocess.run(st["cmd"], cwd=cwd, shell=True, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace")
+        # A multi-line block needs a real shell. GitHub's runner uses bash;
+        # cmd.exe would choke on the first `for ... do`, so a block goes to
+        # bash when one is present and to the default shell otherwise.
+        cmd = st["cmd"]
+        if "\n" in cmd and shutil.which("bash"):
+            p = subprocess.run(["bash", "-e", "-c", cmd], cwd=cwd,
+                               capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+        else:
+            p = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True,
+                               text=True, encoding="utf-8", errors="replace")
         tail = ((p.stdout or p.stderr).strip().splitlines() or [""])[-1]
         ok = p.returncode == 0
-        print(f"  {'ok  ' if ok else 'FAIL'} {st['cmd'][:44]:44} {tail[:50]}")
+        print(f"  {'ok  ' if ok else 'FAIL'} {st['label'][:44]:44} {tail[:50]}")
         if not ok:
-            failed.append((st["cmd"], (p.stdout or "") + (p.stderr or "")))
+            failed.append((st["label"], (p.stdout or "") + (p.stderr or "")))
 
     if failed:
         print(f"\n{len(failed)} step(s) FAILED - do not push:\n")
