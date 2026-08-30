@@ -147,9 +147,43 @@ async def verify_free_key(token: str = Query(..., description="Signed verificati
             ),
         )
 
-    # Consume the pending row from Supabase (best-effort cleanup — doesn't
-    # affect the grant; signature check above is the real gate).
-    await consume_pending(token)
+    # SINGLE USE WHEN WE CAN TELL, signature-only when we cannot.
+    #
+    # This was a bare best-effort cleanup, so the link stayed valid for its
+    # whole hour and could be replayed by anyone holding it - verified during
+    # a walkthrough by clicking the same link twice and getting a key both
+    # times. Enforcing single use USED to be impossible without also breaking
+    # signup during a database blip, because consume_pending returned None
+    # both for "already used" and for "could not check". It now raises for the
+    # second, so the two can be told apart:
+    #
+    #   row found      -> consume it and continue
+    #   row absent     -> already used; say so instead of minting again
+    #   cannot look up -> continue on the signature, which is still a real gate
+    #
+    # The key is deterministic per email, so a replay never produced a second
+    # identity or extra quota. What it produced was a link that kept working
+    # after the person had already used it.
+    from agent_interface.key_request_logic import PendingLookupUnavailable
+    try:
+        if await consume_pending(token) is None:
+            return HTMLResponse(
+                status_code=400,
+                content=html_error(
+                    "This link has already been used",
+                    "Your key was issued the first time you clicked it. If you "
+                    "still have the email, the key is in it. Otherwise request "
+                    "a fresh one at <a href='/docs/#key'>hatchloop.dev/docs</a> "
+                    "- it takes a few seconds and costs nothing.",
+                ),
+            )
+    except PendingLookupUnavailable as exc:
+        # Availability wins here: the signature and expiry above are a real
+        # gate on their own, and refusing every signup during a Supabase blip
+        # is a worse failure than honouring a replayed link.
+        logger.warning(
+            "pending_lookup_unavailable err=%s -- issuing on signature alone; "
+            "single-use is NOT enforced for this request", exc)
 
     # Mint a free-tier JWT
     customer_id = f"free_{hashlib.sha256(email.encode()).hexdigest()[:16]}"

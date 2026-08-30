@@ -206,14 +206,30 @@ async def store_pending(email: str, token: str, expires_at: float) -> None:
         logger.warning("pending_keys_store_failed email=%s err=%s", email, exc)
 
 
+class PendingLookupUnavailable(RuntimeError):
+    """The pending_keys table could not be read - NOT the same as 'no row'."""
+
+
 async def consume_pending(token: str) -> Optional[str]:
     """
     Look up and delete a pending_key row by token.
-    Returns email if found. Falls back gracefully on DB errors.
+    Returns email if found, None if the row is genuinely absent (already used),
+    and RAISES PendingLookupUnavailable if we could not find out.
+
+    THE TWO USED TO BE THE SAME ANSWER, and they mean opposite things. This
+    returned None both for "this link was already used" and for "Supabase did
+    not answer", which is why the caller could not enforce single use without
+    also breaking signup during a database blip. Verification links are now
+    single-use when we can tell, and fall back to signature-only when we
+    genuinely cannot - see verify_free_key.
     """
     try:
-        from storage.supabase_client import select_rows
-        rows = await select_rows("pending_keys", filters={"token": token})
+        from storage.supabase_client import select_rows_strict, SupabaseUnavailable
+        try:
+            rows = await select_rows_strict("pending_keys",
+                                            filters={"token": token})
+        except SupabaseUnavailable as exc:
+            raise PendingLookupUnavailable(str(exc)) from exc
         if not rows:
             return None
         import httpx as _httpx
@@ -227,9 +243,11 @@ async def consume_pending(token: str) -> Optional[str]:
                     params={"token": f"eq.{token}"},
                 )
         return rows[0].get("email")
+    except PendingLookupUnavailable:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("pending_keys_consume_failed token=%s err=%s", token[:8], exc)
-        return None
+        raise PendingLookupUnavailable(str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
