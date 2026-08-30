@@ -56,7 +56,28 @@ def _payments_block() -> dict:
     """
     try:
         from billing.pricing import _PRICING_CENTS
-        free = sorted(n for n, c in _PRICING_CENTS.items() if c == 0)
+        # "FREE" MEANT "COSTS NO CREDITS", AND AN AGENT READS IT AS "I CAN
+        # CALL THIS WITH NO CREDENTIALS". Those are different sets.
+        #
+        # import_booking_url costs zero credits AND requires a key, so it was
+        # published in free_tools - and an autonomous client that planned
+        # around this document got 401 auth_required on a tool the manifest
+        # told it was free. This is the file agents read to decide what they
+        # can do without signing up, so the distinction has to be in it.
+        try:
+            from agent_interface.mcp_server import _WRITE_TOOLS_REQUIRING_AUTH
+            needs_key = set(_WRITE_TOOLS_REQUIRING_AUTH)
+        except Exception:                       # noqa: BLE001
+            needs_key = set()
+        zero = {n for n, c in _PRICING_CENTS.items() if c == 0}
+        # Priced tools that are still callable keyless up to a daily quota.
+        try:
+            from billing.data_quota import PREMIUM_DATA_TOOLS
+            quota_free = sorted(set(PREMIUM_DATA_TOOLS) - needs_key)
+        except Exception:                       # noqa: BLE001
+            quota_free = []
+        free = sorted(zero - needs_key)
+        free_with_key = sorted(zero & needs_key)
         paid = sorted(n for n, c in _PRICING_CENTS.items() if c > 0)
     except Exception:  # noqa: BLE001
         return {"status": "see_pricing",
@@ -91,15 +112,28 @@ def _payments_block() -> dict:
     rails = ["credits"] + (["x402"] if x402_live else [])
     return {
         "status": "active",
+        # Callable with NO key and NO credits.
         "free_tools": free,
+        # Cost no credits, but need a free key. Kept separate because an agent
+        # planning a keyless session must not treat these as available.
+        "free_with_key_tools": free_with_key,
         "paid_tools": paid,
         "unit": "credits (1 credit = 1 US cent)",
         "rails": rails,
+        # Tools that cost credits but are free within a daily per-caller
+        # quota. They are the reason "how many tools are free" has three
+        # different right answers, and why the site managed to publish the
+        # count seven different ways.
+        "quota_free_tools": quota_free,
         "note": (
-            f"{len(free)} tools are free to call; {len(paid)} spend credits. "
-            "Premium data tools are free within a daily quota, then billed per "
-            "call. Call preview_cost (free) for the exact price of any "
-            "operation before committing. Pricing: https://hatchloop.dev/pricing"
+            f"THREE NUMBERS, because 'free' means three things here. "
+            f"{len(free)} tools are callable with NO key and NO credits. "
+            f"{len(quota_free)} more are callable with no key up to a daily "
+            f"quota, then cost credits. That is {len(free) + len(quota_free)} "
+            f"usable without signing up. The remaining {len(paid) - len(quota_free) + len(free_with_key)} "
+            f"need a free key, and {len(paid)} spend credits once past any "
+            f"quota. Call preview_cost (free) for the exact price of any "
+            f"operation before committing. Pricing: https://hatchloop.dev/pricing"
             + (" No account needed to pay per call: attach an x402 payment in "
                "params._meta['x402/payment'] and the server returns a signed "
                "price offer (USDC on Base) for any paid tool."
@@ -145,8 +179,18 @@ def get_ai_plugin_manifest() -> dict:
         "name_for_human": "Agent Broker",
         "name_for_model": "agent_broker",
         "description_for_human": (
-            "Discover, verify, message, and schedule with millions of small businesses "
-            "through a single compliance-aware API."
+            # NOT "millions of small businesses". The supply network holds 25
+            # rows, mostly sample data, and find_business says so in its own
+            # description - so this file was the loudest claim we made and the
+            # least true. It is also the file directories scrape and republish,
+            # which is how an overclaim outlives the page it was written on.
+            #
+            # What IS true and is worth leading with: the screening and
+            # verification tools hit real primary sources on every call.
+            "Screen names against OFAC, EU and UK sanctions lists, verify "
+            "companies against GLEIF and SEC EDGAR, and check trade "
+            "restrictions - then find, message and book small businesses, "
+            "with a compliance gate on every send."
         ),
         "description_for_model": (
             "Plugin for AI agents to interact with small/mid-sized businesses (SMBs) — "

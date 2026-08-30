@@ -311,11 +311,16 @@ def render_pricing() -> str:
   <h3>Do you offer a free tier?</h3>
   <p style="color:var(--text-muted);">Yes. 100 gated operations per DAY per agent identity, forever. No card required, and twelve tools need no key at all.</p>
   <h3>Can I change plan at any time?</h3>
-  <p style="color:var(--text-muted);">Yes. Upgrades take effect immediately and are prorated. Downgrades take effect at the end of the current billing period.</p>
+  <p style="color:var(--text-muted);">There are no plans to change. Credits are
+  bought in packages, spent per call, and never expire - buy a bigger package
+  when you want more, and nothing recurs. This answer used to describe
+  prorated upgrades and downgrades at the end of a billing period, which was
+  left over from a subscription we retired.</p>
   <h3>What payment methods do you accept?</h3>
   <p style="color:var(--text-muted);">Cards (Visa, Mastercard, AmEx), Apple Pay, Google Pay, PayPal, and SEPA &mdash; all routed through Polar. Enterprise plans can pay by wire.</p>
   <h3>Is there a contract?</h3>
-  <p style="color:var(--text-muted);">No. Cancel anytime. Enterprise plans use a flexible MSA.</p>
+  <p style="color:var(--text-muted);">No, and there is nothing to cancel -
+  we do not bill on a recurring basis at all.</p>
 </section>
 """
     return page("Pricing", body, active="pricing",
@@ -407,8 +412,11 @@ def render_terms() -> str:
   voice; live booking execution via Cal.com, with eleven further booking
   platforms recognised for import (Calendly, Doctolib, Booksy, Fresha,
   OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity);
-  and compliance screening against live registries (GLEIF, SEC EDGAR, OFAC and
-  EU/UN sanctions lists).</p>
+  and compliance screening against live registries (GLEIF, SEC EDGAR, the OFAC
+  SDN list, the EU Consolidated list and the UK Sanctions List). The UN
+  consolidated list is NOT screened - it carries no licence permitting
+  commercial redistribution, and screen_sanctions says so in its own
+  output.</p>
   <p>Every outbound communication routes through a non-bypassable compliance
   gate that enforces TCPA / GDPR / CASL / PDPL rules across 22 jurisdictions.
   Marketing messages require a verified opt-in <code>consent_record_id</code>
@@ -660,10 +668,15 @@ def render_refund() -> str:
   it is faster.</p>
 
   <h2>7. Cancellation</h2>
-  <p>You may cancel any time from your account dashboard. Cancellation
-  takes effect at the end of the current billing period; we do not
-  prorate the unused portion of a cancelled month, but we do not bill
-  you again.</p>
+  <p>There is nothing to cancel. We do not sell subscriptions and we do not
+  bill on a recurring basis, so there is no billing period to end and no
+  renewal to stop. Credits you have bought stay on your account and do not
+  expire. If you simply stop calling us, you are never charged again.</p>
+  <p style="color:var(--text-muted);font-size:.9rem">This section used to
+  describe cancelling at the end of a billing period and forfeiting the
+  unused part of a month. That was left over from a subscription we retired,
+  and it contradicted section 2 of this same document - in the page a
+  customer reads immediately before paying.</p>
 
   <h2>8. Contact</h2>
   <p>{LEGAL_ENTITY}<br>
