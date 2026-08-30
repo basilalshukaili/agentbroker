@@ -138,6 +138,14 @@ jobs:
       - name: Every advertised parameter does something
         run: python scripts/check_params_do_something.py
 
+      # A count typed by hand is true only on the day it is typed. An audit
+      # found "22 jurisdictions" on 15+ surfaces (real: 26 - we were
+      # UNDER-claiming our own compliance coverage), plus 12/13/14/18 tools
+      # against 20, and a static test badge reading 103/103 that rendered
+      # green regardless of whether the suite passed.
+      - name: Published counts match reality
+        run: python scripts/check_counts.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

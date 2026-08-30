@@ -5,7 +5,7 @@ compliance gate.
 The problem it solves for a calling agent:
     send_message ($0.02-0.22) and call_business ($0.50) both run every outbound
     through a non-bypassable compliance gate (TCPA / GDPR / CASL / CAN-SPAM /
-    10DLC across 22 jurisdictions). If the gate rejects, the agent has already
+    10DLC across 26 jurisdictions). If the gate rejects, the agent has already
     committed to the paid call and burned a turn discovering the send was never
     legal. Before spending, an agent wants to know CHEAPLY and INSTANTLY whether
     a (recipient, channel, message_type, content) combination would pass.

@@ -586,6 +586,17 @@ class PreviewCostResponse(BaseModel):
     estimated_latency_p50_ms: int
     estimated_latency_p95_ms: int
     success_probability_estimate: float
+    # SAME TREATMENT AS cost_accuracy_slo BELOW, for the same reason.
+    #
+    # success_probability_estimate is published to three significant figures
+    # and docs/AGENT_INTEGRATION_GUIDE.md tells agents to ABORT below 0.5 - so
+    # it decides whether a customer spends money. It was a hardcoded constant,
+    # and the code that could have measured it was called from nowhere.
+    #
+    # A number an agent acts on must carry where it came from. These fields
+    # have no default: whoever builds this result has to say.
+    success_probability_basis: str
+    latency_basis: str
     channel_likely: str
     # WAS `= "+/-5%"`. That is a NUMERIC PUBLIC PROMISE and nothing anywhere
     # measured it - no comparison of preview against the eventual charge exists

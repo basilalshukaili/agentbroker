@@ -112,7 +112,7 @@ sees Agent Broker. Several MCP clients use this index as a fallback.
 ```
 Hi team,
 
-I built an MCP server that gives Claude 12 tools to find, verify,
+I built an MCP server that gives Claude 20 tools to find, verify,
 message, and schedule appointments with small businesses worldwide.
 Live, free for any agent up to 100 ops/month, full TCPA / GDPR / CASL
 compliance gate built in.
@@ -150,7 +150,7 @@ Submitting Agent Broker for the Cursor MCP catalog.
 
 Endpoint:        https://hatchloop.dev/mcp/agent-broker
 Repo:            https://github.com/basilalshukaili/agentbroker
-12 tools: find/verify/message/schedule across small businesses worldwide.
+20 tools: find/verify/message/schedule across small businesses worldwide.
 Free tier 100 ops/month. No auth required for read-only ops.
 
 Connection JSON:
@@ -195,7 +195,7 @@ Submitting Agent Broker for the Cline recommended-MCP-servers list:
 
 Gives Cline users the ability to actually book appointments and message
 small businesses, not just simulate. Compliance gate is non-bypassable
-(TCPA/GDPR/CASL across 22 jurisdictions + INTERNATIONAL fallback).
+(TCPA/GDPR/CASL across 26 jurisdictions + INTERNATIONAL fallback).
 
 Happy to submit a PR if you'd prefer that over an issue.
 ```
@@ -326,7 +326,7 @@ public". This is the channel mix designed for an MCP server in 2026.
 - 0.818 aggregate WinRate measured across 504 simulated trials
   (3 personas × 168 tasks × 3 trials). See `optimizer/simulate.py`
   and `docs/BENCHMARKS.md`.
-- 22 jurisdictions with native compliance rules. INTERNATIONAL
+- 26 jurisdictions with native compliance rules. INTERNATIONAL
   conservative default for the rest. Code: `compliance/jurisdiction_rules.py`.
 - 7 agent-discovery protocols (MCP, ai-plugin.json, openai-tools.json,
   anthropic-tools.json, agents.json, mcp.json, llms.txt).

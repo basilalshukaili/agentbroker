@@ -44,7 +44,7 @@ connects.
 `send_message`, `send_transactional_confirmation`, `handle_inbound`,
 `escalate_to_human`, and `import_booking_url` were advertised in `tools/list`
 but the MCP dispatcher had no case for them. Agents trying to call them got
-"registered but not yet routed" errors. **Now all 13 tools are callable.**
+"registered but not yet routed" errors. **Now all 20 tools are callable.**
 
 ### Critical fix #3 — added user-query examples to every description
 
@@ -95,7 +95,7 @@ Submitted = ✅. Pending = ⏳. Cannot-automate = 👆 (you click once).
 
 | Aggregator | Status | How agents query it |
 |---|---|---|
-| **Smithery** | ✅ live, listing republished with 13 tools | REST API: `GET https://smithery.ai/api/v1/servers?q=<query>` returns ranked MCPs |
+| **Smithery** | ✅ live, listing republished with 20 tools | REST API: `GET https://smithery.ai/api/v1/servers?q=<query>` returns ranked MCPs |
 | **Glama** | ⏳ indexes from GitHub topic in 1-3 days | Their search UI + API consume the GitHub `mcp-server` topic crawl |
 | **MCP servers official catalog** (`modelcontextprotocol/servers`) | ⏳ PR #4077 open | Built into Claude Desktop's "Add MCP" picker |
 | **awesome-mcp-servers** (curated list) | ⏳ PR #5626 open | Read by every list-aggregator |
@@ -182,7 +182,7 @@ Run this from any terminal to confirm the agent-facing surface is doing
 its job:
 
 ```bash
-# 1. List all 13 tools (agents call this on connect)
+# 1. List all 20 tools (agents call this on connect)
 curl -s -X POST https://hatchloop.dev/mcp/agent-broker \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \

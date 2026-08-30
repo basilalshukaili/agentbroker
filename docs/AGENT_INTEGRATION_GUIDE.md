@@ -50,7 +50,13 @@ print(preview)
 # }
 ```
 
-If `success_probability_estimate < 0.5` or `estimated_cost_usd > your_budget`, abort.
+If `estimated_cost_usd > your_budget`, abort.
+
+`success_probability_estimate` also comes back, but CHECK
+`success_probability_basis` BEFORE you branch on it. Until an operation has
+20 real calls on the instance you are talking to, that figure is our own
+prior - not an observed rate - and the basis field says so in words. Aborting
+on an unmeasured prior means aborting on our guess.
 
 ---
 

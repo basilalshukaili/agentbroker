@@ -1391,6 +1391,27 @@ async def _dispatch_operation(
     except Exception:
         pass  # billing must never break tool dispatch
 
+    # FEED THE NUMBER WE PUBLISH.
+    #
+    # preview_cost returns success_probability_estimate to three significant
+    # figures, and docs/AGENT_INTEGRATION_GUIDE.md tells agents to ABORT below
+    # 0.5. That number was a hardcoded constant. The machinery to measure it
+    # already existed in telemetry/metrics_emitter.py - MetricCounters.record()
+    # - and was called from nowhere in production: a producer with no caller
+    # sitting directly behind a number customers make spend decisions on.
+    #
+    # This is the caller. One place, so every tool is counted.
+    try:
+        from telemetry.metrics_emitter import get_metrics
+        get_metrics().record(
+            operation=name,
+            success=_success_bool,
+            latency_ms=int(getattr(receipt, "latency_ms", 0) or 0),
+            cost_usd=_amount,
+        )
+    except Exception:
+        pass  # telemetry must never break tool dispatch
+
     # Convert OutcomeReceipt → dict
     if hasattr(receipt, 'model_dump'):
         receipt_dict = receipt.model_dump()
@@ -1549,7 +1570,7 @@ async def _h_resources_read(params: dict) -> dict:
                     "valid `consent_record_id` referencing a recorded opt-in in the "
                     "consent_store; the compliance gate verifies at send time and rejects "
                     "any marketing send without recorded consent (TCPA / GDPR / CASL / PDPL "
-                    "across 22 jurisdictions). Cold outreach, drip campaigns, bulk lists, "
+                    "across 26 jurisdictions). Cold outreach, drip campaigns, bulk lists, "
                     "and A/B sends are out of scope and rate-limited regardless.\n"
                     "1. (optional) `POST /compliance/check` to preview legality for the jurisdiction\n"
                     "2. `send_message(...)` — gate runs again at send time\n"

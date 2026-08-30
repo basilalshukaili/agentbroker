@@ -20,7 +20,6 @@ reliability.channel_fallback
 reliability.retry_policy
 
 # Telemetry - built, never emitted from.
-telemetry.metrics_emitter
 telemetry.tracer
 telemetry.log_redactor
 

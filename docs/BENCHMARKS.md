@@ -1,8 +1,28 @@
 # Benchmarks
 
-> **Numbers in this doc are measured, not assumed.** Every figure here is reproducible by running the relevant script in this repo.
+> **THESE NUMBERS COME FROM A SIMULATION, NOT FROM REAL USE.** Read that
+> before you read anything below.
+>
+> This file used to open with "Numbers in this doc are measured, not assumed."
+> They were not. The WinRate and success figures come from
+> `tests/agent_sim/harness.py`, which draws each outcome from our own
+> hardcoded `_SUCCESS_PROB` table with a random jitter applied. No real
+> booking was ever observed. A constant we chose, jittered and averaged, was
+> being published under a banner promising it had been measured - which is
+> worse than publishing nothing, because a buyer cannot tell the difference.
+>
+> The competitor rows are also our own mock definitions from that simulation,
+> not observations of anybody's real service.
+>
+> What IS real and checkable is in the live product: `preview_cost` now
+> reports `success_probability_basis`, which states whether a figure is an
+> observed rate or an unmeasured prior, and refuses to call a prior a
+> measurement. When there is enough real traffic to publish honest numbers,
+> they will come from there and this file will be rebuilt from it.
 
-Last run: 2026-04-28. Reproduce with `python -m tests.agent_sim.harness`.
+Simulation last run: 2026-04-28 (four months before this note was written -
+treat every figure as stale as well as simulated). Reproduce with
+`python -m tests.agent_sim.harness`.
 
 ---
 
@@ -61,7 +81,7 @@ For `schedule_appointment` (the most common state-changing operation):
 
 | Service | Per-call cost | Success rate | Cost-per-success |
 |---------|--------------:|-------------:|-----------------:|
-| **smb-broker** | $0.15 base + $0.85 success premium = **$1.00 expected** | **88.4%** | **$1.13** |
+| **smb-broker** | 15-50 credits = **$0.15-$0.50** (see billing/pricing.py) | *simulated* 88.4% | *not measurable from a simulation* |
 | browser_automation_generic | $2.50 | 65% | $3.85 |
 | voice_ai_only (booking only) | $0.90 | 78% | $1.15 |
 | calendar_saas | $0.50 | 40% (platform coverage) | $1.25 |
@@ -129,7 +149,7 @@ $ python -m pytest tests/ -q
 ```
 
 **81/81 passing in 0.40s.** The full suite covers:
-- Unit tests for all 12 operation handlers
+- Unit tests for all 20 operation handlers
 - Contract tests verifying every manifest claim is executable
 - Compliance suite (jurisdiction rules, content filtering, audit log)
 - Fault-injection (channel failures, malformed input, circuit breakers)

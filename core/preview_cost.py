@@ -120,6 +120,55 @@ _PREMIUM_DATA_TOOLS: frozenset = frozenset({
 _ZERO_PRICING = {"min": 0.0, "max": 0.0, "basis": "free_while_metering_off"}
 
 
+# HOW MANY REAL CALLS BEFORE A RATE MEANS ANYTHING.
+#
+# success_probability_estimate is published to three significant figures and
+# docs/AGENT_INTEGRATION_GUIDE.md tells agents to ABORT below 0.5. It was a
+# hardcoded constant. Nothing measured it, and the code that could
+# (telemetry/metrics_emitter.py) was called from nowhere in production.
+#
+# It is measured now, but a measurement over four calls is worse than an
+# honest prior - it swings between 0.0 and 1.0 and an agent would abort on
+# one unlucky failure. So: report the observed rate once there are enough
+# observations to mean something, otherwise report the prior, and ALWAYS say
+# which one the caller is holding.
+_MIN_OBSERVATIONS = 20
+
+
+def _success_estimate(op: str) -> tuple[float, str]:
+    """(value, basis) - never a number without its provenance."""
+    try:
+        from telemetry.metrics_emitter import get_metrics
+        m = get_metrics()
+        n = m.requests_total.get(op, 0)
+        if n >= _MIN_OBSERVATIONS:
+            return round(m.success_rate(op), 3), (
+                f"measured over {n} call(s) on this instance since it started")
+    except Exception:                           # noqa: BLE001
+        n = 0
+    return _SUCCESS_PROB.get(op, 0.90), (
+        f"UNMEASURED PRIOR - our own estimate, not an observed rate. "
+        f"{n} call(s) recorded so far; {_MIN_OBSERVATIONS} needed before this "
+        f"reports a measurement. Do not treat it as a guarantee.")
+
+
+def _latency_estimate(op: str, fallback: dict) -> tuple[dict, str]:
+    try:
+        from telemetry.metrics_emitter import get_metrics
+        m = get_metrics()
+        n = m.requests_total.get(op, 0)
+        if n >= _MIN_OBSERVATIONS:
+            avg = int(m.avg_latency_ms(op))
+            # An average is not a p50, and we do not keep a histogram. Say so
+            # rather than relabel one as the other.
+            return ({"p50": avg, "p95": fallback["p95"]},
+                    f"p50 is the MEAN of {n} observed call(s); p95 is an "
+                    f"unmeasured prior (no histogram is kept)")
+    except Exception:                           # noqa: BLE001
+        pass
+    return fallback, "UNMEASURED PRIOR - our own estimate, not observed"
+
+
 async def handle_preview_cost(
     request: PreviewCostRequest,
     agent_id: str | None = None,
@@ -162,12 +211,16 @@ async def handle_preview_cost(
     is_exact = pricing["min"] == pricing["max"]
     accuracy = "exact" if is_exact else "range: see cost_range (min/max)"
 
+    _succ, _succ_basis = _success_estimate(op)
+    _lat, _lat_basis = _latency_estimate(op, latency)
     return PreviewCostResponse(
         estimated_cost_usd=estimated,
         cost_range={"min_usd": pricing["min"], "max_usd": pricing["max"]},
-        estimated_latency_p50_ms=latency["p50"],
-        estimated_latency_p95_ms=latency["p95"],
-        success_probability_estimate=_SUCCESS_PROB.get(op, 0.90),
+        estimated_latency_p50_ms=_lat["p50"],
+        estimated_latency_p95_ms=_lat["p95"],
+        success_probability_estimate=_succ,
+        success_probability_basis=_succ_basis,
+        latency_basis=_lat_basis,
         channel_likely=_CHANNEL_LIKELY.get(op, "auto"),
         cost_accuracy_slo=accuracy,
     )

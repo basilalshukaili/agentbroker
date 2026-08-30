@@ -50,7 +50,7 @@ These numbers are reproducible — every one comes from a command in this repo.
 | Twilio account live | `My first Twilio account` status=active | `validate_credentials.py` |
 | Cal.com account live | user=`basil-9t8bfa` | `validate_credentials.py` |
 | Vapi account live | 1 assistant configured | `validate_credentials.py` |
-| MCP server | 12 tools via JSON-RPC | `validate_credentials.py` |
+| MCP server | 20 tools via JSON-RPC | `validate_credentials.py` |
 | Compliance gate | fires correctly on gambling SMS | `validate_credentials.py` |
 | Discovery surfaces | all 7 protocols operational | `validate_credentials.py` |
 | Booking-page importer | detects 12 platforms worldwide | `python -c "from supply.booking_page_importer import detect_platform; print(detect_platform('https://cal.com/x'))"` |
@@ -69,10 +69,10 @@ until you have ≥100 real agent calls. Honesty buys credibility.
   *(Cal.com v1 was decommissioned April 2026; we caught this during validation
   and migrated. The pre-pivot code would have shipped broken.)*
 - **Vapi**: account active, 1 assistant configured. Voice calls available.
-- **MCP server**: JSON-RPC at `/mcp` lists 12 tools, dispatches `tools/call`.
+- **MCP server**: JSON-RPC at `/mcp` lists 20 tools, dispatches `tools/call`.
 - **All 7 discovery surfaces**: MCP, ai-plugin.json, openai-tools.json,
   anthropic-tools.json, agents.json, mcp.json, llms.txt.
-- **Compliance gate**: 22 jurisdictions natively modeled, conservative
+- **Compliance gate**: 26 jurisdictions natively modeled, conservative
   "international" default for the rest. Blocks restricted content (gambling /
   cannabis / adult / spam) by default.
 - **Booking-page importer**: paste any public booking URL — Cal.com, Calendly,
@@ -324,7 +324,7 @@ service-root/
 │   ├── self_test.py
 │   └── discovery.py
 │
-├── core/                   # 12 operation handlers + Pydantic models
+├── core/                   # 20 operation handlers + Pydantic models
 ├── channels/               # Twilio, Resend, Vapi, Cal.com (v2), Playwright
 ├── compliance/             # pre_check, jurisdiction_rules (22 countries)
 ├── reliability/            # circuit_breaker, retry_policy, channel_fallback
@@ -446,7 +446,7 @@ exists today, on hand:
   Cal.com, Vapi all green right now in your terminal).
 - **7 ways for any agent ecosystem to discover it** (MCP, OpenAI plugin /
   tools, Anthropic tools, A2A, llms.txt + plain OpenAPI).
-- **22 jurisdictions** with native compliance rules, conservative default
+- **26 jurisdictions** with native compliance rules, conservative default
   for the rest. Not US-only.
 - **A booking-system metadata graph** that imports any public booking page —
   Cal.com / Calendly / Doctolib / Booksy / Fresha / OpenTable / Setmore /

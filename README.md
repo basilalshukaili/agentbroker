@@ -7,7 +7,12 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Edge](https://img.shields.io/badge/edge-cloudflare%20workers-orange)](./edge)
 [![Registry](https://img.shields.io/badge/MCP%20Registry-listed-green)](https://github.com/modelcontextprotocol/servers)
-[![Tests](https://img.shields.io/badge/tests-103%2F103%20passing-brightgreen)](./tests)
+<!-- NO STATIC TEST BADGE. A shields.io badge is a literal in a
+     URL: it rendered "103/103 passing" in green whether or not
+     the suite passed, and the real count is over a thousand. A
+     badge that cannot fail is decoration pretending to be
+     evidence. The CI run on the commit is the evidence. -->
+[![CI](https://github.com/basilalshukaili/agentbroker/actions/workflows/ci.yml/badge.svg)](https://github.com/basilalshukaili/agentbroker/actions/workflows/ci.yml)
 
 **Live endpoint:** `https://hatchloop.dev/mcp/agent-broker` (streamable-http, always-on Cloudflare edge)
 
@@ -250,7 +255,7 @@ Violations surface as `ComplianceViolationError` and are never silently bypassed
 
 ```
 agentbroker/
-+-- core/                  # 14 operation handlers + shared Pydantic models
++-- core/                  # 20 operation handlers + shared Pydantic models
 +-- channels/              # Twilio, SendGrid, Vapi, Bland, Cal.com, Playwright
 +-- compliance/            # pre_check, jurisdiction_rules, consent_store, audit_log
 +-- reliability/           # retry, circuit_breaker, channel_fallback, async_runner
@@ -281,7 +286,7 @@ agentbroker/
 # Install dependencies
 pip install -r requirements.txt
 
-# Run tests (103 passing)
+# Run tests (1173 passing at the time of writing)
 python -m pytest tests/ -q
 
 # Start the API
