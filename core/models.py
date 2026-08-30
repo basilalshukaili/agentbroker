@@ -423,9 +423,39 @@ class SendMessageRequest(BaseModel):
     # channels this opens a tracked conversation and travels in-message as
     # "#4821 for Sara (via HatchLoop)" - so the business knows who it is
     # talking to on a shared number, and their reply is matched back exactly.
-    on_behalf_of: Optional[str] = None
+    on_behalf_of: Optional[str] = Field(default=None, max_length=60)
     # Optional stable id for the business, used for global demand shaping.
     business_id: Optional[str] = None
+
+    @field_validator("on_behalf_of")
+    @classmethod
+    def _clean_on_behalf_of(cls, v: Optional[str]) -> Optional[str]:
+        """A LABEL, NOT A MESSAGE BODY.
+
+        on_behalf_of is interpolated verbatim into the footer we append to an
+        outbound message, sent from OUR number under OUR brand:
+
+            -- Request #4821 for Sara (via HatchLoop). Reply with #4821 ...
+
+        It was unvalidated free text. With newlines in it a caller could write
+        their own paragraph inside our signed footer - the demonstrated case
+        being a fake "HatchLoop support: your account is suspended, reply with
+        your card number" notice, delivered to a real business over our
+        number. It was also uncapped: a 5,000-character value produced a
+        5,085-character body against WhatsApp's 4,096 limit, so Meta rejected
+        the send AFTER the conversation row had been written and the
+        business's demand budget spent.
+
+        Whitespace collapses to single spaces and control characters go. The
+        60-character cap is on the field; this is what stops the shape of the
+        message being caller-controlled.
+        """
+        if v is None:
+            return None
+        cleaned = "".join(
+            " " if (ch.isspace() or ord(ch) < 32) else ch for ch in v)
+        cleaned = " ".join(cleaned.split()).strip()
+        return cleaned or None
 
 
 # ---------------------------------------------------------------------------

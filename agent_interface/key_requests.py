@@ -143,7 +143,8 @@ async def verify_free_key(token: str = Query(..., description="Signed verificati
             content=html_error(
                 "Verification failed",
                 "This link is invalid or has expired. "
-                "Request a new key at <a href='/keys/request'>/keys/request</a>.",
+                "Request a new key at "
+                "<a href='https://hatchloop.dev/docs/#key'>hatchloop.dev/docs</a> - it takes a few seconds and costs nothing.",
             ),
         )
 
@@ -173,7 +174,7 @@ async def verify_free_key(token: str = Query(..., description="Signed verificati
                     "This link has already been used",
                     "Your key was issued the first time you clicked it. If you "
                     "still have the email, the key is in it. Otherwise request "
-                    "a fresh one at <a href='/docs/#key'>hatchloop.dev/docs</a> "
+                    "a fresh one at <a href='https://hatchloop.dev/docs/#key'>hatchloop.dev/docs</a> "
                     "- it takes a few seconds and costs nothing.",
                 ),
             )

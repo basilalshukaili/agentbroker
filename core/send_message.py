@@ -312,6 +312,19 @@ async def handle_send_message(
         except Exception as exc:
             last_error = str(exc)
 
+        # THIS ATTEMPT DID NOT DELIVER, so the thread it opened must not count
+        # against the business's inbound budget. The row is written before the
+        # send and was never cleaned up, so six failed attempts spent six of a
+        # business's six hourly slots and the seventh caller was told the
+        # business "has already received 6 requests" - it had received none.
+        if conversation:
+            try:
+                from core import conversations as _conv3
+                await _conv3.set_state(conversation["conversation_id"], "unsent")
+            except Exception:                   # noqa: BLE001
+                pass
+            conversation = None
+
     return OutcomeReceipt(
         operation_id=operation_id,
         status=OperationStatus.FAILURE,

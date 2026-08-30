@@ -175,6 +175,24 @@ async def check_budget(
     # genuinely frees capacity, not merely the oldest one (review 2026-08-26 -
     # with used >> limit the old formula told callers to retry while still over
     # budget, i.e. an dishonest ETA).
+    # A MESSAGE THAT WAS NEVER DELIVERED DID NOT REACH THIS BUSINESS.
+    #
+    # The conversation row is written BEFORE the send and was never cleaned up
+    # when the send failed, so failed attempts spent the business's inbound
+    # budget. Measured with every channel failing: six attempts, six rows, zero
+    # messages delivered - and the seventh attempt was refused with
+    #
+    #   "This business has already received 6 requests in the last hour"
+    #
+    # It had received none. Worse, each failure receipt carries retriable=True
+    # and next_actions ["retry after 30s"], so the product instructs the agent
+    # to keep burning a budget it is not using.
+    #
+    # send_message now marks those threads `unsent`; they are excluded here.
+    rows = [r for r in rows if r.get("state") != "unsent"]
+    if not rows:
+        return BudgetDecision(allowed=True, limit_hour=limit_h)
+
     in_day = sorted(ts for ts in (_parse_ts(r.get("created_at")) for r in rows) if ts)
     in_hour = [ts for ts in in_day if ts > hour_ago]
     used_d, used_h = len(in_day), len(in_hour)
