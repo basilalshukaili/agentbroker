@@ -42,42 +42,24 @@ function jsonrpcError(id: unknown, code: number, message: string): Response {
 }
 
 /**
- * Headers to send to the origin, with X-Forwarded-For set AUTHORITATIVELY.
+ * Headers to send to the origin, with the CALLER's address resolved once.
  *
- * The worker used to forward `request.headers` verbatim, which broke the
- * canonical endpoint in two different ways at once. The origin's freemium
- * quota keys on the leftmost X-Forwarded-For entry:
+ * The Worker used to forward `request.headers` verbatim, and the origin's
+ * freemium quota keys on the leftmost `x-forwarded-for` entry - so a client
+ * could send any value and mint itself a fresh bucket.
  *
- * 1. WHEN THE CLIENT SENDS NONE - the normal case - the origin saw only the
- *    address the request arrived from, which for everything through
- *    hatchloop.dev is Cloudflare. So EVERY anonymous caller on Earth shared a
- *    single 20/day bucket, and that bucket is permanently drained. A
- *    prospect's first sanctions screen against the endpoint printed on our own
- *    marketing page failed, every time, with a message telling them to go buy
- *    credits. It works on api.hatchloop.dev, which is why testing against the
- *    origin never revealed it.
+ * My first fix set the header from `cf-connecting-ip`. That closed the
+ * spoofing path and broke something worse: through the Vercel rewrite,
+ * `cf-connecting-ip` is VERCEL's proxy address, identical for every caller, so
+ * the origin's meter collapsed to a single bucket for the whole world.
  *
- * 2. WHEN THE CLIENT SENDS ONE - it was trusted. Anyone could send a random
- *    X-Forwarded-For per request and mint themselves an unlimited free tier.
- *
- * `cf-connecting-ip` is set by Cloudflare from the real TCP peer and cannot be
- * forged by the client, so overwriting with it fixes both: real per-caller
- * buckets, and a value the caller does not control.
+ * `clientIp()` in rate-limit.ts is now the one place that decides who the
+ * caller is - the edge limiter, this function and proxy.ts all ask it, so no
+ * two layers can disagree about it. The trade-off it accepts is documented
+ * there.
  */
 function originHeaders(request: Request): Headers {
   const h = new Headers(request.headers);
-  // MY EARLIER VERSION SET THIS FROM `cf-connecting-ip` AND MADE THINGS WORSE.
-  //
-  // I did it to close a spoofing hole - a caller could send any
-  // `x-forwarded-for` and mint themselves a fresh origin bucket - and it did
-  // close it. But through the Vercel rewrite `cf-connecting-ip` is Vercel's
-  // proxy address, so it replaced every real client IP with one shared value
-  // and pointed the origin's meter at a single bucket for the whole world.
-  // I traded a soft quota-evasion path for an outage of the meter itself.
-  //
-  // `clientIp()` now resolves the caller properly (see rate-limit.ts for the
-  // reasoning and the trade-off), and the origin gets that same answer, so the
-  // two layers agree about who is calling.
   const ip = clientIp(request);
   if (ip && ip !== "unknown") {
     h.set("x-forwarded-for", ip);
@@ -136,6 +118,67 @@ async function issue402(
     console.warn("x402 nonce KV put failed:", (e as Error).message);
   }
   return payment402(requirements, failureReason);
+}
+
+/**
+ * Guarantee that a JSON-RPC caller receives JSON-RPC.
+ *
+ * The Worker proxies tools/call to the origin and returned whatever came back,
+ * verbatim. When the upstream answered with something that is not JSON - a
+ * Cloudflare block page, a Render maintenance page, an HTML 502 - that HTML
+ * reached an MCP client as the response to its call. The client's parser
+ * throws, and it gets no error_code, no retriable flag and no way to tell a
+ * transient outage from a permanent refusal.
+ *
+ * It was FOUND by sending an operation_id containing "../", but the traversal
+ * string is the reproduction, not the bug: any upstream that answers with HTML
+ * does the same thing. Sanitising the input would have fixed the symptom and
+ * left the hole.
+ *
+ * SSE IS THE TRAP HERE. MCP streamable-HTTP legitimately answers
+ * `text/event-stream`, so this matches on media type and tolerates a charset
+ * suffix rather than demanding exactly "application/json".
+ */
+async function ensureJsonRpc(response: Response, id: unknown): Promise<Response> {
+  const ct = (response.headers.get("content-type") ?? "").toLowerCase();
+  if (ct.includes("application/json") || ct.includes("text/event-stream")) {
+    return response;
+  }
+
+  // Read a little of it for the diagnostic, then discard - we never forward
+  // an upstream body we could not identify.
+  let peek = "";
+  try {
+    peek = (await response.text()).slice(0, 200).replace(/\s+/g, " ").trim();
+  } catch {
+    peek = "<unreadable>";
+  }
+
+  const status = response.status;
+  const transient = status === 0 || status >= 500 || status === 429;
+  return new Response(JSON.stringify({
+    jsonrpc: "2.0",
+    id: id ?? null,
+    error: {
+      code: -32603,
+      message:
+        `The upstream service answered with ${ct || "an unknown content type"} ` +
+        `(HTTP ${status}) instead of JSON. This is an infrastructure fault, not ` +
+        `a problem with your request.`,
+      data: {
+        error_code: transient ? "upstream_unavailable" : "upstream_error",
+        retriable: transient,
+        retry_after_ms: transient ? 2000 : undefined,
+        upstream_status: status,
+        upstream_content_type: ct || null,
+        upstream_body_excerpt: peek,
+        how_to_resolve: transient
+          ? { hint: "Retry with backoff; the origin may be restarting." }
+          : { hint: "Report this with the excerpt and upstream_status.",
+              contact: "hello@hatchloop.dev" },
+      },
+    },
+  }), { status: 200, headers: JSON_HEADERS });
 }
 
 export async function handleMcpRequest(
@@ -240,7 +283,7 @@ export async function handleMcpRequest(
         body: bodyText,
       });
       const { response } = await proxyToOrigin(proxyReq, originUrl);
-      return withRateLimitHeaders(response, rlResult);
+      return withRateLimitHeaders(await ensureJsonRpc(response, id), rlResult);
     }
 
     // All other non-edge methods (prompts/*, resources/*) — proxy straight through.
@@ -250,7 +293,7 @@ export async function handleMcpRequest(
       body: bodyText,
     });
     const { response } = await proxyToOrigin(proxyReq, originUrl);
-    return response;
+    return ensureJsonRpc(response, id);
   }
 
   const snapshots = getSnapshots(publicBaseUrl);

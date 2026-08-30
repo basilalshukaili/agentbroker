@@ -4,6 +4,8 @@
 // request to a sleeping dyno typically returns 502/503 from Render's router or
 // times out. We retry once after a short delay so AI agents never see that.
 
+import { clientIp } from "./rate-limit";
+
 const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 1500;
 const REQUEST_TIMEOUT_MS = 45_000; // 45s — long enough to ride out one cold start
@@ -30,7 +32,17 @@ export async function proxyToOrigin(
   fwdHeaders.delete("cf-ipcountry");
   fwdHeaders.delete("cf-ray");
   fwdHeaders.delete("cf-visitor");
-  fwdHeaders.set("x-forwarded-for", request.headers.get("cf-connecting-ip") ?? "");
+  // THIS LINE DEFEATED THE FIX MADE ONE LAYER UP, so it is worth being explicit.
+  //
+  // It used to set x-forwarded-for from `cf-connecting-ip` unconditionally.
+  // Through the Vercel rewrite that value is VERCEL's proxy address, identical
+  // for every caller - so the origin's per-IP quota collapsed into one bucket.
+  // mcp-edge.ts was corrected to resolve the real caller and pass it in, and
+  // this line then overwrote that answer with the wrong one again.
+  //
+  // clientIp() is the single place that decides who the caller is; both layers
+  // ask it, so they cannot disagree.
+  fwdHeaders.set("x-forwarded-for", clientIp(request));
   fwdHeaders.set("x-forwarded-host", incomingUrl.host);
   fwdHeaders.set("x-forwarded-proto", "https");
   fwdHeaders.set("x-edge-source", "cloudflare-workers");
