@@ -10,9 +10,23 @@ account_id = "4996b77206796d62ffa870cdd6e5c4f5"
 
 # Public-facing settings (non-secret) live in vars
 [vars]
+# ORIGIN_URL is an INTERNAL proxy target - never published. The worker fetches
+# from it; callers never see it.
 ORIGIN_URL = "https://smb-broker.onrender.com"
 EDGE_VERSION = "0.1.0"
 SERVICE_NAME = "agent-broker"
+
+# THE BRANDED HOST, STAMPED INTO EVERY DISCOVERY DOCUMENT.
+#
+# Without this, publicBaseUrlOf() in src/index.ts falls back to the host the
+# REQUEST arrived on - and requests reach this worker at
+# agent-broker-edge.basil-agent.workers.dev, because hatchloop.dev proxies here
+# via a Vercel rewrite. So every descriptor we served stamped that generic
+# workers.dev hostname in as our public identity, including openapi.yaml.
+#
+# Founder, 2026-08-30: "I do not want generic urls like these, use hatchloop.dev
+# always." This is the one setting that makes that true everywhere at once.
+PUBLIC_BASE_URL = "https://hatchloop.dev"
 
 # Secrets (NOT declared here — set via `wrangler secret put`):
 #   TELEGRAM_BOT_TOKEN  → Telegram bot token from @BotFather. When unset the

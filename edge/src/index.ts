@@ -38,10 +38,23 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Public-facing URL. Derived per-request from the host header so the same
 // worker can serve both workers.dev and any custom domain we map later.
+const BRANDED_BASE_URL = "https://hatchloop.dev";
+
+/**
+ * The base URL stamped into every descriptor we publish.
+ *
+ * THE FALLBACK USED TO BE THE REQUEST'S OWN HOST, and that is how a generic
+ * hostname got into our public identity. Requests reach this Worker at
+ * agent-broker-edge.basil-agent.workers.dev - hatchloop.dev proxies here via a
+ * Vercel rewrite - so with PUBLIC_BASE_URL unset (it was), every discovery
+ * document advertised the workers.dev address as us.
+ *
+ * Falling back to the BRANDED host instead means a missing binding can never
+ * leak an internal hostname again. The worker's own address is plumbing; it is
+ * not the company's name, and it should never be able to become it by default.
+ */
 function publicBaseUrlOf(c: { req: { url: string }; env: Env }): string {
-  if (c.env.PUBLIC_BASE_URL) return c.env.PUBLIC_BASE_URL;
-  const u = new URL(c.req.url);
-  return `${u.protocol}//${u.host}`;
+  return c.env.PUBLIC_BASE_URL || BRANDED_BASE_URL;
 }
 
 // ---------------------------------------------------------------------------
