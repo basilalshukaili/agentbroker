@@ -29,6 +29,26 @@ between them was missing. That is the producer-with-no-caller shape, and
 the lesson each time is the same - a green test proves correctness, never
 INVOCATION.
 
+THIS IS THE WEAKER HALF OF THE PAIR, AND IT IS MEASURED.
+
+An adversarial reviewer defeated it with 7 of 8 one-line mutations that each
+still dropped a parameter - fetching it and discarding it, logging it,
+routing its value to None, a whitelist helper, rebinding `args` first, and
+the one that matters:
+
+    requested_times=args.get("requested_time")      # one character
+
+These models use pydantic's default extra='ignore', so that constructs
+cleanly with requested_time=None. No pattern over source text survives it,
+and the `**args` splat escape hatch below is a blanket pass over a whole
+branch (today: 14 of 78 advertised parameters).
+
+tests/unit/test_every_param_actually_arrives.py is the half that cannot be
+fooled: it drives real dispatch for every tool and asserts on what the
+handler was actually handed. It catches all of the above. This script stays
+because it names the offending line, runs in a second, and fails before the
+tests do - but it is a fast filter, not the proof.
+
 Exit 1 on any advertised parameter the dispatch branch does not forward.
 """
 from __future__ import annotations
