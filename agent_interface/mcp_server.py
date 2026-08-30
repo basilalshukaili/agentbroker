@@ -815,10 +815,23 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
                         ),
                     }
 
-                _is_cr_err = (
-                    _cr_result.get("status") == "failure"
-                    or "reason_code" in _cr_result
-                )
+                # `"reason_code" in _cr_result` WAS ALWAYS TRUE.
+                #
+                # _dispatch_operation returns receipt.model_dump(), and
+                # reason_code is a declared field on OutcomeReceipt - so the
+                # key is present on every result, including successes where it
+                # is None. Every credits-billed call was therefore returned to
+                # the MCP client with isError: true.
+                #
+                # Settlement is decided correctly inside run_metered_tool via
+                # _receipt_is_error, so the customer WAS charged - and then
+                # told the call failed. An agent retrying that is billed twice.
+                # Live: CREDITS_ENABLED is true on this service.
+                #
+                # The clause was also redundant: the insufficient-credits
+                # envelope sets status="failure" as well. This now matches the
+                # free path one screen down, which had it right all along.
+                _is_cr_err = _cr_result.get("status") == "failure"
                 return {
                     "content": [
                         {"type": "text",

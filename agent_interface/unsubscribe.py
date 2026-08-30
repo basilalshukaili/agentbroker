@@ -48,10 +48,29 @@ logger = logging.getLogger("smb_broker.unsubscribe")
 router = APIRouter(tags=["Compliance"])
 
 # Same secret family as the key-verification tokens.
+_DEV_SECRET = "dev-unsub-secret"
 _SECRET = os.getenv(
     "UNSUBSCRIBE_SECRET",
-    os.getenv("KEY_VERIFY_SECRET", os.getenv("JWT_SIGNING_SECRET", "dev-unsub-secret")),
+    os.getenv("KEY_VERIFY_SECRET", os.getenv("JWT_SIGNING_SECRET", _DEV_SECRET)),
 )
+
+# THE SAME GUARD identity.py HAS, WHICH THIS FILE WAS MISSING.
+#
+# The fallback above is a literal in a PUBLIC repository. If none of the three
+# environment variables is set in production, every opt-out token is forgeable
+# by anyone who can read this line - which means a third party can unsubscribe
+# our users, or craft a link that appears to come from us.
+#
+# identity.py guards JWT_SIGNING_SECRET exactly this way and
+# billing/receipt_signer.py asserts on its key. This one had no guard at all,
+# which is the kind of gap that only shows up when someone compares siblings.
+if os.getenv("ENVIRONMENT") == "production" and _SECRET == _DEV_SECRET:
+    logging.getLogger("smb_broker.unsubscribe").error(
+        "SECURITY: no UNSUBSCRIBE_SECRET / KEY_VERIFY_SECRET / "
+        "JWT_SIGNING_SECRET is set in production, so opt-out tokens are "
+        "signed with the development default published in this repository "
+        "and are forgeable by anyone. Set a strong secret and redeploy."
+    )
 # Long-lived on purpose: someone may unsubscribe from a year-old email, and
 # "your opt-out link expired" is not an acceptable answer.
 _TTL_S = 365 * 24 * 3600
