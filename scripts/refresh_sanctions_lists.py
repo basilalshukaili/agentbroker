@@ -151,6 +151,12 @@ def _rows_for(records: list[dict], list_code: str, stamp: str) -> list[dict]:
             # column. The freshness check would have frozen at the first load
             # and reported a year-old index as current.
             "refreshed_at": stamp,
+            # A HINT, never a filter - screen_sanctions annotates matches with
+            # it and ranks on it, but must never drop a match for a country
+            # mismatch. Our country data is address/nationality, not an
+            # exhaustive record of where a sanctioned party operates, so
+            # excluding on it would manufacture false negatives.
+            "countries": rec.get("countries") or None,
         })
     return out
 

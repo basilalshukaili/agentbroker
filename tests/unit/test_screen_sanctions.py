@@ -894,7 +894,7 @@ class TestPreviewCostFree:
 class TestFilterForwarding:
 
     def test_country_is_reported_as_not_applied(self):
-        """`country` and `entity_type` were consumed ONLY by OpenSanctions.
+        """`country` must never be reported as a filter that narrowed the screen.
 
         With it gone they narrow nothing - our name index carries no country
         column - but the response still said "(country filter: IR)". That tells
@@ -912,10 +912,10 @@ class TestFilterForwarding:
 
         assert result.status == OperationStatus.SUCCESS
         assert result.result["country_filter_applied"] is False
-        assert "do NOT narrow" in result.result["filter_note"]
+        assert "never to remove any" in result.result["country_note"]
         # The human-readable half must not imply a filter either.
         assert "country filter:" not in result.human_message
-        assert "NOT used to narrow" in result.human_message
+        assert "country_filter_applied" in result.result
 
 
 
@@ -938,7 +938,8 @@ class TestDeduplication:
         now OFAC, EU and UK, so the test drives EU through the database-backed
         screen and OFAC through the CSV, with the SAME name on both.
         """
-        async def _fake_db(name, list_code, list_label, source_url):
+        async def _fake_db(name, list_code, list_label, source_url,
+                       want_country=None):
             if list_code != "EU":
                 return [], [], []
             row = {

@@ -617,8 +617,38 @@ def _eu_parse(raw: str) -> list[dict]:
         iId = hdr.index("Entity_LogicalId")
         iType = hdr.index("Entity_SubjectType")
         iProg = hdr.index("Entity_Regulation_Programme") if             "Entity_Regulation_Programme" in hdr else None
+        # COUNTRY IS A HINT, NEVER A FILTER - see _country_note() below. We
+        # take address, citizenship and birth country because a listed person
+        # is reachable through any of them, and a caller asking about "IR"
+        # means "connected to Iran", not "whose postal address is in Iran".
+        iCty = [hdr.index(c) for c in ("Address_CountryIso2Code",
+                                       "Citizenship_CountryIso2Code",
+                                       "BirthDate_CountryIso2Code") if c in hdr]
+        # TWO PASSES, because of how this feed is shaped. It is one row per
+        # ALIAS, and the country columns are populated on the rows carrying an
+        # ADDRESS - which are usually not the same rows. Reading country off
+        # the row that supplied the name returned it empty for all 30,739
+        # records, and would have shipped a country field that was always
+        # blank: a filter that silently never matches, which is worse than no
+        # filter at all.
+        #
+        # So countries are gathered per ENTITY across every one of its rows,
+        # then attached to each of that entity's names.
+        buffered = list(rows)
+        ent_countries: dict[str, set] = {}
+        for r in buffered:
+            if iId >= len(r):
+                continue
+            eid = r[iId]
+            for i in iCty:
+                v = r[i].strip().upper() if i < len(r) else ""
+                # "00" is the feed's placeholder for unknown. Storing it would
+                # make a country field that looks populated and matches nothing.
+                if len(v) == 2 and v.isalpha():
+                    ent_countries.setdefault(eid, set()).add(v)
+
         seen: set[tuple[str, str]] = set()
-        for r in rows:
+        for r in buffered:
             if len(r) <= iW:
                 continue
             nm = r[iW].strip()
@@ -634,6 +664,7 @@ def _eu_parse(raw: str) -> list[dict]:
                 "entity_id": eid,
                 "programme": (r[iProg].strip()[:80] if iProg and iProg < len(r) else ""),
                 "etype": "INDIVIDUAL" if st.startswith("person") else "ENTITY",
+                "countries": sorted(ent_countries.get(eid, ())),
             })
     except Exception:
         pass  # a parse failure must not take the whole screen down
@@ -657,6 +688,11 @@ def _uk_parse(raw: str) -> list[dict]:
         iUid = hdr.index("Unique ID") if "Unique ID" in hdr else 1
         iReg = hdr.index("Regime Name") if "Regime Name" in hdr else None
         iType = hdr.index("Individual, Entity, Ship") if             "Individual, Entity, Ship" in hdr else None
+        # The UK feed writes country names, not ISO codes ("Iran", "Russia"),
+        # so these are stored as given and compared case-insensitively against
+        # both the code and the name the caller supplies.
+        iCty = [hdr.index(c) for c in ("Address Country", "Nationality(/ies)",
+                                       "Country of birth") if c in hdr]
         seen: set[tuple[str, str]] = set()
         for r in rows[hdr_i + 1:]:
             if len(r) <= max(name_cols + [iUid]):
@@ -675,6 +711,10 @@ def _uk_parse(raw: str) -> list[dict]:
                 "entity_id": uid,
                 "programme": (r[iReg].strip()[:80] if iReg is not None and iReg < len(r) else ""),
                 "etype": "INDIVIDUAL" if st.startswith("indiv") else "ENTITY",
+                "countries": sorted({c.strip().upper()
+                                     for i in iCty if i < len(r)
+                                     for c in r[i].split(";")
+                                     if 1 < len(c.strip()) <= 40}),
             })
     except Exception:
         pass
@@ -727,8 +767,71 @@ def _days_since(day: Optional[str]) -> Optional[int]:
     return (datetime.now(timezone.utc) - d).days
 
 
+# COUNTRY IS A HINT. IT MUST NEVER REMOVE A MATCH.
+#
+# `country` was accepted and ignored for as long as it existed - it was
+# consumed only by OpenSanctions - while the response said "(country filter:
+# IR)". It now does something real, but deliberately NOT what the name
+# suggests, and the difference matters more than the feature.
+#
+# Our country data is the address, nationality and birth country recorded on a
+# listing. It is not an exhaustive record of where a sanctioned party operates,
+# it is absent on ~15% of entries, and the two feeds disagree on format (the EU
+# writes ISO2, the UK writes names like "FORMER USSR CURRENTLY UKRAINE"). If a
+# country mismatch removed a match, every one of those gaps would become a
+# FALSE NEGATIVE - a clean screen for someone who is on the list. That is the
+# one failure this whole file is arranged to prevent.
+#
+# So country annotates and RANKS. Nothing is ever dropped for it.
+_ISO2_NAMES = {
+    "IR": "IRAN", "RU": "RUSSIA", "KP": "KOREA", "SY": "SYRIA", "IQ": "IRAQ",
+    "BY": "BELARUS", "CU": "CUBA", "VE": "VENEZUELA", "MM": "MYANMAR",
+    "AF": "AFGHANISTAN", "LY": "LIBYA", "SD": "SUDAN", "SS": "SOUTH SUDAN",
+    "SO": "SOMALIA", "YE": "YEMEN", "ZW": "ZIMBABWE", "LB": "LEBANON",
+    "UA": "UKRAINE", "CN": "CHINA", "TR": "TURKEY", "AE": "UNITED ARAB EMIRATES",
+    "GB": "UNITED KINGDOM", "US": "UNITED STATES", "ML": "MALI", "NI": "NICARAGUA",
+    "HT": "HAITI", "CF": "CENTRAL AFRICAN REPUBLIC", "CD": "CONGO", "ER": "ERITREA",
+    "GN": "GUINEA", "GW": "GUINEA-BISSAU", "TN": "TUNISIA", "EG": "EGYPT",
+    "PK": "PAKISTAN", "IN": "INDIA", "TH": "THAILAND", "MD": "MOLDOVA",
+    "RS": "SERBIA", "BA": "BOSNIA", "ME": "MONTENEGRO", "NE": "NIGER",
+    "BF": "BURKINA FASO", "TD": "CHAD", "ET": "ETHIOPIA", "BI": "BURUNDI",
+    "LR": "LIBERIA", "SL": "SIERRA LEONE", "CI": "COTE D'IVOIRE", "KG": "KYRGYZSTAN",
+}
+
+
+def _country_matches(want: str, have: list) -> Optional[bool]:
+    """Does a listing look connected to `want`?
+
+    Returns True, False, or None for "the listing records no country" - which
+    is NOT a mismatch and must not be presented as one.
+    """
+    if not have:
+        return None
+    w = (want or "").strip().upper()
+    if not w:
+        return None
+    names = {str(c).strip().upper() for c in have if str(c).strip()}
+    if w in names:
+        return True
+    # Caller gave ISO2, listing writes names (the UK feed) - or the reverse.
+    expanded = _ISO2_NAMES.get(w, "")
+    codes = {c for c, n in _ISO2_NAMES.items() if n == w}
+    for n in names:
+        if expanded and expanded in n:
+            return True
+        if n in codes:
+            return True
+        # "IRAN" inside "IRAN, ISLAMIC REPUBLIC OF"; both directions, because
+        # the UK writes long descriptive strings.
+        if len(w) > 3 and (w in n or n in w):
+            return True
+    return False
+
+
 async def _screen_list_db(name: str, list_code: str, list_label: str,
-                          source_url: str) -> tuple[list[dict], list[str], list[str]]:
+                          source_url: str,
+                          want_country: Optional[str] = None,
+                          ) -> tuple[list[dict], list[str], list[str]]:
     """Screen one list from the DATABASE index.
 
     Replaces holding 244MB of parsed list in every worker, which OOM-killed the
@@ -780,6 +883,7 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
             # data behind the number. The tag is what keeps the strict filter
             # applying to these too.
             "_matcher": "local_word_overlap",
+            "countries": [_ascii(c) for c in (r.get("countries") or [])] or None,
         }
 
     try:
@@ -845,11 +949,22 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     out = []
     for r in rows:
         rt = set(r.get("tokens") or [])
+        _cm = _country_matches(want_country, r.get("countries") or [])             if want_country else None
         # Proportion of the LISTED name our query accounts for: 1.0 when the
         # token sets are identical, lower the more extra words the listing has.
         score = (len(set(toks) & rt) / len(rt)) if rt else 0.0
-        out.append(_to_match(r, score))
-    out.sort(key=lambda m: m["match_score"], reverse=True)
+        m = _to_match(r, score)
+        if want_country:
+            # Three states, and "unknown" is its own answer. Collapsing it into
+            # False would tell a caller we had checked and ruled the country
+            # out, when the listing simply does not record one.
+            m["country_match"] = _cm
+        out.append(m)
+    # A country hit ranks above a country miss, and an unknown sits between
+    # them - but every one of them is still in the list.
+    _rank = {True: 0, None: 1, False: 2}
+    out.sort(key=lambda m: (_rank.get(m.get("country_match"), 1),
+                            -m["match_score"]))
     return out, queried, []
 
 
@@ -944,12 +1059,12 @@ async def handle_screen_sanctions(
     eu_task = asyncio.create_task(
         _screen_list_db(name_clean, "EU",
                         "EU-CONSOLIDATED (European Commission financial sanctions)",
-                        "https://www.sanctionsmap.eu/")
+                        "https://www.sanctionsmap.eu/", country_upper)
     )
     uk_task = asyncio.create_task(
         _screen_list_db(name_clean, "UK",
                         "UK-SANCTIONS (FCDO UK Sanctions List)",
-                        "https://sanctionslist.fcdo.gov.uk/")
+                        "https://sanctionslist.fcdo.gov.uk/", country_upper)
     )
 
     ofac_matches, ofac_queried, ofac_unavail = await ofac_task
@@ -1124,13 +1239,22 @@ async def handle_screen_sanctions(
         "screened_at": screened_at,
         "disclaimer": _DISCLAIMER,
     }
-    if country_upper or entity_type:
+    if country_upper:
         result_payload["country_filter_applied"] = False
-        result_payload["filter_note"] = (
-            "country and entity_type are accepted for forward compatibility "
-            "but do NOT narrow the screen today: our name index does not "
-            "carry those columns. Results are the same as if you had omitted "
-            "them, so treat any match as needing your own country check.")
+        result_payload["country_note"] = (
+            f"country={country_upper} was used to ANNOTATE and RANK results, "
+            f"never to remove any. Each EU/UK match carries country_match: "
+            f"true, false, or null when the listing records no country at all. "
+            f"Nothing is dropped for a country mismatch, because our country "
+            f"data is the address/nationality on the listing rather than an "
+            f"exhaustive record of where a party operates - excluding on it "
+            f"would turn every gap into a clean screen for someone who IS "
+            f"listed. Use country_match to prioritise your own review.")
+    if entity_type:
+        result_payload["entity_type_filter_applied"] = False
+        result_payload["entity_type_note"] = (
+            "entity_type is accepted but does not narrow the screen. Each "
+            "match reports its own entity_type; filter on that if you need to.")
     if all_sources_unavailable:
         result_payload["sources_unavailable"] = all_sources_unavailable
     if unverified:

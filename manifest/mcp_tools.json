@@ -823,7 +823,7 @@
         },
         "country": {
           "type": "string",
-          "description": "Optional ISO 3166-1 alpha-2 country code (e.g. 'US', 'RU', 'IR'). Narrows results to entities associated with this country."
+          "description": "Optional ISO 3166-1 alpha-2 country code or country name (e.g. 'IR', 'Iran'). It ANNOTATES AND RANKS results; it never removes any. Each EU/UK match carries country_match: true, false, or null when the listing records no country. Nothing is dropped on a mismatch, because the country we hold is the address/nationality on the listing rather than everywhere a party operates - excluding on it would return a clean screen for someone who IS listed."
         },
         "type": {
           "type": "string",
