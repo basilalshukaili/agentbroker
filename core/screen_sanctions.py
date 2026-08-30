@@ -732,6 +732,29 @@ _EU_CSV_URL = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
                "csvFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
 _UK_CSV_URL = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv"
 
+# ---------------------------------------------------------------------------
+# EU/UK ARE OFF BY DEFAULT, AND THAT IS NOT TIMIDITY - IT IS MEASURED.
+# ---------------------------------------------------------------------------
+#
+# Holding both lists in memory costs ~172MB of parsed index plus ~72MB of
+# cached source text. On this instance that is an out-of-memory kill: enabling
+# them put the origin into a restart loop and served 502 to everything for
+# several minutes. Render reported the deploy as "live" throughout, because the
+# container started fine and was then killed.
+#
+# I tried two compaction schemes before accepting the real answer: a
+# frozenset-keyed index (WORSE - 112MB) and a sorted-token-string index (~100MB).
+# Python object overhead dominates, and no amount of tuning makes 46,000 records
+# cheap enough to live in every worker process.
+#
+# THE RIGHT PLACE FOR THIS DATA IS A DATABASE, not each worker's RAM. 46k rows
+# is nothing for Postgres, it survives restarts, it does not multiply by worker
+# count, and a screen becomes an indexed lookup. That is the build; this flag
+# keeps the code present and inert until it lands.
+#
+# Set SANCTIONS_EU_UK_INMEMORY=true only on an instance with headroom to spare.
+_EU_UK_ENABLED = os.getenv("SANCTIONS_EU_UK_INMEMORY", "").lower() in ("1", "true", "yes")
+
 # Parsed indexes are cached alongside the raw text. Downloading 25MB and 50MB
 # per screen would be absurd; so would re-parsing them. Both happen once per
 # _LIST_TTL_S.
@@ -893,6 +916,11 @@ async def warm_lists() -> dict[str, int]:
 async def _screen_list(name: str, url: str, parser, list_label: str,
                        source_url: str) -> tuple[list[dict], list[str], list[str]]:
     """Screen one list. Returns (matches, sources_queried, sources_unavailable)."""
+    if not _EU_UK_ENABLED:
+        # Say it plainly. A caller with a European obligation must not read
+        # silence as coverage - this list is NOT being screened.
+        return [], [], [f"{list_label} (not enabled on this deployment; "
+                        f"NOT screened)"]
     idx = await _get_index(url, parser)
     if not idx:
         # Loading in the background. Say plainly that this call did NOT screen

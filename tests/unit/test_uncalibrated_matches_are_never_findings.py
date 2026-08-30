@@ -272,9 +272,17 @@ def test_attempting_the_calibrated_source_is_not_the_same_as_reaching_it():
 # still holds across three lists rather than one.
 
 def _warm():
-    """Preload the lists. Cold fetches are non-blocking by design, so a test
-    that does not warm first would assert on an empty index and pass
-    vacuously."""
+    """Enable and preload the EU/UK lists for the tests that exercise them.
+
+    They are OFF in production by default - holding both in memory costs
+    ~244MB and OOM-killed the instance, so the real fix is moving them to the
+    database. The capability still works when enabled, and these tests are what
+    keeps it working, so they turn it on explicitly rather than skipping.
+
+    Cold fetches are non-blocking by design, so a test that did not warm first
+    would assert against an empty index and pass vacuously.
+    """
+    ss._EU_UK_ENABLED = True
     asyncio.run(ss.warm_lists())
 
 
