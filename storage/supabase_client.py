@@ -147,6 +147,14 @@ async def upsert_row(table: str, row: dict[str, Any], on_conflict: str = "id") -
     return None
 
 
+# PostgREST operators a caller may supply inline. Deliberately a closed list:
+# see the note in select_rows about values that merely contain a dot.
+_PASSTHROUGH_OPS = frozenset({
+    "eq", "neq", "gt", "gte", "lt", "lte", "like", "ilike",
+    "is", "in", "cs", "cd", "ov", "sl", "sr", "nxr", "nxl", "adj", "not",
+})
+
+
 async def select_rows(
     table: str,
     filters: Optional[dict[str, Any]] = None,
@@ -179,7 +187,23 @@ async def select_rows(
                 params[col] = f"gte.{val}"
         if filters:
             for col, val in filters.items():
-                params[col] = f"eq.{val}"
+                # A filter value may carry its OWN PostgREST operator. Equality
+                # covers almost every caller, so it stays the default - but the
+                # sanctions index needs array containment (`cs.{a,b}`) to find
+                # entries whose tokens include every token of the query, and
+                # forcing `eq.` onto that produced `eq.cs.{...}`, which matches
+                # nothing and fails silently.
+                #
+                # Pass through only RECOGNISED operators. An unknown prefix is
+                # far more likely to be a value that happens to contain a dot -
+                # a hostname, a version, a filename - than an operator someone
+                # meant, and treating those as operators would quietly change
+                # what existing queries return.
+                sval = str(val)
+                if sval.split(".", 1)[0] in _PASSTHROUGH_OPS:
+                    params[col] = sval
+                else:
+                    params[col] = f"eq.{val}"
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(
                 f"{url}/rest/v1/{table}",
@@ -217,7 +241,11 @@ def select_rows_sync(
         params: dict[str, Any] = {"limit": limit}
         if filters:
             for col, val in filters.items():
-                params[col] = f"eq.{val}"
+                sval = str(val)
+                if sval.split(".", 1)[0] in _PASSTHROUGH_OPS:
+                    params[col] = sval
+                else:
+                    params[col] = f"eq.{val}"
         with httpx.Client(timeout=8.0) as client:
             resp = client.get(
                 f"{url}/rest/v1/{table}",

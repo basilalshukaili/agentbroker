@@ -122,6 +122,14 @@ jobs:
       - name: No generic hostnames in published files
         run: python scripts/check_branding.py
 
+      # We must never advertise a sanctions list we do not screen. Five
+      # published surfaces said "OFAC/EU/UN/UK" - including the MCP tool
+      # description every agent reads in tools/list - while the UN list was
+      # deliberately excluded for want of an open commercial licence. The
+      # string was true when written and quietly stopped being true.
+      - name: No sanctions coverage we do not have
+        run: python scripts/check_sanctions_claims.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

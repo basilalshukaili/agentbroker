@@ -271,36 +271,52 @@ def test_attempting_the_calibrated_source_is_not_the_same_as_reaching_it():
 # name-frequency data. So these tests check coverage AND that the strict rule
 # still holds across three lists rather than one.
 
-def _warm():
-    """Enable and preload the EU/UK lists for the tests that exercise them.
+def _index_ready() -> str:
+    """Why the EU/UK tests need a live index, and why they SKIP without one.
 
-    They are OFF in production by default - holding both in memory costs
-    ~244MB and OOM-killed the instance, so the real fix is moving them to the
-    database. The capability still works when enabled, and these tests are what
-    keeps it working, so they turn it on explicitly rather than skipping.
+    These lists are no longer downloaded into the process - holding both cost
+    ~244MB and OOM-killed the instance. They live in `public.sanctions_names`,
+    loaded by scripts/refresh_sanctions_lists.py.
 
-    Cold fetches are non-blocking by design, so a test that did not warm first
-    would assert against an empty index and pass vacuously.
+    That makes the coverage tests below integration tests. Without database
+    config they skip; WITH config and an empty table they FAIL, loudly. That
+    asymmetry is the point: an environment that can check must check. A skip
+    on an empty index would be the same "green means nothing ran" trap these
+    tests exist to catch.
     """
-    ss._EU_UK_ENABLED = True
-    asyncio.run(ss.warm_lists())
+    from storage.supabase_client import _get_config
+    url, key = _get_config()
+    if not (url and key):
+        return "no database config in this environment"
+    return ""
 
 
-def test_eu_and_uk_lists_actually_load():
-    """Guard the guard: if the indexes are empty, every coverage test below
-    passes for the wrong reason."""
-    _warm()
-    eu = asyncio.run(ss._get_index(ss._EU_CSV_URL, ss._eu_parse, block=True))
-    uk = asyncio.run(ss._get_index(ss._UK_CSV_URL, ss._uk_parse, block=True))
-    assert len(eu) > 5000, f"EU index has only {len(eu)} names - did the feed move?"
-    assert len(uk) > 5000, f"UK index has only {len(uk)} names - did the feed move?"
+def _count(list_code: str) -> int:
+    from storage.supabase_client import select_rows
+    rows = asyncio.run(select_rows("sanctions_names",
+                                   filters={"list_code": list_code}, limit=1000))
+    return len(rows)
+
+
+def test_eu_and_uk_indexes_are_populated():
+    """Guard the guard: with an empty index every coverage test below passes
+    for the wrong reason - nothing matches because nothing is there."""
+    why = _index_ready()
+    if why:
+        pytest.skip(why)
+    # 1000 is the select limit, so this asserts "the page came back full"
+    # rather than a true count; it is enough to tell loaded from empty.
+    assert _count("EU") == 1000, "EU index looks empty - run refresh_sanctions_lists.py"
+    assert _count("UK") == 1000, "UK index looks empty - run refresh_sanctions_lists.py"
 
 
 def test_a_listed_entity_is_found_on_every_list_that_carries_it():
     """Saddam Hussein Al-Tikriti is on OFAC, the EU list and the UK list.
     Finding him on one and missing the others would mean a list is loaded but
     not actually searched."""
-    _warm()
+    _w = _index_ready()
+    if _w:
+        pytest.skip(_w)
     _, result = screen("Saddam Hussein Al-Tikriti")
     assert result.get("matched") is True
     lists = {m.get("list", "").split(" ")[0] for m in result.get("matches") or []}
@@ -312,7 +328,9 @@ def test_a_listed_entity_is_found_on_every_list_that_carries_it():
 def test_the_response_names_which_lists_actually_ran():
     """A caller with a European obligation must be able to tell whether the EU
     list was screened ON THIS CALL - not whether we support it in principle."""
-    _warm()
+    _w = _index_ready()
+    if _w:
+        pytest.skip(_w)
     _, result = screen("Saddam Hussein Al-Tikriti")
     screened = " ".join(result.get("lists_screened") or [])
     assert "OFAC-SDN" in screened
@@ -323,7 +341,9 @@ def test_the_response_names_which_lists_actually_ran():
 def test_we_do_not_claim_the_un_list():
     """It has no open licence and no commercial carve-out, so it is not ours to
     redistribute. Claiming it would be the same overclaim we removed."""
-    _warm()
+    _w = _index_ready()
+    if _w:
+        pytest.skip(_w)
     _, result = screen("Saddam Hussein Al-Tikriti")
     screened = " ".join(result.get("lists_screened") or []).upper()
     assert "UN-SECURITY" not in screened and "UNITED NATIONS" not in screened, (
@@ -334,7 +354,9 @@ def test_we_do_not_claim_the_un_list():
 def test_three_lists_do_not_relax_the_rule(name):
     """The whole risk of wider coverage: three times as many chances to accuse
     someone. The strict token-set rule must hold exactly as it did with one."""
-    _warm()
+    _w = _index_ready()
+    if _w:
+        pytest.skip(_w)
     _, result = screen(name)
     assert result.get("matched") is not True, (
         f"{name!r} became a MATCH once EU/UK were added. More lists must mean "

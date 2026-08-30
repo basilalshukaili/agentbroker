@@ -374,6 +374,25 @@ def _os_record(ok: bool) -> None:
             _os_fails["until"] = time.time() + _OS_COOLOFF_S
 
 
+# WHAT IS ACTUALLY LOST WHEN OPENSANCTIONS IS DARK.
+#
+# This string used to say "EU/UN/UK lists NOT screened on this call", which was
+# true when OpenSanctions was our only route to those lists. It stopped being
+# true the moment EU and UK came from our own index - and it kept being printed,
+# telling a European customer their obligation had not been screened while it
+# had. Overclaiming and underclaiming are the same defect: a sentence written as
+# a constant, left behind by code that changed underneath it.
+#
+# What genuinely goes dark: the UN list (no open licence, we never carried it),
+# the 40+ smaller national lists, and the CALIBRATED scorer - the one that has
+# name-frequency data. OFAC, EU and UK still screen.
+_OS_DARK_NOTE = (
+    "OpenSanctions (rate-limited or quota exhausted -- the UN list, 40+ smaller "
+    "national lists and calibrated name-frequency scoring were NOT applied on "
+    "this call. OFAC, EU and UK were screened from our own indexes.)"
+)
+
+
 async def _call_opensanctions(
     name: str,
     country: Optional[str] = None,
@@ -408,7 +427,7 @@ async def _call_opensanctions(
     # to prevent.
     if not api_key:
         sources_unavailable.append(
-            "OpenSanctions (no API key configured; EU/UN/UK breadth beyond our "
+            "OpenSanctions (no API key configured; UN list and 40+ smaller "
             "own OFAC/EU/UK lists NOT screened)")
         return [], sources_queried, sources_unavailable
 
@@ -456,7 +475,7 @@ async def _call_opensanctions(
 
         if resp.status_code == 429:
             _os_record(False)
-            sources_unavailable.append("OpenSanctions (rate-limited or quota exhausted -- EU/UN/UK lists NOT screened on this call)")
+            sources_unavailable.append(_OS_DARK_NOTE)
             return [], sources_queried, sources_unavailable
 
         if resp.status_code != 200:
@@ -732,34 +751,24 @@ _EU_CSV_URL = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
                "csvFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
 _UK_CSV_URL = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv"
 
-# ---------------------------------------------------------------------------
-# EU/UK ARE OFF BY DEFAULT, AND THAT IS NOT TIMIDITY - IT IS MEASURED.
-# ---------------------------------------------------------------------------
+# THE EU AND UK LISTS LIVE IN THE DATABASE, NOT IN THIS PROCESS.
 #
-# Holding both lists in memory costs ~172MB of parsed index plus ~72MB of
-# cached source text. On this instance that is an out-of-memory kill: enabling
-# them put the origin into a restart loop and served 502 to everything for
-# several minutes. Render reported the deploy as "live" throughout, because the
-# container started fine and was then killed.
+# They were held in memory first: ~172MB of parsed index plus ~72MB of cached
+# source text, per worker. That was an out-of-memory kill - the origin entered
+# a restart loop and served 502 to everything for several minutes, while Render
+# reported the deploy as "live" throughout because the container started fine
+# and was then killed.
 #
-# I tried two compaction schemes before accepting the real answer: a
-# frozenset-keyed index (WORSE - 112MB) and a sorted-token-string index (~100MB).
-# Python object overhead dominates, and no amount of tuning makes 46,000 records
-# cheap enough to live in every worker process.
+# Two compaction schemes were tried before accepting the real answer: a
+# frozenset-keyed index (WORSE - 112MB) and a sorted-token-string index
+# (~100MB). Python object overhead dominates; no tuning makes 46,000 records
+# cheap enough to live in every worker.
 #
-# THE RIGHT PLACE FOR THIS DATA IS A DATABASE, not each worker's RAM. 46k rows
-# is nothing for Postgres, it survives restarts, it does not multiply by worker
-# count, and a screen becomes an indexed lookup. That is the build; this flag
-# keeps the code present and inert until it lands.
-#
-# Set SANCTIONS_EU_UK_INMEMORY=true only on an instance with headroom to spare.
-_EU_UK_ENABLED = os.getenv("SANCTIONS_EU_UK_INMEMORY", "").lower() in ("1", "true", "yes")
-
-# Parsed indexes are cached alongside the raw text. Downloading 25MB and 50MB
-# per screen would be absurd; so would re-parsing them. Both happen once per
-# _LIST_TTL_S.
-_index_cache: dict[str, tuple[float, list]] = {}
-
+# `scripts/refresh_sanctions_lists.py` now loads both lists into
+# `public.sanctions_names` (exact key + GIN-indexed token array), and
+# `_screen_list_db()` below looks them up. The parsers stay here because that
+# script imports them - they are the definition of how these feeds are read,
+# and the feeds are the thing that changes shape.
 
 def _eu_parse(raw: str) -> list[dict]:
     """EU consolidated list -> [{name, entity_id, programme, etype}].
@@ -843,114 +852,173 @@ def _uk_parse(raw: str) -> list[dict]:
 _warming: set[str] = set()
 
 
-async def _build_index(url: str, parser) -> list[dict]:
-    """Download and parse one list into the cache. Slow by nature."""
-    raw = await _fetch_url(url)
-    if not raw:
-        return []
-    idx = parser(raw)
-    if idx:
-        _index_cache[url] = (time.time(), idx)
-    return idx
+# HOW OLD THE INDEX IS, DISCLOSED ON EVERY SCREEN.
+#
+# The EU and UK lists are a local copy, refreshed on a schedule. A copy can go
+# stale, and a stale sanctions screen is the worst failure this tool has: it
+# returns "no match" with full confidence for someone designated last week.
+#
+# The honest handling is not to promise freshness - it is to STATE the age and
+# let the caller judge against their own obligation. So every screen carries
+# the date its EU/UK data was last refreshed, and past _STALE_AFTER_DAYS the
+# list moves into sources_unavailable, where a degraded source belongs.
+_STALE_AFTER_DAYS = 7
+_age_cache: dict[str, tuple[float, Optional[str]]] = {}
+_AGE_TTL_S = 900
 
 
-async def _get_index(url: str, parser, block: bool = False) -> list[dict]:
-    """The cached index, WITHOUT making a caller wait for a cold download.
-
-    THE EU AND UK LISTS ARE 25MB AND 50MB. Fetching and parsing both inline
-    took 48 SECONDS on a cold cache - and the person who pays that is whichever
-    caller happens to arrive first after a restart. One agent waiting 48s for a
-    sanctions screen is a worse product than one that says "the EU list was not
-    screened on this call" and returns in a second.
-    
-    So a cold cache starts a background warm and reports the list as
-    unavailable for THIS call. The next caller gets it. `warm_lists()` runs at
-    startup so in practice nobody sees the gap at all.
-
-    `block=True` exists for warm_lists() and for tests that need determinism.
-    """
+async def _list_refreshed_at(list_code: str) -> Optional[str]:
+    """Newest refreshed_at for a list, as YYYY-MM-DD. None if unknown."""
     now = time.time()
-    hit = _index_cache.get(url)
-    if hit and (now - hit[0]) < _LIST_TTL_S:
+    hit = _age_cache.get(list_code)
+    if hit and (now - hit[0]) < _AGE_TTL_S:
         return hit[1]
-
-    if block:
-        return await _build_index(url, parser) or (hit[1] if hit else [])
-
-    # Stale but present: serve it and refresh behind the caller's back.
-    if url not in _warming:
-        _warming.add(url)
-
-        async def _warm():
-            try:
-                await _build_index(url, parser)
-            finally:
-                _warming.discard(url)
-
-        try:
-            asyncio.get_running_loop().create_task(_warm())
-        except RuntimeError:
-            _warming.discard(url)
-
-    return hit[1] if hit else []
-
-
-async def warm_lists() -> dict[str, int]:
-    """Preload every list. Call once at startup so no caller pays the cold cost."""
-    out: dict[str, int] = {}
-    for label, url, parser in (("eu", _EU_CSV_URL, _eu_parse),
-                               ("uk", _UK_CSV_URL, _uk_parse)):
-        try:
-            out[label] = len(await _get_index(url, parser, block=True))
-        except Exception:                       # noqa: BLE001
-            out[label] = 0
     try:
-        await _fetch_url(_OFAC_SDN_CSV_URL)
-        await _fetch_url(_OFAC_ALT_CSV_URL)
-        out["ofac"] = 1
+        from storage.supabase_client import select_rows
+        rows = await select_rows("sanctions_names",
+                                 filters={"list_code": list_code},
+                                 order="refreshed_at.desc", limit=1)
+        val = (rows[0].get("refreshed_at") or "")[:10] if rows else None
     except Exception:                           # noqa: BLE001
-        out["ofac"] = 0
-    return out
+        val = None
+    _age_cache[list_code] = (now, val)
+    return val
 
 
-async def _screen_list(name: str, url: str, parser, list_label: str,
-                       source_url: str) -> tuple[list[dict], list[str], list[str]]:
-    """Screen one list. Returns (matches, sources_queried, sources_unavailable)."""
-    if not _EU_UK_ENABLED:
-        # Say it plainly. A caller with a European obligation must not read
-        # silence as coverage - this list is NOT being screened.
-        return [], [], [f"{list_label} (not enabled on this deployment; "
-                        f"NOT screened)"]
-    idx = await _get_index(url, parser)
-    if not idx:
-        # Loading in the background. Say plainly that this call did NOT screen
-        # it - a caller with a European obligation must not read silence as
-        # coverage.
-        return [], [], [f"{list_label} (loading; NOT screened on this call)"]
+def _days_since(day: Optional[str]) -> Optional[int]:
+    if not day:
+        return None
+    try:
+        d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - d).days
 
-    matches: list[dict] = []
-    seen_ids: set[str] = set()
-    for rec in idx:
-        sc = _word_match_score(name, rec["name"])
-        if sc < _MATCH_THRESHOLD_OFAC:
-            continue
-        if rec["entity_id"] in seen_ids:
-            continue
-        seen_ids.add(rec["entity_id"])
-        matches.append({
-            "name": _ascii(rec["name"]),
+
+async def _screen_list_db(name: str, list_code: str, list_label: str,
+                          source_url: str) -> tuple[list[dict], list[str], list[str]]:
+    """Screen one list from the DATABASE index.
+
+    Replaces holding 244MB of parsed list in every worker, which OOM-killed the
+    instance and served 502 to everything for several minutes. Postgres does
+    the lookup on an index; the process holds nothing.
+
+    TWO QUERIES, because a screen needs two different relationships:
+
+      * EXACT `name_key` - the normalised tokens, sorted. Identical token sets.
+      * SUPERSET - listed entries whose tokens include every token of the
+        query. "Rosneft Trading" against a listed "ROSNEFT TRADING S.A." is
+        that shape, and so is "Vladimir Putin" against the EU's "Vladimir
+        Vladimirovich PUTIN" - which is a real, currently-sanctioned person we
+        would otherwise return NOTHING for.
+
+    BOTH COME BACK IN ONE LIST, tagged `local_word_overlap`. The strict filter
+    in screen_sanctions() is what decides which are findings and which are
+    `possible_matches_unverified`, and it applies the same token-set rule this
+    function would have applied. Splitting them here would mean two places
+    deciding the same question, free to disagree after the next edit; the
+    filter that already carries the reasoning stays the only judge.
+    """
+    from storage.supabase_client import select_rows
+
+    toks = sorted(set(_normalize_name(name).split()))
+    if not toks:
+        return [], [], []
+
+    refreshed = await _list_refreshed_at(list_code)
+    age = _days_since(refreshed)
+    stamp = f"local index refreshed {refreshed}" if refreshed else "local index, age unknown"
+    queried = [f"{list_label} ({stamp})"]
+
+    # A copy this old is not a screen. Say so instead of answering from it.
+    if age is not None and age > _STALE_AFTER_DAYS:
+        return [], queried, [
+            f"{list_label} (local index is {age} days old, older than the "
+            f"{_STALE_AFTER_DAYS}-day limit; NOT screened on this call)"]
+
+    def _to_match(r: dict, score: float) -> dict:
+        return {
+            "name": _ascii(r.get("display_name", "")),
             "list": list_label,
-            "match_score": round(sc, 3),
-            "program": _ascii(rec["programme"]) or None,
-            "entity_type": rec["etype"],
+            "match_score": round(score, 2),
+            "program": _ascii(r.get("programme") or "") or None,
+            "entity_type": r.get("etype") or "ENTITY",
             "source_url": source_url,
-            # UNCALIBRATED, exactly like our OFAC matcher - so the strict
-            # token-set filter applies and these can surface as candidates but
-            # never be asserted as findings on a subset overlap.
+            # UNCALIBRATED, exactly like our OFAC matcher: no name-frequency
+            # data behind the number. The tag is what keeps the strict filter
+            # applying to these too.
             "_matcher": "local_word_overlap",
-        })
-    matches.sort(key=lambda m: m["match_score"], reverse=True)
-    return matches[:5], [url], []
+        }
+
+    try:
+        exact = await select_rows(
+            "sanctions_names",
+            filters={"list_code": list_code, "name_key": " ".join(toks)},
+            limit=5,
+        ) or []
+    except Exception:                           # noqa: BLE001
+        exact = None                            # distinguish failure from empty
+
+    if exact is None:
+        # NOT SCREENED, and the caller is told so. An index we could not reach
+        # must never read as a clean result on this list.
+        return [], queried, [
+            f"{list_label} (name index unreachable; NOT screened on this call)"]
+
+    rows = list(exact)
+    seen = {r.get("name_key") for r in exact}
+
+    # AN EMPTY INDEX IS NOT A CLEAN SCREEN.
+    #
+    # Found by deleting the EU rows during a test of the refresh sweep: with
+    # the table empty, this function returned "no matches, nothing
+    # unavailable" - and the tool reported EU-CONSOLIDATED as SCREENED with a
+    # clean result. The most dangerous possible output: total confidence,
+    # zero coverage.
+    #
+    # "No row matched" and "there are no rows" are different answers and must
+    # never collapse into each other. When nothing matched, prove the list is
+    # actually loaded before reporting a clean screen.
+    if not rows:
+        try:
+            probe = await select_rows("sanctions_names",
+                                      filters={"list_code": list_code}, limit=1)
+        except Exception:                       # noqa: BLE001
+            probe = []
+        if not probe:
+            return [], queried, [
+                f"{list_label} (local index is EMPTY -- NOT screened on this "
+                f"call; the list needs reloading)"]
+
+    # Superset candidates. Skipped for a single-token query: "smith" alone
+    # would drag back every Smith on the list, which is noise, not a candidate.
+    if len(toks) >= 2:
+        try:
+            sup = await select_rows(
+                "sanctions_names",
+                filters={"list_code": list_code,
+                         "tokens": "cs.{" + ",".join(toks) + "}"},
+                limit=8,
+            ) or []
+            for r in sup:
+                if r.get("name_key") in seen:
+                    continue
+                seen.add(r.get("name_key"))
+                rows.append(r)
+        except Exception:                       # noqa: BLE001
+            # Candidates are an enhancement over the exact lookup that already
+            # succeeded. Losing them must not fail the screen.
+            pass
+
+    out = []
+    for r in rows:
+        rt = set(r.get("tokens") or [])
+        # Proportion of the LISTED name our query accounts for: 1.0 when the
+        # token sets are identical, lower the more extra words the listing has.
+        score = (len(set(toks) & rt) / len(rt)) if rt else 0.0
+        out.append(_to_match(r, score))
+    out.sort(key=lambda m: m["match_score"], reverse=True)
+    return out, queried, []
 
 
 async def _call_ofac_sdn(
@@ -1045,14 +1113,14 @@ async def handle_screen_sanctions(
     )
     # EU and UK run alongside OFAC, from the authorities that publish them.
     eu_task = asyncio.create_task(
-        _screen_list(name_clean, _EU_CSV_URL, _eu_parse,
-                     "EU-CONSOLIDATED (European Commission financial sanctions)",
-                     "https://www.sanctionsmap.eu/")
+        _screen_list_db(name_clean, "EU",
+                        "EU-CONSOLIDATED (European Commission financial sanctions)",
+                        "https://www.sanctionsmap.eu/")
     )
     uk_task = asyncio.create_task(
-        _screen_list(name_clean, _UK_CSV_URL, _uk_parse,
-                     "UK-SANCTIONS (FCDO UK Sanctions List)",
-                     "https://sanctionslist.fcdo.gov.uk/")
+        _screen_list_db(name_clean, "UK",
+                        "UK-SANCTIONS (FCDO UK Sanctions List)",
+                        "https://sanctionslist.fcdo.gov.uk/")
     )
 
     os_matches, os_queried, os_unavail = await os_task
@@ -1121,12 +1189,16 @@ async def handle_screen_sanctions(
     if not eu_unavail:
         screened_lists.append(
             "EU-CONSOLIDATED (European Commission consolidated financial "
-            "sanctions, webgate.ec.europa.eu)"
+            "sanctions, webgate.ec.europa.eu; "
+            + (eu_queried[0].split("(")[-1].rstrip(")") if eu_queried else "local index")
+            + ")"
         )
     if not uk_unavail:
         screened_lists.append(
             "UK-SANCTIONS (UK Sanctions List published by the FCDO, "
-            "sanctionslist.fcdo.gov.uk)"
+            "sanctionslist.fcdo.gov.uk; "
+            + (uk_queried[0].split("(")[-1].rstrip(")") if uk_queried else "local index")
+            + ")"
         )
 
     # Fall back to honest "partial" if everything failed

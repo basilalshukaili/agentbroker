@@ -42,7 +42,12 @@ PROFILES: dict[str, dict] = {
         "title": "Sanctions & company verification",
         # 100-char cap, and it is checked by the publisher. Leads with the words
         # an agent actually searches for.
-        "description": "Sanctions screening (OFAC/EU/UN/UK) and company verification. Free, no key, no signup.",
+        # NOT "UN". The UN consolidated list is as easy to fetch as the
+        # others and is deliberately absent: it carries no open licence and no
+        # commercial carve-out, unlike OFAC (public domain), the EU list (EC
+        # open-data) and the UK list (OGL v3.0). We screen what we are licensed
+        # to screen and say exactly that. See core/screen_sanctions.py.
+        "description": "Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup.",
         "tools": (
             "screen_sanctions",
             "verify_company_record",

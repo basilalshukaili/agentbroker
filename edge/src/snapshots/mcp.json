@@ -55,7 +55,7 @@
     {
       "name": "sanctions-screening",
       "endpoint": "https://api.hatchloop.dev/mcp/sanctions-screening",
-      "description": "Sanctions screening (OFAC/EU/UN/UK) and company verification. Free, no key, no signup.",
+      "description": "Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup.",
       "tool_count": 8
     },
     {
