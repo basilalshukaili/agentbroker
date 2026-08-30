@@ -71,7 +71,8 @@
                 "type": "string",
                 "format": "date-time"
               }
-            }
+            },
+            "description": "Accepted but NOT APPLIED - it does not narrow results. We do not hold live calendars for the supply network. The response carries availability_window_applied: false when you send one. To book a specific slot use schedule_appointment with requested_time, which checks real availability."
           },
           "max_results": {
             "type": "integer",
@@ -479,7 +480,7 @@
           "send_at_iso": {
             "type": "string",
             "format": "date-time",
-            "description": "Schedule for future delivery; omit for immediate"
+            "description": "NOT SUPPORTED YET. We do not schedule messages. Supplying a time more than 2 minutes in the future is REFUSED (reason_code scheduling_not_supported) rather than sent immediately, which is what used to happen. Call send_message at the moment you want delivery, or omit this field."
           },
           "on_behalf_of": {
             "type": "string",

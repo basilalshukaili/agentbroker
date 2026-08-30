@@ -105,6 +105,27 @@ async def handle_find_business(
         "businesses": [r.model_dump() for r in records],
         "total_in_supply_network": directory.size(),
     }
+    # A FILTER THAT DOES NOT FILTER MUST SAY SO.
+    #
+    # availability_window is advertised as an object with start_iso/end_iso and
+    # is read by nothing: an identical five-result set came back for "no
+    # window" and for a one-minute window in 1999. Until today it never even
+    # reached the handler, so it was inert twice over. Forwarding it made it
+    # VALIDATE - a malformed value now returns a clean -32602 - which reads to
+    # an agent as support.
+    #
+    # Same treatment as screen_sanctions' country and entity_type notes:
+    # accepted, not applied, and disclosed in the response rather than left
+    # for the caller to discover by comparing result sets.
+    if getattr(request, "availability_window", None) is not None:
+        result["availability_window_applied"] = False
+        result["availability_window_note"] = (
+            "availability_window was accepted but did NOT narrow these "
+            "results - we do not hold live calendars for the supply network, "
+            "so we cannot filter on free/busy without calling each business. "
+            "Use schedule_appointment with requested_time to book a specific "
+            "slot; it checks real availability and refuses rather than "
+            "booking a different time.")
     if any_demo:
         result["sandbox_notice"] = (
             "Some results are sandbox entries (is_demo=true, names prefixed "

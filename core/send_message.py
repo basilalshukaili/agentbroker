@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from core.models import (
     SendMessageRequest, OutcomeReceipt, OperationStatus, CostRecord,
@@ -93,6 +94,43 @@ async def handle_send_message(
 ) -> OutcomeReceipt:
     t0 = time.monotonic()
     operation_id = str(uuid.uuid4())
+
+    # WE DO NOT SCHEDULE, SO WE MUST NOT ACCEPT A SCHEDULE.
+    #
+    # send_at_iso was advertised as "Schedule for future delivery; omit for
+    # immediate" and is read nowhere. Until today it never even reached the
+    # handler, so it was inert twice over; forwarding it made the promise
+    # look supported without making it true. Measured: a requested delivery
+    # of 2027-01-01T09:00Z sent IMMEDIATELY, with a receipt reading
+    # "Message delivered" and no mention of scheduling.
+    #
+    # Disclosure is not enough here, unlike a filter that merely fails to
+    # narrow. A caller scheduling a 9am reminder would have it delivered at
+    # 3am to a real phone, and no wording in the response undoes that. So it
+    # is refused, loudly, until it is built.
+    if request.send_at_iso is not None:
+        _now = datetime.now(timezone.utc)
+        _when = request.send_at_iso
+        if _when.tzinfo is None:
+            _when = _when.replace(tzinfo=timezone.utc)
+        if _when > _now + timedelta(minutes=2):
+            return OutcomeReceipt(
+                operation_id=operation_id,
+                status=OperationStatus.FAILURE,
+                reason_code="scheduling_not_supported",
+                human_message=(
+                    f"NOT SENT. send_at_iso asked for delivery at "
+                    f"{_when.isoformat()}, and this service does not schedule "
+                    f"messages - it would have sent immediately. Nothing was "
+                    f"sent and nothing was charged. Call send_message at the "
+                    f"time you want it delivered, or omit send_at_iso to send "
+                    f"now."),
+                cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+                latency_ms=int((time.monotonic() - t0) * 1000),
+                retriable=False,
+                trace_id=trace_id,
+            )
+
     chain = _build_channel_chain(request.preferred_channel, request.recipient.id_value)
     attempted: list[str] = []
     last_error: str = ""
