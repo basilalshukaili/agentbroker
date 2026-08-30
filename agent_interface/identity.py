@@ -173,6 +173,8 @@ _revoked_jtis: set[str] = set()
 # identity embedded in the token, not a jti we may not have.
 _revoked_customer_ids: set[str] = set()
 _revocation_hydrated = False
+_revocation_next_try = 0.0
+_REVOCATION_RETRY_S = 60.0
 
 
 def _hydrate_revocations() -> None:
@@ -182,21 +184,46 @@ def _hydrate_revocations() -> None:
     No-ops safely when Supabase isn't configured (local/dev/tests) -- same
     "durable is a bonus, in-memory always works" pattern as durable_meter.py
     and supply/smb_directory.py."""
-    global _revocation_hydrated
+    global _revocation_hydrated, _revocation_next_try
     if _revocation_hydrated:
         return
-    _revocation_hydrated = True
+
+    # THE LATCH USED TO BE SET BEFORE THE LOAD, AND THE LOAD COULD NOT FAIL
+    # LOUDLY. select_rows_sync returns [] on any error, so one failed read
+    # marked hydration "done" with an empty revocation set - permanently, for
+    # the life of the process. is_customer_revoked() then answered False for
+    # everyone, and refunded customers kept paid access until the next
+    # redeploy happened to succeed.
+    #
+    # Now: latch only on SUCCESS, and retry on a backoff so it self-heals.
+    now = time.time()
+    if now < _revocation_next_try:
+        return
+    _revocation_next_try = now + _REVOCATION_RETRY_S
+
+    log = logging.getLogger("smb_broker.identity")
     try:
-        from storage.supabase_client import select_rows_sync
-        rows = select_rows_sync("polar_order_events", filters={"status": "revoked"})
-        for row in rows:
-            cid = row.get("customer_id")
-            if cid:
-                _revoked_customer_ids.add(str(cid))
+        from storage.supabase_client import select_rows_sync_strict
+        rows = select_rows_sync_strict("polar_order_events",
+                                       filters={"status": "revoked"})
     except Exception as exc:  # noqa: BLE001
-        logging.getLogger("smb_broker.identity").debug(
-            "revocation_hydrate_failed err=%s", exc,
-        )
+        # DELIBERATELY FAIL OPEN, and say so. Denying every paying customer
+        # during a database blip is a worse outcome than briefly honouring a
+        # refunded token, and the retry above bounds how long "briefly" is.
+        # What must not happen is the previous behaviour: failing open FOR
+        # EVER while reporting success.
+        log.warning(
+            "revocation_hydrate_failed err=%s -- refunded customers may still "
+            "validate until this succeeds; retrying in %ss",
+            exc, _REVOCATION_RETRY_S)
+        return
+
+    for row in rows:
+        cid = row.get("customer_id")
+        if cid:
+            _revoked_customer_ids.add(str(cid))
+    _revocation_hydrated = True
+    log.info("revocation_hydrated count=%d", len(_revoked_customer_ids))
 
 
 async def revoke_customer(

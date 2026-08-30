@@ -93,7 +93,7 @@ def unsubscribe_url(recipient_id: str, channel: str = "email") -> str:
     return f"{base}/unsubscribe?t={make_token(recipient_id, channel)}"
 
 
-async def _record_optout(recipient_id: str, channel: str, method: str) -> None:
+async def _record_optout(recipient_id: str, channel: str, method: str) -> bool:
     """Register the opt-out in memory AND durably. Best-effort, never raises.
 
     Memory first: enforcement must take effect immediately even if the database
@@ -107,9 +107,39 @@ async def _record_optout(recipient_id: str, channel: str, method: str) -> None:
         store.revoke_consent(recipient_id, channel, "marketing", method)
     except Exception as exc:  # noqa: BLE001
         logger.warning("unsub_memory_failed err=%s", exc)
+    # THE RETURN VALUE USED TO BE DISCARDED, and insert_row cannot raise -
+    # it returns None on failure - so the `except` here was dead and the
+    # caller went on to render "You are unsubscribed. We will not send you any
+    # further messages. This takes effect immediately." on the strength of a
+    # write that may never have happened. The RFC 8058 one-click POST returned
+    # {"ok": true, "unsubscribed": true} to Gmail and Yahoo the same way.
+    #
+    # In-memory suppression still works, so the promise holds until the next
+    # redeploy - and then quietly stops. For an opt-out that is not an
+    # operational detail; it is the difference between honouring a legal
+    # request and only appearing to.
+    #
+    # core/handle_inbound.py already had this right ("opt_out_processed is
+    # True ONLY if the durable write succeeds"). Same idiom, applied here.
+    # NOT CONFIGURED IS NOT THE SAME AS DOWN.
+    #
+    # My first version returned 503 whenever the durable write did not happen,
+    # which meant every unsubscribe in local dev and in the test suite - where
+    # Supabase is deliberately absent - reported a service failure. In that
+    # mode in-memory suppression IS the intended behaviour and the promise is
+    # honest, which is the codebase's existing "durable is a bonus" pattern.
+    #
+    # A configured database that then FAILS is a real incident and must be
+    # reported as one. The two look identical to the caller of insert_row,
+    # which is how they came to be treated alike.
+    from storage.supabase_client import _get_config
+    _url, _key = _get_config()
+    if not (_url and _key):
+        return True
+
     try:
-        from storage.supabase_client import insert_row
-        await insert_row("consent_optouts", {
+        from storage.supabase_client import insert_row_strict
+        await insert_row_strict("consent_optouts", {
             "recipient_id": recipient_id,
             "channel": channel,
             "use_case": "marketing",
@@ -117,8 +147,13 @@ async def _record_optout(recipient_id: str, channel: str, method: str) -> None:
             "source": "unsubscribe_link",
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
+        return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("unsub_durable_failed err=%s", exc)
+        logger.error(
+            "unsub_durable_failed recipient=%s channel=%s err=%s -- "
+            "suppression is IN-MEMORY ONLY and will not survive a restart",
+            recipient_id, channel, exc)
+        return False
 
 
 def _page(title: str, body: str, ok: bool = True) -> str:
@@ -149,8 +184,23 @@ async def unsubscribe_get(t: str = Query("", description="signed opt-out token")
             ok=False), status_code=400)
 
     recipient_id, channel = recipient
-    await _record_optout(recipient_id, channel, "unsubscribe_link")
-    logger.info("unsubscribed recipient=%s channel=%s", recipient_id[:4] + "***", channel)
+    durable = await _record_optout(recipient_id, channel, "unsubscribe_link")
+    logger.info("unsubscribed recipient=%s channel=%s durable=%s",
+                recipient_id[:4] + "***", channel, durable)
+    if not durable:
+        # SAY WHAT ACTUALLY HAPPENED. The suppression is real right now but
+        # lives only in this process's memory, so a redeploy would silently
+        # undo it. Promising "this takes effect immediately" and leaving it
+        # there is how someone gets messaged again after opting out.
+        return HTMLResponse(_page(
+            "You are unsubscribed - please confirm by email",
+            f"<p>We have stopped {channel} messages to you right now.</p>"
+            "<p>We could not write this to our permanent record, so it may "
+            "not survive a system restart. That is our fault, not yours.</p>"
+            f'<p><strong>Please email <a href="mailto:{SUPPORT_EMAIL}">'
+            f'{SUPPORT_EMAIL}</a></strong> so we can make it permanent, or '
+            f'reply <code>STOP</code> to any message from us.</p>',
+            ok=False), status_code=503)
     return HTMLResponse(_page(
         "You are unsubscribed",
         f"<p>We will not send you any further {channel} messages.</p>"
@@ -179,5 +229,13 @@ async def unsubscribe_post(request: Request, t: str = Query("")):
     if not parsed:
         return JSONResponse({"ok": False, "reason": "invalid_token"}, status_code=400)
     recipient_id, channel = parsed
-    await _record_optout(recipient_id, channel, "one_click_rfc8058")
+    durable = await _record_optout(recipient_id, channel, "one_click_rfc8058")
+    if not durable:
+        # Gmail and Yahoo retry a 5xx. Returning 200 here told them the
+        # opt-out was recorded when it was not, and there is no second chance
+        # to correct that - the mail client never asks again.
+        return JSONResponse(
+            {"ok": False, "unsubscribed": False, "channel": channel,
+             "reason": "not_durably_recorded", "retry": True},
+            status_code=503)
     return JSONResponse({"ok": True, "unsubscribed": True, "channel": channel})

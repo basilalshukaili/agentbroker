@@ -188,6 +188,40 @@ class SupabaseUnavailable(RuntimeError):
 # never be mistaken for "I checked and there was nothing".
 
 
+async def insert_row_strict(table: str, row: dict) -> dict:
+    """insert_row, but a failed write RAISES instead of returning None.
+
+    For the paths where telling someone the write happened is itself the
+    product: an opt-out, a revocation, a receipt. `insert_row` returns None on
+    failure without raising, so every `except Exception` written around it is
+    dead code and the caller goes on to render "You are unsubscribed."
+    """
+    url, key = _get_config()
+    if not url or not key:
+        raise SupabaseUnavailable(f"no Supabase config; {table} was not written")
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(
+                f"{url}/rest/v1/{table}",
+                headers={
+                    "apikey": key,
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=representation",
+                },
+                json=row,
+            )
+    except Exception as exc:                    # noqa: BLE001
+        raise SupabaseUnavailable(f"{table} unreachable: {exc}") from exc
+    if resp.status_code not in (200, 201):
+        raise SupabaseUnavailable(
+            f"{table} rejected the write: HTTP {resp.status_code} "
+            f"{resp.text[:160]}")
+    data = resp.json()
+    return (data[0] if isinstance(data, list) and data else data) or {}
+
+
 async def select_rows_strict(table: str, **kw) -> list[dict]:
     """select_rows, but a failed query RAISES instead of returning []."""
     url, key = _get_config()

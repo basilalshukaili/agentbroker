@@ -132,10 +132,17 @@ def test_optout_is_durably_recorded(client, monkeypatch):
 
     async def _capture(table, row):
         written.append((table, row))
-    import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row", _capture)
+        return {"ok": True}
 
-    client.get(f"/unsubscribe?t={unsub.make_token('ann@example.com')}")
+    import storage.supabase_client as sb
+    # The write goes through the STRICT writer now, because a discarded
+    # return value is how "You are unsubscribed" got rendered on the strength
+    # of a write that never happened.
+    monkeypatch.setattr(sb, "insert_row_strict", _capture)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
+
+    r = client.get(f"/unsubscribe?t={unsub.make_token('ann@example.com')}")
+    assert r.status_code == 200
     assert written, "opt-out must be written durably, not just held in memory"
     table, row = written[0]
     assert table == "consent_optouts"
@@ -143,16 +150,80 @@ def test_optout_is_durably_recorded(client, monkeypatch):
     assert row["source"] == "unsubscribe_link"
 
 
+def test_a_failed_durable_write_is_not_reported_as_success(client, monkeypatch):
+    """The page must not promise what the database refused.
+
+    "You are unsubscribed. This takes effect immediately." was rendered even
+    when the durable write failed, because insert_row returns None instead of
+    raising and its return value was discarded. Suppression held in memory
+    until the next redeploy, then silently stopped - so somebody who opted out
+    gets messaged again, which is the one outcome this endpoint exists to
+    prevent.
+    """
+    async def _boom(table, row):
+        raise RuntimeError("supabase down")
+
+    import storage.supabase_client as sb
+    monkeypatch.setattr(sb, "insert_row_strict", _boom)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
+
+    r = client.get(f"/unsubscribe?t={unsub.make_token('bob@example.com')}")
+    assert r.status_code == 503, (
+        "a failed durable write was reported to the user as a completed "
+        "unsubscribe")
+    assert "could not write" in r.text.lower()
+
+
+def test_rfc8058_failure_asks_the_mail_client_to_retry(client, monkeypatch):
+    """Gmail and Yahoo retry a 5xx and never re-ask after a 200.
+
+    Returning {"ok": true} on a failed write spends the only chance the mail
+    client gives us.
+    """
+    async def _boom(table, row):
+        raise RuntimeError("supabase down")
+
+    import storage.supabase_client as sb
+    monkeypatch.setattr(sb, "insert_row_strict", _boom)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
+
+    r = client.post(f"/unsubscribe?t={unsub.make_token('cara@example.com')}")
+    assert r.status_code == 503
+    assert r.json().get("retry") is True
+
+
+def test_no_database_configured_is_not_an_error(client, monkeypatch):
+    """Local dev and the test suite run with no Supabase on purpose.
+
+    In that mode in-memory suppression IS the intended behaviour, so the
+    promise is honest. My first version of the fix could not tell "not
+    configured" from "down" and returned 503 for both.
+    """
+    import storage.supabase_client as sb
+    monkeypatch.setattr(sb, "_get_config", lambda: (None, None))
+    r = client.get(f"/unsubscribe?t={unsub.make_token('dee@example.com')}")
+    assert r.status_code == 200
+
+
 def test_db_failure_still_enforces_in_memory(client, isolated_consent, monkeypatch):
-    """Enforcement must not depend on the database being reachable."""
+    """Enforcement must not depend on the database being reachable.
+
+    This is the invariant, and it still holds: the suppression is applied
+    before the durable write is attempted. What changed is that the RESPONSE
+    now says the record is not permanent, instead of promising it is.
+    """
     async def _boom(*a, **k):
         raise RuntimeError("supabase down")
+
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row", _boom)
+    monkeypatch.setattr(sb, "insert_row_strict", _boom)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
 
     r = client.get(f"/unsubscribe?t={unsub.make_token('ann@example.com')}")
-    assert r.status_code == 200
-    assert isolated_consent.is_opted_out("ann@example.com", "email") is True
+    assert r.status_code == 503
+    assert isolated_consent.is_opted_out("ann@example.com", "email") is True, (
+        "suppression must be applied even when the durable write fails")
+
 
 
 # ---------------------------------------------------------------------------
