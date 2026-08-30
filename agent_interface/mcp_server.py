@@ -1184,6 +1184,8 @@ async def _dispatch_operation(
             location=args.get("location", {"zip_or_city": "Atlanta"}),
             capability=args.get("capability"),
             max_results=args.get("max_results", 5),
+            price_band=args.get("price_band"),
+            availability_window=args.get("availability_window"),
         )
         receipt = await handle_find_business(req)
 
@@ -1209,11 +1211,23 @@ async def _dispatch_operation(
     elif name == "schedule_appointment":
         from core.schedule_appointment import handle_schedule_appointment
         from core.models import ScheduleAppointmentRequest, AppointmentAction
+        # EVERY FIELD, NOT THE ONES SOMEONE REMEMBERED.
+        #
+        # This constructor listed four of the seven parameters the manifest
+        # advertises, so `requested_time`, `customer` and `notes` reached the
+        # handler as None on every MCP call. requested_time is the time being
+        # booked: an agent asked for 2pm Tuesday, the field was dropped here,
+        # and the handler - which reads it in eight places - proceeded as
+        # though no time had been given. The parameter was documented,
+        # validated by the model, used by the handler, and never delivered.
         req = ScheduleAppointmentRequest(
             smb_id=args["smb_id"],
             action=AppointmentAction(args.get("action", "book")),
             service=args.get("service"),
             existing_appointment_id=args.get("existing_appointment_id"),
+            customer=args.get("customer"),
+            requested_time=args.get("requested_time"),
+            notes=args.get("notes"),
         )
         receipt = await handle_schedule_appointment(req)
 
@@ -1355,6 +1369,13 @@ async def _dispatch_operation(
                 or args.get("channel_preference")
                 or "auto",
                 "preferred_channel"),
+            # on_behalf_of is WHO THE MESSAGE SAYS IT IS FROM - the handler
+            # reads it in four places to build the sender disclosure a
+            # transactional message is required to carry. It was advertised,
+            # modelled, used, and dropped here.
+            on_behalf_of=args.get("on_behalf_of"),
+            business_id=args.get("business_id"),
+            send_at_iso=args.get("send_at_iso"),
         )
         receipt = await handle_send_message(req)
 

@@ -138,6 +138,16 @@ jobs:
       - name: Every advertised parameter does something
         run: python scripts/check_params_do_something.py
 
+      # AND EVERY ADVERTISED PARAMETER MUST REACH THE HANDLER THAT USES IT.
+      # The guard above reads the handler, so it passed - green - over eight
+      # parameters no caller could deliver, because _dispatch_operation built
+      # each request field by field and simply did not list them.
+      # `requested_time`, the time being booked, arrived as None on every MCP
+      # call ever made while the handler read it in eight places. Documented,
+      # modelled, validated, used - and never wired up.
+      - name: Every advertised parameter survives dispatch
+        run: python scripts/check_params_reach_dispatch.py
+
       # A count typed by hand is true only on the day it is typed. An audit
       # found "22 jurisdictions" on 15+ surfaces (real: 26 - we were
       # UNDER-claiming our own compliance coverage), plus 12/13/14/18 tools
