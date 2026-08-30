@@ -155,6 +155,13 @@ jobs:
       - name: Tool catalogue is derived, not hand-maintained
         run: python scripts/gen_mcp_tools.py --check
 
+      # The MCP registry rejects a description over 100 characters with a 422.
+      # I found that out from a red publish job, after the commit was pushed
+      # and deployed - every local gate passed because none of them knew the
+      # limit existed. It is mirrored locally now.
+      - name: Registry manifests within the registry's limits
+        run: python scripts/check_registry_limits.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so
