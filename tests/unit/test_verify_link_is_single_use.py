@@ -40,7 +40,7 @@ def _valid_token(monkeypatch):
 
 
 def test_the_first_click_issues_a_key(monkeypatch, _valid_token):
-    async def _consume(token):
+    async def _consume(token, email=None):
         return "someone@example.com"          # row was there
 
     monkeypatch.setattr(KR, "consume_pending", _consume)
@@ -50,7 +50,7 @@ def test_the_first_click_issues_a_key(monkeypatch, _valid_token):
 
 
 def test_the_second_click_is_refused(monkeypatch, _valid_token):
-    async def _consume(token):
+    async def _consume(token, email=None):
         return None                           # row gone: already used
 
     monkeypatch.setattr(KR, "consume_pending", _consume)
@@ -67,7 +67,7 @@ def test_a_database_outage_does_not_block_signup(monkeypatch, _valid_token):
     """The reason single-use was not enforced in the first place. The
     signature and expiry are a real gate on their own; refusing every signup
     during a blip is the worse failure."""
-    async def _consume(token):
+    async def _consume(token, email=None):
         raise KRL.PendingLookupUnavailable("supabase down")
 
     monkeypatch.setattr(KR, "consume_pending", _consume)
@@ -87,6 +87,12 @@ def test_consume_pending_separates_absent_from_unreachable(monkeypatch):
     from storage import supabase_client as sb
 
     async def _empty(table, filters=None, **kw):
+        # The row is absent, but the TABLE is readable - which is what makes
+        # "already used" a safe conclusion. An entirely empty read is treated
+        # as unavailable now (RLS can hide rows behind a 200 []), so the probe
+        # has to see something.
+        if not filters:
+            return [{"email": "someone-else@example.com"}]
         return []
 
     async def _down(table, filters=None, **kw):

@@ -166,7 +166,7 @@ async def verify_free_key(token: str = Query(..., description="Signed verificati
     # after the person had already used it.
     from agent_interface.key_request_logic import PendingLookupUnavailable
     try:
-        if await consume_pending(token) is None:
+        if await consume_pending(token, email=email) is None:
             return HTMLResponse(
                 status_code=400,
                 content=html_error(

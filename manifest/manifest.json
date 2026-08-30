@@ -2493,10 +2493,11 @@
             "enum": [
               "hit",
               "clean",
+              "partial",
               "candidates",
               "not_screened"
             ],
-            "description": "What actually happened, because matched:false was ambiguous between two opposite answers. 'hit' = confirmed match. 'clean' = at least one list screened and nothing found. 'candidates' = screened, nothing confirmed, but possible_matches_unverified is non-empty and a human should look. 'not_screened' = NO list produced a complete screen (outage, stale index, or a name too short/generic to match on safely) - this is not a result and must never be treated as clean."
+            "description": "What actually happened, because matched:false was ambiguous between two opposite answers. 'hit' = confirmed match. 'clean' = EVERY list screened and nothing found. 'partial' = some lists screened and clean, others did not run - not a full clearance. 'candidates' = screened, nothing confirmed, but possible_matches_unverified is non-empty and a human should look. 'not_screened' = NO list produced a complete screen (outage, stale or unknown-age index, or a name too short/generic to match on safely) - this is not a result and must never be treated as clean. Check lists_screened and sources_unavailable for which was which."
           },
           "matches": {
             "type": "array",

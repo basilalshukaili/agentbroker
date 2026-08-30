@@ -59,8 +59,13 @@ def _index(monkeypatch):
     monkeypatch.setattr(sb, "select_rows", rows.select_rows)
 
     async def _fresh(code):
+        # DATE ONLY, exactly as _list_refreshed_at returns it in production
+        # ([:10] of refreshed_at). A full ISO timestamp makes _days_since
+        # raise ValueError -> age None -> the list is (correctly) reported as
+        # unscreenable, so this fixture would be testing the outage path while
+        # claiming to test a fresh index.
         from datetime import datetime, timezone
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     monkeypatch.setattr(ss, "_list_refreshed_at", _fresh)
 

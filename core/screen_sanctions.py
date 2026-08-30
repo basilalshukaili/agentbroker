@@ -420,18 +420,67 @@ def list_cache_age_s(url: str) -> Optional[float]:
     return (time.time() - hit[0]) if hit else None
 
 
+# The smallest number of parseable rows a real OFAC list file has. SDN.CSV is
+# ~18,000 lines and ALT.CSV ~11,000; a hundred is far below either and far
+# above anything an error page or a truncated response produces.
+_MIN_LIST_ROWS = 100
+
+
+def _looks_like_a_sanctions_list(text: str) -> bool:
+    """Is this body plausibly the CSV we asked for, or is it an error page?
+
+    A 200 IS NOT A SANCTIONS LIST, AND ACCEPTING ONE PRODUCED A FALSE CLEAN.
+
+    _fetch_url accepted any non-empty 200 body and cached it for six hours.
+    _parse_ofac_sdn silently yields nothing for a body that is not the CSV -
+    every row has fewer than four columns, so every row is skipped - and
+    _call_ofac_sdn reports success whenever the text is not None. Net effect,
+    measured: a JSON error body or an HTML maintenance page from Treasury made
+    screen_sanctions report
+
+        screening_status: "clean"  ... "No matches on the screened lists"
+        lists_screened:   ["OFAC-SDN (...; fetched fresh)"]
+
+    for Mahan Air, a designated airline, with ZERO lists actually screened -
+    and the six-hour cache kept it doing that for six hours.
+
+    The database path already guards this ("AN EMPTY INDEX IS NOT A CLEAN
+    SCREEN", _screen_list_db); the HTTP path had no equivalent. A truncated
+    200 - a CDN cutting the body after a few hundred of ~18,000 lines - has
+    exactly the same effect and also needs to be refused, which is why this
+    counts ROWS rather than sniffing for a header.
+    """
+    if not text or not text.strip():
+        return False
+    head = text.lstrip()[:400].lower()
+    if head.startswith(("<!doctype", "<html", "{", "[")):
+        return False                # an HTML error page or a JSON error body
+    # Count rows that carry the comma-separated shape the parsers require.
+    rows = 0
+    for line in text.splitlines():
+        if line.count(",") >= 3:
+            rows += 1
+            if rows >= _MIN_LIST_ROWS:
+                return True
+    return False
+
+
 async def _fetch_url(url: str, allow_stale: bool = True) -> Optional[str]:
     """GET a public list file, cached for _LIST_TTL_S.
 
     On a failed refresh, returns the last good copy rather than None -
     `allow_stale=False` opts out where a caller genuinely needs freshness.
+
+    A 200 IS NOT A SANCTIONS LIST. See _looks_like_a_sanctions_list: this
+    used to accept any non-empty 200 body, cache it for six hours, and report
+    OFAC as SCREENED with a clean result.
     """
     now = time.time()
     hit = _list_cache.get(url)
     if hit and (now - hit[0]) < _LIST_TTL_S:
         return hit[1]
 
-    import httpx
+    import httpx  # noqa: F401  (imported here to keep startup light)
     ua = "AgentBroker-SanctionsScreen/1.0 (compliance tool; contact hello@hatchloop.dev)"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -440,7 +489,7 @@ async def _fetch_url(url: str, allow_stale: bool = True) -> Optional[str]:
                 headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"},
                 follow_redirects=True,
             )
-        if resp.status_code == 200 and resp.text.strip():
+        if resp.status_code == 200 and _looks_like_a_sanctions_list(resp.text):
             _list_cache[url] = (now, resp.text)
             # CLEAR THE STALE MARK ON A SUCCESSFUL FETCH.
             #
@@ -803,8 +852,12 @@ async def _list_refreshed_at(list_code: str) -> Optional[str]:
                                         order="refreshed_at.asc", limit=1)
         val = (rows[0].get("refreshed_at") or "")[:10] if rows else None
     except Exception:                           # noqa: BLE001
-        # Unknown age is reported as unknown, never as fresh.
-        val = None
+        # DO NOT CACHE A FAILURE. Unknown age now sends the list to
+        # sources_unavailable (see the gate in _screen_list_db), so caching it
+        # would take that list out of service for the full _AGE_TTL_S of 15
+        # minutes after a single blip - long after Supabase recovered.
+        # Returning without writing the cache means the next call retries.
+        return None
     _age_cache[list_code] = (now, val)
     return val
 
@@ -1011,8 +1064,13 @@ def _country_matches(want: str, have: list) -> Optional[bool]:
     want_terms = set(want_words)
     if w in _ISO2_NAMES:
         want_terms |= _words(_ISO2_NAMES[w])
-    codes_for_name = {c for c, n in _ISO2_NAMES.items()
-                      if _words(n) and _words(n) <= want_words}
+    # Same qualifier rule as the alias loop below: "CONGO" must not pull in
+    # the DRC's code, and "KOREA" must not pull in either Korea's.
+    codes_for_name = {
+        c for c, n in _ISO2_NAMES.items()
+        if _words(n) and _words(n) <= want_words
+        and not ((want_words - _words(n)) & _DISTINGUISHING)
+    }
     want_terms |= codes_for_name
     # The full country name(s) this query stands for, compared as whole
     # phrases rather than loose words.
@@ -1021,8 +1079,35 @@ def _country_matches(want: str, have: list) -> Optional[bool]:
         name_forms.append(_ISO2_NAMES[w])
         name_forms.extend(_COUNTRY_ALIASES.get(w, []))
     # The caller may have typed an alias directly ("Russian Federation").
+    #
+    # THIS SUBSET TEST IS WHERE THE TWO CONGOS LEAKED, and it is upstream of
+    # both qualifier rules, which is why neither could stop it.
+    #
+    # `_words(w) <= _words(_ISO2_NAMES[code])` fired for w="CONGO" against
+    # CD="DEMOCRATIC REPUBLIC OF THE CONGO", because {CONGO} is a subset. That
+    # appended the DRC's own name forms and its code to a query meaning the
+    # OTHER Congo - and once "DEMOCRATIC REPUBLIC OF THE CONGO" is in
+    # name_forms, the name branch has no leftover words to reject on, and once
+    # "CD" is in want_terms, want_words minus the DRC's name is empty so the
+    # code branch cannot reject either. Both guards defeated by construction.
+    #
+    # Measured against the live index: 506 rows (250 EU "CD" + 256 UK "CONGO
+    # (DEMOCRATIC REPUBLIC)") returned country_match TRUE for a query meaning
+    # the Republic of the Congo. The same shape made "KOREA" match ~900 DPRK
+    # designations AND South Korea.
+    #
+    # A qualifier that makes it a different country disqualifies the alias,
+    # exactly as it does everywhere else in this function.
     for code, aliases in _COUNTRY_ALIASES.items():
-        if w in aliases or _words(w) <= _words(_ISO2_NAMES.get(code, "")):
+        code_words = _words(_ISO2_NAMES.get(code, ""))
+        if w in aliases:
+            matched_alias = True
+        elif _words(w) and _words(w) <= code_words:
+            # Subset only counts when the EXTRA words are not distinguishing.
+            matched_alias = not ((code_words - _words(w)) & _DISTINGUISHING)
+        else:
+            matched_alias = False
+        if matched_alias:
             name_forms.append(_ISO2_NAMES.get(code, ""))
             name_forms.extend(aliases)
             want_terms.add(code)
@@ -1229,6 +1314,24 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     if age is not None and age > _STALE_AFTER_DAYS:
         return [], queried, [
             f"{list_label} (local index is {age} days old, older than the "
+            f"{_STALE_AFTER_DAYS}-day limit; NOT screened on this call)"]
+
+    # AN AGE WE COULD NOT READ IS NOT A FRESH ONE.
+    #
+    # _list_refreshed_at swallows every exception and returns None, so
+    # _days_since(None) is None and the gate above - `age is not None and ...`
+    # - cannot fire. The list was then counted in lists_screened as "local
+    # index, age unknown" and the screen reported CLEAN. The stamp said
+    # unknown; the decision treated it as fresh, which is the gap between what
+    # a receipt says and what it means.
+    #
+    # It matters most exactly when it is most likely: the age query fails
+    # because Supabase is struggling, which is also when the refresh job may
+    # have been failing for days.
+    if age is None:
+        return [], queried, [
+            f"{list_label} (could not read when this index was last "
+            f"refreshed, so its age cannot be checked against the "
             f"{_STALE_AFTER_DAYS}-day limit; NOT screened on this call)"]
 
     def _to_match(r: dict, score: float) -> dict:
@@ -1564,9 +1667,26 @@ async def handle_screen_sanctions(
         # survives here unless the listed name IS the query.
         _kept = []
         for m in merged:
+            # TWO DIFFERENT DATA SHAPES WERE BEING COMPARED, so this only ever
+            # kept a match by luck. The left side was an ORDERED list with
+            # duplicates, in the order OFAC wrote the name; the right side a
+            # SORTED set of the query's tokens. Any OFAC entry whose own token
+            # order is not alphabetical could not be retained by any query in
+            # any word order:
+            #
+            #   "Ri Je Son"  -> OFAC 'RI, Je-Son'  (NPWMD)  score 1.00
+            #     ['ri','je','son'] != ['je','ri','son']    -> DROPPED
+            #
+            # Measured over the whole SDN file: 276 weak-name entries the
+            # filter could never keep, 239 of them absent from the EU and UK
+            # lists too - so invisible from every source we have. MS-13, the
+            # Mahan Air tail numbers, and a run of North Korean WMD
+            # designations were among them, while the receipt claimed exact
+            # whole-name matches HAD been checked on OFAC.
             if m.get("_matcher") == "local_word_overlap" and \
                     m.get("list", "").startswith("OFAC") and \
-                    _normalize_name(m.get("name", "")).split() != sorted(_q_toks):
+                    sorted(set(_normalize_name(m.get("name", "")).split())) \
+                    != sorted(set(_q_toks)):
                 continue
             m["_single_token_query"] = True      # demote: candidate, never finding
             m.setdefault("_weak_name_reason", _unscreenable)
@@ -1694,14 +1814,22 @@ async def handle_screen_sanctions(
         # health from a screen that never ran. This field says which:
         #
         #   hit          - a confirmed match, matched=true
-        #   clean        - at least one list screened, nothing found
+        #   clean        - EVERY list screened, nothing found
+        #   partial      - some lists screened and clean, others did not run
         #   candidates   - screened, nothing confirmed, unverified candidates
         #   not_screened - NO list produced a complete screen. Not a result.
+        #
+        # `partial` exists because `clean` had the same defect `matched: false`
+        # had, one level up: it was returned both for "all three lists screened
+        # and this party is on none of them" and for "OFAC screened, the EU and
+        # UK indexes were unreachable". The docs tell buyers to branch on this
+        # field, so a US-only screen must not present as a European clearance.
         "screening_status": (
             "hit" if matched
             else "not_screened" if not screened_ok
             else "candidates" if unverified
-            else "clean"),
+            else "clean" if not all_sources_unavailable
+            else "partial"),
         "matches": merged,
         "lists_screened": screened_lists,
         "sources_queried": all_sources_queried,

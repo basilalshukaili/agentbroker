@@ -210,11 +210,34 @@ class PendingLookupUnavailable(RuntimeError):
     """The pending_keys table could not be read - NOT the same as 'no row'."""
 
 
-async def consume_pending(token: str) -> Optional[str]:
+async def consume_pending(token: str, email: Optional[str] = None) -> Optional[str]:
     """
-    Look up and delete a pending_key row by token.
-    Returns email if found, None if the row is genuinely absent (already used),
-    and RAISES PendingLookupUnavailable if we could not find out.
+    Look up and delete the pending_key row for this verification, and say
+    which of three things happened:
+      * the email, if a row was there (first use - go ahead)
+      * None, if the row is genuinely absent (already used - refuse)
+      * PendingLookupUnavailable, if we could not find out (fall back)
+
+    KEYED ON EMAIL, NOT ON THE TOKEN.
+
+    `store_pending` upserts with `on_conflict="email"`, so there is at most ONE
+    row per address no matter how many times someone asks for a link. Looking
+    the row up by TOKEN therefore breaks the resend flow, and measurement
+    against production showed the conflicting write is a no-op - the row keeps
+    the FIRST token:
+
+        request a key, then click "resend"
+          first email's link  -> 200, key issued
+          second email's link -> 400 "already used"   <- never used
+
+    The second email is the one people click. Whichever way the upsert
+    resolves, one of the two live links is refused, and the refusal text tells
+    the person a key was already issued when none was.
+
+    The row is per-EMAIL, so the consume has to be per-email too. The token is
+    still what proves the request is genuine - `verify_token` checks the HMAC
+    and the expiry before this is ever called; this decides only whether that
+    verification has already been spent.
 
     THE TWO USED TO BE THE SAME ANSWER, and they mean opposite things. This
     returned None both for "this link was already used" and for "Supabase did
@@ -223,30 +246,59 @@ async def consume_pending(token: str) -> Optional[str]:
     single-use when we can tell, and fall back to signature-only when we
     genuinely cannot - see verify_free_key.
     """
+    lookup = {"email": email} if email else {"token": token}
     try:
         from storage.supabase_client import select_rows_strict, SupabaseUnavailable
         try:
-            rows = await select_rows_strict("pending_keys",
-                                            filters={"token": token})
+            rows = await select_rows_strict("pending_keys", filters=lookup)
         except SupabaseUnavailable as exc:
             raise PendingLookupUnavailable(str(exc)) from exc
         if not rows:
+            # AN EMPTY ANSWER IS NOT ALWAYS AN ABSENT ROW.
+            #
+            # PostgREST returns 200 [] both for "no such row" and for "a row
+            # you are not allowed to see" - RLS filters silently, and
+            # _get_config() falls back to SUPABASE_ANON_KEY, which does NOT
+            # bypass RLS on this table. A misconfigured key would therefore
+            # refuse every FIRST click as "already used": a total signup
+            # outage that blames the user.
+            #
+            # So before concluding "used", prove the table is readable at all.
+            # If it looks entirely empty we are not looking at the truth, and
+            # unavailable is the honest answer. Same probe as the sanctions
+            # index uses to tell "no match" from "no rows".
+            try:
+                probe = await select_rows_strict("pending_keys", limit=1)
+            except SupabaseUnavailable as exc:
+                raise PendingLookupUnavailable(str(exc)) from exc
+            if not probe:
+                raise PendingLookupUnavailable(
+                    "pending_keys reads as completely empty - cannot tell an "
+                    "already-used link from an unreadable table")
             return None
         import httpx as _httpx
         url = os.getenv("SUPABASE_URL", "").rstrip("/")
         key = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
         if url and key:
             async with _httpx.AsyncClient(timeout=5.0) as client:
-                await client.delete(
+                # CHECK THE DELETE. Discarding this response meant a DELETE
+                # refused by RLS left the row in place and single-use silently
+                # off, with nothing logged and nothing to notice.
+                resp = await client.delete(
                     f"{url}/rest/v1/pending_keys",
                     headers={"apikey": key, "Authorization": f"Bearer {key}"},
-                    params={"token": f"eq.{token}"},
+                    params={k: f"eq.{v}" for k, v in lookup.items()},
                 )
+                if resp.status_code >= 300:
+                    logger.error(
+                        "pending_keys_delete_failed status=%s -- the row "
+                        "SURVIVED, so this verification link is still usable "
+                        "and single-use is NOT in force", resp.status_code)
         return rows[0].get("email")
     except PendingLookupUnavailable:
         raise
     except Exception as exc:  # noqa: BLE001
-        logger.warning("pending_keys_consume_failed token=%s err=%s", token[:8], exc)
+        logger.warning("pending_keys_consume_failed err=%s", exc)
         raise PendingLookupUnavailable(str(exc)) from exc
 
 
