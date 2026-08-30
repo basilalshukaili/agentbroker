@@ -197,6 +197,23 @@ def test_snapshots_do_not_carry_retired_overclaims(banned, why):
         f"text to every agent. Run scripts/refresh_edge_snapshots.py.")
 
 
+def test_sanctions_description_names_its_lists_and_disclaims_the_UN():
+    """The coverage claim changed on 2026-08-30 and the description must track it.
+
+    We now screen OFAC, EU and UK directly from the issuing authorities. The UN
+    list is deliberately excluded - free to fetch, but no licence permitting
+    commercial redistribution - so the description must not imply it.
+    """
+    d = desc("screen_sanctions")
+    for expected in ("OFAC", "European Commission", "FCDO"):
+        assert expected in d, f"the description does not name {expected}"
+    assert "UN CONSOLIDATED LIST IS NOT SCREENED" in d.upper(), (
+        "we must say plainly that UN is not covered, or a compliance buyer will "
+        "assume it is")
+    assert "lists_screened" in d, (
+        "the caller must be told to check which lists actually ran on their call")
+
+
 def test_snapshot_sanctions_claim_matches_the_origin():
     """The conditional in the sanctions description must survive the copy.
 
@@ -207,9 +224,15 @@ def test_snapshot_sanctions_claim_matches_the_origin():
     for f, n, d in SNAPSHOT_DESCRIPTIONS:
         if n != "screen_sanctions":
             continue
-        assert "ONLY when" in d or "only when" in d, (
-            f"{f} describes OpenSanctions as unconditional. It is not: without "
-            f"a configured key the screen is OFAC SDN alone.")
+        # WAS: required the phrase "ONLY when", from the era when EU/UK came
+        # from OpenSanctions and needed a key we did not have. We now screen
+        # them directly, so the required claim is different: name the lists,
+        # and disclaim the UN one.
+        assert "FCDO" in d or "European Commission" in d, (
+            f"{f} does not name the EU/UK sources we now screen directly")
+        assert "NOT SCREENED" in d.upper(), (
+            f"{f} does not disclaim the UN list, which we have no licence to "
+            f"redistribute")
 
 
 def test_free_and_keyless_are_never_conflated():

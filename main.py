@@ -56,6 +56,34 @@ async def lifespan(app: FastAPI):
         for w in warnings:
             import logging
             logging.getLogger("smb_broker").warning(w)
+    # PRELOAD THE SANCTIONS LISTS so no caller pays the cold-cache cost.
+    #
+    # OFAC is ~6MB, the EU list 25MB and the UK list 50MB. Fetching and parsing
+    # them on first use took 48 seconds, and the person who paid it was
+    # whichever agent happened to arrive first after a restart. Warming here
+    # moves that cost to boot, where nobody is waiting.
+    #
+    # Deliberately fire-and-forget: a slow or unreachable publisher must not
+    # stop the service from starting. Until a list is loaded, screens run
+    # without it and SAY so in sources_unavailable.
+    try:
+        import asyncio as _asyncio
+        from core.screen_sanctions import warm_lists as _warm_lists
+
+        async def _warm_sanctions():
+            import logging as _wl
+            try:
+                counts = await _warm_lists()
+                _wl.getLogger("smb_broker").info(
+                    "sanctions_lists_warmed %s", counts)
+            except Exception as exc:  # noqa: BLE001
+                _wl.getLogger("smb_broker").warning(
+                    "sanctions_list_warm_failed err=%s", exc)
+
+        _asyncio.create_task(_warm_sanctions())
+    except Exception:  # noqa: BLE001
+        pass
+
     # Hydrate durable opt-outs (STOP requests) into the compliance enforcement
     # set so a recorded opt-out survives a process restart. Without this the
     # "non-bypassable" gate would leak to opted-out recipients after any redeploy.

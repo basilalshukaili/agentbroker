@@ -28,6 +28,7 @@ Design:
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import os
@@ -650,6 +651,222 @@ async def _fetch_ofac_alt_csv() -> Optional[str]:
     return await _fetch_url(_OFAC_ALT_CSV_URL)
 
 
+# ---------------------------------------------------------------------------
+# EU AND UK LISTS - fetched from the issuing authorities, free, commercial-OK
+# ---------------------------------------------------------------------------
+#
+# Until now this tool screened OFAC only, which makes it unusable for a
+# European customer and made "EU/UN/UK" claims we could not honour. Both lists
+# below are published by the authority that issues them, need no key, and
+# EXPRESSLY permit commercial use - the EU under its open-data licence, the UK
+# under the Open Government Licence v3.0.
+#
+# The UN Consolidated List is deliberately NOT here. It is equally easy to
+# fetch and has NO open licence and no commercial carve-out, so redistributing
+# it is not ours to do. We screen OFAC, EU and UK, and we do not claim UN.
+#
+# THE TRAP THE UK LIST SETS: the older "OFSI Consolidated List of Financial
+# Sanctions Targets" was closed in January 2026 and its endpoints can still
+# answer with stale data rather than an error - a silently outdated sanctions
+# screen, which is the worst failure this tool has. The URL below is the
+# current FCDO-published list.
+_EU_CSV_URL = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
+               "csvFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
+_UK_CSV_URL = "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv"
+
+# Parsed indexes are cached alongside the raw text. Downloading 25MB and 50MB
+# per screen would be absurd; so would re-parsing them. Both happen once per
+# _LIST_TTL_S.
+_index_cache: dict[str, tuple[float, list]] = {}
+
+
+def _eu_parse(raw: str) -> list[dict]:
+    """EU consolidated list -> [{name, entity_id, programme, etype}].
+
+    Semicolon-delimited, UTF-8 BOM, 118 columns, ONE ROW PER ALIAS - so an
+    entity appears many times and is grouped by Entity_LogicalId.
+    `NameAlias_WholeName` already carries the assembled name.
+    """
+    out: list[dict] = []
+    try:
+        rows = csv.reader(io.StringIO(raw), delimiter=";")
+        hdr = next(rows)
+        iW = hdr.index("NameAlias_WholeName")
+        iId = hdr.index("Entity_LogicalId")
+        iType = hdr.index("Entity_SubjectType")
+        iProg = hdr.index("Entity_Regulation_Programme") if             "Entity_Regulation_Programme" in hdr else None
+        seen: set[tuple[str, str]] = set()
+        for r in rows:
+            if len(r) <= iW:
+                continue
+            nm = r[iW].strip()
+            if not nm:
+                continue
+            eid = r[iId] if iId < len(r) else ""
+            if (eid, nm) in seen:
+                continue
+            seen.add((eid, nm))
+            st = (r[iType] if iType < len(r) else "").lower()
+            out.append({
+                "name": nm,
+                "entity_id": eid,
+                "programme": (r[iProg].strip()[:80] if iProg and iProg < len(r) else ""),
+                "etype": "INDIVIDUAL" if st.startswith("person") else "ENTITY",
+            })
+    except Exception:
+        pass  # a parse failure must not take the whole screen down
+    return out
+
+
+def _uk_parse(raw: str) -> list[dict]:
+    """UK Sanctions List -> [{name, entity_id, programme, etype}].
+
+    Row 0 is a "Report Date:" preamble, NOT the header - row 1 is. Names are
+    split across `Name 1`..`Name 6` (given names then family name) and must be
+    joined; rows repeat per address/identifier, so they are deduped by
+    (Unique ID, assembled name).
+    """
+    out: list[dict] = []
+    try:
+        rows = list(csv.reader(io.StringIO(raw)))
+        hdr_i = 1 if len(rows) > 1 and len(rows[1]) > 5 else 0
+        hdr = rows[hdr_i]
+        name_cols = [hdr.index(f"Name {i}") for i in range(1, 7) if f"Name {i}" in hdr]
+        iUid = hdr.index("Unique ID") if "Unique ID" in hdr else 1
+        iReg = hdr.index("Regime Name") if "Regime Name" in hdr else None
+        iType = hdr.index("Individual, Entity, Ship") if             "Individual, Entity, Ship" in hdr else None
+        seen: set[tuple[str, str]] = set()
+        for r in rows[hdr_i + 1:]:
+            if len(r) <= max(name_cols + [iUid]):
+                continue
+            parts = [r[i].strip() for i in name_cols if r[i].strip()]
+            if not parts:
+                continue
+            nm = " ".join(parts)
+            uid = r[iUid]
+            if (uid, nm) in seen:
+                continue
+            seen.add((uid, nm))
+            st = (r[iType] if iType is not None and iType < len(r) else "").lower()
+            out.append({
+                "name": nm,
+                "entity_id": uid,
+                "programme": (r[iReg].strip()[:80] if iReg is not None and iReg < len(r) else ""),
+                "etype": "INDIVIDUAL" if st.startswith("indiv") else "ENTITY",
+            })
+    except Exception:
+        pass
+    return out
+
+
+_warming: set[str] = set()
+
+
+async def _build_index(url: str, parser) -> list[dict]:
+    """Download and parse one list into the cache. Slow by nature."""
+    raw = await _fetch_url(url)
+    if not raw:
+        return []
+    idx = parser(raw)
+    if idx:
+        _index_cache[url] = (time.time(), idx)
+    return idx
+
+
+async def _get_index(url: str, parser, block: bool = False) -> list[dict]:
+    """The cached index, WITHOUT making a caller wait for a cold download.
+
+    THE EU AND UK LISTS ARE 25MB AND 50MB. Fetching and parsing both inline
+    took 48 SECONDS on a cold cache - and the person who pays that is whichever
+    caller happens to arrive first after a restart. One agent waiting 48s for a
+    sanctions screen is a worse product than one that says "the EU list was not
+    screened on this call" and returns in a second.
+    
+    So a cold cache starts a background warm and reports the list as
+    unavailable for THIS call. The next caller gets it. `warm_lists()` runs at
+    startup so in practice nobody sees the gap at all.
+
+    `block=True` exists for warm_lists() and for tests that need determinism.
+    """
+    now = time.time()
+    hit = _index_cache.get(url)
+    if hit and (now - hit[0]) < _LIST_TTL_S:
+        return hit[1]
+
+    if block:
+        return await _build_index(url, parser) or (hit[1] if hit else [])
+
+    # Stale but present: serve it and refresh behind the caller's back.
+    if url not in _warming:
+        _warming.add(url)
+
+        async def _warm():
+            try:
+                await _build_index(url, parser)
+            finally:
+                _warming.discard(url)
+
+        try:
+            asyncio.get_running_loop().create_task(_warm())
+        except RuntimeError:
+            _warming.discard(url)
+
+    return hit[1] if hit else []
+
+
+async def warm_lists() -> dict[str, int]:
+    """Preload every list. Call once at startup so no caller pays the cold cost."""
+    out: dict[str, int] = {}
+    for label, url, parser in (("eu", _EU_CSV_URL, _eu_parse),
+                               ("uk", _UK_CSV_URL, _uk_parse)):
+        try:
+            out[label] = len(await _get_index(url, parser, block=True))
+        except Exception:                       # noqa: BLE001
+            out[label] = 0
+    try:
+        await _fetch_url(_OFAC_SDN_CSV_URL)
+        await _fetch_url(_OFAC_ALT_CSV_URL)
+        out["ofac"] = 1
+    except Exception:                           # noqa: BLE001
+        out["ofac"] = 0
+    return out
+
+
+async def _screen_list(name: str, url: str, parser, list_label: str,
+                       source_url: str) -> tuple[list[dict], list[str], list[str]]:
+    """Screen one list. Returns (matches, sources_queried, sources_unavailable)."""
+    idx = await _get_index(url, parser)
+    if not idx:
+        # Loading in the background. Say plainly that this call did NOT screen
+        # it - a caller with a European obligation must not read silence as
+        # coverage.
+        return [], [], [f"{list_label} (loading; NOT screened on this call)"]
+
+    matches: list[dict] = []
+    seen_ids: set[str] = set()
+    for rec in idx:
+        sc = _word_match_score(name, rec["name"])
+        if sc < _MATCH_THRESHOLD_OFAC:
+            continue
+        if rec["entity_id"] in seen_ids:
+            continue
+        seen_ids.add(rec["entity_id"])
+        matches.append({
+            "name": _ascii(rec["name"]),
+            "list": list_label,
+            "match_score": round(sc, 3),
+            "program": _ascii(rec["programme"]) or None,
+            "entity_type": rec["etype"],
+            "source_url": source_url,
+            # UNCALIBRATED, exactly like our OFAC matcher - so the strict
+            # token-set filter applies and these can surface as candidates but
+            # never be asserted as findings on a subset overlap.
+            "_matcher": "local_word_overlap",
+        })
+    matches.sort(key=lambda m: m["match_score"], reverse=True)
+    return matches[:5], [url], []
+
+
 async def _call_ofac_sdn(
     name: str,
 ) -> tuple[list[dict], list[str], list[str]]:
@@ -740,9 +957,22 @@ async def handle_screen_sanctions(
     ofac_task = asyncio.create_task(
         _call_ofac_sdn(name_clean)
     )
+    # EU and UK run alongside OFAC, from the authorities that publish them.
+    eu_task = asyncio.create_task(
+        _screen_list(name_clean, _EU_CSV_URL, _eu_parse,
+                     "EU-CONSOLIDATED (European Commission financial sanctions)",
+                     "https://www.sanctionsmap.eu/")
+    )
+    uk_task = asyncio.create_task(
+        _screen_list(name_clean, _UK_CSV_URL, _uk_parse,
+                     "UK-SANCTIONS (FCDO UK Sanctions List)",
+                     "https://sanctionslist.fcdo.gov.uk/")
+    )
 
     os_matches, os_queried, os_unavail = await os_task
     ofac_matches, ofac_queried, ofac_unavail = await ofac_task
+    eu_matches, eu_queried, eu_unavail = await eu_task
+    uk_matches, uk_queried, uk_unavail = await uk_task
 
     # --- Merge results ----------------------------------------------------
     all_sources_queried: list[str] = []
@@ -750,8 +980,12 @@ async def handle_screen_sanctions(
 
     all_sources_queried.extend(_ascii(s) for s in os_queried)
     all_sources_queried.extend(_ascii(s) for s in ofac_queried)
+    all_sources_queried.extend(_ascii(s) for s in eu_queried)
+    all_sources_queried.extend(_ascii(s) for s in uk_queried)
     all_sources_unavailable.extend(_ascii(s) for s in os_unavail)
     all_sources_unavailable.extend(_ascii(s) for s in ofac_unavail)
+    all_sources_unavailable.extend(_ascii(s) for s in eu_unavail)
+    all_sources_unavailable.extend(_ascii(s) for s in uk_unavail)
 
     # Merge and deduplicate by (normalized name, list) key
     merged: list[dict] = []
@@ -768,8 +1002,9 @@ async def handle_screen_sanctions(
         m["_matcher"] = "opensanctions_calibrated"
     for m in ofac_matches:
         m["_matcher"] = "local_word_overlap"
+    # EU/UK already carry the tag from _screen_list.
 
-    for m in os_matches + ofac_matches:
+    for m in os_matches + ofac_matches + eu_matches + uk_matches:
         key = (_normalize_name(m.get("name", "")), m.get("list", ""))
         if key not in seen_keys:
             seen_keys.add(key)
@@ -792,6 +1027,20 @@ async def handle_screen_sanctions(
         screened_lists.append(
             "OFAC-SDN (US Treasury Specially Designated Nationals, "
             "published by sanctionslistservice.ofac.treas.gov)"
+        )
+    # NAME EACH LIST THAT ACTUALLY RAN. A caller with a European obligation
+    # needs to know whether the EU list was screened on THIS call, not whether
+    # we support it in principle - so a list that failed to load is absent from
+    # here and present in sources_unavailable.
+    if not eu_unavail:
+        screened_lists.append(
+            "EU-CONSOLIDATED (European Commission consolidated financial "
+            "sanctions, webgate.ec.europa.eu)"
+        )
+    if not uk_unavail:
+        screened_lists.append(
+            "UK-SANCTIONS (UK Sanctions List published by the FCDO, "
+            "sanctionslist.fcdo.gov.uk)"
         )
 
     # Fall back to honest "partial" if everything failed

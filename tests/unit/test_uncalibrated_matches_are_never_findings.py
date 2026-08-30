@@ -253,3 +253,82 @@ def test_attempting_the_calibrated_source_is_not_the_same_as_reaching_it():
         assert "candidate" in msg, (
             f"{len(candidates)} candidate(s) were found and the message does "
             f"not mention them: {receipt.human_message[:200]}")
+
+
+# ---------------------------------------------------------------------------
+# EU AND UK COVERAGE (added 2026-08-30)
+# ---------------------------------------------------------------------------
+#
+# We screened OFAC only, which made the tool unusable for a European customer
+# and made the "EU/UN/UK" claims we used to publish untrue. The EU consolidated
+# list and the UK Sanctions List are published free by the authorities that
+# issue them and expressly permit commercial use.
+#
+# The UN list is deliberately absent: equally easy to fetch, no open licence,
+# no commercial carve-out. We screen OFAC, EU and UK and do not claim UN.
+#
+# EVERY NEW LIST ALSO MULTIPLIES FALSE POSITIVES, because our matcher has no
+# name-frequency data. So these tests check coverage AND that the strict rule
+# still holds across three lists rather than one.
+
+def _warm():
+    """Preload the lists. Cold fetches are non-blocking by design, so a test
+    that does not warm first would assert on an empty index and pass
+    vacuously."""
+    asyncio.run(ss.warm_lists())
+
+
+def test_eu_and_uk_lists_actually_load():
+    """Guard the guard: if the indexes are empty, every coverage test below
+    passes for the wrong reason."""
+    _warm()
+    eu = asyncio.run(ss._get_index(ss._EU_CSV_URL, ss._eu_parse, block=True))
+    uk = asyncio.run(ss._get_index(ss._UK_CSV_URL, ss._uk_parse, block=True))
+    assert len(eu) > 5000, f"EU index has only {len(eu)} names - did the feed move?"
+    assert len(uk) > 5000, f"UK index has only {len(uk)} names - did the feed move?"
+
+
+def test_a_listed_entity_is_found_on_every_list_that_carries_it():
+    """Saddam Hussein Al-Tikriti is on OFAC, the EU list and the UK list.
+    Finding him on one and missing the others would mean a list is loaded but
+    not actually searched."""
+    _warm()
+    _, result = screen("Saddam Hussein Al-Tikriti")
+    assert result.get("matched") is True
+    lists = {m.get("list", "").split(" ")[0] for m in result.get("matches") or []}
+    assert "OFAC-SDN" in lists
+    assert any(l.startswith("EU-CONSOLIDATED") for l in lists), lists
+    assert any(l.startswith("UK-SANCTIONS") for l in lists), lists
+
+
+def test_the_response_names_which_lists_actually_ran():
+    """A caller with a European obligation must be able to tell whether the EU
+    list was screened ON THIS CALL - not whether we support it in principle."""
+    _warm()
+    _, result = screen("Saddam Hussein Al-Tikriti")
+    screened = " ".join(result.get("lists_screened") or [])
+    assert "OFAC-SDN" in screened
+    assert "EU-CONSOLIDATED" in screened
+    assert "UK-SANCTIONS" in screened
+
+
+def test_we_do_not_claim_the_un_list():
+    """It has no open licence and no commercial carve-out, so it is not ours to
+    redistribute. Claiming it would be the same overclaim we removed."""
+    _warm()
+    _, result = screen("Saddam Hussein Al-Tikriti")
+    screened = " ".join(result.get("lists_screened") or []).upper()
+    assert "UN-SECURITY" not in screened and "UNITED NATIONS" not in screened, (
+        "we must not advertise UN coverage we do not have a licence to provide")
+
+
+@pytest.mark.parametrize("name", INNOCENT)
+def test_three_lists_do_not_relax_the_rule(name):
+    """The whole risk of wider coverage: three times as many chances to accuse
+    someone. The strict token-set rule must hold exactly as it did with one."""
+    _warm()
+    _, result = screen(name)
+    assert result.get("matched") is not True, (
+        f"{name!r} became a MATCH once EU/UK were added. More lists must mean "
+        f"more coverage, not a lower bar. "
+        f"Matches: {[m.get('name') for m in result.get('matches') or []]}")
