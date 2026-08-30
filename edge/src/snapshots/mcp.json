@@ -16,10 +16,12 @@
       "get_conversation",
       "get_outcome",
       "get_status",
-      "import_booking_url",
       "preview_cost",
       "self_test",
       "verify_business"
+    ],
+    "free_with_key_tools": [
+      "import_booking_url"
     ],
     "paid_tools": [
       "call_business",
@@ -38,7 +40,12 @@
       "credits",
       "x402"
     ],
-    "note": "10 tools are free to call; 10 spend credits. Premium data tools are free within a daily quota, then billed per call. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing No account needed to pay per call: attach an x402 payment in params._meta['x402/payment'] and the server returns a signed price offer (USDC on Base) for any paid tool."
+    "quota_free_tools": [
+      "map_trade_restriction",
+      "screen_sanctions",
+      "verify_company_record"
+    ],
+    "note": "THREE NUMBERS, because 'free' means three things here. 9 tools are callable with NO key and NO credits. 3 more are callable with no key up to a daily quota, then cost credits. That is 12 usable without signing up. The remaining 8 need a free key, and 10 spend credits once past any quota. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing No account needed to pay per call: attach an x402 payment in params._meta['x402/payment'] and the server returns a signed price offer (USDC on Base) for any paid tool."
   },
   "description": "MCP server for HatchLoop AgentBroker. Exposes 20 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation.",
   "auth": {
