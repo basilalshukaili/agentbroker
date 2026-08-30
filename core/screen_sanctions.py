@@ -476,8 +476,45 @@ async def _call_opensanctions(
 # OFAC SDN CSV  (free, keyless, official US Treasury source)
 # ---------------------------------------------------------------------------
 
-async def _fetch_url(url: str) -> Optional[str]:
-    """GET a public list file. Returns raw text, or None on any failure."""
+# ---------------------------------------------------------------------------
+# LIST CACHE
+# ---------------------------------------------------------------------------
+#
+# EVERY SCREEN USED TO RE-DOWNLOAD THE FULL LISTS. Measured before this
+# existed: 11-16 SECONDS per call, re-fetching 5.6MB of SDN.CSV plus 1MB of
+# ALT.CSV from Treasury on every single screen. That is slow for the caller,
+# rude to the publisher, and fragile - one Treasury blip and every screen in
+# flight degrades at once.
+#
+# It also capped what we could ever add. The UK list is ~50MB; re-fetching that
+# per call is not an option, so caching was a prerequisite for wider coverage,
+# not a nicety.
+#
+# Sanctions lists are published roughly daily, so a few hours of staleness is
+# immaterial next to the alternative - and STALE IS BETTER THAN ABSENT here:
+# if a refresh fails we keep serving the last good copy and say how old it is,
+# because a screen against yesterday's list beats no screen at all.
+_LIST_TTL_S = 6 * 3600
+_list_cache: dict[str, tuple[float, str]] = {}
+
+
+def list_cache_age_s(url: str) -> Optional[float]:
+    """Seconds since this list was fetched, or None if never."""
+    hit = _list_cache.get(url)
+    return (time.time() - hit[0]) if hit else None
+
+
+async def _fetch_url(url: str, allow_stale: bool = True) -> Optional[str]:
+    """GET a public list file, cached for _LIST_TTL_S.
+
+    On a failed refresh, returns the last good copy rather than None -
+    `allow_stale=False` opts out where a caller genuinely needs freshness.
+    """
+    now = time.time()
+    hit = _list_cache.get(url)
+    if hit and (now - hit[0]) < _LIST_TTL_S:
+        return hit[1]
+
     import httpx
     ua = "AgentBroker-SanctionsScreen/1.0 (compliance tool; contact hello@hatchloop.dev)"
     try:
@@ -487,10 +524,15 @@ async def _fetch_url(url: str) -> Optional[str]:
                 headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"},
                 follow_redirects=True,
             )
-        if resp.status_code == 200:
+        if resp.status_code == 200 and resp.text.strip():
+            _list_cache[url] = (now, resp.text)
             return resp.text
     except Exception:
         pass
+
+    # Refresh failed. A list from a few hours ago is still a real screen.
+    if hit and allow_stale:
+        return hit[1]
     return None
 
 
@@ -591,24 +633,6 @@ def _parse_ofac_sdn(csv_text: str, query_name: str,
 
     matches.sort(key=lambda m: m["match_score"], reverse=True)
     return matches[:5]
-
-
-async def _fetch_url(url: str) -> Optional[str]:
-    """GET a public list file. Returns raw text, or None on any failure."""
-    import httpx
-    ua = "AgentBroker-SanctionsScreen/1.0 (compliance tool; contact hello@hatchloop.dev)"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(
-                url,
-                headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"},
-                follow_redirects=True,
-            )
-        if resp.status_code == 200:
-            return resp.text
-    except Exception:
-        pass
-    return None
 
 
 async def _fetch_ofac_sdn_csv() -> Optional[str]:
