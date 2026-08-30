@@ -151,9 +151,20 @@ async def _supabase_upsert(
             "result_json": _json.dumps(persisted_outcome, default=str) if persisted_outcome else None,
             "agent_id": agent_id,
         }
-        await upsert_row("operations", row, on_conflict="operation_id")
+        # CHECK THE RESULT. upsert_row returns None on failure and cannot
+        # raise, so the handler below was dead code - and a lost write means a
+        # later get_status/get_outcome answers "unknown operation", which a
+        # caller reads as "that never happened" rather than "we lost the
+        # record of it". For an operation that may have sent a message or
+        # taken a booking, those are very different things.
+        written = await upsert_row("operations", row, on_conflict="operation_id")
+        if written is None:
+            logger.warning(
+                "outcome_store_persist_failed id=%s -- the durable record was "
+                "NOT written, so get_status/get_outcome will report this "
+                "operation as unknown even though it ran", operation_id)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("outcome_store_persist_failed id=%s err=%s", operation_id, exc)
+        logger.warning("outcome_store_persist_failed id=%s err=%s", operation_id, exc)
 
 
 async def _supabase_fetch(operation_id: str) -> Optional[dict]:
