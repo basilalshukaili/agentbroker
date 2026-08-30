@@ -1197,14 +1197,44 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     # sanctioned individual returned matched=false, reason_code=no_match, and
     # claimed all three lists had been screened. Total confidence, zero
     # coverage, on exactly the populations these lists are full of.
-    unscreenable = _is_screenable(set(toks))
-    if unscreenable:
-        return [], [], [f"{list_label} (NOT screened: {unscreenable})"]
+    # ...BUT REFUSING TO LOOK IS NOT A SAFE DEFAULT EITHER.
+    #
+    # This used to return immediately, screening nothing. Measured against the
+    # live index, that silence covered 1.5% of all entries - and the entries
+    # it covered include the ones a compliance user is most likely to type:
+    #
+    #     GRU  -> listed on EU and UK    (Russian military intelligence)
+    #     M23  -> listed on EU and UK    (the DRC armed group)
+    #     PIJ  -> listed on EU
+    #
+    # Screening "GRU" returned matched: false under the sentence "No matches
+    # on the screened lists". The refusal was disclosed further down, but the
+    # field a program branches on and the sentence a human reads both said
+    # clean, about an entity that is on two of the three lists we screen.
+    #
+    # The harm this rule was written for came from the SUPERSET query - "Dave"
+    # reaching "Isil (Da'esh) and Al-Qaeda" because one shared word is enough
+    # to be a subset. An EXACT whole-name match cannot do that: it fires only
+    # when the listed name IS the query. That is a weak signal on a 3-letter
+    # name and a real one, so it is surfaced as a candidate and never asserted
+    # as a finding - which is the same treatment single-token queries already
+    # get, for the same reason.
+    weak_only = _is_screenable(set(toks))
 
     refreshed = await _list_refreshed_at(list_code)
     age = _days_since(refreshed)
     stamp = f"local index refreshed {refreshed}" if refreshed else "local index, age unknown"
     queried = [f"{list_label} ({stamp})"]
+    if weak_only:
+        # Reported as a REDUCED screen, not an absent one. The old wording
+        # ("NOT screened") was true when nothing ran; saying it now would
+        # understate coverage the same way the silence overstated it.
+        partial_note = (
+            f"{list_label} (reduced screen: {weak_only} - only EXACT "
+            f"whole-name matches were checked, and any hit is reported as an "
+            f"unverified candidate rather than a finding)")
+    else:
+        partial_note = None
 
     # A copy this old is not a screen. Say so instead of answering from it.
     if age is not None and age > _STALE_AFTER_DAYS:
@@ -1244,7 +1274,7 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
 
     rows = list(exact)
     seen = {r.get("name_key") for r in exact}
-    partial: list[str] = []
+    partial: list[str] = [partial_note] if partial_note else []
 
     # AN EMPTY INDEX IS NOT A CLEAN SCREEN.
     #
@@ -1270,7 +1300,9 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
 
     # Superset candidates. Skipped for a single-token query: "smith" alone
     # would drag back every Smith on the list, which is noise, not a candidate.
-    if len(toks) >= 2:
+    # Skipped for a weak name too - this is the query that turned "Dave" into
+    # an Al-Qaeda programme hit, and the exact lookup above cannot.
+    if len(toks) >= 2 and not weak_only:
         try:
             sup = await select_rows_strict(
                 "sanctions_names",
@@ -1302,6 +1334,13 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
         # token sets are identical, lower the more extra words the listing has.
         score = (len(set(toks) & rt) / len(rt)) if rt else 0.0
         m = _to_match(r, score)
+        if weak_only:
+            # Tagged so the strict filter in handle_screen_sanctions demotes
+            # it, exactly as it demotes a single-token query. The reason
+            # travels with the candidate so the caller sees WHY it is a
+            # candidate rather than a finding.
+            m["_single_token_query"] = True
+            m["_weak_name_reason"] = weak_only
         if want_country:
             # Three states, and "unknown" is its own answer. Collapsing it into
             # False would tell a caller we had checked and ruled the country
@@ -1520,21 +1559,44 @@ async def handle_screen_sanctions(
         )
 
     if _unscreenable:
-        # No source could screen this name, so none of them may be reported
-        # as having done so.
+        # A REDUCED SCREEN, NOT AN ERASED ONE.
+        #
+        # This block used to set `merged = []` and drop every list from
+        # screened_lists, so a weak name produced a receipt with nothing in
+        # it. Combined with the "No matches on the screened lists" sentence
+        # below, screening GRU - listed on both the EU and UK lists - read as
+        # clean. The refusal was disclosed; the headline contradicted it.
+        #
+        # EU and UK have now run an exact-whole-name lookup and tagged
+        # whatever it found for demotion, so those results are kept and
+        # surfaced as candidates. OFAC is different: it screens through
+        # _word_match_score, which has no frequency data and is the matcher
+        # that scored "Universal" as a Russia-programme hit. Nothing from it
+        # survives here unless the listed name IS the query.
+        _kept = []
+        for m in merged:
+            if m.get("_matcher") == "local_word_overlap" and \
+                    m.get("list", "").startswith("OFAC") and \
+                    _normalize_name(m.get("name", "")).split() != sorted(_q_toks):
+                continue
+            m["_single_token_query"] = True      # demote: candidate, never finding
+            m.setdefault("_weak_name_reason", _unscreenable)
+            _kept.append(m)
+        merged = _kept
         # EXTEND, do not replace. EU and UK report their own reason from
         # inside _screen_list_db; overwriting the list threw those away and
         # left only OFAC's, so the receipt named one source when three had
         # failed to screen.
         all_sources_unavailable = all_sources_unavailable + [
-            f"{lst.split(' (')[0]} (NOT screened: {_unscreenable})"
+            f"{lst.split(' (')[0]} (reduced screen: {_unscreenable} - only "
+            f"exact whole-name matches were checked)"
             for lst in screened_lists]
         if not all_sources_unavailable:
             all_sources_unavailable = [f"(NOT screened: {_unscreenable})"]
         screened_lists = []
-        merged = []
 
     # Fall back to honest "partial" if everything failed
+    screened_ok = bool(screened_lists)
     if not screened_lists:
         screened_lists = ["(all sources unavailable -- see sources_unavailable field)"]
 
@@ -1636,6 +1698,21 @@ async def handle_screen_sanctions(
     matched = len(merged) > 0
     result_payload: dict = {
         "matched": matched,
+        # WHAT `matched: false` MEANT WAS AMBIGUOUS, AND THE TWO MEANINGS ARE
+        # OPPOSITES. It was false both for "we screened three lists and this
+        # party is on none of them" and for "we screened nothing". A program
+        # branching on it read the second as the first - a clean bill of
+        # health from a screen that never ran. This field says which:
+        #
+        #   hit          - a confirmed match, matched=true
+        #   clean        - at least one list screened, nothing found
+        #   candidates   - screened, nothing confirmed, unverified candidates
+        #   not_screened - NO list produced a complete screen. Not a result.
+        "screening_status": (
+            "hit" if matched
+            else "not_screened" if not screened_ok
+            else "candidates" if unverified
+            else "clean"),
         "matches": merged,
         "lists_screened": screened_lists,
         "sources_queried": all_sources_queried,
@@ -1686,9 +1763,40 @@ async def handle_screen_sanctions(
             "Verify against the official source before acting."
         )
         reason_code = "matched"
+    elif not screened_ok:
+        # NOTHING WAS ACTUALLY SCREENED, so there is no "no matches" to report.
+        #
+        # This branch used to fall through to the sentence below, which opens
+        # "No matches on the screened lists for 'X'" and only mentions the
+        # outage in a trailing NOTE. The first sentence is what a human skims
+        # and what an LLM summarises, and it said clean. Same defect as
+        # verify_company_record's not_found: the shape of the answer has to
+        # change when the basis for it disappears, not just a caveat appended.
+        human_message = (
+            f"COULD NOT FULLY SCREEN '{_ascii(name_clean)}': no sanctions "
+            f"list returned a complete screen on this call ("
+            + "; ".join(_ascii(u) for u in all_sources_unavailable)
+            + "). This is NOT a clean result. "
+              "Retry, or check OFAC, the EU consolidated list and the UK "
+              "sanctions list directly."
+            + ("" if not unverified else
+               f" {len(unverified)} unverified candidate(s) are listed in "
+               f"possible_matches_unverified.")
+        )
+        reason_code = "not_screened"
     else:
         no_match_detail = (
-            f"No matches on the screened lists for '{_ascii(name_clean)}'"
+            # "No matches" IS THE WRONG OPENING WHEN THERE ARE CANDIDATES.
+            # Screening "Rosneft" put three Rosneft entities in
+            # possible_matches_unverified and still opened with "No matches on
+            # the screened lists for 'Rosneft'", relegating them to a trailing
+            # NOTE. The first clause is what gets skimmed and summarised, so
+            # it has to carry the finding-shaped part of the answer.
+            (f"No CONFIRMED match for '{_ascii(name_clean)}', but "
+             f"{len(unverified)} name-similarity candidate(s) were found - see "
+             f"possible_matches_unverified"
+             if unverified else
+             f"No matches on the screened lists for '{_ascii(name_clean)}'")
             # NOT "country filter: IR". `country` annotates and ranks; it
             # never removes a match, so saying "filter applied" would tell a
             # caller their search was narrowed when it was not - and on a
