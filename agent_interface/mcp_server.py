@@ -58,6 +58,24 @@ PROTOCOL_VERSION = "2024-11-05"
 # Tool registry — all operations exposed as MCP tools
 # ---------------------------------------------------------------------------
 
+def _total_tool_count() -> int:
+    """Derived, not typed. I hardcoded "12 of the 20 tools" into the
+    instructions string one commit after building a CI gate that fails the
+    build for exactly that - the habit is stronger than the rule, which is
+    why the rule has to be a function rather than a reminder."""
+    try:
+        from agent_interface.manifest_server import get_full_manifest
+        return len(get_full_manifest().get("operations") or [])
+    except Exception:                           # noqa: BLE001
+        return 0
+
+
+def _keyless_count() -> int:
+    """Tools callable with no key: total minus the write tools that need one."""
+    total = _total_tool_count()
+    return max(0, total - len(_WRITE_TOOLS_REQUIRING_AUTH)) if total else 0
+
+
 def _build_tool_list() -> list[dict]:
     """Convert manifest operations to MCP tool descriptors."""
     manifest = get_full_manifest()
@@ -584,7 +602,14 @@ async def _h_initialize(params: dict) -> dict:
         },
         "instructions": (
             f"SMB Transaction & Communication Broker. Use tools/list to see all {op_count} operations. "
-            "Most operations require an X-Agent-Identity token in the underlying HTTP request. "
+            # "MOST" WAS WRONG AND DISCOURAGING. 12 of the 20 tools need no
+            # key at all - 9 outright and 3 up to a daily quota - and this is
+            # the first sentence every connecting client reads. Telling an
+            # evaluator that most of the product is gated, when most of it is
+            # not, is a self-inflicted wound at the moment of first contact.
+            f"{_keyless_count()} of the {_total_tool_count()} tools need no "
+            f"key at all; the {len(_WRITE_TOOLS_REQUIRING_AUTH)} write tools "
+            f"require an X-Agent-Identity token in the underlying HTTP request. "
             "For state-changing operations (send_message, schedule_appointment), call preview_cost "
             "first to confirm the budget impact."
         ),

@@ -148,10 +148,29 @@ async def _edgar_search(name: str) -> Optional[dict]:
         if resp.status_code != 200:
             raise RegistryUnavailable(f"SEC EDGAR returned HTTP {resp.status_code}")
         tickers = resp.json()
-        name_lower = name.lower()
+        # PUNCTUATION-INSENSITIVE, NOT FUZZY.
+        #
+        # The match was `entry["title"].lower() == name.lower()`, and SEC
+        # stores "Apple Inc." with a trailing period. So verify_company_record
+        # returned GLEIF data for Apple with sec_cik and ticker BOTH NULL,
+        # while listing sec.gov/files/company_tickers.json in sources_queried -
+        # a receipt saying we asked SEC about Apple and SEC had nothing. The
+        # enrichment only ever worked if the caller typed the name
+        # character-for-character as SEC stores it, which nobody does.
+        #
+        # Deliberately NOT a contains-match: the same file holds "Apple
+        # Hospitality REIT, Inc." and "Pineapple Financial Inc.", so a loose
+        # match would attach the wrong CIK to a company-verification receipt.
+        # Normalising punctuation fixes the real miss without inviting that.
+        def _norm(text: str) -> str:
+            return " ".join(
+                "".join(c for c in text.lower() if c.isalnum() or c.isspace())
+                .split())
+
+        name_lower = _norm(name)
         # Linear scan -- JSON is ~6 MB, ~15k entries; fast enough in memory
         for _key, entry in tickers.items():
-            if entry.get("title", "").lower() == name_lower:
+            if _norm(entry.get("title", "")) == name_lower:
                 return {
                     "legal_name": _clean(entry.get("title", "")),
                     "ticker": _clean(str(entry.get("ticker", ""))),
