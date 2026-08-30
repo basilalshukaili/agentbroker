@@ -125,7 +125,10 @@ app.all("/mcp", async (c) => {
 // Health / metrics — short-cached proxy (live counters from origin)
 // ---------------------------------------------------------------------------
 
-app.get("/health", async (c) => {
+// GET AND HEAD. Uptime monitors default to HEAD, and a GET-only health
+// route answers them 405 - the endpoint whose job is to say we are up
+// telling a monitor the service is broken. The origin had the same gap.
+app.on(["GET", "HEAD"], "/health", async (c) => {
   // THIS USED TO ASSERT { manifest: "ok", directory: "ok", compliance: "ok" }.
   //
   // Those are ORIGIN subsystems. This handler runs in a Cloudflare Worker,
