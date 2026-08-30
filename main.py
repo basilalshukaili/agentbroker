@@ -1314,7 +1314,7 @@ async def polar_webhook(request: Request):
 from fastapi.responses import HTMLResponse, RedirectResponse
 from web.pages import (
     render_home, render_pricing, render_terms, render_privacy,
-    render_refund, render_checkout,
+    render_refund, render_checkout, render_status,
 )
 
 _PAGE_CACHE_HEADERS = {"Cache-Control": "public, max-age=300, s-maxage=300"}
