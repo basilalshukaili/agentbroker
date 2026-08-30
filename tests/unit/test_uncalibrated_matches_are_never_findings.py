@@ -130,28 +130,49 @@ def test_the_strict_filter_does_not_depend_on_the_degraded_flag():
             "the calibrated source also answered.")
 
 
-def test_the_authoritative_predicate_is_not_silently_always_false():
-    """It was, for weeks, because it compared 'OpenSanctions' against a URL.
+def test_no_match_can_bypass_the_strict_token_set_filter():
+    """The successor to the authoritative-predicate guard.
 
-    A flag that can never be true is not a flag; anything reading it is dead
-    code, and anything relying on it being false is relying on an accident.
+    HISTORY, because it is the reason this test exists at all. A flag called
+    `authoritative_ran` decided whether the strict filter ran. It compared
+    "OpenSanctions" against strings that were URLs, case-sensitively, so it was
+    False on every call - the filter ran always, and the tool behaved well for
+    a reason nobody intended. The obvious one-line casing fix would have
+    switched the safety OFF. That is why the filter was re-tied to match
+    provenance rather than to a flag.
+
+    OpenSanctions is now gone entirely, so there is no calibrated matcher and
+    no legitimate reason for any match to skip the check. This asserts that -
+    both in the source, so an escape hatch cannot be reintroduced quietly, and
+    in behaviour, which is what actually protects a customer.
     """
     import inspect
     src = inspect.getsource(ss)
-    i = src.find("authoritative_ran = ")
-    assert i != -1, "predicate not found - was it renamed?"
-    expr = src[max(0, i - 600):i + 400]
-    assert ".lower()" in expr, (
-        "the check must be case-insensitive: sources_queried holds URLs like "
-        "https://api.opensanctions.org/..., so a case-sensitive test for "
-        "'OpenSanctions' can never match")
-    # AND it must distinguish attempted from answered. Testing sources_QUERIED
-    # alone is always true, because we always attempt the call; the failure is
-    # recorded in sources_UNAVAILABLE.
-    assert "all_sources_unavailable" in expr, (
-        "the predicate must consult sources_unavailable - otherwise it reports "
-        "the calibrated source as having RUN whenever we merely tried it, and "
-        "suppresses the incomplete-screen warning")
+
+    # The flag must be GONE, not merely always-false. A dead conditional is
+    # how the original bug hid for weeks.
+    assert "authoritative_ran" not in src, (
+        "the retired predicate is back; if a calibrated source is ever added, "
+        "give it its own explicit test rather than resurrecting this flag")
+    assert "opensanctions_calibrated" not in src, (
+        "a matcher tag exists for a matcher we do not have - anything "
+        "comparing against it is a permanently-false branch")
+
+    # Behaviour: a SUBSET overlap must never be reported as a finding, however
+    # it entered. "Star Trading LLC" shares a word with plenty of listed
+    # entities and is not one of them.
+    for name in ("Star Trading LLC", "Atlas Trading Company", "Horizon Group",
+                 "Maria Garcia"):
+        _, d = screen(name)
+        assert d.get("matched") is False, (
+            f"{name!r} was reported as a MATCH on a partial word overlap - "
+            f"this is the failure the filter exists to prevent")
+        for m in d.get("matches") or []:
+            assert (set(ss._normalize_name(m["name"]).split())
+                    == set(ss._normalize_name(name).split())), (
+                f"{m['name']!r} was asserted as a finding for {name!r} without "
+                f"an identical token set")
+
 
 
 # ---------------------------------------------------------------------------

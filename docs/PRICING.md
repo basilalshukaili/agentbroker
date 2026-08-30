@@ -27,7 +27,7 @@ only the threads you started.
 ## Premium data tools — free up to a daily quota
 
 `verify_company_record` (GLEIF LEI + SEC EDGAR) · `screen_sanctions`
-(OFAC SDN + EU + UN + UK + 40 more lists via OpenSanctions) ·
+(OFAC SDN + EU Consolidated + UK Sanctions List) ·
 `map_trade_restriction` (OFAC embargoes + export-control Entity List)
 
 | Caller | Free per day | Beyond the quota |

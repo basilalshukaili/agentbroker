@@ -299,7 +299,7 @@ async def handle_map_trade_restriction(
     Queries:
       1. Hardcoded OFAC comprehensive-embargo map (no network, authoritative).
       2. Party screening via OpenSanctions + OFAC SDN (reused from
-         screen_sanctions; covers OFAC SDN, BIS Entity List, EU/UN, 40+ lists).
+         screen_sanctions; covers OFAC SDN, the EU Consolidated list and the UK Sanctions List).
       3. Tariff guidance links (no network, official sources cited).
 
     Never fabricates a tariff rate, a clear, or a restricted status.
@@ -391,9 +391,19 @@ async def handle_map_trade_restriction(
                             )
                             + ")"
                         ),
-                        "source_url": _ascii(
-                            match.get("source_url", "https://www.opensanctions.org/")
-                        ),
+                        # NO FALLBACK CITATION. This defaulted to
+                        # opensanctions.org - a vendor we do not use - so any
+                        # match arriving without a source_url was attributed,
+                        # on a compliance receipt, to a source that had never
+                        # seen it. A wrong citation on the document a customer
+                        # relies on is worse than no citation: it is checkable,
+                        # and it fails the check.
+                        #
+                        # Every match from screen_sanctions carries the URL of
+                        # the authority that published the list. If one somehow
+                        # does not, the honest output is None.
+                        "source_url": (_ascii(match["source_url"])
+                                       if match.get("source_url") else None),
                     })
 
     # --- 3. Build merged restrictions list ----------------------------------

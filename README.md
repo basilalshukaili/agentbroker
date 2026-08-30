@@ -53,7 +53,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 7 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it  -  sub-100ms pre-flight | **free** |
 | 8 | `check_compliance` | Preview TCPA/GDPR/CASL/10DLC gate result before spending a paid send | **free** |
 | 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
-| 10 | `screen_sanctions` | Check a name or entity against OFAC SDN, EU Consolidated, UN, UK HM Treasury + 40+ lists via OpenSanctions | **free up to daily limit** |
+| 10 | `screen_sanctions` | Check a name or entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List | **free up to daily limit** |
 | 11 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
 | 12 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | **free** |
 | 13 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |

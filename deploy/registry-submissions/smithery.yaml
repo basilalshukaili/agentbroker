@@ -29,7 +29,7 @@ description: >
   Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), plus free
   pre-flight checks for booking links, outbound-message compliance, company
   registry verification (GLEIF + SEC EDGAR), live sanctions screening (OFAC
-  SDN + OpenSanctions covering EU, UN, UK, and 40+ official lists), and
+  SDN, the EU Consolidated list and the UK Sanctions List), and
   cross-border trade compliance (OFAC embargo map + party sanctions + tariff
   guidance). Built-in compliance gate (TCPA / GDPR / CASL / PDPL across 22
   jurisdictions). 11 read tools always free (100 ops/IP/day free tier) -- 8
@@ -110,7 +110,7 @@ tools:
   - name: verify_company_record
     description: "Free live registry lookup: verify a company exists and return its official GLEIF LEI / SEC EDGAR record"
   - name: screen_sanctions
-    description: "Free live sanctions screening: check a name/entity against OFAC SDN, EU, UN, UK, and 40+ official watchlists via OpenSanctions"
+    description: "Free live sanctions screening: check a name/entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List"
   - name: map_trade_restriction
     description: "Free cross-border trade compliance snapshot: OFAC embargo map + party sanctions screening + tariff guidance links for any product + destination"
 

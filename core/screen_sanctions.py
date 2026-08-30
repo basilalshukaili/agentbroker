@@ -1,18 +1,31 @@
 """
 screen_sanctions -- free, read-only sanctions & watchlist screening.
 
-Data sources (live calls, no stored dataset; cite sources in output):
-  1. OpenSanctions (api.opensanctions.org) -- primary aggregator; covers OFAC SDN,
-     EU Consolidated Financial Sanctions, UN Security Council, UK HMT, and 40+
-     official lists worldwide. FREE API key required (non-commercial free tier
-     available at https://www.opensanctions.org/accounts/register/).
-     FOUNDER GATE: register for a free key, set OPENSANCTIONS_API_KEY in Render
-     env vars. Without the key, an unauthenticated attempt is made (may be rate-
-     limited) and the OFAC SDN fallback runs.
-  2. OFAC SDN (ofac.treasury.gov/downloads/sdn.csv) -- official US Treasury
-     Specially Designated Nationals list, fetched live, NO KEY NEEDED. Covers
-     the primary OFAC SDN list only (not consolidated or program-specific lists).
-     Used as always-on supplement and fallback for when OpenSanctions is unavailable.
+Data sources. Three lists, each fetched from the authority that publishes it,
+and each licensed for commercial use:
+
+  1. OFAC SDN -- US Treasury Specially Designated Nationals, from
+     sanctionslistservice.ofac.treas.gov (SDN.CSV plus ALT.CSV for alternate
+     spellings). US Government work, public domain. No key.
+  2. EU Consolidated financial sanctions -- European Commission, webgate.ec.
+     europa.eu. Published under the Commission's open-data licence, which
+     permits commercial reuse. No key.
+  3. UK Sanctions List -- FCDO, sanctionslist.fcdo.gov.uk. Open Government
+     Licence v3.0. No key.
+
+  THE UN CONSOLIDATED LIST IS NOT SCREENED. It is as easy to fetch as the
+  others and is deliberately absent: no open licence, no commercial carve-out.
+  We screen what we are licensed to screen and say exactly that.
+
+  The EU and UK lists are held in our own indexed copy (public.sanctions_names)
+  rather than downloaded per call - see the note further down about the 244MB
+  that OOM-killed this service. Every response states how old that copy is, and
+  past seven days the list reports as unavailable rather than answering stale.
+
+Matching is UNCALIBRATED and the output says so. We have no name-frequency
+data, so a finding is asserted only on an exact normalised token-set equality;
+every partial overlap is returned as possible_matches_unverified for the caller
+to judge. See the note where the filter is applied.
 
 Design:
   * 10-second timeout per upstream; fail-open to partial results.
@@ -344,211 +357,30 @@ def _dataset_id_to_list_name(dataset_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# OpenSanctions API  (primary)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# OpenSanctions circuit breaker
+# WE DO NOT USE OPENSANCTIONS.  (founder decision, 2026-08-30)
 # ---------------------------------------------------------------------------
 #
-# Their API is optional breadth on top of the three lists we fetch ourselves.
-# When it is failing - exhausted quota, no key, an outage - calling it anyway
-# costs ~900ms on EVERY screen and returns nothing. This stops that without
-# removing the capability.
-_OS_FAIL_THRESHOLD = 3
-_OS_COOLOFF_S = 900          # 15 min; a quota reset or a new key recovers fast
-_os_fails = {"count": 0, "until": 0.0}
-
-
-def _os_circuit_open() -> bool:
-    return _os_fails["count"] >= _OS_FAIL_THRESHOLD and time.time() < _os_fails["until"]
-
-
-def _os_record(ok: bool) -> None:
-    if ok:
-        _os_fails["count"] = 0
-        _os_fails["until"] = 0.0
-    else:
-        _os_fails["count"] += 1
-        if _os_fails["count"] >= _OS_FAIL_THRESHOLD:
-            _os_fails["until"] = time.time() + _OS_COOLOFF_S
-
-
-# WHAT IS ACTUALLY LOST WHEN OPENSANCTIONS IS DARK.
+# It was the primary source here: a calibrated matcher with name-frequency
+# data, plus breadth across 40+ national lists. Removed for two reasons, and
+# the second one is the disqualifying one:
 #
-# This string used to say "EU/UN/UK lists NOT screened on this call", which was
-# true when OpenSanctions was our only route to those lists. It stopped being
-# true the moment EU and UK came from our own index - and it kept being printed,
-# telling a European customer their obligation had not been screened while it
-# had. Overclaiming and underclaiming are the same defect: a sentence written as
-# a constant, left behind by code that changed underneath it.
+#   * Commercially: pay-as-you-go per query, which the founder does not want.
+#   * Legally: their DATA is CC-BY-NonCommercial. We sell screening. We could
+#     not have used it commercially whatever we paid, which makes the
+#     dependency a liability rather than a cost.
 #
-# What genuinely goes dark: the UN list (no open licence, we never carried it),
-# the 40+ smaller national lists, and the CALIBRATED scorer - the one that has
-# name-frequency data. OFAC, EU and UK still screen.
-_OS_DARK_NOTE = (
-    "OpenSanctions (rate-limited or quota exhausted -- the UN list, 40+ smaller "
-    "national lists and calibrated name-frequency scoring were NOT applied on "
-    "this call. OFAC, EU and UK were screened from our own indexes.)"
-)
-
-
-async def _call_opensanctions(
-    name: str,
-    country: Optional[str] = None,
-    entity_type: Optional[str] = None,
-) -> tuple[list[dict], list[str], list[str]]:
-    """
-    Query OpenSanctions /match/sanctions endpoint.
-
-    Returns (matches, sources_queried, sources_unavailable).
-    `matches` is a list of dicts following our standard match record format.
-    """
-    import httpx
-
-    api_key = os.getenv("OPENSANCTIONS_API_KEY", "").strip()
-    url = f"{_OPENSANCTIONS_BASE}/match/sanctions?threshold={_MATCH_THRESHOLD_OPENSANCTIONS}"
-    sources_queried = [url]
-    sources_unavailable: list[str] = []
-
-    # DO NOT SPEND A SECOND ON A SOURCE THAT IS NOT ANSWERING.
-    #
-    # Measured 2026-08-30: this call took 923ms of a 1.6s screen and returned
-    # ZERO matches, because the account's monthly quota was exhausted. Nearly
-    # two thirds of our latency, for nothing, on every single screen.
-    #
-    # After a run of consecutive failures we stop calling until the cool-off
-    # passes. The capability is not removed - the moment the quota resets or a
-    # working key is set, the next probe succeeds and normal service resumes -
-    # but a dead upstream stops taxing every caller in the meantime.
-    #
-    # We still DECLARE it unavailable, because silently dropping a source a
-    # caller believes is being screened is exactly the failure this file exists
-    # to prevent.
-    if not api_key:
-        sources_unavailable.append(
-            "OpenSanctions (no API key configured; UN list and 40+ smaller "
-            "own OFAC/EU/UK lists NOT screened)")
-        return [], sources_queried, sources_unavailable
-
-    if _os_circuit_open():
-        sources_unavailable.append(
-            "OpenSanctions (skipped: repeated failures, retrying later -- not "
-            "screened on this call)")
-        return [], sources_queried, sources_unavailable
-
-    # Build entity schema -- OpenSanctions uses FtM (Follow the Money) schemas
-    schema = "Thing"  # top-level; matches both Person and Organization
-    if entity_type == "person":
-        schema = "Person"
-    elif entity_type == "entity":
-        schema = "Organization"
-
-    properties: dict = {"name": [name]}
-    if country:
-        properties["country"] = [country.upper()]
-
-    payload = {
-        "queries": {
-            "q1": {
-                "schema": schema,
-                "properties": properties,
-            }
-        }
-    }
-
-    headers: dict = {"Content-Type": "application/json", "Accept": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"ApiKey {api_key}"
-
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-
-        if resp.status_code == 401:
-            _os_record(False)
-            sources_unavailable.append(
-                "OpenSanctions (OPENSANCTIONS_API_KEY not set or invalid -- "
-                "free key available at https://www.opensanctions.org/accounts/register/)"
-            )
-            return [], sources_queried, sources_unavailable
-
-        if resp.status_code == 429:
-            _os_record(False)
-            sources_unavailable.append(_OS_DARK_NOTE)
-            return [], sources_queried, sources_unavailable
-
-        if resp.status_code != 200:
-            _os_record(False)
-            sources_unavailable.append(
-                f"OpenSanctions (HTTP {resp.status_code})"
-            )
-            return [], sources_queried, sources_unavailable
-
-        data = resp.json()
-        responses = data.get("responses", {})
-        q_result = responses.get("q1", {})
-        raw_results = q_result.get("results", [])
-
-        matches: list[dict] = []
-        for item in raw_results:
-            score = float(item.get("score", 0.0))
-            if score < _MATCH_THRESHOLD_OPENSANCTIONS:
-                continue
-
-            item_id = _clean(item.get("id", ""))
-            caption = _clean(item.get("caption", ""))
-            schema_name = _clean(item.get("schema", "Thing"))
-            datasets = item.get("datasets", [])
-
-            props = item.get("properties", {})
-            programs = props.get("sanctionProgram", props.get("program", []))
-            topics = props.get("topics", [])
-
-            # Derive entity_type label
-            if schema_name in ("Person",):
-                etype = "INDIVIDUAL"
-            elif schema_name in ("Vessel",):
-                etype = "VESSEL"
-            elif schema_name in ("Aircraft",):
-                etype = "AIRCRAFT"
-            else:
-                etype = "ENTITY"
-
-            # Derive list names from datasets
-            list_names = [_dataset_id_to_list_name(ds) for ds in datasets]
-            list_str = ", ".join(list_names) if list_names else "OpenSanctions"
-
-            # Derive program string
-            prog_str = None
-            if programs:
-                prog_str = _ascii(", ".join(str(p) for p in programs[:3]))
-            elif "sanction" in topics:
-                prog_str = "SANCTIONED"
-
-            source_url = (
-                f"https://www.opensanctions.org/entities/{item_id}/"
-                if item_id
-                else "https://www.opensanctions.org/"
-            )
-
-            matches.append({
-                "name": caption or _ascii(name),
-                "list": list_str,
-                "match_score": round(score, 3),
-                "program": prog_str,
-                "entity_type": etype,
-                "source_url": source_url,
-            })
-
-        _os_record(True)
-        return matches, sources_queried, sources_unavailable
-
-    except Exception as exc:
-        _os_record(False)
-        sources_unavailable.append(f"OpenSanctions (error: {_ascii(str(exc)[:80])})")
-        return [], sources_queried, sources_unavailable
-
+# WHAT WE GAVE UP, STATED PLAINLY BECAUSE IT MATTERS. OpenSanctions knew that
+# "Ali Mohammed" is a common name and "Zarubezhneft" is not. We do not, and we
+# are not going to reproduce name-frequency scoring from nothing. So the honest
+# matcher is a narrow one: identical normalised token sets are reported as
+# matches, and every partial overlap goes to possible_matches_unverified for
+# the caller to judge. That is not a degraded state waiting to be restored -
+# it is the permanent, disclosed method, and every response says so.
+#
+# WHAT WE KEPT: the three lists we fetch from the publishers themselves, all
+# licensed for commercial use - OFAC SDN (US Treasury, public domain), the EU
+# consolidated list (European Commission, open data) and the UK Sanctions List
+# (FCDO, OGL v3.0). The UN list stays out: no open licence, no carve-out.
 
 # ---------------------------------------------------------------------------
 # OFAC SDN CSV  (free, keyless, official US Treasury source)
@@ -1071,7 +903,7 @@ async def handle_screen_sanctions(
     Screen a name/entity against official sanctions & watchlists.
 
     Queries:
-      1. OpenSanctions (40+ official lists: OFAC, EU, UN, UK, and more)
+      1. OFAC SDN, the EU Consolidated list and the UK Sanctions List
       2. OFAC SDN directly (Treasury CSV, always free, no key)
 
     Returns an OutcomeReceipt with result dict containing:
@@ -1105,9 +937,6 @@ async def handle_screen_sanctions(
     # --- Run upstreams (OpenSanctions primary, OFAC CSV fallback) ----------
     import asyncio
 
-    os_task = asyncio.create_task(
-        _call_opensanctions(name_clean, country_upper, entity_type)
-    )
     ofac_task = asyncio.create_task(
         _call_ofac_sdn(name_clean)
     )
@@ -1123,7 +952,6 @@ async def handle_screen_sanctions(
                         "https://sanctionslist.fcdo.gov.uk/")
     )
 
-    os_matches, os_queried, os_unavail = await os_task
     ofac_matches, ofac_queried, ofac_unavail = await ofac_task
     eu_matches, eu_queried, eu_unavail = await eu_task
     uk_matches, uk_queried, uk_unavail = await uk_task
@@ -1132,11 +960,9 @@ async def handle_screen_sanctions(
     all_sources_queried: list[str] = []
     all_sources_unavailable: list[str] = []
 
-    all_sources_queried.extend(_ascii(s) for s in os_queried)
     all_sources_queried.extend(_ascii(s) for s in ofac_queried)
     all_sources_queried.extend(_ascii(s) for s in eu_queried)
     all_sources_queried.extend(_ascii(s) for s in uk_queried)
-    all_sources_unavailable.extend(_ascii(s) for s in os_unavail)
     all_sources_unavailable.extend(_ascii(s) for s in ofac_unavail)
     all_sources_unavailable.extend(_ascii(s) for s in eu_unavail)
     all_sources_unavailable.extend(_ascii(s) for s in uk_unavail)
@@ -1152,13 +978,11 @@ async def handle_screen_sanctions(
     # come from our own word-overlap function, which has no frequency data at
     # all and scores "Star Trading LLC" against "Star Dragon Corporation" at
     # 1.00. One of those numbers is evidence; the other is a coincidence.
-    for m in os_matches:
-        m["_matcher"] = "opensanctions_calibrated"
     for m in ofac_matches:
         m["_matcher"] = "local_word_overlap"
     # EU/UK already carry the tag from _screen_list.
 
-    for m in os_matches + ofac_matches + eu_matches + uk_matches:
+    for m in ofac_matches + eu_matches + uk_matches:
         key = (_normalize_name(m.get("name", "")), m.get("list", ""))
         if key not in seen_keys:
             seen_keys.add(key)
@@ -1171,12 +995,6 @@ async def handle_screen_sanctions(
 
     # --- Determine lists actually screened --------------------------------
     screened_lists: list[str] = []
-    if not os_unavail:
-        # OpenSanctions was available -- we covered all its lists
-        screened_lists.append(
-            "OpenSanctions (OFAC-SDN, EU-Financial-Sanctions, UN-Security-Council, "
-            "UK-HMT-Financial-Sanctions, and 40+ more)"
-        )
     if not ofac_unavail:
         screened_lists.append(
             "OFAC-SDN (US Treasury Specially Designated Nationals, "
@@ -1205,71 +1023,37 @@ async def handle_screen_sanctions(
     if not screened_lists:
         screened_lists = ["(all sources unavailable -- see sources_unavailable field)"]
 
-    # --- WHEN THE AUTHORITATIVE SOURCE IS DARK, DO NOT ASSERT A MATCH -------
+    # --- OUR MATCHER IS UNCALIBRATED, PERMANENTLY, AND SAYS SO -------------
     #
-    # This is the most important safety rule in the file, and it exists because
-    # of what the tool was doing live on 2026-08-29:
+    # This used to be a fallback rule for when the calibrated source was dark.
+    # There is no calibrated source any more (see the note at the top of the
+    # file), so it is not a fallback: it is the method.
     #
-    #   "Mohammed Ali"       -> MATCH, score 1.00, programme US-TERR
-    #   "Maria Garcia"       -> MATCH, score 1.00, programme US-NARCO
-    #   "Star Trading LLC"   -> MATCH, score 1.00, programme US-DRC
-    #   "Delta Services Group" -> MATCH, score 1.00, US-RUSHAR
+    # WHAT THE OLD CODE GOT RIGHT AND WHY IT IS KEPT. The predicate that
+    # decided "is the authoritative source up" was broken for a long time - the
+    # test was case-sensitive for "OpenSanctions" against lowercase URLs, so it
+    # was False on every call, the strict filter ran on every call, and the
+    # tool behaved well for a reason nobody intended. The obvious one-line fix
+    # would have switched the safety OFF. The fix was to tie the filter to
+    # match PROVENANCE instead of to a flag, and that decoupling is the only
+    # reason this removal is a deletion rather than a rewrite: the safety was
+    # never actually resting on OpenSanctions being up.
     #
-    # Ordinary names, at MAXIMUM confidence, on terrorism and narcotics
-    # programmes. Four rounds of fixes that afternoon each closed one specific
-    # false positive and none touched the cause: our local matcher compares
-    # word sets, so any short name whose distinctive words appear anywhere
-    # inside one of ~17,000 long listed names scores perfectly.
+    # What the filter enforces, on every match, always: a finding requires the
+    # SAME NORMALISED TOKEN SET. Not a subset, not a high overlap score.
+    # Sanctions lists write names in every order - "Kim Jong Un" is listed as
+    # "Jong Un Kim" - so order-insensitive set equality is right, and it is
+    # also the ONLY relationship a word-set matcher can assert without
+    # name-frequency data. Everything else is a candidate for the caller.
     #
-    # A word-overlap matcher cannot do this job. Deciding that "Ali Mohammed"
-    # is a common name and "Zarubezhneft" is not requires knowing how often
-    # each token occurs across the corpus. OpenSanctions does exactly that and
-    # returns a calibrated score - which is why it is the primary source.
+    # Over-claiming tells someone that Maria Garcia is a narcotics trafficker.
+    # Under-claiming costs them one lookup.
     #
-    # OUR OPENSANCTIONS KEY IS OVER ITS MONTHLY LIMIT (HTTP 429), so every
-    # answer above came from the local OFAC-CSV fallback alone. The fallback is
-    # useful for confirming a name IS listed; it is not fit to assert that an
-    # ordinary name is a sanctions hit.
-    #
-    # So when the calibrated source did not answer, a local-only hit is
-    # reported as a POSSIBLE match requiring verification, and `matched` stays
-    # false unless the names are effectively identical. Under-claiming costs
-    # the caller one lookup. Over-claiming tells someone that Maria Garcia is a
-    # narcotics trafficker.
-    # THIS PREDICATE WAS ALWAYS FALSE, AND THAT ACCIDENT WAS THE ONLY THING
-    # KEEPING THE TOOL HONEST.
-    #
-    # `all_sources_queried` holds URLs - "https://api.opensanctions.org/..." -
-    # and the test was case-SENSITIVE for "OpenSanctions", which never appears
-    # in a lowercase URL. So `authoritative_ran` was False on every call,
-    # `degraded` was True on every call, and the strict token-set filter below
-    # ran on every call. The tool behaved well for a reason nobody intended.
-    #
-    # That made it a booby trap: the obvious one-line fix to the casing would
-    # have silently switched the filter OFF whenever OpenSanctions answered,
-    # exposing raw word-overlap scores as findings. A safety that depends on a
-    # bug is not a safety.
-    #
-    # So: the predicate is correct now (it means what it says), AND the filter
-    # no longer depends on it - see below.
-    # "QUERIED" IS NOT "ANSWERED", and my first correction of this predicate
-    # conflated them. Making the test case-insensitive turned it TRUE whenever
-    # the OpenSanctions URL appeared in sources_QUERIED - which it always does,
-    # because we always attempt the call. The failure is recorded separately,
-    # in sources_UNAVAILABLE.
-    #
-    # So the flag started claiming the calibrated source had run on calls where
-    # it had been rate-limited and returned nothing, which suppressed the
-    # "LOCAL-LIST CHECK ONLY" warning a caller needs.
-    #
-    # The strict filter did not regress with it, because it is tied to match
-    # provenance rather than to this flag. That decoupling was worth doing for
-    # exactly this reason: one wrong predicate should not be able to switch off
-    # the safety AND the disclosure at once.
-    _os_failed = any("opensanctions" in u.lower() for u in all_sources_unavailable)
-    authoritative_ran = (not _os_failed) and any(
-        "opensanctions" in s.lower() for s in all_sources_queried)
-    degraded = bool(merged) and not authoritative_ran
+    # `degraded` is gone as a runtime state. A permanent property of the method
+    # is not an outage, and reporting one on every call trains callers to
+    # ignore the field that matters. What replaces it is a method statement in
+    # every response, matched or not.
+    degraded = False
 
     unverified: list = []
     # THE FILTER NOW APPLIES TO OUR OWN MATCHER ALWAYS, not only when degraded.
@@ -1283,9 +1067,8 @@ async def handle_screen_sanctions(
     # Calibrated matches from the OpenSanctions API pass through on their own
     # score, because that score means something. This is the whole distinction
     # the `_matcher` tag was added to preserve.
-    _needs_strict = [m for m in merged
-                     if m.get("_matcher") == "local_word_overlap"]
-    if degraded or _needs_strict:
+    _needs_strict = merged   # every match we can make is uncalibrated now
+    if _needs_strict:
         # I TRIED STRIPPING GENERIC CORPORATE WORDS HERE AND REVERTED IT.
         #
         # The motive was real: comparing raw token sets misses true positives
@@ -1314,10 +1097,6 @@ async def handle_screen_sanctions(
         q_set = set(_normalize_name(name_clean).split())
         confident, possible = [], []
         for m in merged:
-            # A calibrated match is evidence on its own; do not re-filter it.
-            if m.get("_matcher") == "opensanctions_calibrated" and not degraded:
-                confident.append(m)
-                continue
             # SAME TOKEN SET, order-insensitive. Sanctions lists write names in
             # every order - "Kim Jong Un" is listed as "Jong Un Kim" - so exact
             # string equality misses real entities, while a subset ("Rosneft"
@@ -1345,17 +1124,26 @@ async def handle_screen_sanctions(
         "screened_at": screened_at,
         "disclaimer": _DISCLAIMER,
     }
+    if country_upper or entity_type:
+        result_payload["country_filter_applied"] = False
+        result_payload["filter_note"] = (
+            "country and entity_type are accepted for forward compatibility "
+            "but do NOT narrow the screen today: our name index does not "
+            "carry those columns. Results are the same as if you had omitted "
+            "them, so treat any match as needing your own country check.")
     if all_sources_unavailable:
         result_payload["sources_unavailable"] = all_sources_unavailable
     if unverified:
         # Surfaced, never hidden. The caller may well want to look at these -
         # they simply must not be handed over as findings.
         result_payload["possible_matches_unverified"] = unverified
-        result_payload["degraded"] = (
-            "The calibrated sanctions source did not answer, so these are "
-            "name-similarity candidates from a local list only. They are NOT "
-            "sanctions findings and matched=false. Check each against the "
-            "official source before acting on it.")
+        result_payload["matching_method"] = (
+            "Name matching is exact normalised-token-set equality, and it is "
+            "uncalibrated: we have no name-frequency data, so we do not guess "
+            "whether a partial overlap is meaningful. Entries that share some "
+            "but not all of your query's words are listed here as candidates. "
+            "They are NOT sanctions findings and do not set matched=true. "
+            "Check each against the official source before acting on it.")
 
     # --- Human message ---------------------------------------------------
     if matched:
@@ -1372,18 +1160,27 @@ async def handle_screen_sanctions(
     else:
         no_match_detail = (
             f"No matches on the screened lists for '{_ascii(name_clean)}'"
-            + (f" (country filter: {country_upper})" if country_upper else "")
+            # NOT "country filter: IR". These parameters are accepted and
+            # currently narrow NOTHING: they were consumed only by
+            # OpenSanctions, and our own index does not carry a country
+            # column yet. Saying "filter applied" would tell a caller their
+            # search was narrowed when it was not - which, on a screening
+            # tool, means they think a clean result is more specific than it
+            # is. Accepted-and-ignored is survivable; misreported is not.
+            + (f" (note: country={country_upper} was NOT used to narrow this "
+               f"screen - see country_filter_applied)" if country_upper else "")
             + ". Screened: "
             + "; ".join(screened_lists)
             # Say it in the sentence a caller actually reads, not only in a
             # field they may not parse. "No match" from a degraded screen means
             # something weaker than "no match" from a complete one, and an
             # agent deciding whether to trade needs to know which it got.
-            + ("" if not degraded else
-               f". WARNING: the calibrated source did not answer, so this was a "
-               f"LOCAL-LIST CHECK ONLY and is not a complete screening. "
-               f"{len(unverified)} name-similarity candidate(s) were found and "
-               f"are in possible_matches_unverified - they are not findings.")
+            + ("" if not unverified else
+               f". NOTE: {len(unverified)} name-similarity candidate(s) share "
+               f"some of these words and are listed in "
+               f"possible_matches_unverified. They are not findings - our "
+               f"matcher is uncalibrated and only asserts a match on an exact "
+               f"token-set equality - but a human should look at them.")
         )
         if all_sources_unavailable:
             no_match_detail += ". NOTE: some sources were unavailable -- screening may be incomplete."

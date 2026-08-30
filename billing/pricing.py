@@ -41,7 +41,7 @@ _PRICING_CENTS: dict[str, int] = {
     # PREMIUM DATA TOOLS (2cr/call when DATA_METERING_ENABLED=true; free within daily quota)
     # When DATA_METERING_ENABLED=false (default) these run free/unmetered via the bypass in mcp_server.py.
     "verify_company_record":       2,   # live GLEIF LEI + SEC EDGAR lookup
-    "screen_sanctions":            2,   # OFAC SDN + OpenSanctions 40+ lists
+    "screen_sanctions":            2,   # OFAC SDN + EU Consolidated + UK Sanctions List
     "map_trade_restriction":       2,   # OFAC embargo + export-control + sanctioned-party screening
     # PAID writes
     "send_message":                2,   # variable: min 2cr, max 22cr (Twilio SMS)

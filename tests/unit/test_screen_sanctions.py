@@ -317,63 +317,35 @@ def _client_ctx(response):
 
 
 
-class TestOpensanctionsMatch:
+class TestOfacMatch:
+    """Was TestOpensanctionsMatch. OpenSanctions is gone (its data is
+    CC-BY-NonCommercial and we sell screening), so the match has to come from
+    a source we actually use."""
 
-    def test_match_found_via_opensanctions(self):
+    def test_match_found_via_ofac(self):
+        """A real match, produced by the real matcher.
 
-        with patch("core.screen_sanctions._call_ofac_sdn",
-
-                   new=AsyncMock(return_value=([], [_OFAC_CSV_WITH_MATCH], []))):
-
-            with patch("core.screen_sanctions._call_opensanctions",
-
-                       new=AsyncMock(return_value=(
-
-                           [{
-
-                               "name": "KIM Jong Un",
-
-                               "list": "OFAC-SDN, EU-Financial-Sanctions",
-
-                               "match_score": 0.95,
-
-                               "program": "DPRK",
-
-                               "entity_type": "INDIVIDUAL",
-
-                               "source_url": "https://www.opensanctions.org/entities/NK-ABC/",
-
-                           }],
-
-                           ["https://api.opensanctions.org/match/sanctions"],
-
-                           [],
-
-                       ))):
-
-                result = run(handle_screen_sanctions(name="Kim Jong-un", country="KP"))
-
-
+        This test used to mock an OpenSanctions reply and assert we surfaced it,
+        which mostly tested the mock. Patching the FETCH instead means the OFAC
+        parser and the token-set matcher both actually run.
+        """
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
+                   new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
+            result = run(handle_screen_sanctions(name="Kim Jong-un", country="KP"))
 
         assert result.status == OperationStatus.SUCCESS
-
         assert result.result["matched"] is True
-
-        assert len(result.result["matches"]) >= 1
-
         top = result.result["matches"][0]
-
-        assert top["match_score"] >= 0.70
-
-        assert "OFAC-SDN" in top["list"] or "EU" in top["list"]
-
+        # "KIM, Jong Un" against "Kim Jong-un": same token set once normalised,
+        # which is the ONLY relationship an uncalibrated matcher may assert.
+        assert "KIM" in top["name"].upper()
+        assert "OFAC-SDN" in top["list"]
         assert result.cost.amount == 0.0
-
         assert result.cost.basis == "free"
-
         assert "disclaimer" in result.result
-
         assert "screened_at" in result.result
+        # A retired dependency must not appear anywhere in the receipt.
+        assert "opensanctions" not in str(result.result).lower()
 
 
 
@@ -391,23 +363,12 @@ class TestOfacCsvFallbackMatch:
 
     def test_match_via_ofac_csv_only(self):
 
-        with patch("core.screen_sanctions._call_opensanctions",
 
-                   new=AsyncMock(return_value=(
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
 
-                       [],
+                   new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
 
-                       ["https://api.opensanctions.org/match/sanctions"],
-
-                       ["OpenSanctions (OPENSANCTIONS_API_KEY not set or invalid)"],
-
-                   ))):
-
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
-
-                       new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
-
-                result = run(handle_screen_sanctions(name="Kim Jong-un"))
+            result = run(handle_screen_sanctions(name="Kim Jong-un"))
 
 
 
@@ -425,7 +386,13 @@ class TestOfacCsvFallbackMatch:
 
         unavail = result.result.get("sources_unavailable", [])
 
-        assert any("OpenSanctions" in s for s in unavail)
+        # WAS: assert OpenSanctions appears in sources_unavailable.
+        # It is not a source at all now, so it must appear NOWHERE - neither
+        # as screened nor as unavailable. A retired dependency that still
+        # shows up in a receipt is a claim about how we screened.
+        assert not any("opensanctions" in str(s).lower() for s in unavail)
+        assert not any("opensanctions" in str(s).lower()
+                       for s in result.result.get("lists_screened") or [])
 
 
 
@@ -443,15 +410,12 @@ class TestNoMatch:
 
     def test_clean_name_returns_no_match(self):
 
-        with patch("core.screen_sanctions._call_opensanctions",
 
-                   new=AsyncMock(return_value=([], ["https://api.opensanctions.org/match/sanctions"], []))):
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
 
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
+                   new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
 
-                       new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
-
-                result = run(handle_screen_sanctions(name="Jane Smith Completely Innocent"))
+            result = run(handle_screen_sanctions(name="Jane Smith Completely Innocent"))
 
 
 
@@ -473,15 +437,12 @@ class TestNoMatch:
 
     def test_no_match_message_names_lists_screened(self):
 
-        with patch("core.screen_sanctions._call_opensanctions",
 
-                   new=AsyncMock(return_value=([], ["https://api.opensanctions.org/match/sanctions"], []))):
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
 
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
+                   new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
 
-                       new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
-
-                result = run(handle_screen_sanctions(name="Jane Smith Completely Innocent"))
+            result = run(handle_screen_sanctions(name="Jane Smith Completely Innocent"))
 
 
 
@@ -549,23 +510,12 @@ class TestFailOpen:
 
 
 
-        with patch("core.screen_sanctions._call_opensanctions",
 
-                   new=AsyncMock(return_value=(
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
 
-                       [],
+                   new=AsyncMock(return_value=None)):
 
-                       ["https://api.opensanctions.org/match/sanctions"],
-
-                       ["OpenSanctions (error: timed out)"],
-
-                   ))):
-
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
-
-                       new=AsyncMock(return_value=None)):
-
-                result = run(handle_screen_sanctions(name="Some Corp"))
+            result = run(handle_screen_sanctions(name="Some Corp"))
 
 
 
@@ -595,23 +545,12 @@ class TestOpensanctions401Fallback:
 
     def test_401_falls_back_to_ofac(self):
 
-        with patch("core.screen_sanctions._call_opensanctions",
 
-                   new=AsyncMock(return_value=(
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
 
-                       [],
+                   new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
 
-                       ["https://api.opensanctions.org/match/sanctions"],
-
-                       ["OpenSanctions (OPENSANCTIONS_API_KEY not set or invalid -- free key available at https://www.opensanctions.org/accounts/register/)"],
-
-                   ))):
-
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
-
-                       new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
-
-                result = run(handle_screen_sanctions(name="Kim Jong Un"))
+            result = run(handle_screen_sanctions(name="Kim Jong Un"))
 
 
 
@@ -625,7 +564,13 @@ class TestOpensanctions401Fallback:
 
         unavail = result.result.get("sources_unavailable", [])
 
-        assert any("OpenSanctions" in s for s in unavail)
+        # WAS: assert OpenSanctions appears in sources_unavailable.
+        # It is not a source at all now, so it must appear NOWHERE - neither
+        # as screened nor as unavailable. A retired dependency that still
+        # shows up in a receipt is a claim about how we screened.
+        assert not any("opensanctions" in str(s).lower() for s in unavail)
+        assert not any("opensanctions" in str(s).lower()
+                       for s in result.result.get("lists_screened") or [])
 
 
 
@@ -826,64 +771,20 @@ class TestNotInWriteTools:
 class TestMcpDispatchMatched:
 
     def test_callable_via_mcp_match_found(self):
-
-        with patch("core.screen_sanctions._call_opensanctions",
-
-                   new=AsyncMock(return_value=(
-
-                       [{
-
-                           "name": "KIM Jong Un",
-
-                           "list": "OFAC-SDN",
-
-                           "match_score": 0.95,
-
-                           "program": "DPRK",
-
-                           "entity_type": "INDIVIDUAL",
-
-                           "source_url": "https://ofac.treasury.gov/sanctions-list-service",
-
-                       }],
-
-                       ["https://api.opensanctions.org/match/sanctions"],
-
-                       [],
-
-                   ))):
-
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
-
-                       new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
-
-                r = run(handle_mcp_request({
-
-                    "jsonrpc": "2.0", "id": 200, "method": "tools/call",
-
-                    "params": {
-
-                        "name": "screen_sanctions",
-
-                        "arguments": {"name": "Kim Jong-un", "country": "KP", "type": "person"},
-
-                    },
-
-                }))
-
-
-
-        assert "result" in r, f"expected result, got error: {r.get('error')}"
-
-        data = json.loads(r["result"]["content"][0]["text"])
+        """The same match, reached through the MCP dispatch path."""
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
+                   new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
+            resp = run(handle_mcp_request({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "screen_sanctions",
+                           "arguments": {"name": "Kim Jong-un"}},
+            }))
+            data = json.loads(resp["result"]["content"][0]["text"])
 
         assert data["status"] == "success"
-
         assert data["result"]["matched"] is True
-
         assert len(data["result"]["matches"]) >= 1
-
-        assert data["result"]["matches"][0]["list"] == "OFAC-SDN"
+        assert "opensanctions" not in str(data).lower()
 
 
 
@@ -901,27 +802,24 @@ class TestMcpDispatchNoMatch:
 
     def test_callable_via_mcp_no_match(self):
 
-        with patch("core.screen_sanctions._call_opensanctions",
 
-                   new=AsyncMock(return_value=([], ["https://api.opensanctions.org/match/sanctions"], []))):
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
 
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
+                   new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
 
-                       new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
+            r = run(handle_mcp_request({
 
-                r = run(handle_mcp_request({
+                "jsonrpc": "2.0", "id": 201, "method": "tools/call",
 
-                    "jsonrpc": "2.0", "id": 201, "method": "tools/call",
+                "params": {
 
-                    "params": {
+                    "name": "screen_sanctions",
 
-                        "name": "screen_sanctions",
+                    "arguments": {"name": "Jane Smith Clearly Innocent"},
 
-                        "arguments": {"name": "Jane Smith Clearly Innocent"},
+                },
 
-                    },
-
-                }))
+            }))
 
 
 
@@ -995,37 +893,29 @@ class TestPreviewCostFree:
 
 class TestFilterForwarding:
 
-    def test_country_and_type_passed_to_opensanctions(self):
+    def test_country_is_reported_as_not_applied(self):
+        """`country` and `entity_type` were consumed ONLY by OpenSanctions.
 
-        captured_args = {}
+        With it gone they narrow nothing - our name index carries no country
+        column - but the response still said "(country filter: IR)". That tells
+        a caller their screen was narrowed when it was not, so a clean result
+        reads as more specific than it is. On a screening tool that is the
+        dangerous direction to be wrong in.
 
+        The parameters are still ACCEPTED, so no existing call breaks. What
+        changed is that the answer says plainly they were not applied.
+        """
+        with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
+                   new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
+            result = run(handle_screen_sanctions(
+                name="Mahan Air", country="ir", entity_type="entity"))
 
-
-        async def _mock_os(name, country=None, entity_type=None):
-
-            captured_args["name"] = name
-
-            captured_args["country"] = country
-
-            captured_args["entity_type"] = entity_type
-
-            return [], ["https://api.opensanctions.org/match/sanctions"], []
-
-
-
-        with patch("core.screen_sanctions._call_opensanctions", side_effect=_mock_os):
-
-            with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
-
-                       new=AsyncMock(return_value=_OFAC_CSV_NO_MATCH)):
-
-                run(handle_screen_sanctions(name="Mahan Air", country="ir", entity_type="entity"))
-
-
-
-        assert captured_args["country"] == "IR"  # uppercased
-
-        assert captured_args["entity_type"] == "entity"
+        assert result.status == OperationStatus.SUCCESS
+        assert result.result["country_filter_applied"] is False
+        assert "do NOT narrow" in result.result["filter_note"]
+        # The human-readable half must not imply a filter either.
+        assert "country filter:" not in result.human_message
+        assert "NOT used to narrow" in result.human_message
 
 
 
@@ -1042,58 +932,40 @@ class TestFilterForwarding:
 class TestDeduplication:
 
     def test_same_entity_deduped_across_sources(self):
+        """One entity listed on two of our sources must be reported once per list.
 
-        # Both OpenSanctions and OFAC CSV return a match for the same name.
+        Dedup used to be tested across OpenSanctions and OFAC. The sources are
+        now OFAC, EU and UK, so the test drives EU through the database-backed
+        screen and OFAC through the CSV, with the SAME name on both.
+        """
+        async def _fake_db(name, list_code, list_label, source_url):
+            if list_code != "EU":
+                return [], [], []
+            row = {
+                "name": "KIM, Jong Un",
+                "list": list_label,
+                "match_score": 1.0,
+                "program": "DPRK",
+                "entity_type": "INDIVIDUAL",
+                "source_url": source_url,
+                "_matcher": "local_word_overlap",
+            }
+            # The same entity twice from one list: the merge must collapse these.
+            return [row, dict(row)], [list_label], []
 
-        # The merged result should not have a duplicate.
-
-        os_match = [{
-
-            "name": "KIM JONG UN",
-
-            "list": "OFAC-SDN",
-
-            "match_score": 0.95,
-
-            "program": "DPRK",
-
-            "entity_type": "INDIVIDUAL",
-
-            "source_url": "https://www.opensanctions.org/entities/NK-ABC/",
-
-        }]
-
-        with patch("core.screen_sanctions._call_opensanctions",
-
-                   new=AsyncMock(return_value=(
-
-                       os_match,
-
-                       ["https://api.opensanctions.org/match/sanctions"],
-
-                       [],
-
-                   ))):
-
+        with patch("core.screen_sanctions._screen_list_db", new=_fake_db):
             with patch("core.screen_sanctions._fetch_ofac_sdn_csv",
-
                        new=AsyncMock(return_value=_OFAC_CSV_WITH_MATCH)):
+                result = run(handle_screen_sanctions(name="Kim Jong-un"))
 
-                result = run(handle_screen_sanctions(name="Kim Jong Un"))
-
-
-
-        # Matches should not contain "kim jong un" twice under the same list
-
-        kim_ofac = [
-
-            m for m in result.result["matches"]
-
-            if "kim jong" in m["name"].lower() and "OFAC-SDN" in m["list"]
-
-        ]
-
-        assert len(kim_ofac) == 1, f"Expected 1 deduplicated Kim Jong-un, got {len(kim_ofac)}"
+        matches = result.result["matches"]
+        eu = [m for m in matches if m["list"].startswith("EU-CONSOLIDATED")]
+        assert len(eu) == 1, f"EU duplicate not collapsed: {eu}"
+        ofac = [m for m in matches if "OFAC-SDN" in m["list"]]
+        assert len(ofac) == 1, f"Expected 1 OFAC match, got {len(ofac)}"
+        # Same person, two lists: BOTH are kept, because which list carries a
+        # designation is exactly what a compliance caller needs to know.
+        assert len(matches) >= 2
 
 
 

@@ -83,16 +83,34 @@ def test_candidates_are_surfaced_rather_than_hidden():
     d = screen("Star Trading LLC")
     assert d.get("possible_matches_unverified"), (
         "near-matches were dropped entirely instead of surfaced for review")
-    assert "not sanctions findings" in (d.get("degraded") or "").lower() or \
-           "NOT sanctions findings" in (d.get("degraded") or "")
+    # WAS: assert the `degraded` string explains them.
+    #
+    # `degraded` is gone. It described a transient state - "the calibrated
+    # source did not answer" - and after OpenSanctions was removed there is no
+    # calibrated source to be down. A permanent property of the method is not
+    # an outage, and reporting one on every call trains callers to ignore the
+    # field. What must still be true is that the candidates arrive with an
+    # explanation attached, so nobody mistakes them for findings.
+    note = d.get("matching_method") or ""
+    assert "NOT sanctions findings" in note, (
+        "candidates are surfaced with no explanation of what they are")
+    assert "uncalibrated" in note.lower(), (
+        "the response does not disclose that the matcher is uncalibrated")
 
 
-def test_the_human_message_says_the_screening_was_incomplete():
-    """A caller reads the sentence, not the fields. "No match" from a degraded
-    screen means something much weaker than "no match" from a complete one."""
+def test_the_response_discloses_how_it_matches():
+    """A caller reads the sentence, not the fields.
+
+    "No match" from an uncalibrated exact-token matcher means something
+    narrower than "no match" from a calibrated one, and the caller has to be
+    able to tell which they got. This used to be phrased as a degradation
+    warning; it is now a permanent statement of method, but it must still
+    reach the human-readable message and not only a JSON field.
+    """
     d = screen("Star Trading LLC")
-    # the receipt's own narrative must carry the warning
-    assert d.get("degraded"), "nothing marks this result as degraded"
+    assert d.get("matching_method"), "nothing states how matching was done"
+    assert "do not guess" in d["matching_method"].lower()
+
 
 
 # --------------------------------------------------------------------------
