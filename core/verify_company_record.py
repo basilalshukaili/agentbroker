@@ -131,6 +131,82 @@ def _parse_gleif_entity(data: dict) -> dict:
     }
 
 
+_LEGAL_SUFFIXES = frozenset({
+    "inc", "incorporated", "corp", "corporation", "co", "company", "llc",
+    "lp", "llp", "plc", "ltd", "limited", "sa", "sas", "ag", "gmbh", "nv",
+    "bv", "ab", "as", "oy", "spa", "srl", "pte", "pty", "kk", "the", "group",
+    "holdings", "holding",
+})
+
+# Long forms one registry spells out and the other abbreviates. Applied as
+# whole phrases before tokenising - see the note in _same_entity.
+_LEGAL_PHRASES = {
+    "public limited company": "plc",
+    "public limited co": "plc",
+    "limited liability company": "llc",
+    "limited liability partnership": "llp",
+    "societe anonyme": "sa",
+    "naamloze vennootschap": "nv",
+    "aktiengesellschaft": "ag",
+    "gesellschaft mit beschrankter haftung": "gmbh",
+}
+
+
+def _same_entity(a: Optional[str], b: Optional[str]) -> bool:
+    """Are these two registry names plausibly the same company?
+
+    Used to decide whether a SEC EDGAR hit may lend its CIK and ticker to a
+    GLEIF record. The bar is deliberately asymmetric: a FALSE match invents a
+    company that does not exist, while a false NON-match only means we publish
+    a real GLEIF record without a ticker, and say so.
+
+    Corporate suffixes are dropped because the two registries disagree about
+    them constantly - GLEIF writes "APPLE INC.", SEC writes "Apple Inc." and
+    for others "CORPORATION" against "Corp". What is left has to match as a
+    set, so "Apple" never merges with "Apple Hospitality REIT".
+    """
+    def _toks(text: Optional[str]) -> list:
+        cleaned = "".join(
+            c if (c.isalnum() or c.isspace()) else " " for c in (text or "").lower())
+        cleaned = " ".join(cleaned.split())
+        # PHRASES, NOT WORDS. "Public limited company" is the expansion of
+        # "plc" and GLEIF writes it out in full where SEC abbreviates, so
+        # Vodafone did not merge with itself. The word "public" cannot simply
+        # join _LEGAL_SUFFIXES to fix that: Public Storage is a real listed
+        # company, and dropping the word would let it merge with anything else
+        # called Storage. The whole phrase is unambiguous; the word is not.
+        for phrase, short in _LEGAL_PHRASES.items():
+            if phrase in cleaned:
+                cleaned = cleaned.replace(phrase, short)
+        return [t for t in cleaned.split() if t]
+
+    ta, tb = _toks(a), _toks(b)
+    if not ta or not tb:
+        return False
+    if set(ta) == set(tb):
+        return True                     # identical but for case and punctuation
+
+    # A SUFFIX MAY BE SPELLED DIFFERENTLY. IT MAY NOT BE ABSENT.
+    #
+    # Ignoring suffixes on both sides bridges "Microsoft Corporation" and
+    # "Microsoft Corp", which is the whole point. But it ALSO bridged "Apple"
+    # and "Apple Inc." - and an existing test forbids exactly that, with its
+    # reasoning written down: a caller who types a bare first word has not
+    # named a legal entity, and resolving it to one puts a CIK the caller
+    # never asked for onto a compliance receipt.
+    #
+    # So both names must actually CARRY a corporate form before their forms
+    # are allowed to differ. "Corporation" vs "Corp" is a spelling; nothing
+    # vs "Inc." is a missing word.
+    sa = [t for t in ta if t not in _LEGAL_SUFFIXES]
+    sb = [t for t in tb if t not in _LEGAL_SUFFIXES]
+    if len(sa) == len(ta) or len(sb) == len(tb):
+        return False                    # one side names no corporate form
+    # "The Limited" is a real company whose every token is a suffix; an empty
+    # remainder identifies nobody.
+    return bool(sa) and set(sa) == set(sb)
+
+
 async def _edgar_search(name: str) -> Optional[dict]:
     """
     Search SEC EDGAR company_tickers.json for US public companies.
@@ -168,17 +244,51 @@ async def _edgar_search(name: str) -> Optional[dict]:
                 .split())
 
         name_lower = _norm(name)
+
+        def _hit(entry: dict) -> dict:
+            return {
+                "legal_name": _clean(entry.get("title", "")),
+                "ticker": _clean(str(entry.get("ticker", ""))),
+                "cik": str(entry.get("cik_str", "")),
+                "registry_authority": "SEC EDGAR (US public companies)",
+                "jurisdiction": "US",
+                "status": "active",
+            }
+
         # Linear scan -- JSON is ~6 MB, ~15k entries; fast enough in memory
+        suffix_matches: list = []
         for _key, entry in tickers.items():
-            if _norm(entry.get("title", "")) == name_lower:
-                return {
-                    "legal_name": _clean(entry.get("title", "")),
-                    "ticker": _clean(str(entry.get("ticker", ""))),
-                    "cik": str(entry.get("cik_str", "")),
-                    "registry_authority": "SEC EDGAR (US public companies)",
-                    "jurisdiction": "US",
-                    "status": "active",
-                }
+            title = entry.get("title", "")
+            if _norm(title) == name_lower:
+                return _hit(entry)                  # exact wins outright
+            # AND THE ABBREVIATIONS, which punctuation-insensitivity did not
+            # reach. SEC stores "Microsoft Corp"; ask about "Microsoft
+            # Corporation" - the name GLEIF holds - and the scan above found
+            # nothing, so the receipt listed sec.gov as queried and returned
+            # sec_cik: null for the third-largest company on the exchange.
+            # Same defect as the Apple full stop, one abbreviation further on.
+            if _same_entity(title, name):
+                suffix_matches.append(entry)
+
+        # AMBIGUITY IS NOT A TIE TO BREAK. If dropping suffixes makes two
+        # different filers look alike, picking one attaches a real CIK to the
+        # wrong company - the exact invention this file now guards against on
+        # the merge.
+        if len({str(e.get("cik_str", "")) for e in suffix_matches}) == 1:
+            return _hit(suffix_matches[0])
+        if suffix_matches:
+            # AND IT IS REPORTED, not swallowed. "SEC had nothing" and "SEC
+            # had several and we would not guess" are different answers, and
+            # returning None for both is how this file's other bugs started.
+            return {
+                "ambiguous": [
+                    {"legal_name": _clean(e.get("title", "")),
+                     "ticker": _clean(str(e.get("ticker", ""))),
+                     "cik": str(e.get("cik_str", ""))}
+                    for e in suffix_matches[:5]
+                ],
+            }
+        return None
     # RegistryUnavailable MUST ESCAPE. It subclasses RuntimeError, so the bare
     # `except Exception` below caught the raise two lines above it - the
     # function raised and then swallowed its own exception, and the commit
@@ -260,11 +370,52 @@ async def handle_verify_company_record(
         except Exception:
             sources_unavailable.append("SEC EDGAR")
 
-    # Merge: if GLEIF found something, annotate with EDGAR CIK if available
+    # Merge: if GLEIF found something, annotate with EDGAR CIK if available.
+    #
+    # THE TWO LOOKUPS ARE KEYED ON DIFFERENT THINGS AND WERE NEVER COMPARED.
+    #
+    # GLEIF is keyed on the LEI when one is supplied; EDGAR is always keyed on
+    # `name`. So verify_company_record(name="Apple Inc", lei=<Tesla's LEI>)
+    # fetched TESLA from GLEIF, fetched APPLE from SEC, and stapled them into
+    # one record: legal_name "TESLA, INC." carrying ticker AAPL and cik 320193.
+    # Every field in that receipt is real and the entity it describes does not
+    # exist. A verification tool inventing a company is the worst output in
+    # this file, worse than any outage, because nothing about it looks wrong.
+    #
+    # So the enrichment now has to prove the two records are the same company.
+    merge_conflict: Optional[dict] = None
+
+    # SEC found several filers whose names differ only by corporate suffix.
+    # No CIK is attached and the candidates are handed back, so the caller can
+    # disambiguate instead of being told SEC knew nothing.
+    if edgar_record and edgar_record.get("ambiguous"):
+        merge_conflict = {
+            "sec_candidates": edgar_record["ambiguous"],
+            "reason": ("SEC EDGAR held more than one filer matching this name "
+                       "once corporate suffixes are set aside, so no CIK or "
+                       "ticker was attached - supply the exact SEC name to "
+                       "pick one"),
+        }
+        edgar_record = None
+
     if record and edgar_record:
-        record["sec_cik"] = edgar_record.get("cik")
-        record["ticker"] = edgar_record.get("ticker")
-        record["sources"] = ["GLEIF", "SEC EDGAR"]
+        if _same_entity(record.get("legal_name"), edgar_record.get("legal_name")):
+            record["sec_cik"] = edgar_record.get("cik")
+            record["ticker"] = edgar_record.get("ticker")
+            record["sources"] = ["GLEIF", "SEC EDGAR"]
+        else:
+            # Disclosed, not discarded silently: the caller asked about a name
+            # SEC does know, and the mismatch is the single most useful fact we
+            # learned on this call.
+            merge_conflict = {
+                "sec_legal_name": edgar_record.get("legal_name"),
+                "sec_cik": edgar_record.get("cik"),
+                "sec_ticker": edgar_record.get("ticker"),
+                "reason": ("SEC EDGAR matched a different company than the "
+                           "registry record above, so its identifiers were "
+                           "NOT attached to this entity"),
+            }
+            record["sources"] = ["GLEIF"]
     elif record:
         record["sources"] = ["GLEIF"]
     elif edgar_record:
@@ -288,20 +439,33 @@ async def handle_verify_company_record(
         # and never matched, so the branch below could not fire - a guard that
         # silently does nothing, which is the defect this whole file is being
         # audited for.
-        _attempted = 1 + (1 if is_us else 0)     # GLEIF, plus EDGAR when US
-        _all_dark = len(sources_unavailable) >= _attempted
+        #
+        # THEN THE COUNT ITSELF WAS WRONG, in the direction that matters.
+        # `_attempted = 1 + (1 if is_us else 0)` with is_us defaulting True
+        # meant a caller who named no country needed BOTH registries dark
+        # before we would admit it. GLEIF down and EDGAR up produced the full
+        # not_found sentence - "the company may not be a legal entity
+        # registered with these free registries" - for, say, a German company,
+        # on the strength of its absence from a file of US-listed tickers.
+        #
+        # The registries are not interchangeable, so counting them was the
+        # wrong shape. GLEIF is the only global entity registry we consult;
+        # EDGAR covers US public companies alone. If GLEIF did not answer, we
+        # have no basis for "not registered" about anyone.
+        _all_dark = "GLEIF" in sources_unavailable
         if _all_dark:
             return OutcomeReceipt(
                 operation_id=op_id,
                 status=OperationStatus.SUCCESS,
                 reason_code="partial_lookup",
                 human_message=(
-                    f"COULD NOT VERIFY '{_ascii(name)}': every registry we use "
-                    f"was unavailable on this call ("
+                    f"COULD NOT VERIFY '{_ascii(name)}': the GLEIF global "
+                    f"entity registry was unavailable on this call ("
                     + ", ".join(_ascii(u) for u in sources_unavailable)
-                    + "). This is NOT evidence that the company is "
-                      "unregistered - we did not reach any registry. Retry, "
-                      "or check GLEIF and SEC EDGAR directly."
+                    + " unreachable). This is NOT evidence that the company is "
+                      "unregistered - GLEIF is the only worldwide registry we "
+                      "consult, and it did not answer. Retry, or check GLEIF "
+                      "and SEC EDGAR directly."
                 ),
                 result={
                     "status": "unavailable",
@@ -362,6 +526,11 @@ async def handle_verify_company_record(
     }
     if sources_unavailable:
         result_payload["sources_unavailable"] = [_ascii(s) for s in sources_unavailable]
+    if merge_conflict:
+        result_payload["unmerged_sec_match"] = {
+            k: (_ascii(v) if isinstance(v, str) else v)
+            for k, v in merge_conflict.items()
+        }
 
     return OutcomeReceipt(
         operation_id=op_id,
@@ -373,6 +542,17 @@ async def handle_verify_company_record(
             + (f", jurisdiction: {result_payload['jurisdiction']}" if result_payload.get("jurisdiction") else "")
             + (f", status: {result_payload['entity_status']}" if result_payload.get("entity_status") else "")
             + "."
+            + (f" NOTE: you asked about '{_ascii(name)}' and SEC EDGAR matched "
+               f"'{_ascii(str(merge_conflict.get('sec_legal_name') or ''))}', a "
+               f"DIFFERENT company from the registry record above - so no "
+               f"ticker or CIK has been attached. The two identifiers you "
+               f"supplied may not belong to the same entity."
+               if merge_conflict and merge_conflict.get("sec_legal_name") else "")
+            + (f" NOTE: SEC EDGAR held "
+               f"{len(merge_conflict.get('sec_candidates') or [])} filers "
+               f"matching this name once corporate suffixes are set aside, so "
+               f"no ticker or CIK has been attached - see sec_candidates."
+               if merge_conflict and merge_conflict.get("sec_candidates") else "")
         ),
         result=result_payload,
         cost=CostRecord(amount=0.0, currency="USD", basis="free"),

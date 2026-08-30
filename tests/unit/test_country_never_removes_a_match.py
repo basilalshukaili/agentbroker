@@ -144,3 +144,72 @@ def test_official_long_forms_still_match(want, have):
 ])
 def test_country_matching_bridges_the_two_feed_formats(want, have, expected):
     assert ss._country_matches(want, have) is expected
+
+
+# THE MOST SANCTIONED JURISDICTIONS, against the spellings our index really
+# stores. An adversarial sweep found KP matched NOTHING - _ISO2_NAMES held
+# four alternative names crammed into one string and the subset rule needs
+# every word - so genuine DPRK entities came back country_match: FALSE and
+# sorted BELOW listings with no country at all.
+@pytest.mark.parametrize("code,listing", [
+    ("KP", "NORTH KOREA"),                       # what the UK feed stores
+    ("KP", "KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF"),
+    ("CD", "CONGO (DEMOCRATIC REPUBLIC)"),
+    ("IR", "IRAN, ISLAMIC REPUBLIC OF"),
+    ("SY", "SYRIAN ARAB REPUBLIC"),
+    ("RU", "RUSSIA"),
+    ("IQ", "IRAQ"),
+])
+def test_the_heaviest_jurisdictions_match_their_real_spellings(code, listing):
+    assert ss._country_matches(code, [listing]) is True, (
+        f"{code} does not match {listing!r}, which is a string our own index "
+        f"stores - a false MISMATCH on a sanctions receipt")
+
+
+@pytest.mark.parametrize("code,listing", [
+    ("KP", "KOREA, REPUBLIC OF"),                # South Korea
+    ("KP", "SOUTH KOREA"),
+    ("CD", "CONGO, REPUBLIC OF"),                # the other Congo
+])
+def test_the_neighbouring_country_still_does_not_match(code, listing):
+    assert ss._country_matches(code, [listing]) is False
+
+
+def test_a_code_we_cannot_interpret_is_unknown_not_a_mismatch():
+    """Passing a code the map does not carry used to return False, which the
+    schema defines as "we checked and it is not that country". We had not
+    checked; we did not know the word. Asserting a negative from ignorance is
+    the same defect as the KP mapping, one level up.
+
+    "DZ" was the original example here and is now MAPPED - the sweep that
+    found it found 32 more, and the map was widened. TV (Tuvalu) stands in for
+    the tail that will always exist."""
+    assert "TV" not in ss._ISO2_NAMES, "pick a code still outside the map"
+    assert ss._country_matches("TV", ["ALGERIA"]) is None
+    # But two bare codes are comparable whether or not we know either.
+    assert ss._country_matches("TV", ["IQ"]) is False
+    assert ss._country_matches("FR", ["IQ"]) is False
+
+
+def test_every_country_string_in_the_live_index_is_reachable_by_some_code():
+    """THE GUARD FOR THE HOLE ITSELF.
+
+    The KP bug and the 33 unreachable names are the same failure: a country
+    the index really stores that no query can name. Checked against the
+    spellings the feeds use, so a feed changing its format shows up here
+    rather than as a silently weaker ranking signal.
+    """
+    reachable = {n.upper() for n in ss._ISO2_NAMES.values()}
+    for code, aliases in ss._COUNTRY_ALIASES.items():
+        reachable.update(a.upper() for a in aliases)
+
+    # Spellings observed in the live UK and EU feeds.
+    for listing in ["ALGERIA", "FRANCE", "GERMANY", "ISRAEL", "SAUDI ARABIA",
+                    "THE GAMBIA", "OCCUPIED PALESTINIAN TERRITORIES",
+                    "TRINIDAD AND TOBAGO", "EQUATORIAL GUINEA", "LAOS",
+                    "EL SALVADOR", "NORTH KOREA", "KAZAKHSTAN"]:
+        hits = [c for c in ss._ISO2_NAMES
+                if ss._country_matches(c, [listing]) is True]
+        assert hits, (
+            f"no ISO code in the map matches {listing!r}, a country string "
+            f"our own index stores - nobody can ask about it")

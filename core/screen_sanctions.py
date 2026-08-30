@@ -847,18 +847,59 @@ def _days_since(day: Optional[str]) -> Optional[int]:
 #
 # So country annotates and RANKS. Nothing is ever dropped for it.
 _ISO2_NAMES = {
-    "IR": "IRAN", "RU": "RUSSIA", "KP": "KOREA DEMOCRATIC PEOPLES REPUBLIC NORTH KOREA", "SY": "SYRIA", "IQ": "IRAQ",
+    "IR": "IRAN", "RU": "RUSSIA", "KP": "NORTH KOREA", "SY": "SYRIA", "IQ": "IRAQ",
     "BY": "BELARUS", "CU": "CUBA", "VE": "VENEZUELA", "MM": "MYANMAR",
     "AF": "AFGHANISTAN", "LY": "LIBYA", "SD": "SUDAN", "SS": "SOUTH SUDAN",
     "SO": "SOMALIA", "YE": "YEMEN", "ZW": "ZIMBABWE", "LB": "LEBANON",
     "UA": "UKRAINE", "CN": "CHINA", "TR": "TURKEY", "AE": "UNITED ARAB EMIRATES",
     "GB": "UNITED KINGDOM", "US": "UNITED STATES", "ML": "MALI", "NI": "NICARAGUA",
-    "HT": "HAITI", "CF": "CENTRAL AFRICAN REPUBLIC", "CD": "CONGO", "ER": "ERITREA",
+    "HT": "HAITI", "CF": "CENTRAL AFRICAN REPUBLIC", "CD": "DEMOCRATIC REPUBLIC OF THE CONGO", "ER": "ERITREA",
     "GN": "GUINEA", "GW": "GUINEA-BISSAU", "TN": "TUNISIA", "EG": "EGYPT",
     "PK": "PAKISTAN", "IN": "INDIA", "TH": "THAILAND", "MD": "MOLDOVA",
     "RS": "SERBIA", "BA": "BOSNIA", "ME": "MONTENEGRO", "NE": "NIGER",
     "BF": "BURKINA FASO", "TD": "CHAD", "ET": "ETHIOPIA", "BI": "BURUNDI",
     "LR": "LIBERIA", "SL": "SIERRA LEONE", "CI": "COTE D'IVOIRE", "KG": "KYRGYZSTAN",
+
+    # THE SECOND HALF OF THIS MAP EXISTS BECAUSE OF WHAT THE FIRST HALF DID
+    # WHEN IT ENDED HERE.
+    #
+    # The map used to stop at the ~48 countries a sanctions programme is NAMED
+    # after, on the reasoning that those are the ones that matter. But the
+    # `country` argument is the caller's counterparty, not the sanctions
+    # regime: someone screening a French supplier passes "FR". Sweeping the
+    # live index found 33 country strings - ALGERIA, FRANCE, GERMANY, ISRAEL,
+    # SAUDI ARABIA, THE GAMBIA - that no code in the map could reach, so every
+    # one of those queries fell through to "we do not know this code".
+    #
+    # Honest, but useless: the ranking signal silently switched off for most
+    # of the world. The unknown branch is the tail, not the common case.
+    "DZ": "ALGERIA", "AO": "ANGOLA", "AR": "ARGENTINA", "AM": "ARMENIA",
+    "AU": "AUSTRALIA", "AT": "AUSTRIA", "AZ": "AZERBAIJAN", "BH": "BAHRAIN",
+    "BD": "BANGLADESH", "BE": "BELGIUM", "BO": "BOLIVIA", "BR": "BRAZIL",
+    "BG": "BULGARIA", "KH": "CAMBODIA", "CM": "CAMEROON", "CA": "CANADA",
+    "CL": "CHILE", "CO": "COLOMBIA", "CG": "CONGO", "HR": "CROATIA",
+    "CY": "CYPRUS", "CZ": "CZECHIA", "DK": "DENMARK", "DO": "DOMINICAN REPUBLIC",
+    "EC": "ECUADOR", "SV": "EL SALVADOR", "GQ": "EQUATORIAL GUINEA",
+    "EE": "ESTONIA", "FI": "FINLAND", "FR": "FRANCE", "GM": "GAMBIA",
+    "GE": "GEORGIA", "DE": "GERMANY", "GH": "GHANA", "GR": "GREECE",
+    "GT": "GUATEMALA", "HN": "HONDURAS", "HK": "HONG KONG", "HU": "HUNGARY",
+    "IS": "ICELAND", "ID": "INDONESIA", "IE": "IRELAND", "IL": "ISRAEL",
+    "IT": "ITALY", "JM": "JAMAICA", "JP": "JAPAN", "JO": "JORDAN",
+    "KZ": "KAZAKHSTAN", "KE": "KENYA", "KR": "SOUTH KOREA", "KW": "KUWAIT",
+    "LA": "LAOS", "LV": "LATVIA", "LT": "LITHUANIA", "LU": "LUXEMBOURG",
+    "MW": "MALAWI", "MY": "MALAYSIA", "MT": "MALTA", "MR": "MAURITANIA",
+    "MX": "MEXICO", "MN": "MONGOLIA", "MA": "MOROCCO", "MZ": "MOZAMBIQUE",
+    "NP": "NEPAL", "NL": "NETHERLANDS", "NZ": "NEW ZEALAND", "NG": "NIGERIA",
+    "NO": "NORWAY", "OM": "OMAN", "PS": "PALESTINE", "PA": "PANAMA",
+    "PG": "PAPUA NEW GUINEA", "PY": "PARAGUAY", "PE": "PERU",
+    "PH": "PHILIPPINES", "PL": "POLAND", "PT": "PORTUGAL", "QA": "QATAR",
+    "RO": "ROMANIA", "RW": "RWANDA", "SA": "SAUDI ARABIA", "SN": "SENEGAL",
+    "SG": "SINGAPORE", "SK": "SLOVAKIA", "SI": "SLOVENIA", "ZA": "SOUTH AFRICA",
+    "ES": "SPAIN", "LK": "SRI LANKA", "SE": "SWEDEN", "CH": "SWITZERLAND",
+    "TW": "TAIWAN", "TJ": "TAJIKISTAN", "TZ": "TANZANIA",
+    "TT": "TRINIDAD AND TOBAGO", "TM": "TURKMENISTAN", "UG": "UGANDA",
+    "UY": "URUGUAY", "UZ": "UZBEKISTAN", "VN": "VIETNAM", "ZM": "ZAMBIA",
+    "AL": "ALBANIA",
 }
 
 
@@ -883,16 +924,48 @@ _COUNTRY_ALIASES = {
     "RU": ["RUSSIAN FEDERATION"],
     "IR": ["ISLAMIC REPUBLIC OF IRAN"],
     "SY": ["SYRIAN ARAB REPUBLIC"],
-    "KP": ["DPRK"],
+    # THE MOST SANCTIONED JURISDICTION ON EARTH MATCHED NOTHING.
+    #
+    # _ISO2_NAMES["KP"] held "KOREA DEMOCRATIC PEOPLES REPUBLIC NORTH KOREA" -
+    # four alternative names in one string - and the name-form rule requires
+    # EVERY word to appear in the listing. No real listing carries all five,
+    # so KP matched none of them. Our own index stores "NORTH KOREA" on real
+    # DPRK entities, and they were coming back country_match: FALSE, which the
+    # schema defines as "we checked and it is not that country" - and sorting
+    # BELOW listings with no country at all.
+    "KP": ["DPRK", "KOREA DEMOCRATIC PEOPLES REPUBLIC OF",
+           "KOREA DEMOCRATIC PEOPLES REPUBLIC"],
     "VE": ["BOLIVARIAN REPUBLIC OF VENEZUELA"],
     "MM": ["BURMA"],
-    "CD": ["DRC", "DEMOCRATIC REPUBLIC OF THE CONGO"],
+    # Same shape: "CONGO" alone was blocked by the DEMOCRATIC qualifier that
+    # distinguishes it from the Republic of the Congo.
+    "CD": ["DRC", "CONGO DEMOCRATIC REPUBLIC"],
     "CI": ["COTE DIVOIRE", "IVORY COAST"],
     "GB": ["UK", "GREAT BRITAIN"],
     "US": ["USA", "UNITED STATES OF AMERICA"],
     "AE": ["UAE"],
     "MD": ["REPUBLIC OF MOLDOVA"],
     "BY": ["REPUBLIC OF BELARUS"],
+    # South Korea, spelled the way the feeds spell it. Without this the ONLY
+    # form KR matched was the literal words "SOUTH KOREA", while both lists
+    # write "KOREA, REPUBLIC OF".
+    "KR": ["KOREA REPUBLIC OF", "REPUBLIC OF KOREA"],
+    # The listing our index actually holds is "PALESTINIAN" on some rows and
+    # "OCCUPIED PALESTINIAN TERRITORIES" on others; neither contains the word
+    # PALESTINE, so the plain name form reaches neither.
+    "PS": ["PALESTINIAN", "PALESTINIAN TERRITORIES",
+           "OCCUPIED PALESTINIAN TERRITORIES", "STATE OF PALESTINE"],
+    # "LAO PEOPLE'S DEMOCRATIC REPUBLIC" carries two qualifier words, so the
+    # bare "LAO" form is refused by the qualifier rule on purpose - the full
+    # official form has to be spelled out to get through it.
+    "LA": ["LAO PEOPLES DEMOCRATIC REPUBLIC", "LAO"],
+    "CZ": ["CZECH REPUBLIC"],
+    "NL": ["THE NETHERLANDS", "HOLLAND"],
+    "VN": ["VIET NAM", "SOCIALIST REPUBLIC OF VIETNAM"],
+    "TZ": ["UNITED REPUBLIC OF TANZANIA"],
+    "TW": ["CHINESE TAIPEI", "TAIWAN PROVINCE OF CHINA"],
+    "HK": ["HONG KONG SAR", "HONG KONG SPECIAL ADMINISTRATIVE REGION"],
+    "DO": ["DOMINICAN REP"],
 }
 
 
@@ -929,7 +1002,14 @@ def _country_matches(want: str, have: list) -> Optional[bool]:
         return None
 
     def _words(text: str) -> set:
-        return {t for t in re.split(r"[^A-Z0-9]+", text.upper()) if t}
+        # APOSTROPHES ARE REMOVED, NOT SPLIT ON. Splitting turned
+        # "KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF" into {..., PEOPLE, S, ...},
+        # which no alias could ever be a subset of - so the official long form
+        # of the most sanctioned country on earth matched nothing. Sanctions
+        # lists are full of possessives and Arabic transliterations
+        # ("AL-JAZA'IRI"), so this is general, not a special case.
+        return {t for t in re.split(r"[^A-Z0-9]+", text.upper().replace("'", ""))
+                if t}
 
     names = {str(c).strip().upper() for c in have if str(c).strip()}
     if w in names:
@@ -957,6 +1037,30 @@ def _country_matches(want: str, have: list) -> Optional[bool]:
             name_forms.append(_ISO2_NAMES.get(code, ""))
             name_forms.extend(aliases)
             want_terms.add(code)
+
+    # A CODE WE CANNOT INTERPRET IS UNKNOWN, NOT A MISMATCH.
+    #
+    # _ISO2_NAMES started at ~48 sanctions-relevant countries. A caller passing
+    # a two-letter code outside that set - "DZ" for Algeria, "BE" for Belgium,
+    # both of which appear in our index by NAME - got country_match: false,
+    # which the schema defines as "we checked and it is not that country". We
+    # had not checked; we did not know the word.
+    #
+    # This is the same defect as the KP mapping, one level up: asserting a
+    # negative from ignorance. Sweeping the live index found 33 country
+    # strings no code in the map could reach, so the map was widened to cover
+    # them. It is still not every ISO code, and it never will be - which is
+    # exactly why the unknown case has to answer None rather than guess.
+    if len(w) == 2 and w not in _ISO2_NAMES:
+        # UNLESS THE LISTING IS ALSO A BARE CODE. Two two-letter codes are
+        # directly comparable whether or not we know what either stands for,
+        # and the exact-match check above already handled the equal case - so
+        # reaching here with all-code listings is a genuine mismatch, not
+        # ignorance. Anything else (a country NAME we cannot map the code to)
+        # stays unknown.
+        if names and all(len(n) == 2 and n.isalpha() for n in names):
+            return False
+        return None
 
     for n in names:
         listing_words = _words(n)
