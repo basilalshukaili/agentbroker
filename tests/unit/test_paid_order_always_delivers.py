@@ -90,7 +90,12 @@ def test_an_unrecoverable_grant_is_recorded_and_escalated(monkeypatch):
         alerted["text"] = text
         return True
 
-    monkeypatch.setattr("storage.supabase_client.insert_row", fake_insert)
+    # STRICT, matching the call site. _record_ungranted_order used the
+    # lenient insert_row, which never raises - so its own except-handler,
+    # and the ERROR log inside it, were unreachable. Patching the lenient
+    # one here would now silently test nothing.
+    monkeypatch.setattr("storage.supabase_client.insert_row_strict",
+                        fake_insert)
     monkeypatch.setattr(
         "billing.telegram_revenue_alerts.send_telegram_alert", fake_alert)
 
@@ -107,3 +112,45 @@ def test_an_unrecoverable_grant_is_recorded_and_escalated(monkeypatch):
     assert "ord_123" in text, "the alert does not name the order to replay"
     assert "idempotency_key" in text, (
         "the alert must say the replay is safe, or nobody will dare run it")
+
+
+def test_a_failed_recovery_write_is_logged_and_still_escalates(monkeypatch,
+                                                               caplog):
+    """The handler that could not fire.
+
+    _record_ungranted_order wrapped the lenient insert_row in
+    `except Exception: logger.error(...)`. insert_row is documented "never
+    raises" - it returns None on any failure - so that log line was dead code.
+    It matters here more than almost anywhere: the usual reason a grant failed
+    is that Supabase is down, which is exactly when this recovery write fails
+    too. The paid order would vanish with no durable row AND nothing in the
+    log saying so.
+    """
+    import logging
+    alerted = {}
+
+    async def _boom(table, row):
+        raise RuntimeError("supabase down")
+
+    async def fake_alert(text):
+        alerted["text"] = text
+        return True
+
+    monkeypatch.setattr("storage.supabase_client.insert_row_strict", _boom)
+    monkeypatch.setattr(
+        "billing.telegram_revenue_alerts.send_telegram_alert", fake_alert)
+
+    with caplog.at_level(logging.ERROR, logger="smb_broker.polar_webhook"):
+        asyncio.run(pw._record_ungranted_order(
+            order_id="ord_777", account_id="sub_cus_1", credits=1000,
+            email="a@b.co", error="supabase down"))
+
+    errors = [r.getMessage() for r in caplog.records
+              if r.levelno >= logging.ERROR]
+    assert any("ungranted_order_not_recorded" in m for m in errors), (
+        "the durable write failed and nothing was logged at ERROR - this is "
+        "the dead-handler bug, and a paid order just disappeared silently")
+    assert any("ord_777" in m for m in errors), (
+        "the log does not name the order, so it cannot be replayed from it")
+    # And the customer-facing escalation must still happen.
+    assert "ord_777" in alerted.get("text", "")

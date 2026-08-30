@@ -148,6 +148,13 @@ jobs:
       - name: Every advertised parameter survives dispatch
         run: python scripts/check_params_reach_dispatch.py
 
+      # screen_sanctions.py defined two of its OFAC fetchers TWICE each,
+      # byte-identical, a hundred lines apart. Harmless by luck - Python binds
+      # the last one and the copies agreed. The danger is the next edit: fix a
+      # bug in the first copy, watch every test pass, ship nothing.
+      - name: No top-level name defined twice
+        run: python scripts/check_no_shadowed_defs.py
+
       # A count typed by hand is true only on the day it is typed. An audit
       # found "22 jurisdictions" on 15+ surfaces (real: 26 - we were
       # UNDER-claiming our own compliance coverage), plus 12/13/14/18 tools

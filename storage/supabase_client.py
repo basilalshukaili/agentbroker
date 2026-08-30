@@ -283,10 +283,21 @@ def select_rows_sync_strict(table: str, **kw) -> list[dict]:
             f"({str(exc)[:80]})") from exc
 
 
-def _select_params(filters=None, limit: int = 1000, order=None, gte=None) -> dict:
+def _select_params(filters=None, limit: int = 1000, order=None, gte=None,
+                   offset: int = 0) -> dict:
     """Query-string builder shared by the lenient and strict readers, so the
-    two can never encode a filter differently."""
+    two can never encode a filter differently.
+
+    `offset` exists so a caller that must read a WHOLE table can page through
+    it. Without it the only options were a bigger limit - which just moves the
+    cliff - and truncation, which the revocation loader was doing: it read one
+    page, logged that it had truncated, and latched hydration as complete, so
+    every revoked customer past the page boundary kept paid access for the
+    life of the process. Always pair it with `order`, or the pages overlap.
+    """
     params: dict[str, Any] = {"limit": limit}
+    if offset:
+        params["offset"] = offset
     if order:
         params["order"] = order
     if gte:

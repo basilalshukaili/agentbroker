@@ -285,8 +285,14 @@ async def _record_ungranted_order(order_id: str, account_id: str, credits: int,
     replaying the grant with it cannot double-credit.
     """
     try:
-        from storage.supabase_client import insert_row
-        await insert_row("ungranted_orders", {
+        # STRICT. insert_row is documented "never raises" - it returns None on
+        # any failure - so the handler below was dead code, and the ERROR line
+        # it guards could not fire. That matters more here than almost
+        # anywhere: the usual reason a grant fails is that Supabase is down,
+        # which is exactly when this recovery write fails too. A paid order
+        # would vanish with no durable record AND no log saying so.
+        from storage.supabase_client import insert_row_strict
+        await insert_row_strict("ungranted_orders", {
             "order_id": order_id,
             "account_id": account_id,
             "credits": credits,
@@ -294,7 +300,11 @@ async def _record_ungranted_order(order_id: str, account_id: str, credits: int,
             "error": error,
         })
     except Exception as exc:                    # noqa: BLE001
-        logger.error("ungranted_order_not_recorded order=%s err=%s", order_id, exc)
+        logger.error(
+            "ungranted_order_not_recorded order=%s account=%s credits=%d "
+            "email=%s err=%s -- THIS ORDER IS NOW ONLY IN THIS LOG LINE AND "
+            "THE TELEGRAM ALERT BELOW. Replay with idempotency_key=%s",
+            order_id, account_id, credits, email, exc, order_id)
     try:
         from billing.telegram_revenue_alerts import send_telegram_alert
         await send_telegram_alert(

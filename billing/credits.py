@@ -6,8 +6,12 @@ authenticate via X-Agent-Identity with a funded credit_accounts row use this
 path instead of x402; the x402 branch in the dispatcher checks for the header
 and skips to credits if present.
 
-SLICE 2: This module exists but run_metered_tool is NOT yet called from
-dispatch (that is slice 3). All functions are implemented and unit-tested.
+run_metered_tool IS wired: agent_interface/mcp_server.py calls it on the paid
+path (funded, non-free credit account). This line used to say the opposite -
+"SLICE 2: this module exists but run_metered_tool is NOT yet called from
+dispatch" - and stayed after the wiring landed. A comment that says a live
+billing path is not live is worse than no comment: it is the reason the next
+person does not check.
 
 Honesty invariants (must hold across all code paths):
 - preview_cost == actual charge (price_cents == what is committed)

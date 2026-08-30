@@ -488,19 +488,8 @@ def _ofac_age_note() -> str:
             f"unreachable on the last refresh")
 
 
-async def _fetch_ofac_sdn_csv() -> Optional[str]:
-    """Primary SDN names. Kept as its own function for the existing tests."""
-    return await _fetch_url(_OFAC_SDN_CSV_URL)
 
 
-async def _fetch_ofac_alt_csv() -> Optional[str]:
-    """Alternate spellings (a.k.a., f.k.a., n.k.a.).
-
-    Fetched separately because OFAC publishes them separately. If this one
-    fails we still screen, on primary names alone - and say so, rather than
-    quietly screening a smaller list than the caller believes.
-    """
-    return await _fetch_url(_OFAC_ALT_CSV_URL)
 
 
 def _parse_ofac_sdn(csv_text: str, query_name: str,

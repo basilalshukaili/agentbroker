@@ -114,8 +114,14 @@ _ONE_YEAR = 365 * _ONE_DAY
 # match the op counts the /pricing page advertises (10k / 100k / negotiated)
 # at an ~$0.05 blended cost per op, with headroom for premium ops like
 # schedule_appointment and escalate_to_human. They are NOT a billing
-# enforcement mechanism — Paddle handles that — the broker only soft-
-# throttles agents that blow past the cap.
+# enforcement mechanism - Polar, the merchant of record, handles that - the
+# broker only soft-throttles agents that blow past the cap.
+#
+# This said "Paddle handles that". Paddle was evaluated and never adopted:
+# there is no PADDLE_API_KEY and no PADDLE_WEBHOOK_SECRET in any environment,
+# so /webhooks/paddle 401s on every request (verified against production
+# 2026-08-30 - it fails closed, which is the right direction). Polar is the
+# fiat rail; x402 is the crypto one.
 _PLAN_SCOPES: dict[str, tuple[list[str], float, list[str], int]] = {
     "developer":  (["*"],    500.0, ["*"], _NINETY_DAYS),
     "business":   (["*"],   5000.0, ["*"], _NINETY_DAYS),
@@ -131,9 +137,11 @@ def issue_subscription_token(
     """
     Mint a long-lived Agent-Identity token for a paying subscriber.
 
-    Called from the Paddle webhook on `subscription.activated` and from the
-    admin `/auth/token` route. Unknown plan strings fall back to "developer"
-    so we never fail-closed on a paid customer.
+    Called from billing/polar_webhook.py on a completed order, from the
+    customer portal, and from the admin `/auth/token` route. (It said "the
+    Paddle webhook"; that rail was never adopted - see the note above
+    _PLAN_SCOPES.) Unknown plan strings fall back to "developer" so we never
+    fail-closed on a paid customer.
 
     `customer_email` is accepted for signature parity with the call sites
     (the email is consumed by the delivery layer, not embedded in the JWT
@@ -209,9 +217,35 @@ def _hydrate_revocations() -> None:
         # about it - so past the default 1000 revocations we would hydrate a
         # random subset and some refunded customers would silently keep
         # access. Newest first, and the count is checked below.
-        rows = select_rows_sync_strict("polar_order_events",
-                                       filters={"status": "revoked"},
-                                       order="ts.desc", limit=5000)
+        # PAGED, because the previous single read could not be complete.
+        #
+        # It asked for 5000 rows, logged an error if it got 5000, and then
+        # latched hydration as DONE anyway - so past that boundary the extra
+        # revocations were never loaded and never retried, and those refunded
+        # customers kept paid access for the life of the process. That is the
+        # same bug as the one this function's own comment describes, one level
+        # down: the loud log made it look handled.
+        rows = []
+        _page = 1000
+        for _p in range(50):                    # 50k revocations, then complain
+            _chunk = select_rows_sync_strict(
+                "polar_order_events", filters={"status": "revoked"},
+                order="ts.desc", limit=_page, offset=_p * _page)
+            rows.extend(_chunk)
+            if len(_chunk) < _page:
+                break
+        else:
+            # Ran out of pages rather than rows. Do NOT latch - leaving
+            # hydration incomplete means the backoff retries, which is the
+            # honest state, and this log says what a fix looks like.
+            log.error(
+                "REVOCATION_HYDRATION_INCOMPLETE after %d rows - raise the "
+                "page ceiling; hydration is NOT latched so it will retry",
+                len(rows))
+            for row in rows:
+                if row.get("customer_id"):
+                    _revoked_customer_ids.add(str(row["customer_id"]))
+            return
     except Exception as exc:  # noqa: BLE001
         # DELIBERATELY FAIL OPEN, and say so. Denying every paying customer
         # during a database blip is a worse outcome than briefly honouring a
@@ -230,11 +264,6 @@ def _hydrate_revocations() -> None:
             _revoked_customer_ids.add(str(cid))
     _revocation_hydrated = True
     log.info("revocation_hydrated count=%d", len(_revoked_customer_ids))
-    if len(rows) >= 5000:
-        log.error(
-            "REVOCATION_HYDRATION_TRUNCATED at %d rows - revocations beyond "
-            "this page are NOT loaded and those customers keep access. "
-            "Paginate this read.", len(rows))
 
 
 async def revoke_customer(
