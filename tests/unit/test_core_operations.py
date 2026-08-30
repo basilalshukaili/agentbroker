@@ -124,7 +124,13 @@ class TestPreviewCost:
         req = PreviewCostRequest(operation="schedule_appointment", params={"smb_id": "smb_001"})
         resp = run(handle_preview_cost(req))
         assert resp.estimated_cost_usd > 0
-        assert resp.cost_accuracy_slo == "±5%"
+        # WAS `== "+/-5%"`. That asserted a constant nobody measured - and it
+        # was arithmetically impossible here, where the range spans 0.15-0.50.
+        # Assert the honest contract instead: the estimate lies inside its own
+        # stated range, and the basis is declared.
+        assert (resp.cost_range["min_usd"] <= resp.estimated_cost_usd
+                <= resp.cost_range["max_usd"])
+        assert resp.cost_accuracy_slo
         assert resp.success_probability_estimate > 0
 
     def test_self_test_is_free(self):

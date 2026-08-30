@@ -105,7 +105,7 @@ The service stays **horizontal and channel-agnostic**. Early GTM sales focus:
 - Agent-Identity JWT authentication with scope enforcement
 - Compliance: consent store, opt-out lists, jurisdiction rules, 10DLC campaign scaffold, recording-consent prompts, audit log, content classifier
 - Reliability: idempotency, retries, circuit breakers, channel fallback, async job runner, signed webhook delivery
-- Billing: usage metering, preview_cost (±5% accuracy SLO), per-success pricing
+- Billing: usage metering, preview_cost (exact price, or a stated range), per-success pricing
 - Telemetry: structured logging + distributed tracing with all required spans
 - Agent-simulation harness: ≥50 tasks, ≥3 personas, WinRate computation
 - Optimization loops: manifest A/B router, failure classifier, weekly reports

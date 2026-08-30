@@ -1,7 +1,10 @@
 """
 preview_cost — core operation handler.
 Returns cost estimate, latency estimate, and success probability before execution.
-Accuracy SLO: actual cost within ±5% of preview.
+Reports the BASIS of the estimate - 'exact' for fixed prices, a
+min/max range otherwise. It does NOT promise a tolerance: nothing
+measures preview against the eventual charge, and a midpoint cannot
+be within 5% of both ends of an 11x range.
 """
 from __future__ import annotations
 
@@ -147,8 +150,17 @@ async def handle_preview_cost(
         pricing = _PRICING.get(op, {"min": 0.01, "max": 1.00, "basis": "per_call"})
     latency = _LATENCY.get(op, {"p50": 1000, "p95": 5000})
 
-    # Estimate cost: use midpoint for preview, stay within ±5% of actual
+    # Estimate: midpoint for preview. NOTE the honest caveat - for variable
+    # operations the range can be wide (send_message spans 0.02-0.22), so the
+    # midpoint is an expectation, not a bound. That is why cost_accuracy_slo
+    # below reports the BASIS rather than a percentage nobody measures.
     estimated = round((pricing["min"] + pricing["max"]) / 2, 4)
+
+    # DERIVED, not asserted. "exact" is a claim we can support: min == max means
+    # the price is fixed and the preview IS the charge. Anything else is a
+    # range, and saying so beats quoting a tolerance we never check.
+    is_exact = pricing["min"] == pricing["max"]
+    accuracy = "exact" if is_exact else "range: see cost_range (min/max)"
 
     return PreviewCostResponse(
         estimated_cost_usd=estimated,
@@ -157,5 +169,5 @@ async def handle_preview_cost(
         estimated_latency_p95_ms=latency["p95"],
         success_probability_estimate=_SUCCESS_PROB.get(op, 0.90),
         channel_likely=_CHANNEL_LIKELY.get(op, "auto"),
-        cost_accuracy_slo="±5%",
+        cost_accuracy_slo=accuracy,
     )

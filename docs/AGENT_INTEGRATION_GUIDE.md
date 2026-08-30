@@ -32,7 +32,7 @@ Store the token; it's good for 24 hours by default. Re-issue when expired.
 
 ## Step 1: Always call `preview_cost` first
 
-`preview_cost` is **free** and ±5% accurate. Use it before every state-changing operation.
+`preview_cost` is **free** and returns the exact price when fixed, or a min/max range when it depends on channel or outcome. Use it before every state-changing operation.
 
 ```python
 preview = httpx.post(
@@ -42,7 +42,7 @@ preview = httpx.post(
 print(preview)
 # {
 #   "estimated_cost_usd": 0.625,
-#   "cost_accuracy_slo": "±5%",
+#   "cost_accuracy_slo": "exact",
 #   "estimated_latency_p50_ms": 2500,
 #   "success_probability_estimate": 0.87,
 #   "execution_profile": "async_by_default",

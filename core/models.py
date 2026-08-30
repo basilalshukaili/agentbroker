@@ -587,7 +587,16 @@ class PreviewCostResponse(BaseModel):
     estimated_latency_p95_ms: int
     success_probability_estimate: float
     channel_likely: str
-    cost_accuracy_slo: str = "±5%"
+    # WAS `= "+/-5%"`. That is a NUMERIC PUBLIC PROMISE and nothing anywhere
+    # measured it - no comparison of preview against the eventual charge exists
+    # in this codebase. It was also arithmetically impossible for the variable
+    # operations: send_message ranges 0.02-0.22, an 11x spread, and a midpoint
+    # cannot be within 5% of both ends.
+    #
+    # It now describes the BASIS of the estimate, which is a fact we actually
+    # know: "exact" when the price is fixed, "range" when it depends on the
+    # channel or outcome. No default - the caller of this model must state which.
+    cost_accuracy_slo: str
 
 
 # ---------------------------------------------------------------------------

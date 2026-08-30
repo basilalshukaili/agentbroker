@@ -119,7 +119,16 @@ async def _check_preview_cost() -> TestCheck:
         from core.models import PreviewCostRequest
         req = PreviewCostRequest(operation="schedule_appointment", params={"smb_id": "smb_001"})
         resp = await handle_preview_cost(req)
-        ok = resp.estimated_cost_usd >= 0 and resp.cost_accuracy_slo == "±5%"
+        # WAS: `and resp.cost_accuracy_slo == "+/-5%"`. That asserted a
+        # constant equals itself - it "verified" the accuracy promise by
+        # confirming we had made it, which is not a check of anything.
+        # Assert the estimate is inside its own stated range instead, which is
+        # a property that can actually be false.
+        _lo = resp.cost_range.get("min_usd", 0.0)
+        _hi = resp.cost_range.get("max_usd", 0.0)
+        ok = (resp.estimated_cost_usd >= 0
+              and _lo <= resp.estimated_cost_usd <= _hi
+              and bool(resp.cost_accuracy_slo))
         return TestCheck("preview_cost", ok, round((time.time() - start) * 1000, 2),
                          "" if ok else "Unexpected preview_cost response.")
     except Exception as e:

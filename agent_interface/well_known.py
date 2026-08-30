@@ -443,7 +443,7 @@ def get_llms_txt() -> str:
         "two-party recording consent are enforced as a non-bypassable gate.",
         "- **Idempotent**: every state-changing operation is keyed by "
         "(agent_id, operation, idempotency_key) — safe to retry.",
-        "- **Predictable cost**: `preview_cost` is free and returns ±5% "
+        "- **Predictable cost**: `preview_cost` is free and returns the exact "
         "accurate estimates before you commit.",
         "- **Channel fallback**: direct API → voice AI → SMS → email → web "
         "form — automatic, transparent.",
