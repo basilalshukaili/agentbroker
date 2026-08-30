@@ -265,11 +265,26 @@ async def _screen_party(party_name: str) -> dict:
         from core.screen_sanctions import handle_screen_sanctions
         receipt = await handle_screen_sanctions(name=party_name)
         res = receipt.result or {}
+        # CARRY THE UNAVAILABILITY FORWARD. screen_sanctions spends real care
+        # building sources_unavailable and reason_code="partial_screening" -
+        # it is how a caller tells "we screened and found nothing" from "we
+        # could not screen this". Both were dropped on the floor here, and
+        # `restricted` further down is computed from party_restrictions alone,
+        # so every list being dark produced restricted=false and "No party
+        # matches found".
+        #
+        # That defeats the entire defence built into the tool this calls, on a
+        # compliance receipt, for the caller least able to notice.
         return {
             "party": _ascii(party_name),
             "matched": bool(res.get("matched", False)),
             "matches": res.get("matches", []),
             "sources_queried": res.get("sources_queried", []),
+            "sources_unavailable": res.get("sources_unavailable", []),
+            "possible_matches_unverified": res.get(
+                "possible_matches_unverified", []),
+            "screening_complete": not res.get("sources_unavailable"),
+            "reason_code": getattr(receipt, "reason_code", None),
         }
     except Exception as exc:  # noqa: BLE001
         return {
@@ -411,6 +426,19 @@ async def handle_map_trade_restriction(
     all_restrictions: list[dict] = dest_restrictions + party_restrictions
     restricted = dest_restricted or bool(party_restrictions)
 
+    # WHICH PARTIES WERE ACTUALLY SCREENED. `restricted` is computed from
+    # findings alone, so a party we could not screen at all contributes
+    # nothing and the receipt reads "no party matches found" - the same
+    # answer as a party we screened and cleared.
+    party_screening_gaps: list[str] = []
+    for pr in parties_screened:
+        for u in pr.get("sources_unavailable") or []:
+            party_screening_gaps.append(f"{pr.get('party')}: {u}")
+        if pr.get("error"):
+            party_screening_gaps.append(
+                f"{pr.get('party')}: screening failed ({pr['error']})")
+    parties_fully_screened = not party_screening_gaps
+
     # --- 4. HS code hint ----------------------------------------------------
     # We do NOT derive HS codes from text (would risk fabrication).
     # If the caller provided hs_code, echo it (caller's responsibility).
@@ -438,6 +466,8 @@ async def handle_map_trade_restriction(
 
     result_payload: dict = {
         "restricted": restricted,
+        # A CLEAR IS ONLY A CLEAR IF EVERY PARTY WAS SCREENED.
+        "parties_fully_screened": parties_fully_screened,
         "restrictions": all_restrictions,
         "hs_code_hint": hs_code_hint,
         "destination_risk": destination_risk,
@@ -514,6 +544,26 @@ async def handle_map_trade_restriction(
             f"BIS/EU/UK controls before shipping."
         )
         reason_code = "partial"
+
+    # AND SAY IT WHEN A PARTY COULD NOT BE SCREENED AT ALL.
+    #
+    # This receipt used to drop screen_sanctions' sources_unavailable entirely,
+    # so a party whose lists were ALL dark contributed nothing and read exactly
+    # like a party that was screened and cleared. The sentence a human reads
+    # said "No party matches found" either way.
+    #
+    # It applies to every branch, not just the partial one: a destination that
+    # is merely advisory, with an unscreenable party, is not a cleaner result
+    # than a restricted one.
+    if party_screening_gaps:
+        human_message += (
+            f" WARNING: {len(party_screening_gaps)} party screening gap(s) - "
+            f"these parties were NOT fully screened, so the absence of a match "
+            f"for them means nothing: "
+            + "; ".join(party_screening_gaps[:3])
+        )
+        if reason_code not in ("restricted",):
+            reason_code = "partial"
 
     return OutcomeReceipt(
         operation_id=op_id,

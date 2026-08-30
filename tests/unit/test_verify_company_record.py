@@ -278,7 +278,19 @@ class TestFailOpen:
         assert result.status in (OperationStatus.SUCCESS, OperationStatus.FAILURE)
         # sources_unavailable or not_found is acceptable -- never a crash
 
-    def test_both_upstreams_timeout_returns_not_found(self):
+    def test_both_upstreams_down_is_not_reported_as_not_found(self):
+        """Fail open, yes. Assert a negative, no.
+
+        This test used to require reason_code == "not_found" when BOTH
+        registries timed out - encoding the defect as the contract. The tool
+        answered "No registry record found for X. The company may not be a
+        legal entity registered with these free registries", with
+        sources_unavailable EMPTY, having reached neither registry.
+
+        A registered company confidently described as unregistered, by a tool
+        sold for company verification. Failing open means still answering; it
+        does not mean answering something we did not check.
+        """
         import httpx
 
         async def _raise(*args, **kwargs):
@@ -288,8 +300,36 @@ class TestFailOpen:
             with patch("core.verify_company_record._edgar_search", side_effect=_raise):
                 result = run(handle_verify_company_record(name="Some Corp"))
 
+        # Still fails open - never raises, always returns a receipt.
         assert result.status == OperationStatus.SUCCESS
+
+        assert result.reason_code != "not_found", (
+            "both registries were unreachable and the tool still reported "
+            "'not_found' - that is a claim about the company, made without "
+            "reaching a single registry")
+        assert result.reason_code == "partial_lookup"
+        assert result.retriable is True, (
+            "an outage is retriable; a genuine absence is not")
+
+        payload = result.result or {}
+        assert payload.get("status") == "unavailable"
+        assert payload.get("sources_unavailable"), (
+            "the caller cannot tell an outage from an absence without this")
+        assert "NOT evidence" in (result.human_message or "")
+
+    def test_a_real_absence_is_still_reported_as_not_found(self):
+        """Guard the guard: if the rule above also suppressed genuine misses,
+        the tool would never say 'not found' about anything."""
+        async def _none(*args, **kwargs):
+            return None
+
+        with patch("core.verify_company_record._gleif_by_name", side_effect=_none):
+            with patch("core.verify_company_record._edgar_search", side_effect=_none):
+                result = run(handle_verify_company_record(name="Zzz Nope Ltd"))
+
         assert result.reason_code == "not_found"
+        assert (result.result or {}).get("status") == "not_found"
+
 
 
 # ---------------------------------------------------------------------------

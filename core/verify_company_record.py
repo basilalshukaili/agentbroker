@@ -47,6 +47,21 @@ def _clean(v) -> Optional[str]:
     return _ascii(str(v).strip()) or None
 
 
+class RegistryUnavailable(RuntimeError):
+    """The registry did not answer. NOT the same as "no record exists".
+
+    _gleif_by_name and _edgar_search each caught their own exceptions and
+    returned None, so the outer handlers that append to `sources_unavailable`
+    could only ever fire on an ImportError. With both upstreams down this tool
+    returned status "not_found" and the sentence "No registry record found for
+    X. Searched: GLEIF, SEC EDGAR" - with sources_unavailable EMPTY.
+
+    A registered company confidently reported as unregistered, by a tool sold
+    for company verification. The distinction this exception exists to keep is
+    the entire product.
+    """
+
+
 async def _gleif_by_lei(lei: str) -> Optional[dict]:
     """Direct LEI lookup. Returns the raw GLEIF entity dict or None."""
     import httpx
@@ -56,9 +71,11 @@ async def _gleif_by_lei(lei: str) -> Optional[dict]:
             resp = await client.get(url, headers={"Accept": "application/json"})
         if resp.status_code == 200:
             return resp.json().get("data")
-    except Exception:
-        pass
-    return None
+        raise RegistryUnavailable(f"GLEIF returned HTTP {resp.status_code}")
+    except RegistryUnavailable:
+        raise
+    except Exception as exc:                    # noqa: BLE001
+        raise RegistryUnavailable(f"GLEIF unreachable: {exc}") from exc
 
 
 async def _gleif_by_name(name: str, country: Optional[str] = None) -> list[dict]:
@@ -127,7 +144,7 @@ async def _edgar_search(name: str) -> Optional[dict]:
                 headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"},
             )
         if resp.status_code != 200:
-            return None
+            raise RegistryUnavailable(f"SEC EDGAR returned HTTP {resp.status_code}")
         tickers = resp.json()
         name_lower = name.lower()
         # Linear scan -- JSON is ~6 MB, ~15k entries; fast enough in memory
@@ -231,6 +248,46 @@ async def handle_verify_company_record(
 
     # --- Not found --------------------------------------------------------
     if not record:
+        # NOTHING FOUND IS NOT THE SAME AS NOTHING SEARCHED.
+        #
+        # When every registry we consulted was unavailable, "no record found"
+        # and "the company may not be a legal entity" are both unsupported -
+        # we did not look. Reporting them anyway is how a registered company
+        # gets confidently described as unregistered by a tool sold for
+        # company verification.
+        # COUNT THE REGISTRIES, do not string-match their names against URLs.
+        # My first version compared "GLEIF" against "https://api.gleif.org/..."
+        # and never matched, so the branch below could not fire - a guard that
+        # silently does nothing, which is the defect this whole file is being
+        # audited for.
+        _attempted = 1 + (1 if is_us else 0)     # GLEIF, plus EDGAR when US
+        _all_dark = len(sources_unavailable) >= _attempted
+        if _all_dark:
+            return OutcomeReceipt(
+                operation_id=op_id,
+                status=OperationStatus.SUCCESS,
+                reason_code="partial_lookup",
+                human_message=(
+                    f"COULD NOT VERIFY '{_ascii(name)}': every registry we use "
+                    f"was unavailable on this call ("
+                    + ", ".join(_ascii(u) for u in sources_unavailable)
+                    + "). This is NOT evidence that the company is "
+                      "unregistered - we did not reach any registry. Retry, "
+                      "or check GLEIF and SEC EDGAR directly."
+                ),
+                result={
+                    "status": "unavailable",
+                    "queried_name": _ascii(name),
+                    "queried_country": country_upper,
+                    "queried_lei": _clean(lei) if lei else None,
+                    "sources_queried": [_ascii(x) for x in sources_queried],
+                    "sources_unavailable": [_ascii(x) for x in sources_unavailable],
+                },
+                cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+                latency_ms=lat,
+                retriable=True,
+                trace_id=trace_id,
+            )
         return OutcomeReceipt(
             operation_id=op_id,
             status=OperationStatus.SUCCESS,
@@ -241,6 +298,9 @@ async def handle_verify_company_record(
                 + ". Searched: GLEIF global entity registry"
                 + (", SEC EDGAR" if is_us else "")
                 + ". The company may not be a legal entity registered with these free registries."
+                + (f" NOTE: {len(sources_unavailable)} source(s) were "
+                   f"unavailable, so this is a partial search."
+                   if sources_unavailable else "")
             ),
             result={
                 "status": "not_found",
