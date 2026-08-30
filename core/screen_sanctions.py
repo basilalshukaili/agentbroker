@@ -347,6 +347,33 @@ def _dataset_id_to_list_name(dataset_id: str) -> str:
 # OpenSanctions API  (primary)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# OpenSanctions circuit breaker
+# ---------------------------------------------------------------------------
+#
+# Their API is optional breadth on top of the three lists we fetch ourselves.
+# When it is failing - exhausted quota, no key, an outage - calling it anyway
+# costs ~900ms on EVERY screen and returns nothing. This stops that without
+# removing the capability.
+_OS_FAIL_THRESHOLD = 3
+_OS_COOLOFF_S = 900          # 15 min; a quota reset or a new key recovers fast
+_os_fails = {"count": 0, "until": 0.0}
+
+
+def _os_circuit_open() -> bool:
+    return _os_fails["count"] >= _OS_FAIL_THRESHOLD and time.time() < _os_fails["until"]
+
+
+def _os_record(ok: bool) -> None:
+    if ok:
+        _os_fails["count"] = 0
+        _os_fails["until"] = 0.0
+    else:
+        _os_fails["count"] += 1
+        if _os_fails["count"] >= _OS_FAIL_THRESHOLD:
+            _os_fails["until"] = time.time() + _OS_COOLOFF_S
+
+
 async def _call_opensanctions(
     name: str,
     country: Optional[str] = None,
@@ -364,6 +391,32 @@ async def _call_opensanctions(
     url = f"{_OPENSANCTIONS_BASE}/match/sanctions?threshold={_MATCH_THRESHOLD_OPENSANCTIONS}"
     sources_queried = [url]
     sources_unavailable: list[str] = []
+
+    # DO NOT SPEND A SECOND ON A SOURCE THAT IS NOT ANSWERING.
+    #
+    # Measured 2026-08-30: this call took 923ms of a 1.6s screen and returned
+    # ZERO matches, because the account's monthly quota was exhausted. Nearly
+    # two thirds of our latency, for nothing, on every single screen.
+    #
+    # After a run of consecutive failures we stop calling until the cool-off
+    # passes. The capability is not removed - the moment the quota resets or a
+    # working key is set, the next probe succeeds and normal service resumes -
+    # but a dead upstream stops taxing every caller in the meantime.
+    #
+    # We still DECLARE it unavailable, because silently dropping a source a
+    # caller believes is being screened is exactly the failure this file exists
+    # to prevent.
+    if not api_key:
+        sources_unavailable.append(
+            "OpenSanctions (no API key configured; EU/UN/UK breadth beyond our "
+            "own OFAC/EU/UK lists NOT screened)")
+        return [], sources_queried, sources_unavailable
+
+    if _os_circuit_open():
+        sources_unavailable.append(
+            "OpenSanctions (skipped: repeated failures, retrying later -- not "
+            "screened on this call)")
+        return [], sources_queried, sources_unavailable
 
     # Build entity schema -- OpenSanctions uses FtM (Follow the Money) schemas
     schema = "Thing"  # top-level; matches both Person and Organization
@@ -394,6 +447,7 @@ async def _call_opensanctions(
             resp = await client.post(url, json=payload, headers=headers)
 
         if resp.status_code == 401:
+            _os_record(False)
             sources_unavailable.append(
                 "OpenSanctions (OPENSANCTIONS_API_KEY not set or invalid -- "
                 "free key available at https://www.opensanctions.org/accounts/register/)"
@@ -401,10 +455,12 @@ async def _call_opensanctions(
             return [], sources_queried, sources_unavailable
 
         if resp.status_code == 429:
+            _os_record(False)
             sources_unavailable.append("OpenSanctions (rate-limited or quota exhausted -- EU/UN/UK lists NOT screened on this call)")
             return [], sources_queried, sources_unavailable
 
         if resp.status_code != 200:
+            _os_record(False)
             sources_unavailable.append(
                 f"OpenSanctions (HTTP {resp.status_code})"
             )
@@ -466,9 +522,11 @@ async def _call_opensanctions(
                 "source_url": source_url,
             })
 
+        _os_record(True)
         return matches, sources_queried, sources_unavailable
 
     except Exception as exc:
+        _os_record(False)
         sources_unavailable.append(f"OpenSanctions (error: {_ascii(str(exc)[:80])})")
         return [], sources_queried, sources_unavailable
 
