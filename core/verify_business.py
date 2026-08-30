@@ -53,7 +53,27 @@ async def handle_verify_business(
         result["valid_capabilities"] = list(smb.capabilities)
 
     if verified:
-        human_message = "Business verified."
+        # "Business verified." OVERSTATES WHAT THIS DID. `verified` means the
+        # capability you asked about is listed in our directory and a channel
+        # is recorded - a consistency check on our own record. Nothing
+        # contacted the business, which `verification_method:
+        # directory_lookup` already says, so the sentence beside it should not
+        # imply otherwise.
+        #
+        # It matters most for the seed entries: they are constructed from
+        # literals in supply/smb_directory.py, nobody ever confirmed them, and
+        # they used to carry a last_verified_at of a few minutes ago.
+        human_message = (
+            "Directory record is consistent: the requested capability is "
+            "listed and a contact channel is on file. This is a lookup in our "
+            "own directory - it does not contact the business or confirm it "
+            "is trading."
+        )
+        if getattr(smb, "is_demo", False):
+            human_message += (
+                " THIS IS A DEMO RECORD: it is sample data, was never "
+                "independently verified, and cannot be transacted with."
+            )
     elif not capability_confirmed:
         valid = ", ".join(smb.capabilities) if smb.capabilities else "(none registered)"
         human_message = (

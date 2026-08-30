@@ -47,7 +47,21 @@ class SMBEntry:
 
 
 def _seed_smbs() -> dict[str, SMBEntry]:
-    now = datetime.now(timezone.utc)
+    # NOT datetime.now(). These twenty entries are constructed from literals
+    # in this file; nobody verified anything. Stamping them with the current
+    # time made verify_business answer `verified: true` with
+    # `last_verified_at` a few minutes ago - so an agent reading it concluded
+    # the record had been independently confirmed TODAY, every day, for ever.
+    #
+    # A freshness stamp that is permanently fresh is harder to notice than a
+    # stale one, and this runs in production: render.yaml sets
+    # SUPPLY_SEED_MODE=demo and the loader falls back to demo for every mode
+    # except empty_strict.
+    #
+    # None is the honest value: we do not know when, because it never
+    # happened. The entries are still flagged is_demo and name-prefixed
+    # [DEMO]; this stops the third claim from contradicting the other two.
+    now = None
     smbs = [
         # --- Personal Services ---
         SMBEntry("smb_001", "Cuts & Co.", Vertical.PERSONAL_SERVICES,

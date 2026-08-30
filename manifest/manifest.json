@@ -366,7 +366,7 @@
               "channels_reachable": [
                 "direct_api:square"
               ],
-              "verification_method": "direct_api_probe"
+              "verification_method": "directory_lookup"
             }
           }
         }
