@@ -35,6 +35,8 @@ Usage:
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 import subprocess
 import sys
 
@@ -103,6 +105,33 @@ def collect() -> tuple[list[dict], list[str]]:
     return runnable, skipped
 
 
+def _ci_checkout() -> str:
+    """Run the gates against a REPO-ONLY COPY, the way CI sees the code.
+
+    WHY. I have pushed a red commit three times, and the last one was caused by
+    this exact gap: a gate passed locally and failed in CI because it reads
+    files that live in the surrounding workspace - the marketing site, the
+    public skill repo, the distribution feed - which exist on this machine and
+    do NOT exist in a repo-only checkout. Preflight ran in the workspace, saw
+    them, and said "safe to push".
+
+    A pre-push check that runs in a more generous environment than the thing it
+    is predicting is not a check; it is a second opinion from someone with more
+    information. So the gates run in a temp copy containing ONLY the repo.
+
+    `--no-sandbox` runs them in place, for when a gate genuinely needs the
+    workspace and you want to see that result too.
+    """
+    tmp = tempfile.mkdtemp(prefix="preflight-")
+    dst = os.path.join(tmp, os.path.basename(REPO))
+    shutil.copytree(REPO, dst, ignore=shutil.ignore_patterns(
+        ".git", "node_modules", "__pycache__", "*.pyc", ".pytest_cache",
+        ".venv", "dist", "distX"))
+    print(f"  (gates run against a repo-only copy, as CI sees it; "
+          f"--no-sandbox to run in place)")
+    return dst
+
+
 def main(argv: list[str]) -> int:
     runnable, skipped = collect()
 
@@ -123,10 +152,11 @@ def main(argv: list[str]) -> int:
             print(f"    {st['cmd']}{loc}")
         return 0
 
+    root = REPO if "--no-sandbox" in argv else _ci_checkout()
     print(f"\nrunning {len(runnable)} step(s) from ci.yml\n")
     failed = []
     for st in runnable:
-        cwd = os.path.join(REPO, st["cwd"]) if st["cwd"] != "." else REPO
+        cwd = os.path.join(root, st["cwd"]) if st["cwd"] != "." else root
         p = subprocess.run(st["cmd"], cwd=cwd, shell=True, capture_output=True,
                            text=True, encoding="utf-8", errors="replace")
         tail = ((p.stdout or p.stderr).strip().splitlines() or [""])[-1]

@@ -84,10 +84,27 @@ OUTSIDE = [
 
 def main() -> int:
     checked, bad, missing = 0, [], []
-    targets = [(rel, os.path.join(REPO, rel)) for rel in SURFACES]
-    targets += [(rel, os.path.join(os.path.dirname(REPO), rel)) for rel in OUTSIDE]
-    for rel, path in targets:
+    # TWO KINDS OF ABSENCE, and conflating them broke CI on the very commit
+    # that added this check.
+    #
+    # An IN-REPO path that does not exist is a typo, and it is the bug this
+    # guard was hardened for: "smithery.yaml" was declared at a root path that
+    # does not exist and skipped silently for as long as it stood, which is
+    # exactly how that listing kept a false claim through every run.
+    #
+    # An OUT-OF-REPO path that does not exist usually means we are running in a
+    # repo-only checkout - which is what CI is. Failing there would make the
+    # gate depend on the whole workspace being present, so it is reported and
+    # skipped instead. It is still checked on any machine that has them.
+    targets = [(rel, os.path.join(REPO, rel), True) for rel in SURFACES]
+    targets += [(rel, os.path.join(os.path.dirname(REPO), rel), False)
+                for rel in OUTSIDE]
+    outside_absent = []
+    for rel, path, in_repo in targets:
         if not os.path.exists(path):
+            if not in_repo:
+                outside_absent.append(rel)
+                continue
             # A DECLARED SURFACE THAT DOES NOT EXIST IS A HOLE, NOT A PASS.
             # This used to `continue`, so a typo'd path read as "checked and
             # clean" for ever - which is exactly how the Smithery listing kept
@@ -129,9 +146,13 @@ def main() -> int:
         print(f"\nWe screen {'/'.join(sorted(SCREENED))}. Say that, or add the "
               f"list to the screening code first.")
         return 1
+    note = ""
+    if outside_absent:
+        note = (f"; {len(outside_absent)} workspace surface(s) not in this "
+                f"checkout, so unchecked here: {', '.join(outside_absent)}")
     print(f"check_sanctions_claims OK -- {checked} surface(s), no claim to a "
           f"list we do not screen ({'/'.join(sorted(SCREENED))} screened, "
-          f"{'/'.join(sorted(EXCLUDED))} correctly absent)")
+          f"{'/'.join(sorted(EXCLUDED))} correctly absent){note}")
     return 0
 
 
