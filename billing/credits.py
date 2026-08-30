@@ -349,10 +349,11 @@ async def run_metered_tool(
         # Tool failed -- release hold, no charge
         try:
             rel_result = await release(hold_id, reason="tool_failure")
-            balance_after = rel_result.get("balance_after", 0)
+            # Same rule as the commit path: a missing key is UNKNOWN, not zero.
+            balance_after = rel_result.get("balance_after")
         except Exception as exc:
             log.error("credits release failed hold=%s err=%s", hold_id, exc)
-            balance_after = 0
+            balance_after = None
         actual_charged = 0
     else:
         # Tool succeeded -- commit actual cost
@@ -391,7 +392,9 @@ async def run_metered_tool(
 
         try:
             commit_result = await commit(hold_id, actual_cents)
-            balance_after = commit_result.get("balance_after", 0)
+            # None, not 0. A missing key means the ledger did not tell us the
+            # balance - which is not the same as the balance being zero.
+            balance_after = commit_result.get("balance_after")
         except Exception as exc:
             log.error("credits commit failed hold=%s err=%s", hold_id, exc)
             # Could not confirm -- attempt release to avoid permanent hold
@@ -399,7 +402,15 @@ async def run_metered_tool(
                 await release(hold_id, reason="commit_failed")
             except Exception:
                 pass
-            balance_after = 0
+            # WAS `balance_after = 0`, AND THAT NUMBER REACHED THE CUSTOMER
+            # TWICE. It went onto the receipt, so someone holding 50,000
+            # credits was told their balance was zero; and it fell through the
+            # low-balance test below, which emailed them a warning about
+            # running out - on the strength of a number we invented because a
+            # write failed.
+            #
+            # Unknown is a value. It is the honest one here.
+            balance_after = None
         actual_charged = actual_cents
 
     # --- Step 4: Attach credits info to receipt ---
@@ -409,10 +420,19 @@ async def run_metered_tool(
             "charged": actual_charged,
             "balance": balance_after,
         }
+        if balance_after is None:
+            receipt["credits"]["balance_note"] = (
+                "Your balance could not be confirmed on this call - the charge "
+                "was applied but the ledger did not return a balance. This is "
+                "NOT a balance of zero. Check the portal for the real figure.")
 
     # --- Step 5: Fire low-balance nudge (slice 6) ---
     # Non-blocking; never raises. Dedup enforced by low_balance_notified_at (24h).
-    if not is_error and balance_after < 500:
+    # `balance_after is not None` FIRST. This test used to run against a
+    # fabricated zero and email the customer a low-balance warning whenever a
+    # commit failed - telling someone with a full account that they were
+    # nearly out.
+    if not is_error and balance_after is not None and balance_after < 500:
         try:
             import asyncio as _asyncio
             _asyncio.create_task(_maybe_low_balance_nudge(account_id, balance_after))

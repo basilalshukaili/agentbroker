@@ -410,6 +410,8 @@ def _word_match_score(query: str, candidate: str) -> float:
 # because a screen against yesterday's list beats no screen at all.
 _LIST_TTL_S = 6 * 3600
 _list_cache: dict[str, tuple[float, str]] = {}
+# How stale the copy we last SERVED was, so the receipt can say so.
+_stale_ages: dict[str, float] = {}
 
 
 def list_cache_age_s(url: str) -> Optional[float]:
@@ -444,10 +446,37 @@ async def _fetch_url(url: str, allow_stale: bool = True) -> Optional[str]:
     except Exception:
         pass
 
-    # Refresh failed. A list from a few hours ago is still a real screen.
+    # Refresh failed. A list from a few hours ago is still a real screen -
+    # but "a few hours" was never enforced. This served the last good copy
+    # INDEFINITELY, with no age reported anywhere, while the EU and UK lists
+    # refuse to answer past 7 days and stamp their age on every response. A
+    # long-running process with Treasury unreachable would have screened
+    # against a weeks-old SDN list and called it current.
+    #
+    # Same rule for all three lists now.
     if hit and allow_stale:
+        age_s = now - hit[0]
+        if age_s > _STALE_AFTER_DAYS * 86400:
+            return None                         # too old to be a screen
+        _stale_ages[url] = age_s
         return hit[1]
     return None
+
+
+def _ofac_age_note() -> str:
+    """State the age of the OFAC copy we served, when it was not fresh.
+
+    EU and UK stamp their index age on every response. OFAC said nothing at
+    all, so a cached copy served after a Treasury outage was reported exactly
+    like a live fetch.
+    """
+    ages = [a for u, a in _stale_ages.items()
+            if u in (_OFAC_SDN_CSV_URL, _OFAC_ALT_CSV_URL)]
+    if not ages:
+        return "; fetched fresh"
+    hrs = max(ages) / 3600.0
+    return (f"; served from a cached copy {hrs:.0f}h old - Treasury was "
+            f"unreachable on the last refresh")
 
 
 async def _fetch_ofac_sdn_csv() -> Optional[str]:
@@ -1328,7 +1357,8 @@ async def handle_screen_sanctions(
     if not ofac_unavail:
         screened_lists.append(
             "OFAC-SDN (US Treasury Specially Designated Nationals, "
-            "published by sanctionslistservice.ofac.treas.gov)"
+            "published by sanctionslistservice.ofac.treas.gov"
+            + _ofac_age_note() + ")"
         )
     # NAME EACH LIST THAT ACTUALLY RAN. A caller with a European obligation
     # needs to know whether the EU list was screened on THIS call, not whether
