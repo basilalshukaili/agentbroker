@@ -146,6 +146,15 @@ jobs:
       - name: Published counts match reality
         run: python scripts/check_counts.py
 
+      # manifest/mcp_tools.json is the catalogue registry submissions are
+      # built from. It was maintained by hand, a sync log flagged it as
+      # "Never regenerated" on 2026-08-16, and two weeks later it was still
+      # stale at 18 tools against 20 - carrying three capability claims that
+      # check_pricing bans everywhere else. It is derived now; this fails if
+      # anyone lets it drift again.
+      - name: Tool catalogue is derived, not hand-maintained
+        run: python scripts/gen_mcp_tools.py --check
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

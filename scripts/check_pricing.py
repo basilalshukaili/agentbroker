@@ -58,6 +58,37 @@ _SCAN_FILES += sorted(
     if p.is_file()
 )
 
+# --- AND THE THREE PLACES THE BANNED STRINGS ACTUALLY SURVIVED IN ----------
+#
+# The globbing argument above was right and stopped one file short. An audit
+# found every one of these carrying a string this guard already forbids:
+#
+#   * manifest/mcp_tools.json - "curated, verified, transactable", the exact
+#     phrase banned at line 171, in a file both check_branding and
+#     check_sanctions_claims treat as published;
+#   * web_hatchloop_v2/src/app/llms.txt/route.ts - three pinned
+#     buy.polar.sh/polar_cl_ checkout links, banned at line 175, in the file
+#     AGENTS read. They had been removed from the two site pages this guard
+#     did scan and left in the one it did not;
+#   * mcp-data-tools/page.tsx - "Search verified SMBs" and "against live
+#     sources", both banned capability claims.
+#
+# Two site pages were enumerated by hand; the rest of the site was invisible.
+# Same failure, one level out.
+_SCAN_FILES += sorted(
+    p for p in (_AGENTBROKER_DIR / "manifest").glob("*.json") if p.is_file()
+)
+_SCAN_FILES += sorted(
+    p for p in (_AGENTBROKER_DIR / "edge" / "src" / "snapshots").iterdir()
+    if p.is_file() and p.suffix in (".json", ".txt")
+)
+_SITE_APP = _REPO_ROOT / "web_hatchloop_v2" / "src"
+if _SITE_APP.is_dir():
+    _SCAN_FILES += sorted(
+        p for p in _SITE_APP.rglob("*.ts*")
+        if p.is_file() and "node_modules" not in p.parts
+    )
+
 # THE EDGE WORKER SOURCES, for the same reason and with a live example.
 #
 # hatchloop.dev is served by a Cloudflare worker in front of the origin, and it
