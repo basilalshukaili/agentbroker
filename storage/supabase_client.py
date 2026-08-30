@@ -155,6 +155,98 @@ _PASSTHROUGH_OPS = frozenset({
 })
 
 
+class SupabaseUnavailable(RuntimeError):
+    """The query did not run. NOT the same as "the query returned nothing"."""
+
+
+# WHY THE STRICT VARIANTS EXIST.
+#
+# select_rows() returns [] on every failure - no config, network error, non-200
+# - and is contractually incapable of raising. That is the right default for a
+# display path: a dashboard should degrade, not crash.
+#
+# It is the WRONG default for a safety path, and worse, it makes the correct
+# defence look like it is present. Callers across this codebase wrote
+#
+#     try:
+#         rows = await select_rows(...)
+#     except Exception:
+#         rows = None            # distinguish failure from empty
+#
+# and every one of those handlers is DEAD CODE. I wrote one of them myself,
+# this morning, in the sanctions screen - as the fix for a bug whose whole
+# lesson was that an empty result and an unavailable source must never look
+# alike. The guard could not fire.
+#
+# Found by an adversarial review of the same day's work. The instances that
+# matter: a refunded customer keeps paid access because the revocation list
+# read as empty; opt-outs un-suppress after a redeploy because hydration read
+# as empty; a sanctions list reports as SCREENED because the index read as
+# empty.
+#
+# So: strict variants that RAISE, for the paths where "I could not check" must
+# never be mistaken for "I checked and there was nothing".
+
+
+async def select_rows_strict(table: str, **kw) -> list[dict]:
+    """select_rows, but a failed query RAISES instead of returning []."""
+    url, key = _get_config()
+    if not url or not key:
+        raise SupabaseUnavailable(f"no Supabase config; {table} was not queried")
+    try:
+        import httpx
+        params = _select_params(**kw)
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"{url}/rest/v1/{table}",
+                headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                params=params,
+            )
+    except Exception as exc:                    # noqa: BLE001
+        raise SupabaseUnavailable(f"{table} unreachable: {exc}") from exc
+    if resp.status_code != 200:
+        raise SupabaseUnavailable(
+            f"{table} returned HTTP {resp.status_code}, so it was not queried")
+    return resp.json() or []
+
+
+def select_rows_sync_strict(table: str, **kw) -> list[dict]:
+    """Synchronous select_rows_strict, for import-time and non-async callers."""
+    url, key = _get_config()
+    if not url or not key:
+        raise SupabaseUnavailable(f"no Supabase config; {table} was not queried")
+    try:
+        import httpx
+        with httpx.Client(timeout=8.0) as client:
+            resp = client.get(
+                f"{url}/rest/v1/{table}",
+                headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                params=_select_params(**kw),
+            )
+    except Exception as exc:                    # noqa: BLE001
+        raise SupabaseUnavailable(f"{table} unreachable: {exc}") from exc
+    if resp.status_code != 200:
+        raise SupabaseUnavailable(
+            f"{table} returned HTTP {resp.status_code}, so it was not queried")
+    return resp.json() or []
+
+
+def _select_params(filters=None, limit: int = 1000, order=None, gte=None) -> dict:
+    """Query-string builder shared by the lenient and strict readers, so the
+    two can never encode a filter differently."""
+    params: dict[str, Any] = {"limit": limit}
+    if order:
+        params["order"] = order
+    if gte:
+        for col, val in gte.items():
+            params[col] = f"gte.{val}"
+    if filters:
+        for col, val in filters.items():
+            sval = str(val)
+            params[col] = sval if sval.split(".", 1)[0] in _PASSTHROUGH_OPS                 else f"eq.{val}"
+    return params
+
+
 async def select_rows(
     table: str,
     filters: Optional[dict[str, Any]] = None,

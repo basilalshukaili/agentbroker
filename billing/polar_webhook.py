@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import asyncio
 import logging
 import os
 import time
@@ -248,6 +249,46 @@ async def _handle_revoke_event(event_type: str, data: dict[str, Any]) -> None:
         logger.exception("polar_revoke_failed customer=%s err=%s", customer_id, e)
 
 
+async def _record_ungranted_order(order_id: str, account_id: str, credits: int,
+                                  email: str, error: str) -> None:
+    """A paid order whose credits did not land. Make it recoverable and loud.
+
+    Three places, because the reason the grant failed is usually that one of
+    them is the thing that is down:
+      * the durable table, so a human or a sweeper can replay it;
+      * the log, at ERROR;
+      * Telegram, because a customer who paid and got nothing will not wait
+        for someone to read a log.
+
+    The order id is included everywhere: it is the idempotency key, so
+    replaying the grant with it cannot double-credit.
+    """
+    try:
+        from storage.supabase_client import insert_row
+        await insert_row("ungranted_orders", {
+            "order_id": order_id,
+            "account_id": account_id,
+            "credits": credits,
+            "email": email,
+            "error": error,
+        })
+    except Exception as exc:                    # noqa: BLE001
+        logger.error("ungranted_order_not_recorded order=%s err=%s", order_id, exc)
+    try:
+        from billing.telegram_revenue_alerts import send_telegram_alert
+        await send_telegram_alert(
+            f"PAID ORDER DID NOT DELIVER\n\n"
+            f"order: {order_id}\n"
+            f"account: {account_id}\n"
+            f"credits owed: {credits}\n"
+            f"error: {error[:160]}\n\n"
+            f"The customer has been charged and has an API key with NO "
+            f"credits. Replay with idempotency_key={order_id} - it cannot "
+            f"double-credit.")
+    except Exception:                           # noqa: BLE001
+        pass
+
+
 async def handle_polar_event(event: dict[str, Any]) -> None:
     """Dispatch a verified Polar event. On a paid order/subscription, mint an
     Agent-Identity token, email it, and fire the Telegram revenue alert. Never
@@ -336,17 +377,53 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
             )
             if pkg_credits > 0 and order_id:
                 credit_account = f"sub_{customer_id}"
-                await _credit_grant(
-                    account_id=credit_account,
-                    amount=pkg_credits,
-                    source="polar",
-                    idempotency_key=order_id,
-                    order_id=order_id,
-                )
-                logger.info(
-                    "polar_credit_grant_applied account=%s credits=%d order_id=%s",
-                    credit_account, pkg_credits, order_id,
-                )
+                # A FAILED GRANT USED TO BE A LOG LINE AND NOTHING ELSE.
+                #
+                # The outer `except` caught it, execution carried on to email
+                # the customer their API key and fire the revenue alert, and
+                # the route returned 200 - which this webhook does on purpose
+                # so Polar does not retry. Net effect: the customer paid, got
+                # a key, got a welcome email, and had ZERO credits for ever.
+                # Nothing retried it and nothing surfaced it.
+                #
+                # The grant is idempotent on order_id, so retrying is safe.
+                # After the retries, an unfixed grant is escalated rather than
+                # logged: a paid order that did not deliver is not an
+                # operational detail, it is somebody's money.
+                _granted, _last_err = False, None
+                for _attempt in range(3):
+                    try:
+                        await _credit_grant(
+                            account_id=credit_account,
+                            amount=pkg_credits,
+                            source="polar",
+                            idempotency_key=order_id,
+                            order_id=order_id,
+                        )
+                        _granted = True
+                        break
+                    except Exception as _ge:    # noqa: BLE001
+                        _last_err = _ge
+                        logger.warning(
+                            "polar_credit_grant_attempt_failed attempt=%d "
+                            "order=%s err=%s", _attempt + 1, order_id, _ge)
+                        if _attempt < 2:
+                            await asyncio.sleep(1.5 * (_attempt + 1))
+
+                if _granted:
+                    logger.info(
+                        "polar_credit_grant_applied account=%s credits=%d order_id=%s",
+                        credit_account, pkg_credits, order_id,
+                    )
+                else:
+                    logger.error(
+                        "POLAR_CREDIT_GRANT_UNRECOVERED account=%s credits=%d "
+                        "order_id=%s err=%s -- CUSTOMER PAID AND HAS NO CREDITS",
+                        credit_account, pkg_credits, order_id, _last_err)
+                    await _record_ungranted_order(
+                        order_id=order_id, account_id=credit_account,
+                        credits=pkg_credits, email=email or "",
+                        error=str(_last_err)[:300])
             elif pkg_credits <= 0:
                 logger.warning(
                     "polar_credit_grant_skipped: no credits resolved for "

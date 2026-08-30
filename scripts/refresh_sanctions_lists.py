@@ -36,6 +36,7 @@ import io
 import json
 import os
 import subprocess
+import tempfile
 import sys
 import urllib.error
 import urllib.request
@@ -72,51 +73,75 @@ def _fetch(url: str) -> str:
 
     THIS FUNCTION SHIPPED BROKEN AND I CAUGHT IT WITHIN THE HOUR. It ran curl,
     decoded stdout, and ignored both the exit code and stderr. Two downloads
-    seconds apart returned 25.2MB and 19.9MB - the EU feed had not changed, the
-    transfer was being cut short - and curl said so on stderr, into the void.
+    seconds apart returned 25.2MB and 19.9MB - the EU feed had not changed,
+    the transfer was being cut short - and curl said so on stderr, into the
+    void.
 
     A truncated sanctions list is the most dangerous failure this product has.
     It does not error. It loads, it looks healthy, the row count is large, and
     the tool answers "no match" with full confidence about a name that was in
-    the part that never arrived. The customer discovers it, in the worst way.
+    the part that never arrived.
 
-    So three independent checks, because any one of them can be fooled:
-      * curl's own exit code, with --fail and retries;
-      * bytes received == Content-Length, when the server sends one (this feed
-        does: 25,166,172 bytes). This is the check that catches the exact bug;
-      * a floor on the body size, for a server that sends no length at all.
+    THEN THE FIX ITSELF WAS WRONG, in a way worth keeping written down. It
+    asked for the headers in a SEPARATE request and compared that
+    Content-Length against a second, later download. The EU endpoint is
+    genuinely unstable - it has served 25.2MB, 19.9MB and a timeout within
+    minutes - so the two requests could legitimately disagree, and the check
+    then reported "TRUNCATED, -19169024 missing" for a body that was LARGER
+    than declared. A guard whose own failure mode is a false alarm gets
+    switched off, and it also doubled the bytes we pull from a public feed.
+
+    One request now. The headers and the body come from the same response, so
+    they cannot describe different downloads.
     """
-    head = subprocess.run(
-        ["curl", "-sS", "-L", "--fail", "--retry", "3", "--retry-all-errors",
-         "-D", "-", "-o", os.devnull, "--max-time", "120", url],
-        capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=180)
-    expect = None
-    for line in (head.stdout or "").splitlines():
-        if line.lower().startswith("content-length:"):
-            try:
-                expect = int(line.split(":", 1)[1].strip())
-            except ValueError:
-                pass
+    fd, hdr_path = tempfile.mkstemp(suffix=".hdr")
+    os.close(fd)
+    try:
+        p = subprocess.run(
+            ["curl", "-sS", "-L", "--fail", "--retry", "3",
+             "--retry-all-errors", "-D", hdr_path, "--max-time", "300", url],
+            capture_output=True, timeout=360)
+        got = len(p.stdout)
 
-    p = subprocess.run(
-        ["curl", "-sS", "-L", "--fail", "--retry", "3", "--retry-all-errors",
-         "--max-time", "300", url],
-        capture_output=True, timeout=360)
-    got = len(p.stdout)
+        if p.returncode != 0:
+            raise ShortRead(
+                f"curl exit {p.returncode}: "
+                f"{(p.stderr or b'').decode('utf-8', 'replace').strip()[:200]}")
 
-    if p.returncode != 0:
-        raise ShortRead(f"curl exit {p.returncode}: "
-                        f"{(p.stderr or b'').decode('utf-8', 'replace').strip()[:200]}")
-    if expect is not None and got != expect:
-        raise ShortRead(f"got {got} bytes, server declared {expect} "
-                        f"({expect - got} missing) - TRUNCATED")
-    if got < 1_000_000:
-        raise ShortRead(f"only {got} bytes; a sanctions list is never this small")
+        # Content-Length from THIS response. A redirect chain writes several
+        # header blocks into the file, so the LAST one is the one that
+        # described the body we actually received.
+        expect = None
+        with open(hdr_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.lower().startswith("content-length:"):
+                    try:
+                        expect = int(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        pass
 
-    print(f"  downloaded {got/1e6:.1f} MB"
-          + (" (matches Content-Length)" if expect is not None else " (no length header)"))
-    return p.stdout.decode("utf-8-sig", errors="replace")
+        if expect is not None and got < expect:
+            raise ShortRead(f"got {got} bytes, server declared {expect} "
+                            f"({expect - got} missing) - TRUNCATED")
+        if got < 1_000_000:
+            raise ShortRead(
+                f"only {got} bytes; a sanctions list is never this small")
+
+        if expect is None:
+            note = "no length header"
+        elif got == expect:
+            note = "matches Content-Length"
+        else:
+            # Larger than declared is not truncation. It happens with chunked
+            # or compressed responses; say what we saw rather than guess.
+            note = f"Content-Length said {expect/1e6:.1f} MB, body was larger"
+        print(f"  downloaded {got/1e6:.1f} MB ({note})")
+        return p.stdout.decode("utf-8-sig", errors="replace")
+    finally:
+        try:
+            os.unlink(hdr_path)
+        except OSError:
+            pass
 
 
 def _rows_for(records: list[dict], list_code: str, stamp: str) -> list[dict]:
@@ -189,6 +214,21 @@ def _upsert(env: dict, rows: list[dict]) -> int:
                 os.unlink(tmp)
             except OSError:
                 pass
+        # CHECK THE EXIT CODE, NOT JUST THE BODY.
+        #
+        # With `Prefer: return=minimal` a SUCCESSFUL PostgREST write returns an
+        # empty body. A curl failure - DNS, timeout, connection refused - also
+        # produces empty stdout. Identical. So a total network outage made this
+        # function report every batch as written, and the caller printed
+        # "upserted 23941" having written nothing.
+        #
+        # That is the same defect as the truncated download two functions up,
+        # in the file where I fixed it. Found by an adversarial review of this
+        # morning's work, which is the only reason it is not still here.
+        if p.returncode != 0:
+            print(f"  batch {i//BATCH + 1} FAILED: curl exit {p.returncode}: "
+                  f"{(p.stderr or '').strip()[:180]}")
+            return done
         body = (p.stdout or "").strip()
         if body and not body.startswith("["):
             print(f"  batch {i//BATCH + 1} FAILED: {body[:200]}")
@@ -208,10 +248,12 @@ def _count(env: dict, list_code: str) -> str:
                         "-H", "Prefer: count=exact", "-H", "Range: 0-0"],
                        capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=90)
+    if p.returncode != 0:
+        return f"UNKNOWN (count query failed: curl exit {p.returncode})"
     for line in (p.stdout or "").splitlines():
         if line.lower().startswith("content-range"):
             return line.split("/")[-1].strip()
-    return "?"
+    return "UNKNOWN (no content-range header)"
 
 
 def _count_at(env: dict, list_code: str, stamp: str) -> int:

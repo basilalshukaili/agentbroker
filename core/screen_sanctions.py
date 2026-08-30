@@ -58,7 +58,6 @@ from core.models import CostRecord, OperationStatus, OutcomeReceipt
 # Constants
 # ---------------------------------------------------------------------------
 
-_OPENSANCTIONS_BASE = "https://api.opensanctions.org"
 # OpenSanctions publishes free bulk data (no API key needed) at a stable URL.
 # Updated daily. 7.5MB CSV with id, schema, name, aliases, sanctions, program_ids.
 # This is derived from the official OFAC SDN XML published by US Treasury.
@@ -110,7 +109,6 @@ _DATASET_NAMES: dict[str, str] = {
 }
 
 # Match score threshold -- results below this are not returned as hits
-_MATCH_THRESHOLD_OPENSANCTIONS = 0.70
 _MATCH_THRESHOLD_OFAC = 0.60
 
 
@@ -127,9 +125,20 @@ def _ascii(s: str) -> str:
         screen_sanctions("Сбербанк")  -> "MATCH FOUND for '????????'"
         screen_sanctions("حزب الله")   -> "MATCH FOUND for '??? ????'"
 
-    The MATCHING was fine - OpenSanctions handles those scripts upstream - but
-    the receipt is the audit artefact, and an audit record that cannot say what
-    was screened is not an audit record. "Wire-safe" was never a real
+    THE MATCHING IS NOT FINE, AND THIS COMMENT USED TO SAY IT WAS. It read
+    "OpenSanctions handles those scripts upstream" - true when written, and
+    false from the moment that dependency was removed. Nobody re-checked,
+    because the comment said there was nothing to check.
+
+    What is actually true now: _normalize_name reduces to [a-z0-9 ], so a
+    Cyrillic, Arabic or CJK name normalises to NOTHING and cannot match any
+    index entry. That is handled honestly rather than silently - see
+    _is_screenable, which reports such a name as NOT SCREENED instead of
+    returning a clean result - but it is a real coverage gap, not a solved
+    problem. Transliteration is the fix and it is not built yet.
+
+    The receipt is the audit artefact, and an audit record that cannot say
+    what was screened is not an audit record. "Wire-safe" was never a real
     constraint: MCP responses are JSON, and JSON is UTF-8 by definition.
 
     For an Oman-registered company whose home market writes in Arabic, silently
@@ -349,11 +358,6 @@ def _word_match_score(query: str, candidate: str) -> float:
     # Until then this is a heuristic that is honest about being one, and every
     # result carries "Verify against the official source before acting".
     return overlap / len(q_words)
-
-
-def _dataset_id_to_list_name(dataset_id: str) -> str:
-    """Map an OpenSanctions dataset ID to a human-readable list name."""
-    return _DATASET_NAMES.get(dataset_id, _ascii(dataset_id).upper())
 
 
 # ---------------------------------------------------------------------------
@@ -658,12 +662,17 @@ def _eu_parse(raw: str) -> list[dict]:
             if (eid, nm) in seen:
                 continue
             seen.add((eid, nm))
-            st = (r[iType] if iType < len(r) else "").lower()
+            # THIS COLUMN HOLDS A CODE, NOT A WORD. It contains "P" or "E";
+            # the test was `st.startswith("person")`, which is False for
+            # every row ever published, so all 23,941 EU entries were typed
+            # ENTITY - including every individual. The word "person" lives in
+            # the NEXT column, Entity_SubjectType_ClassificationCode.
+            st = (r[iType] if iType < len(r) else "").strip().upper()
             out.append({
                 "name": nm,
                 "entity_id": eid,
                 "programme": (r[iProg].strip()[:80] if iProg and iProg < len(r) else ""),
-                "etype": "INDIVIDUAL" if st.startswith("person") else "ENTITY",
+                "etype": "INDIVIDUAL" if st == "P" else "ENTITY",
                 "countries": sorted(ent_countries.get(eid, ())),
             })
     except Exception:
@@ -687,7 +696,15 @@ def _uk_parse(raw: str) -> list[dict]:
         name_cols = [hdr.index(f"Name {i}") for i in range(1, 7) if f"Name {i}" in hdr]
         iUid = hdr.index("Unique ID") if "Unique ID" in hdr else 1
         iReg = hdr.index("Regime Name") if "Regime Name" in hdr else None
-        iType = hdr.index("Individual, Entity, Ship") if             "Individual, Entity, Ship" in hdr else None
+        # THE COLUMN THIS LOOKED FOR DOES NOT EXIST. The FCDO feed has no
+        # "Individual, Entity, Ship" header - it has "Designation Type" - so
+        # iType was None on every run and every UK entry was typed ENTITY.
+        # A hand-written column name that silently resolves to None is the
+        # same defect as a hand-maintained file list that silently skips a
+        # missing path.
+        iType = next((hdr.index(c) for c in
+                      ("Designation Type", "Individual, Entity, Ship",
+                       "Type of entity") if c in hdr), None)
         # The UK feed writes country names, not ISO codes ("Iran", "Russia"),
         # so these are stored as given and compared case-insensitively against
         # both the code and the name the caller supplies.
@@ -706,6 +723,7 @@ def _uk_parse(raw: str) -> list[dict]:
                 continue
             seen.add((uid, nm))
             st = (r[iType] if iType is not None and iType < len(r) else "").lower()
+            # "Individual" / "Entity" / "Ship" in the current feed.
             out.append({
                 "name": nm,
                 "entity_id": uid,
@@ -746,12 +764,19 @@ async def _list_refreshed_at(list_code: str) -> Optional[str]:
     if hit and (now - hit[0]) < _AGE_TTL_S:
         return hit[1]
     try:
-        from storage.supabase_client import select_rows
-        rows = await select_rows("sanctions_names",
-                                 filters={"list_code": list_code},
-                                 order="refreshed_at.desc", limit=1)
+        from storage.supabase_client import select_rows_strict
+        # ASCENDING - the OLDEST row, not the newest.
+        #
+        # This read the MAX, so a single freshly-stamped row made 23,940 stale
+        # rows report as current. The freshness rule exists to stop us
+        # answering from an outdated list; keying it on the newest row is the
+        # one ordering that cannot detect that.
+        rows = await select_rows_strict("sanctions_names",
+                                        filters={"list_code": list_code},
+                                        order="refreshed_at.asc", limit=1)
         val = (rows[0].get("refreshed_at") or "")[:10] if rows else None
     except Exception:                           # noqa: BLE001
+        # Unknown age is reported as unknown, never as fresh.
         val = None
     _age_cache[list_code] = (now, val)
     return val
@@ -784,7 +809,7 @@ def _days_since(day: Optional[str]) -> Optional[int]:
 #
 # So country annotates and RANKS. Nothing is ever dropped for it.
 _ISO2_NAMES = {
-    "IR": "IRAN", "RU": "RUSSIA", "KP": "KOREA", "SY": "SYRIA", "IQ": "IRAQ",
+    "IR": "IRAN", "RU": "RUSSIA", "KP": "KOREA DEMOCRATIC PEOPLES REPUBLIC NORTH KOREA", "SY": "SYRIA", "IQ": "IRAQ",
     "BY": "BELARUS", "CU": "CUBA", "VE": "VENEZUELA", "MM": "MYANMAR",
     "AF": "AFGHANISTAN", "LY": "LIBYA", "SD": "SUDAN", "SS": "SOUTH SUDAN",
     "SO": "SOMALIA", "YE": "YEMEN", "ZW": "ZIMBABWE", "LB": "LEBANON",
@@ -799,33 +824,165 @@ _ISO2_NAMES = {
 }
 
 
+# Words that turn one country name into a DIFFERENT country. If a listing
+# carries one of these and the query does not, they are not the same place -
+# SUDAN is not SOUTH SUDAN, GUINEA is not GUINEA-BISSAU, and the two Koreas
+# sit at opposite ends of a sanctions regime.
+_DISTINGUISHING = frozenset({
+    "NORTH", "SOUTH", "EAST", "WEST", "NEW", "EQUATORIAL", "BISSAU",
+    "PAPUA", "DEMOCRATIC", "PEOPLES", "PEOPLE", "IVORY", "CENTRAL",
+})
+
+
+# Official long forms and adjectival spellings the feeds actually use.
+#
+# EXPLICIT, NOT CLEVER. A prefix rule would map RUSSIA -> RUSSIAN in one line
+# and NIGER -> NIGERIA in the same line, and Niger and Nigeria are different
+# countries that both appear on these lists. Stemming country names is how a
+# screening tool corroborates a hit against the wrong nation, so the aliases
+# are written down instead of derived.
+_COUNTRY_ALIASES = {
+    "RU": ["RUSSIAN FEDERATION"],
+    "IR": ["ISLAMIC REPUBLIC OF IRAN"],
+    "SY": ["SYRIAN ARAB REPUBLIC"],
+    "KP": ["DPRK"],
+    "VE": ["BOLIVARIAN REPUBLIC OF VENEZUELA"],
+    "MM": ["BURMA"],
+    "CD": ["DRC", "DEMOCRATIC REPUBLIC OF THE CONGO"],
+    "CI": ["COTE DIVOIRE", "IVORY COAST"],
+    "GB": ["UK", "GREAT BRITAIN"],
+    "US": ["USA", "UNITED STATES OF AMERICA"],
+    "AE": ["UAE"],
+    "MD": ["REPUBLIC OF MOLDOVA"],
+    "BY": ["REPUBLIC OF BELARUS"],
+}
+
+
 def _country_matches(want: str, have: list) -> Optional[bool]:
     """Does a listing look connected to `want`?
 
-    Returns True, False, or None for "the listing records no country" - which
-    is NOT a mismatch and must not be presented as one.
+    True / False / None, where None means the listing records no country -
+    which is NOT a mismatch and must never be presented as one.
+
+    THE FIRST VERSION MATCHED RAW SUBSTRINGS AND WAS WRONG TEN WAYS. Measured:
+
+        KP     vs "KOREA, REPUBLIC OF"  -> True   (North Korea query, South
+                                                   Korea listing)
+        ML     vs "SOMALIA"             -> True   ("MALI" inside "SOMALIA")
+        NE     vs "NIGERIA"             -> True
+        SD     vs "SOUTH SUDAN"         -> True
+        GN     vs "GUINEA-BISSAU"       -> True
+        RUSSIA vs "US"                  -> True   (reverse direction: any
+                                                   2-letter code inside any
+                                                   country name)
+
+    `country_match: true` is corroboration of a hit. Asserting it for the
+    wrong country is the same defect as reporting a mismatch we never
+    checked, pointed the other way - and on the Korea case it is the
+    difference between two countries at opposite ends of a sanctions regime.
+
+    So: whole-word matching only, and a 2-letter code never matches inside a
+    longer word.
     """
     if not have:
         return None
     w = (want or "").strip().upper()
     if not w:
         return None
+
+    def _words(text: str) -> set:
+        return {t for t in re.split(r"[^A-Z0-9]+", text.upper()) if t}
+
     names = {str(c).strip().upper() for c in have if str(c).strip()}
     if w in names:
         return True
-    # Caller gave ISO2, listing writes names (the UK feed) - or the reverse.
-    expanded = _ISO2_NAMES.get(w, "")
-    codes = {c for c, n in _ISO2_NAMES.items() if n == w}
+
+    want_words = _words(w)
+    codes_all = set(_ISO2_NAMES)
+    # What the caller means, as words: the code's country name, or the name
+    # itself, plus any ISO2 codes that spell it.
+    want_terms = set(want_words)
+    if w in _ISO2_NAMES:
+        want_terms |= _words(_ISO2_NAMES[w])
+    codes_for_name = {c for c, n in _ISO2_NAMES.items()
+                      if _words(n) and _words(n) <= want_words}
+    want_terms |= codes_for_name
+    # The full country name(s) this query stands for, compared as whole
+    # phrases rather than loose words.
+    name_forms = [w]
+    if w in _ISO2_NAMES:
+        name_forms.append(_ISO2_NAMES[w])
+        name_forms.extend(_COUNTRY_ALIASES.get(w, []))
+    # The caller may have typed an alias directly ("Russian Federation").
+    for code, aliases in _COUNTRY_ALIASES.items():
+        if w in aliases or _words(w) <= _words(_ISO2_NAMES.get(code, "")):
+            name_forms.append(_ISO2_NAMES.get(code, ""))
+            name_forms.extend(aliases)
+            want_terms.add(code)
+
     for n in names:
-        if expanded and expanded in n:
+        listing_words = _words(n)
+        # A 2-letter code must BE one of the listing's words, never a
+        # fragment of one - that is what made RUSSIA match "US".
+        if want_terms & codes_all & listing_words:
             return True
-        if n in codes:
-            return True
-        # "IRAN" inside "IRAN, ISLAMIC REPUBLIC OF"; both directions, because
-        # the UK writes long descriptive strings.
-        if len(w) > 3 and (w in n or n in w):
+        # Otherwise the country NAME must appear in full, and the listing must
+        # not carry a qualifier that makes it a DIFFERENT country.
+        #
+        # Shared-word matching is not enough here, because so many country
+        # names contain another: SUDAN in SOUTH SUDAN, GUINEA in
+        # GUINEA-BISSAU and EQUATORIAL GUINEA, KOREA in both Koreas. Those
+        # four survived the first rewrite of this function.
+        for cand in name_forms:
+            cw = _words(cand)
+            if not cw or not cw <= listing_words:
+                continue
+            if (listing_words - cw) & _DISTINGUISHING:
+                continue                        # "SOUTH" SUDAN is not SUDAN
             return True
     return False
+
+def _is_screenable(toks: set) -> Optional[str]:
+    """Can this name carry a finding at all? Returns a REASON if it cannot.
+
+    THE DATABASE PATH BYPASSED EVERY SAFETY LAYER IN _word_match_score.
+    Moving EU/UK to an indexed exact-key lookup made matching faster and
+    dropped, silently, the two guards that file spends 140 lines justifying.
+    Measured live on the deployed service before this was added:
+
+        "Dave"      -> MATCH on EU (TAQA) and UK ("Isil (Da'esh) and Al-Qaeda")
+        "Said"      -> MATCH on EU (TERR) and UK Counter-Terrorism regs
+        "Universal" -> MATCH on OFAC (RUSSIA-EO14024) and UK Russia regs
+        "East"      -> MATCH on UK Russia regs
+        "OOO"       -> MATCH on EU (SYR)
+
+    Those are not near-misses; they were returned as FINDINGS, with a
+    programme name attached, to anyone who asked. Telling a customer their
+    counterparty appears on an Al-Qaeda list because the name is "Dave" is
+    the worst output this product can produce.
+
+    The index really does contain those rows - 16 whose entire key is generic
+    words, and dozens of 2-3 character keys like "ig", "ao", "rim". They are
+    legitimate entries whose short form is simply not enough to identify
+    anyone by name alone.
+
+    Both rules are lifted from _word_match_score so the two paths cannot
+    disagree again:
+      * a single token under 4 characters carries no information ("Rosneft"
+        is 7 and must still match; "ig" is 2 and must not);
+      * a name made only of legal forms and generic words identifies nobody.
+    """
+    if not toks:
+        return "the name contains no Latin-script characters to match on"
+    if len(toks) == 1:
+        only = next(iter(toks))
+        if len(only) < 4:
+            return (f"'{only}' is a single token under 4 characters - too "
+                    f"short to identify anyone by name alone")
+    if not (toks - _GENERIC_NAME_WORDS):
+        return ("the name consists only of generic and legal-form words, "
+                "which identify no specific party")
+    return None
 
 
 async def _screen_list_db(name: str, list_code: str, list_label: str,
@@ -854,11 +1011,26 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     deciding the same question, free to disagree after the next edit; the
     filter that already carries the reasoning stays the only judge.
     """
-    from storage.supabase_client import select_rows
+    # STRICT, because this function's whole contract is that "nothing matched"
+    # and "I could not check" are different answers. select_rows() returns []
+    # for both, so the except-handler below was dead code from the moment I
+    # wrote it - as the fix for a bug whose lesson was exactly this.
+    from storage.supabase_client import (
+        select_rows, select_rows_strict, SupabaseUnavailable)
 
     toks = sorted(set(_normalize_name(name).split()))
-    if not toks:
-        return [], [], []
+
+    # A NAME WE CANNOT SCREEN IS NOT A CLEAN SCREEN.
+    #
+    # This used to `return [], [], []` - no matches, nothing queried, nothing
+    # unavailable - so handle_screen_sanctions went on to list EU and UK under
+    # lists_screened. Measured on the live service: a Cyrillic query for a
+    # sanctioned individual returned matched=false, reason_code=no_match, and
+    # claimed all three lists had been screened. Total confidence, zero
+    # coverage, on exactly the populations these lists are full of.
+    unscreenable = _is_screenable(set(toks))
+    if unscreenable:
+        return [], [], [f"{list_label} (NOT screened: {unscreenable})"]
 
     refreshed = await _list_refreshed_at(list_code)
     age = _days_since(refreshed)
@@ -887,12 +1059,12 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
         }
 
     try:
-        exact = await select_rows(
+        exact = await select_rows_strict(
             "sanctions_names",
             filters={"list_code": list_code, "name_key": " ".join(toks)},
             limit=5,
-        ) or []
-    except Exception:                           # noqa: BLE001
+        )
+    except SupabaseUnavailable:
         exact = None                            # distinguish failure from empty
 
     if exact is None:
@@ -903,6 +1075,7 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
 
     rows = list(exact)
     seen = {r.get("name_key") for r in exact}
+    partial: list[str] = []
 
     # AN EMPTY INDEX IS NOT A CLEAN SCREEN.
     #
@@ -930,21 +1103,27 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     # would drag back every Smith on the list, which is noise, not a candidate.
     if len(toks) >= 2:
         try:
-            sup = await select_rows(
+            sup = await select_rows_strict(
                 "sanctions_names",
                 filters={"list_code": list_code,
                          "tokens": "cs.{" + ",".join(toks) + "}"},
                 limit=8,
-            ) or []
+            )
             for r in sup:
                 if r.get("name_key") in seen:
                     continue
                 seen.add(r.get("name_key"))
                 rows.append(r)
-        except Exception:                       # noqa: BLE001
-            # Candidates are an enhancement over the exact lookup that already
-            # succeeded. Losing them must not fail the screen.
-            pass
+        except SupabaseUnavailable:
+            # THIS IS THE QUERY THAT FINDS "Vladimir Putin" INSIDE THE EU'S
+            # "Vladimir Vladimirovich PUTIN". Losing it does not fail the
+            # screen - the exact lookup already succeeded - but it DOES narrow
+            # coverage, so it is disclosed rather than swallowed. Silently
+            # returning a narrower screen under the same clean verdict is the
+            # failure this whole file is arranged against.
+            partial.append(
+                f"{list_label} (near-match lookup unavailable; only exact "
+                f"name matches were checked on this call)")
 
     out = []
     for r in rows:
@@ -965,7 +1144,27 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     _rank = {True: 0, None: 1, False: 2}
     out.sort(key=lambda m: (_rank.get(m.get("country_match"), 1),
                             -m["match_score"]))
-    return out, queried, []
+
+    # A SINGLE WORD CANNOT IDENTIFY A PARTY, so it is never a finding.
+    #
+    # "Dave" was being returned as a MATCH against a list entry literally
+    # named Dave, with the programme "Isil (Da'esh) and Al-Qaeda" attached.
+    # So were "Said", "Universal" and "East". The rows are real; one word is
+    # simply not enough to say WHICH Dave.
+    #
+    # Telling apart "Dave" from "Rosneft" - both single tokens, one
+    # meaningless and one decisive - requires name-frequency data. That is
+    # exactly the thing we do not have and are not going to invent, and it is
+    # why the calibrated source was worth something. Without it, the only
+    # honest rule that does not depend on guessing is: one word gets
+    # SURFACED, prominently, and never ASSERTED.
+    #
+    # The cost is real and accepted: screening "Rosneft" alone now returns
+    # matched=false with Rosneft at the top of possible_matches_unverified,
+    # rather than a finding. Under-claiming costs the caller one look. The
+    # alternative cost is telling someone their counterparty is on an
+    # Al-Qaeda list because he is called Dave.
+    return out, queried, partial
 
 
 async def _call_ofac_sdn(
@@ -1052,6 +1251,17 @@ async def handle_screen_sanctions(
     # --- Run upstreams (OpenSanctions primary, OFAC CSV fallback) ----------
     import asyncio
 
+    # SCREENABILITY IS DECIDED ONCE, FOR EVERY SOURCE.
+    #
+    # My first version of this guard lived inside the database path, so EU and
+    # UK correctly refused "Universal" while OFAC - which has its own matcher -
+    # went on returning it as a MATCH on a Russia programme. A safety rule that
+    # covers two of three sources is not a safety rule; it just moves which
+    # list makes the false accusation.
+    _q_toks = set(_normalize_name(name_clean).split())
+    _unscreenable = _is_screenable(_q_toks)
+    _single_token = len(_q_toks) == 1
+
     ofac_task = asyncio.create_task(
         _call_ofac_sdn(name_clean)
     )
@@ -1093,6 +1303,11 @@ async def handle_screen_sanctions(
     # come from our own word-overlap function, which has no frequency data at
     # all and scores "Star Trading LLC" against "Star Dragon Corporation" at
     # 1.00. One of those numbers is evidence; the other is a coincidence.
+    if _single_token:
+        # One word identifies nobody, from ANY list. Surfaced, never asserted.
+        for m in ofac_matches + eu_matches + uk_matches:
+            m["_single_token_query"] = True
+
     for m in ofac_matches:
         m["_matcher"] = "local_word_overlap"
     # EU/UK already carry the tag from _screen_list.
@@ -1133,6 +1348,21 @@ async def handle_screen_sanctions(
             + (uk_queried[0].split("(")[-1].rstrip(")") if uk_queried else "local index")
             + ")"
         )
+
+    if _unscreenable:
+        # No source could screen this name, so none of them may be reported
+        # as having done so.
+        # EXTEND, do not replace. EU and UK report their own reason from
+        # inside _screen_list_db; overwriting the list threw those away and
+        # left only OFAC's, so the receipt named one source when three had
+        # failed to screen.
+        all_sources_unavailable = all_sources_unavailable + [
+            f"{lst.split(' (')[0]} (NOT screened: {_unscreenable})"
+            for lst in screened_lists]
+        if not all_sources_unavailable:
+            all_sources_unavailable = [f"(NOT screened: {_unscreenable})"]
+        screened_lists = []
+        merged = []
 
     # Fall back to honest "partial" if everything failed
     if not screened_lists:
@@ -1223,7 +1453,10 @@ async def handle_screen_sanctions(
             # collisions like "Mohammed Ali" against a listed "Ali Mohammed" -
             # and it SHOULD: that is a genuine collision a screener must show.
             # What it no longer does is dress a subset overlap as a finding.
-            if q_set and set(_normalize_name(m.get("name", "")).split()) == q_set:
+            if m.get("_single_token_query"):
+                # One word identifies nobody. Surfaced, never asserted.
+                possible.append(m)
+            elif q_set and set(_normalize_name(m.get("name", "")).split()) == q_set:
                 confident.append(m)
             else:
                 possible.append(m)
@@ -1254,7 +1487,9 @@ async def handle_screen_sanctions(
         result_payload["entity_type_filter_applied"] = False
         result_payload["entity_type_note"] = (
             "entity_type is accepted but does not narrow the screen. Each "
-            "match reports its own entity_type; filter on that if you need to.")
+            "match reports its own entity_type, taken from the publishing "
+            "authority's own type column on all three lists; filter on that "
+            "if you need to.")
     if all_sources_unavailable:
         result_payload["sources_unavailable"] = all_sources_unavailable
     if unverified:
@@ -1284,13 +1519,16 @@ async def handle_screen_sanctions(
     else:
         no_match_detail = (
             f"No matches on the screened lists for '{_ascii(name_clean)}'"
-            # NOT "country filter: IR". These parameters are accepted and
-            # currently narrow NOTHING: they were consumed only by
-            # OpenSanctions, and our own index does not carry a country
-            # column yet. Saying "filter applied" would tell a caller their
-            # search was narrowed when it was not - which, on a screening
-            # tool, means they think a clean result is more specific than it
-            # is. Accepted-and-ignored is survivable; misreported is not.
+            # NOT "country filter: IR". `country` annotates and ranks; it
+            # never removes a match, so saying "filter applied" would tell a
+            # caller their search was narrowed when it was not - and on a
+            # screening tool that means they read a clean result as more
+            # specific than it is.
+            #
+            # This comment previously said the index "does not carry a country
+            # column yet". The commit that added the column did not update it,
+            # which is verbatim the defect that commit was written to remove:
+            # a sentence left behind by code that changed underneath it.
             + (f" (note: country={country_upper} was NOT used to narrow this "
                f"screen - see country_filter_applied)" if country_upper else "")
             + ". Screened: "

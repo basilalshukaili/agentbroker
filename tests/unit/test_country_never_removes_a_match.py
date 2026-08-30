@@ -91,6 +91,47 @@ def test_the_response_does_not_claim_a_filter_was_applied():
     assert "never to remove any" in (r.get("country_note") or "")
 
 
+# NEAR MISSES. The original table only listed pairs that SHOULD match, so a
+# matcher that returned True for everything would have passed it. These are
+# the ten wrong answers an adversarial review measured on the first version,
+# which used raw substrings: the KP pair put a North Korea query on a South
+# Korea listing, and the reverse direction let any 2-letter code match inside
+# any country name ("US" inside "RUSSIA").
+#
+# country_match: true is corroboration of a sanctions hit. Asserting it for
+# the wrong country is the same defect as reporting a mismatch we never
+# checked, aimed the other way.
+@pytest.mark.parametrize("want,have", [
+    ("KP", ["KOREA, REPUBLIC OF"]),      # North Korea query, South Korea listing
+    ("KP", ["SOUTH KOREA"]),
+    ("ML", ["SOMALIA"]),                 # "MALI" inside "SOMALIA"
+    ("MALI", ["SOMALIA"]),
+    ("NE", ["NIGERIA"]),                 # Niger is not Nigeria
+    ("NIGER", ["NIGERIA"]),
+    ("SD", ["SOUTH SUDAN"]),
+    ("GN", ["GUINEA-BISSAU"]),
+    ("GN", ["EQUATORIAL GUINEA"]),
+    ("RUSSIA", ["US"]),                  # reverse-direction substring
+    ("IRELAND", ["IR"]),
+    ("CHINA", ["IN"]),
+])
+def test_a_different_country_is_not_a_match(want, have):
+    assert ss._country_matches(want, have) is False, (
+        f"{want!r} was reported as connected to {have!r} - that is "
+        f"corroboration of a sanctions hit against the wrong country")
+
+
+@pytest.mark.parametrize("want,have", [
+    ("RU", ["RUSSIAN FEDERATION"]),      # official long form
+    ("RUSSIA", ["RUSSIAN FEDERATION"]),
+    ("SY", ["SYRIAN ARAB REPUBLIC"]),
+    ("IR", ["IRAN, ISLAMIC REPUBLIC OF"]),
+])
+def test_official_long_forms_still_match(want, have):
+    """Guard the guard: tightening the matcher must not lose the real ones."""
+    assert ss._country_matches(want, have) is True
+
+
 @pytest.mark.parametrize("want,have,expected", [
     ("IQ", ["IQ"], True),                       # ISO2 both sides (EU shape)
     ("IQ", ["IRAQ"], True),                     # caller ISO2, UK writes names

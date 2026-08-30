@@ -71,6 +71,14 @@ SURFACES = [
     "edge/src/snapshots/openai-tools.json",
     "edge/src/snapshots/anthropic-tools.json",
     "edge/src/snapshots/agents.json",
+    # THE CODE ITSELF IS A SURFACE. Two false OpenSanctions claims survived the
+    # removal sweep by sitting in module docstrings under core/ - one of them
+    # still telling a reader we required an API key for a vendor we had just
+    # dropped. A comment is not published, but it is what the next person (or
+    # the next model) believes before touching the code, and both of those
+    # claims stopped anybody re-checking the thing they described.
+    "core/screen_sanctions.py", "core/map_trade_restriction.py",
+    "agent_interface/mcp_server.py", "agent_interface/profiles.py",
 ]
 
 # Published outside the agentbroker repo, but read by the same buyers.
@@ -80,6 +88,17 @@ OUTSIDE = [
     "web_hatchloop_v2/src/app/pricing/page.tsx",
     "web_hatchloop_v2/src/app/agent-broker/page.tsx",
 ]
+
+
+# Present-tense capability claims about a retired source, as they appear in
+# code. "We used to query OpenSanctions" is history; "queries OpenSanctions"
+# and "OPENSANCTIONS_API_KEY required" are promises.
+_CODE_CAPABILITY_CLAIM = re.compile(
+    r"(?:via|through|using|queries|querying|calls?|screened against|"
+    r"powered by)\s+opensanctions"
+    r"|opensanctions_api_key"
+    r"|opensanctions\s*\(\s*(?:aggregat|cover|40\+|eu|un|ofac)",
+    re.IGNORECASE)
 
 
 def main() -> int:
@@ -114,7 +133,24 @@ def main() -> int:
         with open(path, encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
         checked += 1
+        is_code = rel.endswith(".py")
         for n, line in enumerate(lines, 1):
+            if is_code:
+                # IN CODE, ONLY PRESENT-TENSE CAPABILITY CLAIMS COUNT.
+                #
+                # My first version flagged every mention and produced 19 hits,
+                # of which most were this file's own record of WHY the
+                # dependency was dropped and what we gave up by dropping it.
+                # That history is worth more than the guard: it is the reason
+                # nobody re-adds the vendor. A checker that fires on it gets
+                # switched off, and then the real claims come back.
+                #
+                # So in code, flag only the shapes that assert we USE it now.
+                if not _CODE_CAPABILITY_CLAIM.search(line):
+                    continue
+                bad.append((rel, n, line.strip()[:70], "opensanctions",
+                            RETIRED_SOURCES["opensanctions"]))
+                continue
             if line.strip().startswith("#"):
                 continue                        # a comment explaining the rule
             for claim in CLAIM.findall(line):

@@ -9,9 +9,10 @@ Data sources (no stored dataset; cite all sources in output):
   1. Hardcoded OFAC comprehensive-embargo country map (IR, KP, CU, SY + advisory
      notes for Crimea/DNR/LNR regions).  Source: OFAC Program Summaries at
      https://ofac.treasury.gov/countries.  Rarely changes; maintained here.
-  2. Party screening via OpenSanctions + OFAC SDN (reused from screen_sanctions):
-     covers OFAC SDN, BIS Entity List, EU/UN consolidated lists, 40+ official
-     watchlists.  FREE API key required for OpenSanctions (set OPENSANCTIONS_API_KEY);
+  2. Party screening via screen_sanctions, which covers OFAC SDN (US
+     Treasury), the EU Consolidated list (European Commission) and the UK
+     Sanctions List (FCDO). No API key. The UN list is NOT screened: it
+     carries no open licence permitting commercial use.
      OFAC SDN bulk CSV is always free with no key.
   3. Tariff / HS guidance: returns official links only (USITC HTS, EU TARIC,
      Canada CBSA).  Rates are NOT provided here to avoid misinformation -- the
@@ -298,8 +299,8 @@ async def handle_map_trade_restriction(
 
     Queries:
       1. Hardcoded OFAC comprehensive-embargo map (no network, authoritative).
-      2. Party screening via OpenSanctions + OFAC SDN (reused from
-         screen_sanctions; covers OFAC SDN, the EU Consolidated list and the UK Sanctions List).
+      2. Party screening via screen_sanctions (OFAC SDN, the EU Consolidated
+         list and the UK Sanctions List; no API key, no UN list).
       3. Tariff guidance links (no network, official sources cited).
 
     Never fabricates a tariff rate, a clear, or a restricted status.

@@ -1337,7 +1337,8 @@ async def _dispatch_operation(
         )
 
     elif name == "screen_sanctions":
-        # Free read-only sanctions screening: OFAC SDN + OpenSanctions (40+ lists).
+        # Free read-only sanctions screening: OFAC SDN, the EU Consolidated
+        # list and the UK Sanctions List. No UN list, no API key.
         from core.screen_sanctions import handle_screen_sanctions
         receipt = await handle_screen_sanctions(
             name=args["name"],
@@ -1347,7 +1348,7 @@ async def _dispatch_operation(
 
     elif name == "map_trade_restriction":
         # Free read-only cross-border trade-compliance snapshot: OFAC embargo
-        # map + party sanctions screening (OpenSanctions + OFAC SDN) + tariff
+        # map + party sanctions screening (OFAC SDN, EU, UK) + tariff
         # guidance links.  Never fabricates a rate or a clear.
         from core.map_trade_restriction import handle_map_trade_restriction
         receipt = await handle_map_trade_restriction(

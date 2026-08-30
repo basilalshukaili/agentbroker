@@ -95,13 +95,54 @@ def get_capabilities_flat(agent_id: Optional[str] = None) -> list[dict]:
 
 
 def health_check() -> dict:
-    """Live health status — checked by orchestrators and circuit breakers."""
+    """Live health status - checked by orchestrators and circuit breakers.
+
+    THIS USED TO BE FOUR STRING LITERALS. It reported manifest, directory and
+    compliance as "ok" without looking at any of them, and it had no code path
+    that could return anything else. Render gates container restarts on it
+    (`healthCheckPath: /health`) and CI gates the post-deploy step on it, so
+    both were satisfied by a process that could serve a constant.
+
+    WHY IT CHECKS WHAT IT CHECKS. A liveness endpoint that fails when a
+    DEPENDENCY blips is worse than a constant: Render restarts the container,
+    the restart does not fix the dependency, and the service enters a restart
+    loop. I put this exact service into one earlier today by a different
+    route. So the split is deliberate:
+
+      * `status` reflects THIS PROCESS's own invariants - the manifest parses,
+        the directory loads, the compliance rules are present. Those are
+        in-process, cheap, and a genuine reason to replace the container.
+      * `dependencies` reports outward state honestly and NEVER changes
+        `status`, so a Supabase or Treasury outage is visible without
+        triggering a restart that cannot help.
+    """
+    checks: dict[str, str] = {}
+
+    try:
+        m = get_full_manifest()
+        ops = (m or {}).get("operations") or []
+        checks["manifest"] = "ok" if len(ops) >= 1 else "empty"
+    except Exception as exc:                    # noqa: BLE001
+        checks["manifest"] = f"error: {type(exc).__name__}"
+
+    try:
+        from supply.smb_directory import get_directory
+        d = get_directory()
+        checks["directory"] = "ok" if d is not None else "unavailable"
+    except Exception as exc:                    # noqa: BLE001
+        checks["directory"] = f"error: {type(exc).__name__}"
+
+    try:
+        from compliance.jurisdiction_rules import _RULES
+        checks["compliance"] = "ok" if len(_RULES) >= 1 else "empty"
+    except Exception as exc:                    # noqa: BLE001
+        checks["compliance"] = f"error: {type(exc).__name__}"
+
+    broken = [k for k, v in checks.items() if v != "ok"]
     return {
-        "status": "healthy",
+        "status": "healthy" if not broken else "unhealthy",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "checks": {
-            "manifest": "ok",
-            "directory": "ok",
-            "compliance": "ok",
-        },
+        "checks": checks,
+        # Present for a reader, never for the restart decision - see above.
+        "degraded": broken or None,
     }

@@ -126,13 +126,44 @@ app.all("/mcp", async (c) => {
 // ---------------------------------------------------------------------------
 
 app.get("/health", async (c) => {
-  // Edge-served health: we report on edge state independent of origin.
-  // For full origin probe, agents can hit /healthz/external.
+  // THIS USED TO ASSERT { manifest: "ok", directory: "ok", compliance: "ok" }.
+  //
+  // Those are ORIGIN subsystems. This handler runs in a Cloudflare Worker,
+  // in a different runtime, with no access to any of them - so it was
+  // reporting three things it structurally cannot observe, and doing it in
+  // the document an orchestrator or circuit breaker reads to decide whether
+  // we are up. The origin could have been returning 502 to everything and
+  // this endpoint would still have said all three were fine.
+  //
+  // Now it reports what it can actually see: that the edge is serving, and
+  // what the origin said when asked. The origin's own /health derives its
+  // three checks; this forwards that verdict rather than inventing one.
+  let origin: unknown = "unknown";
+  let status = "healthy";
+  try {
+    const r = await fetch(`${c.env.ORIGIN_URL}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (r.ok) {
+      origin = await r.json();
+      const s = (origin as { status?: string })?.status;
+      if (s && s !== "healthy") status = "degraded";
+    } else {
+      origin = { status: `unhealthy_${r.status}` };
+      status = "degraded";
+    }
+  } catch (e) {
+    origin = { status: "unreachable", error: (e as Error).message };
+    status = "degraded";
+  }
   return c.json({
-    status: "healthy",
+    // The EDGE is serving - that is the only thing this runtime can assert
+    // about itself, and it is true by virtue of answering at all.
+    status,
     timestamp: new Date().toISOString(),
-    checks: { manifest: "ok", directory: "ok", compliance: "ok" },
     edge: "cloudflare-workers",
+    origin,
   });
 });
 
