@@ -241,7 +241,16 @@ async def select_rows_strict(table: str, **kw) -> list[dict]:
     if resp.status_code != 200:
         raise SupabaseUnavailable(
             f"{table} returned HTTP {resp.status_code}, so it was not queried")
-    return resp.json() or []
+    try:
+        return resp.json() or []
+    except Exception as exc:                    # noqa: BLE001
+        # A 200 carrying HTML - a WAF page, a proxy interstitial - used to
+        # raise a raw ValueError straight past every `except
+        # SupabaseUnavailable` handler, turning "I could not read the index"
+        # into a 500 for the whole screen instead of an honest "NOT screened".
+        raise SupabaseUnavailable(
+            f"{table} returned 200 with a body that is not JSON "
+            f"({str(exc)[:80]})") from exc
 
 
 def select_rows_sync_strict(table: str, **kw) -> list[dict]:
@@ -262,7 +271,16 @@ def select_rows_sync_strict(table: str, **kw) -> list[dict]:
     if resp.status_code != 200:
         raise SupabaseUnavailable(
             f"{table} returned HTTP {resp.status_code}, so it was not queried")
-    return resp.json() or []
+    try:
+        return resp.json() or []
+    except Exception as exc:                    # noqa: BLE001
+        # A 200 carrying HTML - a WAF page, a proxy interstitial - used to
+        # raise a raw ValueError straight past every `except
+        # SupabaseUnavailable` handler, turning "I could not read the index"
+        # into a 500 for the whole screen instead of an honest "NOT screened".
+        raise SupabaseUnavailable(
+            f"{table} returned 200 with a body that is not JSON "
+            f"({str(exc)[:80]})") from exc
 
 
 def _select_params(filters=None, limit: int = 1000, order=None, gte=None) -> dict:
@@ -305,31 +323,13 @@ async def select_rows(
         return []
     try:
         import httpx
-        params: dict[str, Any] = {"limit": limit}
-        if order:
-            params["order"] = order
-        if gte:
-            for col, val in gte.items():
-                params[col] = f"gte.{val}"
-        if filters:
-            for col, val in filters.items():
-                # A filter value may carry its OWN PostgREST operator. Equality
-                # covers almost every caller, so it stays the default - but the
-                # sanctions index needs array containment (`cs.{a,b}`) to find
-                # entries whose tokens include every token of the query, and
-                # forcing `eq.` onto that produced `eq.cs.{...}`, which matches
-                # nothing and fails silently.
-                #
-                # Pass through only RECOGNISED operators. An unknown prefix is
-                # far more likely to be a value that happens to contain a dot -
-                # a hostname, a version, a filename - than an operator someone
-                # meant, and treating those as operators would quietly change
-                # what existing queries return.
-                sval = str(val)
-                if sval.split(".", 1)[0] in _PASSTHROUGH_OPS:
-                    params[col] = sval
-                else:
-                    params[col] = f"eq.{val}"
+        # THE ONE BUILDER, actually shared now. The docstring on
+        # _select_params claimed the lenient and strict readers used it "so
+        # the two can never encode a filter differently" - and neither
+        # lenient reader called it. They duplicated the logic inline, so the
+        # invariant was asserted and unenforced. They agreed today; nothing
+        # made them agree tomorrow.
+        params = _select_params(filters=filters, limit=limit, order=order, gte=gte)
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(
                 f"{url}/rest/v1/{table}",
@@ -353,6 +353,8 @@ def select_rows_sync(
     table: str,
     filters: Optional[dict[str, Any]] = None,
     limit: int = 1000,
+    order: Optional[str] = None,
+    gte: Optional[dict[str, Any]] = None,
 ) -> list[dict]:
     """
     Synchronous version of select_rows for use at module import time.
@@ -364,14 +366,11 @@ def select_rows_sync(
         return []
     try:
         import httpx
-        params: dict[str, Any] = {"limit": limit}
-        if filters:
-            for col, val in filters.items():
-                sval = str(val)
-                if sval.split(".", 1)[0] in _PASSTHROUGH_OPS:
-                    params[col] = sval
-                else:
-                    params[col] = f"eq.{val}"
+        # Shared builder, like the other three readers. This copy also
+        # silently ignored `order` and `gte` - a caller passing them got an
+        # arbitrary slice and no indication why.
+        params = _select_params(filters=filters, limit=limit, order=order,
+                                gte=gte)
         with httpx.Client(timeout=8.0) as client:
             resp = client.get(
                 f"{url}/rest/v1/{table}",

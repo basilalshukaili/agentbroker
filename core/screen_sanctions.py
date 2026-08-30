@@ -963,7 +963,16 @@ def _country_matches(want: str, have: list) -> Optional[bool]:
         # A 2-letter code must BE one of the listing's words, never a
         # fragment of one - that is what made RUSSIA match "US".
         if want_terms & codes_all & listing_words:
-            return True
+            # THE QUALIFIER RULE APPLIES HERE TOO. This branch skipped it, so
+            # a query naming a qualified country still matched the unqualified
+            # code: "SOUTH SUDAN" vs ["SD"] -> True, "GUINEA-BISSAU" vs ["GN"]
+            # -> True, "REPUBLIC OF THE CONGO" vs ["CD"] (the DRC) -> True.
+            # The reverse direction was already refused; this is the same
+            # false corroboration pointing the other way.
+            if not (want_words - _words(_ISO2_NAMES.get(
+                    next(iter(want_terms & codes_all & listing_words)), ""))
+                    ) & _DISTINGUISHING:
+                return True
         # Otherwise the country NAME must appear in full, and the listing must
         # not carry a qualifier that makes it a DIFFERENT country.
         #

@@ -204,8 +204,14 @@ def _hydrate_revocations() -> None:
     log = logging.getLogger("smb_broker.identity")
     try:
         from storage.supabase_client import select_rows_sync_strict
+        # ORDERED AND BOUNDED. A bare limit with no ORDER BY returns an
+        # ARBITRARY PostgREST slice - supabase_client's own docstring warns
+        # about it - so past the default 1000 revocations we would hydrate a
+        # random subset and some refunded customers would silently keep
+        # access. Newest first, and the count is checked below.
         rows = select_rows_sync_strict("polar_order_events",
-                                       filters={"status": "revoked"})
+                                       filters={"status": "revoked"},
+                                       order="ts.desc", limit=5000)
     except Exception as exc:  # noqa: BLE001
         # DELIBERATELY FAIL OPEN, and say so. Denying every paying customer
         # during a database blip is a worse outcome than briefly honouring a
@@ -224,6 +230,11 @@ def _hydrate_revocations() -> None:
             _revoked_customer_ids.add(str(cid))
     _revocation_hydrated = True
     log.info("revocation_hydrated count=%d", len(_revoked_customer_ids))
+    if len(rows) >= 5000:
+        log.error(
+            "REVOCATION_HYDRATION_TRUNCATED at %d rows - revocations beyond "
+            "this page are NOT loaded and those customers keep access. "
+            "Paginate this read.", len(rows))
 
 
 async def revoke_customer(
