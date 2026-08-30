@@ -130,6 +130,14 @@ jobs:
       - name: No sanctions coverage we do not have
         run: python scripts/check_sanctions_claims.py
 
+      # THE GENERAL FORM OF THE BUG THAT KEEPS RECURRING: a capability
+      # declared in one place and performed nowhere. screen_sanctions accepted
+      # a `country` argument, validated it, uppercased it, echoed it into the
+      # response as "(country filter: IR)" - and never used it for anything.
+      # The published schema promised a filter; the code performed an echo.
+      - name: Every advertised parameter does something
+        run: python scripts/check_params_do_something.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

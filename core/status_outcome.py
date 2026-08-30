@@ -22,18 +22,28 @@ async def handle_get_status(
     store = get_outcome_store()
     record = await store.get_async(operation_id)
     if not record:
-        return {
+        out = {
             "operation_id": operation_id,
             "status": "not_found",
             "error": "No operation found with this ID.",
         }
-    return {
+        if trace_id:
+            out["trace_id"] = trace_id
+        return out
+    out = {
         "operation_id": operation_id,
         "status": record.get("status", "pending"),
         "estimated_completion_time": record.get("estimated_completion_time"),
         "last_updated_at": record.get("updated_at"),
         "partial_result": record.get("partial_result"),
     }
+    # TRACE_ID IS ADVERTISED FOR CORRELATION AND WAS BEING DROPPED. A caller
+    # passing it got nothing back to correlate against, which is the whole
+    # point of sending one. Echoing it is the minimum that makes the parameter
+    # real; it costs nothing and it is what a caller asked for.
+    if trace_id:
+        out["trace_id"] = trace_id
+    return out
 
 
 async def handle_get_outcome(
