@@ -317,6 +317,41 @@ class TestFailOpen:
             "the caller cannot tell an outage from an absence without this")
         assert "NOT evidence" in (result.human_message or "")
 
+    def test_a_transport_failure_reaches_the_receipt(self):
+        """Fail the TRANSPORT, not the helpers.
+
+        The previous version of this test stubbed _gleif_by_name and
+        _edgar_search directly, which meant it passed while the real functions
+        still swallowed everything: _gleif_by_name had a bare
+        `except Exception: pass`, and _edgar_search raised RegistryUnavailable
+        and then CAUGHT IT two lines later, because RegistryUnavailable
+        subclasses RuntimeError. The commit claiming both were fixed was
+        wrong, and a helper-level stub could never have caught that.
+
+        Breaking httpx exercises every except-chain on the way out.
+        """
+        import httpx
+
+        real = httpx.AsyncClient
+
+        class Boom(real):
+            async def get(self, *a, **k):
+                raise httpx.ConnectError("simulated outage")
+
+        httpx.AsyncClient = Boom
+        try:
+            result = run(handle_verify_company_record(name="Volkswagen AG"))
+        finally:
+            httpx.AsyncClient = real
+
+        assert result.reason_code == "partial_lookup", (
+            "a transport failure on both registries still reported "
+            f"{result.reason_code!r} - the raise is being swallowed again")
+        payload = result.result or {}
+        assert payload.get("status") == "unavailable"
+        assert set(payload.get("sources_unavailable") or []) == {"GLEIF", "SEC EDGAR"}
+        assert result.retriable is True
+
     def test_a_real_absence_is_still_reported_as_not_found(self):
         """Guard the guard: if the rule above also suppressed genuine misses,
         the tool would never say 'not found' about anything."""

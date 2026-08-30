@@ -228,7 +228,7 @@ def _hydrate_revocations() -> None:
 
 async def revoke_customer(
     customer_id: str, order_id: Optional[str] = None, reason: str = "refund",
-) -> None:
+) -> bool:
     """Revoke every token for `customer_id` (e.g. on a Polar
     order.refunded/refund.created/subscription.revoked webhook).
 
@@ -245,19 +245,33 @@ async def revoke_customer(
         customer_id, order_id, reason,
     )
     try:
-        from storage.supabase_client import insert_row
+        # STRICT. This is the WRITE half of the bug whose read half was fixed
+        # earlier today. `insert_row` returns None on failure and cannot
+        # raise, so the handler below was dead code and
+        # "revocation_persist_failed" could never be logged.
+        #
+        # The consequence is the whole point of the function: the revocation
+        # holds in memory until the next restart, _hydrate_revocations then
+        # reads a table that never got the row, and the refunded customer
+        # keeps paid access permanently. Fixing only the read half left the
+        # same outcome reachable by a different route.
+        from storage.supabase_client import insert_row_strict
         from datetime import datetime, timezone
-        await insert_row("polar_order_events", {
+        await insert_row_strict("polar_order_events", {
             "order_id": order_id or "",
             "event_type": reason,
             "customer_id": str(customer_id),
             "status": "revoked",
             "ts": datetime.now(timezone.utc).isoformat(),
         })
+        return True
     except Exception as exc:  # noqa: BLE001
-        logging.getLogger("smb_broker.identity").warning(
-            "revocation_persist_failed customer_id=%s err=%s", customer_id, exc,
+        logging.getLogger("smb_broker.identity").error(
+            "revocation_persist_failed customer_id=%s err=%s -- the revocation "
+            "is IN-MEMORY ONLY and will not survive a restart",
+            customer_id, exc,
         )
+        return False
 
 
 def is_customer_revoked(customer_id: str) -> bool:

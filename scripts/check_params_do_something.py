@@ -192,6 +192,76 @@ def _functional_uses(fn, param: str) -> int:
     return uses
 
 
+def _schema_params() -> dict:
+    """Every parameter we ADVERTISE, per tool, from the manifest."""
+    import json
+    path = os.path.join(REPO, "manifest", "manifest.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        ops = json.load(fh).get("operations") or []
+    out = {}
+    for op in ops:
+        props = ((op.get("input_schema") or {}).get("properties") or {})
+        if props:
+            out[op["name"]] = sorted(props)
+    return out
+
+
+def _module_text(tool: str) -> str:
+    """Source of everything that could implement this tool.
+
+    Not just core/<tool>.py: request models live in core/models.py and the
+    dispatch layer unpacks arguments in mcp_server.py, so a parameter can be
+    legitimately consumed in any of the three.
+    """
+    parts = []
+    for rel in (os.path.join("core", f"{tool}.py"),
+                os.path.join("core", "models.py"),
+                os.path.join("agent_interface", "mcp_server.py")):
+        path = os.path.join(REPO, rel)
+        if os.path.exists(path):
+            parts.append(open(path, encoding="utf-8", errors="replace").read())
+    # A few tools are implemented under a different filename.
+    if not parts:
+        for dirpath, _d, names in os.walk(os.path.join(REPO, "core")):
+            for n in names:
+                if n.endswith(".py"):
+                    parts.append(open(os.path.join(dirpath, n),
+                                      encoding="utf-8", errors="replace").read())
+    return "\n".join(parts)
+
+
+def _advertised_but_absent() -> list:
+    """Parameters in the PUBLISHED schema whose name appears nowhere in code.
+
+    WHY THIS EXISTS ALONGSIDE THE AST CHECK. The AST check reads Python
+    signatures, and twelve of twenty handlers take a single Pydantic request
+    model - so it sees one parameter called `request` and never looks inside.
+    An audit measured 56 advertised parameters invisible to it, covering every
+    write tool. `send_at_iso` or `preferred_channel` quietly doing nothing is
+    precisely what this gate is for.
+
+    This half is deliberately CRUDE and cannot produce a false positive: it
+    only reports a parameter whose name does not occur ANYWHERE in the
+    implementing modules. That cannot be a live parameter. It will miss a
+    parameter that is mentioned but unused - the AST half covers those where
+    it can see them - and missing something is the acceptable failure here.
+    """
+    import re
+    findings = []
+    for tool, params in _schema_params().items():
+        text = _module_text(tool)
+        if not text:
+            continue
+        for name in params:
+            if (tool, name) in DECLARED_INERT or ("*", name) in DECLARED_INERT:
+                continue
+            if not re.search(r"\b" + re.escape(name) + r"\b", text):
+                findings.append((tool, name))
+    return findings
+
+
 def main() -> int:
     if not os.path.isdir(CORE):
         print("check_params_do_something: no core/ directory - verifying nothing")
@@ -220,6 +290,15 @@ def main() -> int:
         print("check_params_do_something: FOUND NO HANDLERS - verifying nothing")
         return 2
 
+    absent = _advertised_but_absent()
+    if absent:
+        print(f"check_params_do_something FAILED -- {len(absent)} PUBLISHED "
+              f"parameter(s) do not appear anywhere in the implementing code:\n")
+        for tool, name in absent:
+            print(f"  {tool}({name}=...) is advertised in the manifest and "
+                  f"implemented nowhere")
+        return 1
+
     if inert:
         print(f"check_params_do_something FAILED -- {len(inert)} advertised "
               f"parameter(s) are accepted and never acted on:\n")
@@ -230,9 +309,10 @@ def main() -> int:
                   f"AND say so in the tool's own response.")
         return 1
 
-    print(f"check_params_do_something OK -- {checked} parameter(s) across all "
-          f"handlers do something ({exempted} declared inert, each disclosed "
-          f"in its tool's output)")
+    advertised = sum(len(v) for v in _schema_params().values())
+    print(f"check_params_do_something OK -- {checked} handler parameter(s) and "
+          f"{advertised} published parameter(s) checked; {exempted} declared "
+          f"inert, each disclosed in its tool's output")
     return 0
 
 

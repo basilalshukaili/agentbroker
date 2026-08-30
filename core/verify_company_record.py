@@ -93,9 +93,11 @@ async def _gleif_by_name(name: str, country: Optional[str] = None) -> list[dict]
             resp = await client.get(url, headers={"Accept": "application/json"})
         if resp.status_code == 200:
             return resp.json().get("data", [])
-    except Exception:
-        pass
-    return []
+        raise RegistryUnavailable(f"GLEIF returned HTTP {resp.status_code}")
+    except RegistryUnavailable:
+        raise
+    except Exception as exc:                    # noqa: BLE001
+        raise RegistryUnavailable(f"GLEIF unreachable: {exc}") from exc
 
 
 def _parse_gleif_entity(data: dict) -> dict:
@@ -158,8 +160,15 @@ async def _edgar_search(name: str) -> Optional[dict]:
                     "jurisdiction": "US",
                     "status": "active",
                 }
-    except Exception:
-        pass
+    # RegistryUnavailable MUST ESCAPE. It subclasses RuntimeError, so the bare
+    # `except Exception` below caught the raise two lines above it - the
+    # function raised and then swallowed its own exception, and the commit
+    # that added the raise claimed the tool now reports outages honestly.
+    # It did not. This is the re-raise that makes the raise mean something.
+    except RegistryUnavailable:
+        raise
+    except Exception as exc:                    # noqa: BLE001
+        raise RegistryUnavailable(f"SEC EDGAR unreachable: {exc}") from exc
     return None
 
 

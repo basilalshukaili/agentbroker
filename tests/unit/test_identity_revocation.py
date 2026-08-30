@@ -60,21 +60,47 @@ class TestRevokedTokenRejectedAtValidation:
         assert validate_token(refunded.token).valid is False
         assert validate_token(victim.token).valid is True
 
-    def test_revoke_customer_persists_durably_best_effort(self):
-        """revoke_customer() must attempt a durable write (so the revocation
-        survives a restart) but must never raise even if that write fails --
-        matches the fire-and-forget contract every other durable write in
-        this codebase has (billing/durable_meter.py, storage/supabase_client.py)."""
+    def test_revoke_customer_reports_whether_the_write_persisted(self):
+        """It must attempt the durable write, never raise - AND SAY whether it
+        stuck.
+
+        This test used to patch the lenient `insert_row` and assert only that
+        it was awaited, describing fire-and-forget as "the contract every
+        other durable write in this codebase has". That framing was the bug:
+        `insert_row` returns None on failure and cannot raise, so the
+        function's own `except` was dead, the caller could not tell, the
+        webhook returned 200 to Polar (no retry), and the refunded customer
+        got their access back at the next restart - because
+        _hydrate_revocations then read a table that never got the row.
+
+        Fire-and-forget is fine for a metric. It is not fine for a refund.
+        """
         with patch(
-            "storage.supabase_client.insert_row",
+            "storage.supabase_client.insert_row_strict",
             new_callable=AsyncMock, side_effect=RuntimeError("supabase down"),
         ) as mock_insert:
             # Must not raise despite the durable write failing.
-            run(revoke_customer(customer_id="cust_store_down_1", order_id="order_z", reason="order.refunded"))
+            durable = run(revoke_customer(
+                customer_id="cust_store_down_1", order_id="order_z",
+                reason="order.refunded"))
 
         # In-memory revocation still took effect even though persistence failed.
         assert is_customer_revoked("cust_store_down_1") is True
         assert mock_insert.await_count == 1
+        assert durable is False, (
+            "the durable write failed and revoke_customer reported success - "
+            "the caller cannot escalate a refund that did not stick")
+
+    def test_revoke_customer_reports_success_when_the_write_lands(self):
+        with patch(
+            "storage.supabase_client.insert_row_strict",
+            new_callable=AsyncMock, return_value={"ok": True},
+        ):
+            durable = run(revoke_customer(
+                customer_id="cust_ok_1", order_id="order_y",
+                reason="order.refunded"))
+        assert durable is True
+
 
     def test_revoke_customer_noop_on_empty_customer_id(self):
         # Must not raise or pollute the revoked set on a malformed/empty id.

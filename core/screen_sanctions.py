@@ -442,6 +442,15 @@ async def _fetch_url(url: str, allow_stale: bool = True) -> Optional[str]:
             )
         if resp.status_code == 200 and resp.text.strip():
             _list_cache[url] = (now, resp.text)
+            # CLEAR THE STALE MARK ON A SUCCESSFUL FETCH.
+            #
+            # _stale_ages was written on a stale serve and never cleared,
+            # so once Treasury had been unreachable once every later
+            # response kept saying "served from a cached copy 30h old"
+            # for the life of the process, with a fresh copy in hand.
+            # A stamp written once and never re-derived - inside the
+            # commit written to stop exactly that.
+            _stale_ages.pop(url, None)
             return resp.text
     except Exception:
         pass
@@ -1003,11 +1012,29 @@ def _is_screenable(toks: set) -> Optional[str]:
     """
     if not toks:
         return "the name contains no Latin-script characters to match on"
-    if len(toks) == 1:
-        only = next(iter(toks))
-        if len(only) < 4:
-            return (f"'{only}' is a single token under 4 characters - too "
-                    f"short to identify anyone by name alone")
+    # THE RULE IS ABOUT DISTINCTIVENESS, NOT TOKEN COUNT.
+    #
+    # This used to fire only when the WHOLE query was one token, so a name
+    # made of two short tokens sailed past it into the strict token-set
+    # filter and was ASSERTED as a finding. Measured on production:
+    #
+    #     screen_sanctions("Li Na")
+    #       -> MATCH FOUND: 'LI, Na' on OFAC-SDN, program NPWMD] [IFSR
+    #
+    # "Li Na" is one of the most common names in China, returned as an
+    # Iran-WMD-proliferation finding. Identical harm to the "Dave" case this
+    # guard was written for, and the guard did not cover it because I keyed it
+    # on how MANY tokens there were instead of how much information they
+    # carry.
+    #
+    # A name needs at least one token long enough to identify somebody.
+    # "Rosneft" is 7 characters and must still match; "li", "na", "kim", "il",
+    # "ao" carry nothing on their own and carry nothing together either.
+    distinctive = toks - _GENERIC_NAME_WORDS
+    if not any(len(t) >= 4 for t in (distinctive or toks)):
+        longest = max((distinctive or toks), key=len)
+        return (f"no token in this name is 4 characters or longer (longest: "
+                f"'{longest}') - too short to identify anyone by name")
     if not (toks - _GENERIC_NAME_WORDS):
         return ("the name consists only of generic and legal-form words, "
                 "which identify no specific party")

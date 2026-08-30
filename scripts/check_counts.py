@@ -58,12 +58,21 @@ def _derive() -> dict:
     except Exception:                           # noqa: BLE001
         pass
 
-    try:
-        from core.models import BookingPlatform
-        truth["booking platforms"] = len(
-            [p for p in BookingPlatform if p.name != "CUSTOM"])
-    except Exception:                           # noqa: BLE001
-        pass
+    # BookingPlatform moved, and the `except: pass` meant "booking platforms"
+    # was silently never verified - the guard printed OK while one of its
+    # three nouns was unchecked. Try the real locations, and if none of them
+    # answer, say so instead of skipping.
+    for mod, attr in (("supply.booking_page_importer", "BookingPlatform"),
+                      ("core.models", "BookingPlatform"),
+                      ("core.enums", "BookingPlatform")):
+        try:
+            m = __import__(mod, fromlist=[attr])
+            bp = getattr(m, attr)
+            truth["booking platforms"] = len(
+                [x for x in bp if getattr(x, "name", "") != "CUSTOM"])
+            break
+        except Exception:                       # noqa: BLE001
+            continue
 
     return truth
 
@@ -122,10 +131,14 @@ def main(argv: list[str]) -> int:
         for noun in NOUNS
     }
 
-    wrong, scanned = [], 0
+    wrong, scanned, missing = [], 0, []
     for rel in SURFACES:
         path = os.path.join(REPO, rel)
         if not os.path.exists(path):
+            # A DECLARED SURFACE THAT DOES NOT EXIST IS A HOLE, NOT A PASS.
+            # check_sanctions_claims was hardened against exactly this on the
+            # same day and this sibling still had the silent `continue`.
+            missing.append(rel)
             continue
         with open(path, encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
@@ -133,8 +146,11 @@ def main(argv: list[str]) -> int:
         for n, line in enumerate(lines, 1):
             if any(m in line for m in EXEMPT_LINES):
                 continue
-            if SUBSET.search(line):
-                continue
+            # NOT `SUBSET.search(line)`. Exempting the whole line let any
+            # sentence containing "free", "of the", "require" etc. carry a
+            # wrong count: "AgentBroker exposes 47 tools on the free plan"
+            # passed clean. The qualifier only matters if it is NEAR the
+            # number, so the window is checked at the match instead.
             for noun, pat in patterns.items():
                 key = NOUNS[noun]
                 if key not in truth:
@@ -145,12 +161,21 @@ def main(argv: list[str]) -> int:
                         continue
                     if RATE.match(line[m.end():m.end() + 12]):
                         continue
+                    window = line[max(0, m.start() - 40):m.end() + 40]
+                    if SUBSET.search(window):
+                        continue
                     wrong.append((rel, n, found, noun, truth[key],
                                   line.strip()[:70]))
 
     if not scanned:
         print("check_counts: NO SURFACES FOUND - verifying nothing")
         return 2
+    if missing:
+        print(f"check_counts FAILED -- {len(missing)} declared surface(s) do "
+              f"not exist, so they were never checked:\n")
+        for rel in missing:
+            print(f"  {rel}")
+        return 1
 
     if wrong:
         print(f"check_counts FAILED -- {len(wrong)} published count(s) "

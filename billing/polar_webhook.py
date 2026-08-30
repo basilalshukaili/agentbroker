@@ -244,7 +244,28 @@ async def _handle_revoke_event(event_type: str, data: dict[str, Any]) -> None:
     )
     try:
         from agent_interface.identity import revoke_customer
-        await revoke_customer(customer_id=customer_id, order_id=order_id, reason=event_type)
+        _durable = await revoke_customer(
+            customer_id=customer_id, order_id=order_id, reason=event_type)
+        if not _durable:
+            # The revocation holds in memory but did not persist, so it dies
+            # at the next restart and the refunded customer gets their access
+            # back. Escalate it the same way an undelivered paid order is
+            # escalated - a refund that silently un-refunds is the same class
+            # of money problem, pointing the other way.
+            logger.error(
+                "REVOCATION_NOT_DURABLE customer=%s order=%s -- access will "
+                "return on the next restart", customer_id, order_id)
+            try:
+                from billing.telegram_revenue_alerts import send_telegram_alert
+                await send_telegram_alert(
+                    "REFUND DID NOT STICK" + chr(10) + chr(10)
+                    + f"customer: {customer_id}" + chr(10)
+                    + f"order: {order_id}" + chr(10) + chr(10)
+                    + "The revocation is in memory only. After the next "
+                      "restart this refunded customer regains paid access. "
+                      "Re-run the revocation once the database is reachable.")
+            except Exception:                   # noqa: BLE001
+                pass
     except Exception as e:  # noqa: BLE001
         logger.exception("polar_revoke_failed customer=%s err=%s", customer_id, e)
 

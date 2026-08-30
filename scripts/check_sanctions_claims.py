@@ -135,6 +135,18 @@ def main() -> int:
         checked += 1
         is_code = rel.endswith(".py")
         for n, line in enumerate(lines, 1):
+            # THE UN CHECK RUNS EVERYWHERE, INCLUDING IN CODE.
+            #
+            # The code branch below used to `continue` after its
+            # OpenSanctions-specific test, so the UN overclaim check never ran
+            # on the four .py surfaces - which are in SURFACES precisely
+            # because tool descriptions live in code. Measured: the sentence
+            # "Free sanctions screening against OFAC/EU/UN/UK lists" passed
+            # clean in profiles.py and failed correctly in README.md.
+            for claim in CLAIM.findall(line):
+                named = {t.strip().upper() for t in re.split(r"[/,]", claim)}
+                for over in sorted(named & set(EXCLUDED)):
+                    bad.append((rel, n, claim, over, EXCLUDED[over]))
             if is_code:
                 # IN CODE, ONLY PRESENT-TENSE CAPABILITY CLAIMS COUNT.
                 #
@@ -151,12 +163,12 @@ def main() -> int:
                 bad.append((rel, n, line.strip()[:70], "opensanctions",
                             RETIRED_SOURCES["opensanctions"]))
                 continue
-            if line.strip().startswith("#"):
-                continue                        # a comment explaining the rule
-            for claim in CLAIM.findall(line):
-                named = {t.strip().upper() for t in re.split(r"[/,]", claim)}
-                for over in sorted(named & set(EXCLUDED)):
-                    bad.append((rel, n, claim, over, EXCLUDED[over]))
+            # A LEADING "#" IS A COMMENT IN PYTHON AND A HEADING IN MARKDOWN.
+            # Skipping it wholesale meant "# Sanctions coverage: OFAC/EU/UN/UK"
+            # passed clean in a README - a heading is about as published as
+            # text gets. Only skip it where it really is a comment.
+            if not is_code and line.strip().startswith("#"):
+                pass                            # markdown heading - still checked
             low = line.lower()
             for vendor, why in RETIRED_SOURCES.items():
                 if vendor in low:
@@ -173,6 +185,18 @@ def main() -> int:
         print("\nFix the path or remove it from SURFACES. A surface that "
               "silently does not exist is worse than one that is not listed.")
         return 1
+    # One line can trip both the UN rule and the retired-source rule; report
+    # each (file, line, subject) once.
+    seen_bad = set()
+    deduped = []
+    for item in bad:
+        key = (item[0], item[1], item[3])
+        if key in seen_bad:
+            continue
+        seen_bad.add(key)
+        deduped.append(item)
+    bad = deduped
+
     if bad:
         print(f"check_sanctions_claims FAILED -- {len(bad)} claim(s) advertise a "
               f"list we do not screen:\n")
