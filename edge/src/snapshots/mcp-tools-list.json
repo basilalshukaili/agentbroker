@@ -1005,6 +1005,36 @@
           "idempotentHint": false,
           "openWorldHint": false
         }
+      },
+      {
+        "name": "lookup_us_contracts",
+        "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.\n\nEXAMPLE USER QUERIES THAT MATCH THIS TOOL:\n  user: \"Does Palantir have US government contracts?\"\n  -> call lookup_us_contracts({\"company_name\": \"Palantir Technologies\"})\n  user: \"What federal contracts does Booz Allen Hamilton have?\"\n  -> call lookup_us_contracts({\"company_name\": \"Booz Allen Hamilton\", \"max_results\": 5})\n  user: \"Find US import supplier data for Lockheed Martin\"\n  -> call lookup_us_contracts({\"company_name\": \"Lockheed Martin\"})\n  user: \"Which government agencies are customers of SAIC?\"\n  -> call lookup_us_contracts({\"company_name\": \"SAIC\", \"max_results\": 10})\n\nWHEN TO USE: Use when you need to know whether a company is a US federal contractor, which government agencies have awarded it contracts, the dollar value and NAICS sector of those contracts, and the period of performance. Useful for supplier due-diligence, vendor qualification, competitive intelligence, and import/trade research. The target demand: \"us import data api\", \"supplier lookup api\", \"company trade records\", \"who has government contracts\", \"federal contractor search\".\nWHEN NOT TO USE: Do not use for non-US companies (USASpending.gov only covers US federal contracts). Do not use as an exhaustive financial-risk or sanctions screen -- use verify_company_record and screen_sanctions for those. Do not use for state/local government contracts (federal only).\nCOST: free - no key required\nLATENCY: ~1200ms",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "company_name"
+          ],
+          "properties": {
+            "company_name": {
+              "type": "string",
+              "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\", \"Palantir Technologies\")."
+            },
+            "max_results": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Maximum number of contract awards to return (sorted by award amount descending). Default: 5, max: 10."
+            }
+          }
+        },
+        "annotations": {
+          "title": "Lookup Us Contracts",
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
       }
     ]
   }

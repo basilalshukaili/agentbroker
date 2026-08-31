@@ -406,6 +406,23 @@
       "output_modes": [
         "application/json"
       ]
+    },
+    {
+      "id": "lookup_us_contracts",
+      "name": "Lookup Us Contracts",
+      "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.",
+      "tags": [
+        "sync"
+      ],
+      "examples": [
+        ""
+      ],
+      "input_modes": [
+        "application/json"
+      ],
+      "output_modes": [
+        "application/json"
+      ]
     }
   ],
   "supported_protocols": [

@@ -254,6 +254,17 @@ Agent self-serve API key issuance. An autonomous agent that has no email inbox c
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/mint_key`
 
+### lookup_us_contracts
+
+Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.
+
+- **When to use**: Use when you need to know whether a company is a US federal contractor, which government agencies have awarded it contracts, the dollar value and NAICS sector of those contracts, and the period of performance. Useful for supplier due-diligence, vendor qualification, competitive intelligence, and import/trade research. The target demand: "us import data api", "supplier lookup api", "company trade records", "who has government contracts", "federal contractor search".
+- **When NOT to use**: Do not use for non-US companies (USASpending.gov only covers US federal contracts). Do not use as an exhaustive financial-risk or sanctions screen -- use verify_company_record and screen_sanctions for those. Do not use for state/local government contracts (federal only).
+- **Cost: free (no key required).**
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://api.hatchloop.dev/ops/lookup_us_contracts`
+
 ## Authentication
 
 All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://api.hatchloop.dev/auth/token`. Scopes include allowed operations, budget cap, and verticals.
@@ -284,7 +295,7 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
-- `https://api.hatchloop.dev/mcp/agent-broker` - everything (21 tools)
+- `https://api.hatchloop.dev/mcp/agent-broker` - everything (22 tools)
 
 The same rows work in Claude Code, Codex, and any other MCP client - the transport is standard.
 
@@ -1864,7 +1875,7 @@ hello@hatchloop.dev
             "estimated_latency_p50_ms": 5000,
             "success_probability_estimate": 0.88,
             "channel_likely": "direct_api:square",
-            "cost_accuracy_slo": "\u00b15%"
+            "cost_accuracy_slo": "\u00c2\u00b15%"
           }
         }
       ],
@@ -3504,7 +3515,7 @@ hello@hatchloop.dev
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "Free-tier key. The issued key allows 100 gated ops/day at no charge."
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 100,
@@ -3541,6 +3552,179 @@ hello@hatchloop.dev
             }
           },
           "returns": "ok=true, key=<JWT>, expires_at=2026-11-28, tier=free, daily_limit=100"
+        }
+      ]
+    },
+    {
+      "name": "lookup_us_contracts",
+      "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.",
+      "when_to_use": "Use when you need to know whether a company is a US federal contractor, which government agencies have awarded it contracts, the dollar value and NAICS sector of those contracts, and the period of performance. Useful for supplier due-diligence, vendor qualification, competitive intelligence, and import/trade research. The target demand: \"us import data api\", \"supplier lookup api\", \"company trade records\", \"who has government contracts\", \"federal contractor search\".",
+      "when_not_to_use": "Do not use for non-US companies (USASpending.gov only covers US federal contracts). Do not use as an exhaustive financial-risk or sanctions screen -- use verify_company_record and screen_sanctions for those. Do not use for state/local government contracts (federal only).",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "company_name"
+        ],
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\", \"Palantir Technologies\")."
+          },
+          "max_results": {
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Maximum number of contract awards to return (sorted by award amount descending). Default: 5, max: 10."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "found",
+              "not_found",
+              "unavailable"
+            ]
+          },
+          "queried_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "total_in_result_set_usd": {
+            "type": "number"
+          },
+          "awards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "award_id": {
+                  "type": "string"
+                },
+                "recipient_name": {
+                  "type": "string"
+                },
+                "award_amount_usd": {
+                  "type": "number"
+                },
+                "awarding_agency": {
+                  "type": "string"
+                },
+                "naics_code": {
+                  "type": "string"
+                },
+                "naics_description": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "period_start": {
+                  "type": "string"
+                },
+                "period_end": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
+      },
+      "slo": {
+        "p50_ms": 1200,
+        "p95_ms": 5000
+      },
+      "idempotency": "read-only",
+      "failure_modes": [
+        {
+          "reason_code": "bad_input",
+          "retriable": false,
+          "meaning": "company_name is empty or missing.",
+          "agent_action": "Supply a non-empty company_name."
+        },
+        {
+          "reason_code": "partial_lookup",
+          "retriable": true,
+          "meaning": "USASpending.gov was unreachable on this call.",
+          "agent_action": "Retry; the upstream has SLA issues occasionally."
+        }
+      ],
+      "examples": [
+        {
+          "label": "Look up federal contracts for a major contractor",
+          "input": {
+            "company_name": "Booz Allen Hamilton",
+            "max_results": 3
+          },
+          "output": {
+            "status": "found",
+            "total_in_result_set_usd": 450000000.0,
+            "awards": [
+              {
+                "award_id": "EXAMPLE-001",
+                "recipient_name": "BOOZ ALLEN HAMILTON INC.",
+                "award_amount_usd": 450000000.0,
+                "awarding_agency": "Department of Defense",
+                "naics_code": "541511",
+                "naics_description": "Custom Computer Programming Services",
+                "period_start": "2022-01-01",
+                "period_end": "2025-12-31"
+              }
+            ]
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Does Palantir have US government contracts?",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "Palantir Technologies"
+            }
+          }
+        },
+        {
+          "user_says": "What federal contracts does Booz Allen Hamilton have?",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "Booz Allen Hamilton",
+              "max_results": 5
+            }
+          }
+        },
+        {
+          "user_says": "Find US import supplier data for Lockheed Martin",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "Lockheed Martin"
+            }
+          }
+        },
+        {
+          "user_says": "Which government agencies are customers of SAIC?",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "SAIC",
+              "max_results": 10
+            }
+          }
         }
       ]
     }
@@ -4872,7 +5056,7 @@ hello@hatchloop.dev
     "estimated_latency_p50_ms": 5000,
     "success_probability_estimate": 0.88,
     "channel_likely": "direct_api:square",
-    "cost_accuracy_slo": "\u00b15%"
+    "cost_accuracy_slo": "\u00c2\u00b15%"
   }
 }
 ```
@@ -6144,6 +6328,124 @@ hello@hatchloop.dev
     }
   },
   "returns": "ok=true, key=<JWT>, expires_at=2026-11-28, tier=free, daily_limit=100"
+}
+```
+
+### Failure Modes
+- ****: 
+- ****: 
+
+## Operation: lookup_us_contracts
+
+### Input Schema
+```json
+{
+  "type": "object",
+  "required": [
+    "company_name"
+  ],
+  "properties": {
+    "company_name": {
+      "type": "string",
+      "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\", \"Palantir Technologies\")."
+    },
+    "max_results": {
+      "type": "integer",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Maximum number of contract awards to return (sorted by award amount descending). Default: 5, max: 10."
+    }
+  }
+}
+```
+
+### Output Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "found",
+        "not_found",
+        "unavailable"
+      ]
+    },
+    "queried_name": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "total_in_result_set_usd": {
+      "type": "number"
+    },
+    "awards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "award_id": {
+            "type": "string"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "award_amount_usd": {
+            "type": "number"
+          },
+          "awarding_agency": {
+            "type": "string"
+          },
+          "naics_code": {
+            "type": "string"
+          },
+          "naics_description": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "period_start": {
+            "type": "string"
+          },
+          "period_end": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Examples
+#### Example 1: 
+```json
+{
+  "label": "Look up federal contracts for a major contractor",
+  "input": {
+    "company_name": "Booz Allen Hamilton",
+    "max_results": 3
+  },
+  "output": {
+    "status": "found",
+    "total_in_result_set_usd": 450000000.0,
+    "awards": [
+      {
+        "award_id": "EXAMPLE-001",
+        "recipient_name": "BOOZ ALLEN HAMILTON INC.",
+        "award_amount_usd": 450000000.0,
+        "awarding_agency": "Department of Defense",
+        "naics_code": "541511",
+        "naics_description": "Custom Computer Programming Services",
+        "period_start": "2022-01-01",
+        "period_end": "2025-12-31"
+      }
+    ]
+  }
 }
 ```
 

@@ -20,6 +20,6 @@
       },
       "logging": {}
     },
-    "instructions": "SMB Transaction & Communication Broker. Use tools/list to see all 21 operations. 13 of the 21 tools need no key at all; the 8 write tools require an X-Agent-Identity token in the underlying HTTP request. For state-changing operations (send_message, schedule_appointment), call preview_cost first to confirm the budget impact."
+    "instructions": "SMB Transaction & Communication Broker. Use tools/list to see all 22 operations. 14 of the 22 tools need no key at all; the 8 write tools require an X-Agent-Identity token in the underlying HTTP request. For state-changing operations (send_message, schedule_appointment), call preview_cost first to confirm the budget impact."
   }
 }

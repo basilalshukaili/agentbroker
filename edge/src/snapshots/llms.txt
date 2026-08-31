@@ -254,6 +254,17 @@ Agent self-serve API key issuance. An autonomous agent that has no email inbox c
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/mint_key`
 
+### lookup_us_contracts
+
+Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.
+
+- **When to use**: Use when you need to know whether a company is a US federal contractor, which government agencies have awarded it contracts, the dollar value and NAICS sector of those contracts, and the period of performance. Useful for supplier due-diligence, vendor qualification, competitive intelligence, and import/trade research. The target demand: "us import data api", "supplier lookup api", "company trade records", "who has government contracts", "federal contractor search".
+- **When NOT to use**: Do not use for non-US companies (USASpending.gov only covers US federal contracts). Do not use as an exhaustive financial-risk or sanctions screen -- use verify_company_record and screen_sanctions for those. Do not use for state/local government contracts (federal only).
+- **Cost: free (no key required).**
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://api.hatchloop.dev/ops/lookup_us_contracts`
+
 ## Authentication
 
 All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://api.hatchloop.dev/auth/token`. Scopes include allowed operations, budget cap, and verticals.
@@ -284,7 +295,7 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
-- `https://api.hatchloop.dev/mcp/agent-broker` - everything (21 tools)
+- `https://api.hatchloop.dev/mcp/agent-broker` - everything (22 tools)
 
 The same rows work in Claude Code, Codex, and any other MCP client - the transport is standard.
 
