@@ -277,7 +277,12 @@ def test_marketing_email_embeds_a_real_per_recipient_link(monkeypatch):
     from channels.adapter_interface import ChannelRequest
     from channels.sms_email.resend_email import ResendEmailAdapter
 
-    monkeypatch.setattr("compliance.pre_check.pre_check", lambda **k: None)
+    # Patch the binding the ADAPTER reads. resend_email.py copies the symbol
+    # into its own namespace at import time, so stubbing the definition site
+    # ("compliance.pre_check.pre_check") is dead code and the real gate runs -
+    # which then fire-and-forgets a Supabase audit write onto this loop.
+    monkeypatch.setattr("channels.sms_email.resend_email.pre_check",
+                        lambda **k: None)
     monkeypatch.setenv("ALLOW_STUB_CHANNELS", "1")
     monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("BUSINESS_UNSUBSCRIBE_URL", raising=False)

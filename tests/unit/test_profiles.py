@@ -83,7 +83,7 @@ def test_a_door_still_runs_its_own_tools():
 def test_the_full_server_is_unchanged():
     """profile=None must be byte-identical to the behaviour before profiles."""
     r = call("tools/list", {})
-    assert len(r["result"]["tools"]) == 20
+    assert len(r["result"]["tools"]) == 21
 
 
 # --------------------------------------------------------------------------

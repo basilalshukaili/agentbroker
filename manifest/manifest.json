@@ -3146,7 +3146,12 @@
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
-        "required": ["agent_id", "timestamp", "nonce", "signature"],
+        "required": [
+          "agent_id",
+          "timestamp",
+          "nonce",
+          "signature"
+        ],
         "properties": {
           "agent_id": {
             "type": "string",
@@ -3169,19 +3174,39 @@
       "output_schema": {
         "type": "object",
         "properties": {
-          "ok": {"type": "boolean"},
-          "key": {"type": "string", "description": "The API key to use as X-Agent-Identity header."},
-          "key_id": {"type": "string"},
-          "expires_at": {"type": "string", "description": "ISO date (YYYY-MM-DD)."},
-          "tier": {"type": "string", "enum": ["free"]},
-          "daily_limit": {"type": "integer", "description": "Gated operations allowed per day."},
-          "usage": {"type": "string"}
+          "ok": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string",
+            "description": "The API key to use as X-Agent-Identity header."
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "ISO date (YYYY-MM-DD)."
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "free"
+            ]
+          },
+          "daily_limit": {
+            "type": "integer",
+            "description": "Gated operations allowed per day."
+          },
+          "usage": {
+            "type": "string"
+          }
         }
       },
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "Free-tier key. The issued key allows 100 gated ops/day at no charge."
+        "notes": "No key required, unmetered."
       },
       "slo": {
         "p50_ms": 100,

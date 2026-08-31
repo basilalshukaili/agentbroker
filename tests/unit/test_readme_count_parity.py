@@ -16,10 +16,10 @@ recomputed from pricing.py and every stated figure must match it.
 WHY THE COUNT IS WHAT IT IS, since three different numbers are all defensible
 and that is exactly how the drift happened:
 
-  * 20 tools are priced in total.
-  * 10 of them cost ZERO credits.
-  * One of those ten, `import_booking_url`, is a WRITE tool and needs a key.
-    So "free with no key" is 9, not 10 - free and keyless are different claims
+  * 21 tools are priced in total.
+  * 11 of them cost ZERO credits.
+  * One of those eleven, `import_booking_url`, is a WRITE tool and needs a key.
+    So "free with no key" is 10, not 11 - free and keyless are different claims
     and the README makes the keyless one.
   * The 3 premium data tools are NOT in either figure: they are metered-free
     up to a daily limit, which is a third category and must never be folded
@@ -64,7 +64,7 @@ def test_the_free_keyless_count_is_nine_or_this_test_is_stale(counts):
     """A canary on the fixture itself. If this fails the product changed, and
     the README needs updating - which is the point - but it also means every
     other assertion here was comparing against a moved target."""
-    assert counts["free_and_keyless"] == 9, (
+    assert counts["free_and_keyless"] == 10, (
         f"free-and-keyless tool count moved to {counts['free_and_keyless']}; "
         f"update README.md and this docstring together")
 

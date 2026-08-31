@@ -39,6 +39,7 @@ class TestManifestStructure:
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
             "get_conversation",
             "verify_company_record", "screen_sanctions", "map_trade_restriction",
+            "mint_key",
         }
         actual = {op["name"] for op in self.manifest["operations"]}
         assert expected == actual, f"missing={expected - actual} extra={actual - expected}"

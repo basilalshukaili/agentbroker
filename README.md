@@ -35,11 +35,11 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  9 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
+| Billing | **Live**  -  10 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
 | x402 payment rail | **Offered, opt-in.** Enabled on the service since the founder lifted the crypto restriction on 2026-08-29. A caller attaches a payment in `params._meta["x402/payment"]` and the call is served without a key (USDC on Base, proven once on mainnet, tx 0x38a0d9ec). Callers who do not attach one fall through to credits and the free quota, so nothing is gated behind it. `/.well-known/x402` is still a 404 - discovery is via `/.well-known/mcp.json`, which lists the rail. |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. 9 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+> The MCP server is live and callable right now. Bookings hit demo data. 10 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ---
 
@@ -69,6 +69,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 18 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
 | 19 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
 | 20 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
+| 21 | `mint_key` | Issue a free-tier agent identity key via HMAC proof — no email required, no human in the loop | **free** |
 
 Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
 

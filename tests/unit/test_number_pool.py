@@ -10,10 +10,132 @@ send-from wiring is tested, not just the allocation arithmetic.
 from __future__ import annotations
 
 import asyncio
+import socket
 
 import pytest
 
 from core import number_pool as np
+
+
+# ---------------------------------------------------------------------------
+# I/O containment - the invariant is stated, not hoped for
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS (2026-08-31). The two adapter tests at the bottom of this file
+# failed once inside a full-suite run and passed on every re-run - the exact
+# shape of a test that is quietly talking to the network.
+#
+# They stubbed the compliance gate as "compliance.pre_check.pre_check". But
+# channels/whatsapp/cloud_api.py binds that symbol AT IMPORT TIME
+# (`from compliance.pre_check import pre_check`), so the stub rebound a name the
+# adapter never reads: dead code, and the REAL gate ran on every send. The gate's
+# last act is get_audit_log().record(), which fire-and-forgets a Supabase write
+# onto whatever event loop is running - so anywhere SUPABASE_URL is configured, a
+# test that believes it is offline was issuing a live HTTP POST mid-assertion.
+#
+# Two guards, because the two failure modes are opposite and only one of them
+# involves a socket:
+#
+#   * no_outbound_io - anything aimed off-box raises. Catches whatever escapes
+#     the httpx patch.
+#   * _record_http   - records EVERY request, and the tests assert there is
+#     exactly one. Catches the case that actually bit us: a stray call the httpx
+#     patch happily absorbs, overwriting the single URL the assertion then reads.
+#     A socket guard alone would have seen nothing at all here.
+#
+# Loopback is deliberately left alone: asyncio's Windows ProactorEventLoop builds
+# its self-pipe from a real 127.0.0.1 socketpair, so banning sockets outright
+# breaks asyncio.run itself and every test in this file fails for the wrong
+# reason (measured, not assumed).
+_LOOPBACK = {"127.0.0.1", "::1", "localhost", ""}
+
+
+class OutboundIOInTest(RuntimeError):
+    """A test that claims to do no I/O reached for the network."""
+
+
+def _hostname(value):
+    return value.decode(errors="replace") if isinstance(value, bytes) else value
+
+
+@pytest.fixture(autouse=True)
+def no_outbound_io(monkeypatch):
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_getaddrinfo = socket.getaddrinfo
+
+    def _is_local(address):
+        host = address[0] if isinstance(address, tuple) else address
+        return _hostname(host) in _LOOPBACK
+
+    def _connect(self, address, *a, **k):
+        if not _is_local(address):
+            raise OutboundIOInTest(f"outbound connect({address!r}) from a test")
+        return real_connect(self, address, *a, **k)
+
+    def _connect_ex(self, address, *a, **k):
+        if not _is_local(address):
+            raise OutboundIOInTest(f"outbound connect_ex({address!r}) from a test")
+        return real_connect_ex(self, address, *a, **k)
+
+    def _getaddrinfo(host, port, *a, **k):
+        if _hostname(host) not in _LOOPBACK:
+            raise OutboundIOInTest(f"outbound DNS for {_hostname(host)!r} from a test")
+        return real_getaddrinfo(host, port, *a, **k)
+
+    monkeypatch.setattr(socket.socket, "connect", _connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", _connect_ex)
+    monkeypatch.setattr(socket, "getaddrinfo", _getaddrinfo)
+
+
+class _FakeResponse:
+    status_code = 200
+    content = b"{}"
+
+    def json(self):
+        return {"messages": [{"id": "wamid_x"}]}
+
+
+def _record_http(monkeypatch) -> list[str]:
+    """Patch httpx.AsyncClient; return the list of URLs anything POSTs to.
+
+    A LIST, not a dict holding "the" URL. The flake this file suffered wrote a
+    SECOND, unrelated POST (the compliance audit mirror, to Supabase) through
+    this same mock - with a dict the last writer won and the assertion read back
+    a URL the adapter never chose.
+    """
+    import httpx
+
+    urls: list[str] = []
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            urls.append(url)
+            return _FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    return urls
+
+
+def _stub_compliance_gate(monkeypatch):
+    """No-op the compliance gate FOR THE ADAPTER. The patch target is the point.
+
+    Patching "compliance.pre_check.pre_check" rebinds the definition site, which
+    every adapter has already copied into its own module namespace at import
+    time - so the stub never fires. Patch the binding the caller actually reads,
+    the way tests/unit/test_twilio_dual_auth.py documents. The gate itself is
+    covered by tests/unit/test_compliance.py; in THIS file it is noise, and
+    (until now) noise that made a network call.
+    """
+    monkeypatch.setattr("channels.whatsapp.cloud_api.pre_check", lambda **k: None)
 
 
 @pytest.fixture(autouse=True)
@@ -137,37 +259,13 @@ def test_no_pool_configured_returns_no_sender(monkeypatch):
 def test_adapter_sends_from_the_allocated_number(monkeypatch):
     """If the adapter ignored the allocation, every reply would correlate to the
     wrong pair — strictly worse than having no pool."""
-    import httpx
     from channels.adapter_interface import ChannelRequest
     from channels.whatsapp.cloud_api import WhatsAppCloudAdapter
 
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "tok")
     monkeypatch.setenv("WHATSAPP_PHONE_ID", "111")
-    called = {}
-
-    class _Resp:
-        status_code = 200
-        content = b"{}"
-
-        def json(self):
-            return {"messages": [{"id": "wamid_x"}]}
-
-    class _Client:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, **kw):
-            called["url"] = url
-            return _Resp()
-
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
-    monkeypatch.setattr("compliance.pre_check.pre_check", lambda **k: None)
+    urls = _record_http(monkeypatch)
+    _stub_compliance_gate(monkeypatch)
 
     req = ChannelRequest(
         recipient_id="+96894639405", channel="whatsapp",
@@ -176,47 +274,28 @@ def test_adapter_sends_from_the_allocated_number(monkeypatch):
     )
     resp = asyncio.run(WhatsAppCloudAdapter().send(req))
     assert resp.success
-    assert "/222/messages" in called["url"], "must POST to the ALLOCATED phone id"
+    # ONE send is ONE request. Anything else on this list is a side channel the
+    # test was never told about - which is how the Supabase audit mirror used to
+    # smuggle itself in here and overwrite the URL below.
+    assert len(urls) == 1, f"one send, one request - got {urls}"
+    assert "/222/messages" in urls[0], "must POST to the ALLOCATED phone id"
 
 
 def test_adapter_defaults_when_no_allocation(monkeypatch):
     """No metadata -> today's behaviour, unchanged."""
-    import httpx
     from channels.adapter_interface import ChannelRequest
     from channels.whatsapp.cloud_api import WhatsAppCloudAdapter
 
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "tok")
     monkeypatch.setenv("WHATSAPP_PHONE_ID", "111")
-    called = {}
-
-    class _Resp:
-        status_code = 200
-        content = b"{}"
-
-        def json(self):
-            return {"messages": [{"id": "wamid_x"}]}
-
-    class _Client:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, **kw):
-            called["url"] = url
-            return _Resp()
-
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
-    monkeypatch.setattr("compliance.pre_check.pre_check", lambda **k: None)
+    urls = _record_http(monkeypatch)
+    _stub_compliance_gate(monkeypatch)
 
     req = ChannelRequest(recipient_id="+96894639405", channel="whatsapp",
                          message_type="transactional", content="hi")
     asyncio.run(WhatsAppCloudAdapter().send(req))
-    assert "/111/messages" in called["url"]
+    assert len(urls) == 1, f"one send, one request - got {urls}"
+    assert "/111/messages" in urls[0]
 
 
 def test_webhook_replies_from_the_receiving_number(monkeypatch):
