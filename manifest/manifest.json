@@ -146,7 +146,7 @@
         "availability_30d": null,
         "supply_network_coverage_by_vertical": null
       },
-      "idempotency": "read-only — idempotency key not required",
+      "idempotency": "read-only â€” idempotency key not required",
       "failure_modes": [
         "bad_input",
         "missing_capability",
@@ -157,7 +157,7 @@
       ],
       "examples": [
         {
-          "label": "Happy path — find hair salon near Atlanta",
+          "label": "Happy path â€” find hair salon near Atlanta",
           "input": {
             "vertical": "personal_services",
             "location": {
@@ -239,7 +239,7 @@
                 ]
               }
             ],
-            "supply_coverage_note": "This business is reachable via voice AI or SMS only — no direct scheduling API."
+            "supply_coverage_note": "This business is reachable via voice AI or SMS only â€” no direct scheduling API."
           }
         }
       ],
@@ -289,7 +289,7 @@
       "name": "verify_business",
       "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
       "when_to_use": "Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').",
-      "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.",
+      "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours â€” those results are already verified.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -342,7 +342,7 @@
         "p50_ms": 500,
         "p95_ms": 2000
       },
-      "idempotency": "read-only — idempotency key not required",
+      "idempotency": "read-only â€” idempotency key not required",
       "failure_modes": [
         "bad_input",
         "supply_unreachable",
@@ -387,13 +387,13 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content â€” marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
       "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
-      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
+      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations â€” use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in â€” the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach â€” those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
         "Permitted message types: transactional, marketing, reminder, follow_up, notification.",
-        "Marketing messages require a valid consent_record_id at send time — the gate looks it up in the consent_store and rejects if missing, expired, or revoked.",
+        "Marketing messages require a valid consent_record_id at send time â€” the gate looks it up in the consent_store and rejects if missing, expired, or revoked.",
         "US SMS marketing requires TCPA prior express written consent + 10DLC campaign registration.",
         "EU/UK recipients require explicit GDPR lawful basis (contract or freely-given consent) for marketing messages.",
         "Canadian recipients require CASL express consent for commercial electronic messages.",
@@ -507,7 +507,7 @@
         "p50_ms": 800,
         "p95_ms": 4000
       },
-      "idempotency": "required — use Idempotency-Key header to prevent duplicate sends",
+      "idempotency": "required â€” use Idempotency-Key header to prevent duplicate sends",
       "failure_modes": [
         "bad_input",
         "compliance_violation",
@@ -519,7 +519,7 @@
       ],
       "examples": [
         {
-          "label": "SMS appointment reminder — happy path",
+          "label": "SMS appointment reminder â€” happy path",
           "input": {
             "recipient": {
               "id_type": "phone",
@@ -551,7 +551,7 @@
             },
             "message_type": "follow_up",
             "content": {
-              "body": "Hi — checking back on the plumbing quote I requested yesterday for Maple St. Could you share availability for Thursday?"
+              "body": "Hi â€” checking back on the plumbing quote I requested yesterday for Maple St. Could you share availability for Thursday?"
             }
           },
           "output": {
@@ -564,7 +564,7 @@
           }
         },
         {
-          "label": "Marketing SMS blocked — no recorded consent",
+          "label": "Marketing SMS blocked â€” no recorded consent",
           "input": {
             "recipient": {
               "id_type": "phone",
@@ -593,7 +593,7 @@
             },
             "message_type": "marketing",
             "content": {
-              "body": "Cuts & Co.: Fall sale this Saturday — 20% off cuts + color. Reply STOP to opt out."
+              "body": "Cuts & Co.: Fall sale this Saturday â€” 20% off cuts + color. Reply STOP to opt out."
             }
           },
           "output": {
@@ -673,7 +673,7 @@
       "name": "capture_lead",
       "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.",
       "when_to_use": "Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.",
-      "when_not_to_use": "Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.",
+      "when_not_to_use": "Do not use for confirmed bookings â€” use schedule_appointment. Do not use for bulk list imports.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
         "Captured lead data is subject to GDPR data subject rights for EU residents.",
@@ -736,7 +736,7 @@
         "p50_ms": 600,
         "p95_ms": 3000
       },
-      "idempotency": "required — dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
+      "idempotency": "required â€” dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
       "failure_modes": [
         "bad_input",
         "idempotency_conflict",
@@ -745,7 +745,7 @@
       ],
       "examples": [
         {
-          "label": "Happy path — lead captured into Square CRM",
+          "label": "Happy path â€” lead captured into Square CRM",
           "input": {
             "smb_id": "smb_001",
             "prospect": {
@@ -787,11 +787,11 @@
       "name": "schedule_appointment",
       "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form.",
       "when_to_use": "Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id.",
-      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed.",
+      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB â€” call find_business and verify_business first if needed.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
         "Voice channel to US recipients requires prior express consent for prerecorded calls (TCPA).",
-        "Voice recording in CA, FL, IL, MD, MA, MT, NV, NH, PA, WA requires two-party consent — recording-consent prompt fires automatically."
+        "Voice recording in CA, FL, IL, MD, MA, MT, NV, NH, PA, WA requires two-party consent â€” recording-consent prompt fires automatically."
       ],
       "input_schema": {
         "type": "object",
@@ -872,9 +872,9 @@
       "slo": {
         "p50_ms": 5000,
         "p95_ms": 60000,
-        "note": "async — p50/p95 reflect time to terminal outcome, not HTTP response"
+        "note": "async â€” p50/p95 reflect time to terminal outcome, not HTTP response"
       },
-      "idempotency": "required — prevents double-booking on network retry",
+      "idempotency": "required â€” prevents double-booking on network retry",
       "failure_modes": [
         "bad_input",
         "supply_unreachable",
@@ -885,7 +885,7 @@
       ],
       "examples": [
         {
-          "label": "Book haircut — direct API path",
+          "label": "Book haircut â€” direct API path",
           "input": {
             "smb_id": "smb_001",
             "action": "book",
@@ -910,7 +910,7 @@
           }
         },
         {
-          "label": "Book plumber — voice AI fallback",
+          "label": "Book plumber â€” voice AI fallback",
           "input": {
             "smb_id": "smb_044",
             "action": "book",
@@ -982,7 +982,7 @@
     {
       "name": "send_transactional_confirmation",
       "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen.",
-      "when_to_use": "Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing.",
+      "when_to_use": "Use for any message that MUST be delivered reliably â€” OTPs, booking confirmations, receipts. Do not use for marketing.",
       "when_not_to_use": "Do not use for marketing or promotional messages. Do not use for conversational messages.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
@@ -1047,7 +1047,7 @@
         "p50_ms": 500,
         "p95_ms": 2000
       },
-      "idempotency": "required — Idempotency-Key prevents double-sends of OTPs and confirmations",
+      "idempotency": "required â€” Idempotency-Key prevents double-sends of OTPs and confirmations",
       "failure_modes": [
         "bad_input",
         "upstream_failure",
@@ -1098,11 +1098,11 @@
     {
       "name": "handle_inbound",
       "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.",
-      "when_to_use": "Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.",
+      "when_to_use": "Use when an SMB needs inbound message triage â€” classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.",
       "when_not_to_use": "Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
-        "Inbound message content may contain PII — retained per jurisdiction retention policy.",
+        "Inbound message content may contain PII â€” retained per jurisdiction retention policy.",
         "GDPR data subject deletion requests received via inbound must be escalated immediately."
       ],
       "input_schema": {
@@ -1218,7 +1218,7 @@
       "when_not_to_use": "Do not use as a first resort. Escalate only after automated resolution attempts.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
-        "Context bundle may contain PII — handled per jurisdiction retention policy.",
+        "Context bundle may contain PII â€” handled per jurisdiction retention policy.",
         "Recording transcripts included in handoff must have recording consent confirmed."
       ],
       "input_schema": {
@@ -1319,7 +1319,7 @@
       ],
       "user_query_examples": [
         {
-          "user_says": "I'm stuck — get a human at smb_xyz to call me back",
+          "user_says": "I'm stuck â€” get a human at smb_xyz to call me back",
           "agent_call": {
             "tool": "escalate_to_human",
             "arguments": {
@@ -1339,7 +1339,7 @@
       "name": "get_status",
       "description": "Query the current state of any in-flight async operation by operation_id.",
       "when_to_use": "Use to poll the state of a pending_async operation when no webhook callback has arrived or to check progress.",
-      "when_not_to_use": "Do not poll more frequently than once per 10 seconds — use webhook delivery for real-time updates instead.",
+      "when_not_to_use": "Do not poll more frequently than once per 10 seconds â€” use webhook delivery for real-time updates instead.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1413,7 +1413,7 @@
       "name": "get_outcome",
       "description": "Retrieve the final OutcomeReceipt for a completed operation.",
       "when_to_use": "Use after get_status returns success/failure/partial to retrieve the full result with cost and reason codes.",
-      "when_not_to_use": "Do not use for operations still in pending/executing state — use get_status first.",
+      "when_not_to_use": "Do not use for operations still in pending/executing state â€” use get_status first.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1472,7 +1472,7 @@
       "name": "preview_cost",
       "description": "Return an expected cost estimate, latency estimate, and success-probability estimate for a proposed call before execution. Returns the exact price when it is fixed, and a min/max range when the cost depends on channel or outcome. It does not promise an accuracy percentage - check cost_range.",
       "when_to_use": "Use before any operation when the agent is operating under a budget constraint and needs to decide whether to proceed.",
-      "when_not_to_use": "Do not use in a hot loop — cache the result for at least 60 seconds if repeating the same preview.",
+      "when_not_to_use": "Do not use in a hot loop â€” cache the result for at least 60 seconds if repeating the same preview.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1566,7 +1566,7 @@
             "estimated_latency_p50_ms": 5000,
             "success_probability_estimate": 0.88,
             "channel_likely": "direct_api:square",
-            "cost_accuracy_slo": "±5%"
+            "cost_accuracy_slo": "Â±5%"
           }
         }
       ],
@@ -1697,7 +1697,7 @@
       "name": "check_booking_link",
       "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.",
       "when_to_use": "Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt.",
-      "when_not_to_use": "Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
+      "when_not_to_use": "Do not use to confirm the page is currently live/available â€” this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1748,7 +1748,7 @@
           },
           "checked_live": {
             "type": "boolean",
-            "description": "Always false — this is an offline classification, the page is never fetched."
+            "description": "Always false â€” this is an offline classification, the page is never fetched."
           }
         }
       },
@@ -1823,9 +1823,9 @@
     },
     {
       "name": "import_booking_url",
-      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
+      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent â€” calling twice returns the same smb_id.",
       "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.",
-      "when_not_to_use": "Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
+      "when_not_to_use": "Do not use if the user only describes a business by name without a URL â€” call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -1894,7 +1894,7 @@
           },
           "smb_id": {
             "type": "string",
-            "description": "Stable identifier — pass to schedule_appointment, send_message, or capture_lead next."
+            "description": "Stable identifier â€” pass to schedule_appointment, send_message, or capture_lead next."
           },
           "platform": {
             "type": "string",
@@ -1939,7 +1939,7 @@
           }
         },
         {
-          "user_says": "I want to see Dr. Dupont — https://www.doctolib.fr/dentiste/paris/jean-dupont",
+          "user_says": "I want to see Dr. Dupont â€” https://www.doctolib.fr/dentiste/paris/jean-dupont",
           "agent_call": {
             "tool": "import_booking_url",
             "arguments": {
@@ -2014,14 +2014,14 @@
     },
     {
       "name": "call_business",
-      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
-      "when_to_use": "Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).",
-      "when_not_to_use": "Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page â€” only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers â€” but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+      "when_to_use": "Use when the target business has NO booking URL and NO API â€” only a phone number â€” and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).",
+      "when_not_to_use": "Do NOT use when the business has a booking URL â€” use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing â€” the compliance gate and the B2B-only framing reject that.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
         "Business-directed voice call. The opening line identifies the caller as an AI assistant acting on a consumer's behalf.",
         "Recording consent enforced per jurisdiction (two-party-consent states/countries get a spoken consent prompt before recording).",
-        "Not for consumer-directed autodialing or prerecorded marketing (TCPA) — objective must be an operational business question."
+        "Not for consumer-directed autodialing or prerecorded marketing (TCPA) â€” objective must be an operational business question."
       ],
       "input_schema": {
         "type": "object",
@@ -2075,7 +2075,7 @@
         "p50_ms": 45000,
         "p95_ms": 180000
       },
-      "idempotency": "NOT idempotent — each call places a new phone call. Do not retry a call_business that returned pending_async; poll get_outcome instead.",
+      "idempotency": "NOT idempotent â€” each call places a new phone call. Do not retry a call_business that returned pending_async; poll get_outcome instead.",
       "failure_modes": [
         "bad_input",
         "voice_not_provisioned",
@@ -2109,9 +2109,9 @@
     },
     {
       "name": "check_compliance",
-      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
-      "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
-      "when_not_to_use": "Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run â€” but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+      "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated â€” anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
+      "when_not_to_use": "Do not treat a legal=true as a permanent license â€” the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -2179,7 +2179,7 @@
           },
           "checked_live": {
             "type": "boolean",
-            "description": "Always false — this is a gate decision preview, not a live delivery."
+            "description": "Always false â€” this is a gate decision preview, not a live delivery."
           }
         }
       },
@@ -2192,7 +2192,7 @@
         "p50_ms": 15,
         "p95_ms": 80
       },
-      "idempotency": "read-only — no send, no audit write, no idempotency key required",
+      "idempotency": "read-only â€” no send, no audit write, no idempotency key required",
       "failure_modes": [
         "bad_input"
       ],
@@ -2217,7 +2217,7 @@
           }
         },
         {
-          "label": "Marketing SMS blocked — no recorded consent",
+          "label": "Marketing SMS blocked â€” no recorded consent",
           "input": {
             "recipient_id": "+14045550200",
             "content": "20% off this week only!",
@@ -3136,7 +3136,7 @@
       "name": "mint_key",
       "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.",
       "when_to_use": "Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).",
-      "when_not_to_use": "Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.",
+      "when_not_to_use": "Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans â€” this endpoint issues free-tier keys (100 ops/day) only.",
       "execution_profile": "sync",
       "http": {
         "method": "POST",
@@ -3163,7 +3163,7 @@
           },
           "nonce": {
             "type": "string",
-            "description": "Random value (UUID or hex). Prevents replay attacks — use a fresh nonce each call."
+            "description": "Random value (UUID or hex). Prevents replay attacks â€” use a fresh nonce each call."
           },
           "signature": {
             "type": "string",
@@ -3214,7 +3214,7 @@
       },
       "idempotency": {
         "safe_to_retry": true,
-        "key": "agent_id — the same agent_id always resolves to the same key_id"
+        "key": "agent_id â€” the same agent_id always resolves to the same key_id"
       },
       "failure_modes": [
         {
@@ -3227,7 +3227,7 @@
           "reason_code": "not_configured",
           "retriable": false,
           "meaning": "MACHINE_MINT_SECRET is not set on this server.",
-          "agent_action": "Contact hello@hatchloop.dev — the endpoint is not yet enabled."
+          "agent_action": "Contact hello@hatchloop.dev â€” the endpoint is not yet enabled."
         }
       ],
       "examples": [
@@ -3243,6 +3243,179 @@
             }
           },
           "returns": "ok=true, key=<JWT>, expires_at=2026-11-28, tier=free, daily_limit=100"
+        }
+      ]
+    },
+    {
+      "name": "lookup_us_contracts",
+      "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.",
+      "when_to_use": "Use when you need to know whether a company is a US federal contractor, which government agencies have awarded it contracts, the dollar value and NAICS sector of those contracts, and the period of performance. Useful for supplier due-diligence, vendor qualification, competitive intelligence, and import/trade research. The target demand: \"us import data api\", \"supplier lookup api\", \"company trade records\", \"who has government contracts\", \"federal contractor search\".",
+      "when_not_to_use": "Do not use for non-US companies (USASpending.gov only covers US federal contracts). Do not use as an exhaustive financial-risk or sanctions screen -- use verify_company_record and screen_sanctions for those. Do not use for state/local government contracts (federal only).",
+      "execution_profile": "sync",
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "company_name"
+        ],
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\", \"Palantir Technologies\")."
+          },
+          "max_results": {
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Maximum number of contract awards to return (sorted by award amount descending). Default: 5, max: 10."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "found",
+              "not_found",
+              "unavailable"
+            ]
+          },
+          "queried_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "total_in_result_set_usd": {
+            "type": "number"
+          },
+          "awards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "award_id": {
+                  "type": "string"
+                },
+                "recipient_name": {
+                  "type": "string"
+                },
+                "award_amount_usd": {
+                  "type": "number"
+                },
+                "awarding_agency": {
+                  "type": "string"
+                },
+                "naics_code": {
+                  "type": "string"
+                },
+                "naics_description": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "period_start": {
+                  "type": "string"
+                },
+                "period_end": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "No key required, unmetered."
+      },
+      "slo": {
+        "p50_ms": 1200,
+        "p95_ms": 5000
+      },
+      "idempotency": "read-only",
+      "failure_modes": [
+        {
+          "reason_code": "bad_input",
+          "retriable": false,
+          "meaning": "company_name is empty or missing.",
+          "agent_action": "Supply a non-empty company_name."
+        },
+        {
+          "reason_code": "partial_lookup",
+          "retriable": true,
+          "meaning": "USASpending.gov was unreachable on this call.",
+          "agent_action": "Retry; the upstream has SLA issues occasionally."
+        }
+      ],
+      "examples": [
+        {
+          "label": "Look up federal contracts for a major contractor",
+          "input": {
+            "company_name": "Booz Allen Hamilton",
+            "max_results": 3
+          },
+          "output": {
+            "status": "found",
+            "total_in_result_set_usd": 450000000.0,
+            "awards": [
+              {
+                "award_id": "EXAMPLE-001",
+                "recipient_name": "BOOZ ALLEN HAMILTON INC.",
+                "award_amount_usd": 450000000.0,
+                "awarding_agency": "Department of Defense",
+                "naics_code": "541511",
+                "naics_description": "Custom Computer Programming Services",
+                "period_start": "2022-01-01",
+                "period_end": "2025-12-31"
+              }
+            ]
+          }
+        }
+      ],
+      "user_query_examples": [
+        {
+          "user_says": "Does Palantir have US government contracts?",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "Palantir Technologies"
+            }
+          }
+        },
+        {
+          "user_says": "What federal contracts does Booz Allen Hamilton have?",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "Booz Allen Hamilton",
+              "max_results": 5
+            }
+          }
+        },
+        {
+          "user_says": "Find US import supplier data for Lockheed Martin",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "Lockheed Martin"
+            }
+          }
+        },
+        {
+          "user_says": "Which government agencies are customers of SAIC?",
+          "agent_call": {
+            "tool": "lookup_us_contracts",
+            "arguments": {
+              "company_name": "SAIC",
+              "max_results": 10
+            }
+          }
         }
       ]
     }
@@ -3319,6 +3492,6 @@
   },
   "manifest_version": "0.1.0",
   "generated_at": "2026-04-27T00:00:00Z",
-  "slo_data_freshness": "static_seed — replace with telemetry-driven values at P8",
+  "slo_data_freshness": "static_seed â€” replace with telemetry-driven values at P8",
   "version": "0.2.10"
 }

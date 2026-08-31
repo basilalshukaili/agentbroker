@@ -115,7 +115,7 @@ def _build_tool_list() -> list[dict]:
                 "get_outcome", "preview_cost", "self_test",
                 "check_booking_link", "check_compliance", "get_conversation",
                 "verify_company_record", "screen_sanctions",
-                "map_trade_restriction",
+                "map_trade_restriction", "lookup_us_contracts",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -133,6 +133,7 @@ def _build_tool_list() -> list[dict]:
                 "verify_company_record",  # read-only live registry lookup
                 "screen_sanctions",    # read-only live sanctions lookup
                 "map_trade_restriction",  # read-only compliance snapshot
+                "lookup_us_contracts",  # read-only USASpending.gov contract search
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -1457,6 +1458,16 @@ async def _dispatch_operation(
             parties=args.get("parties"),
         )
 
+    elif name == "lookup_us_contracts":
+        # Free read-only US federal contract award lookup via USASpending.gov.
+        # Probe A demand probe: "us import data api", "supplier lookup api",
+        # "who has government contracts", "federal contractor search".
+        from core.lookup_us_contracts import handle_lookup_us_contracts
+        receipt = await handle_lookup_us_contracts(
+            company_name=args["company_name"],
+            max_results=int(args.get("max_results", 5)),
+        )
+
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")
 
@@ -1524,7 +1535,7 @@ async def _dispatch_operation(
         "get_status", "get_outcome",
         "find_business", "verify_business", "preview_cost", "self_test",
         "check_booking_link", "check_compliance", "verify_company_record",
-        "screen_sanctions", "map_trade_restriction",
+        "screen_sanctions", "map_trade_restriction", "lookup_us_contracts",
     })
 
     # FIX 1 (durable store) + FIX 5 (quota strip): persist operation to durable

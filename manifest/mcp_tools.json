@@ -783,5 +783,28 @@
         }
       }
     }
+  },
+  {
+    "name": "lookup_us_contracts",
+    "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov API. Returns award ID, recipient name, award amount, awarding agency, NAICS code, and period of performance. Zero cost, no key required.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "company_name"
+      ],
+      "properties": {
+        "company_name": {
+          "type": "string",
+          "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\")"
+        },
+        "max_results": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum number of contract awards to return (sorted by award amount, descending). Default: 5."
+        }
+      }
+    }
   }
 ]

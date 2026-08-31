@@ -29,6 +29,7 @@ _PRICING_CENTS: dict[str, int] = {
     "check_booking_link":          0,
     "check_compliance":            0,
     "get_conversation":            0,   # read the thread you started - free
+    "lookup_us_contracts":         0,   # free demand probe: US federal contract awards via USASpending.gov
     "import_booking_url":          0,   # adoption wedge -- free so agents import without friction
     "mint_key":                    0,   # agent self-serve key issuance -- always free (only issues free-tier keys)
     # VOICE. Vapi is live and a call costs us ~$0.30, so the at-cost floor is

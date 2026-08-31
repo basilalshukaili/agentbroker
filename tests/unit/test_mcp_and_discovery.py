@@ -38,7 +38,7 @@ class TestMcpServer:
             "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {},
         }))
         tools = r["result"]["tools"]
-        assert len(tools) >= 21
+        assert len(tools) >= 22
         names = {t["name"] for t in tools}
         assert names == {
             "find_business", "verify_business", "send_message", "capture_lead",
@@ -46,7 +46,7 @@ class TestMcpServer:
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
             "verify_company_record", "screen_sanctions", "map_trade_restriction",
-            "get_conversation", "mint_key",
+            "get_conversation", "mint_key", "lookup_us_contracts",
         }
 
     def test_every_tool_has_input_schema_and_annotations(self):
