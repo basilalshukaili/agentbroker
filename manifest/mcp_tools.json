@@ -785,8 +785,39 @@
     }
   },
   {
+    "name": "mint_key",
+    "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "agent_id",
+        "timestamp",
+        "nonce",
+        "signature"
+      ],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "A stable unique identifier for this agent (e.g. a UUID). The issued key is deterministically tied to this ID."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Unix epoch seconds at signing time. Must be within 60s of server time."
+        },
+        "nonce": {
+          "type": "string",
+          "description": "Random value (UUID or hex). Prevents replay attacks \u2014 use a fresh nonce each call."
+        },
+        "signature": {
+          "type": "string",
+          "description": "HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET) as lowercase hex. The HMAC input is the raw concatenation with no separators."
+        }
+      }
+    }
+  },
+  {
     "name": "lookup_us_contracts",
-    "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov API. Returns award ID, recipient name, award amount, awarding agency, NAICS code, and period of performance. Zero cost, no key required.",
+    "description": "Search US federal contract awards by company (recipient) name using the free USASpending.gov public API. Returns the top awards sorted by dollar amount: award ID, recipient name, award amount USD, awarding agency, NAICS code/description, and period of performance. Zero upstream cost, no key required. Data covers 2020-2026 procurement contracts.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -795,14 +826,14 @@
       "properties": {
         "company_name": {
           "type": "string",
-          "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\")"
+          "description": "Company or recipient name to search for in US federal contract awards (e.g. \"Lockheed Martin\", \"Booz Allen Hamilton\", \"Palantir Technologies\")."
         },
         "max_results": {
           "type": "integer",
           "default": 5,
           "minimum": 1,
           "maximum": 10,
-          "description": "Maximum number of contract awards to return (sorted by award amount, descending). Default: 5."
+          "description": "Maximum number of contract awards to return (sorted by award amount descending). Default: 5, max: 10."
         }
       }
     }
