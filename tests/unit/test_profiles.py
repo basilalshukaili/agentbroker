@@ -81,9 +81,10 @@ def test_a_door_still_runs_its_own_tools():
 
 
 def test_the_full_server_is_unchanged():
-    """profile=None must be byte-identical to the behaviour before profiles."""
+    """profile=None must expose the full tool surface (currently 22:
+    the 21 at the time profiles landed, plus lookup_us_contracts)."""
     r = call("tools/list", {})
-    assert len(r["result"]["tools"]) == 21
+    assert len(r["result"]["tools"]) == 22
 
 
 # --------------------------------------------------------------------------
