@@ -1,6 +1,6 @@
 startCommand:
   type: http
-  url: "https://hatchloop.dev/mcp/agent-broker"
+  url: "https://api.hatchloop.dev/mcp"
   configSchema:
     type: object
     properties:
