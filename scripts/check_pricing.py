@@ -29,7 +29,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _AGENTBROKER_DIR = _SCRIPT_DIR.parent           # agentbroker/
-_REPO_ROOT = _AGENTBROKER_DIR.parent            # C:\ai company\
+_REPO_ROOT = _AGENTBROKER_DIR.parent            # C:\TechMate\projects\hatchloop\
 
 # Files to scan (absolute paths)
 _SCAN_FILES = [

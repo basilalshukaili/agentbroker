@@ -300,9 +300,9 @@ pushing it.
    these actively contradict the $49/mo flat-fee model buyers are actually offered.
 
 ## Files touched this session
-- `C:\ai company\agentbroker\deploy\registry-submissions\smithery.yaml` — updated to 16 tools,
+- `C:\TechMate\projects\hatchloop\agentbroker\deploy\registry-submissions\smithery.yaml` — updated to 16 tools,
   correct 8/8 free/paid split, fixed Polar checkout link, deploy-gap warning comment.
-- `C:\ai company\agentbroker\deploy\registry-submissions\smithery-sync-2026-08-16.md` — this file.
+- `C:\TechMate\projects\hatchloop\agentbroker\deploy\registry-submissions\smithery-sync-2026-08-16.md` — this file.
 
 Nothing else in the repo was modified. Nothing was submitted to Smithery, Cloudflare, or the MCP
 registry.
