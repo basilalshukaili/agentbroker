@@ -86,8 +86,10 @@ NOUNS = {
 }
 
 SURFACES = [
-    "README.md", "llms-install.md", "PROJECT_OVERVIEW.md", "HANDOFF.md",
-    "AGENT_DISTRIBUTION.md", "LAUNCH_STATUS.md", "OUTREACH_KIT.md",
+    "README.md", "llms-install.md", "PROJECT_OVERVIEW.md",
+    # HANDOFF.md, AGENT_DISTRIBUTION.md, LAUNCH_STATUS.md and OUTREACH_KIT.md
+    # were stale pre-pivot operational docs, removed in 4a78f11. A surface that
+    # no longer exists must be dropped here, not left to fail as "never checked".
     "docs/PRICING.md", "docs/BENCHMARKS.md", "docs/mission.md",
     "server.json", "glama.json", "manifest/manifest.json",
     "manifest/mcp_tools.json",

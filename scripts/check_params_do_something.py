@@ -213,12 +213,19 @@ def _module_text(tool: str) -> str:
 
     Not just core/<tool>.py: request models live in core/models.py and the
     dispatch layer unpacks arguments in mcp_server.py, so a parameter can be
-    legitimately consumed in any of the three.
+    legitimately consumed in any of the three. A few tools are implemented in
+    the agent_interface layer instead of core/ - mint_key is a signed HTTP
+    endpoint whose agent_id/timestamp/nonce/signature are verified in
+    key_requests.py + key_request_logic.py - so those are scanned too, or the
+    gate reports live parameters as absent purely because it looked in the
+    wrong file.
     """
     parts = []
     for rel in (os.path.join("core", f"{tool}.py"),
                 os.path.join("core", "models.py"),
-                os.path.join("agent_interface", "mcp_server.py")):
+                os.path.join("agent_interface", "mcp_server.py"),
+                os.path.join("agent_interface", "key_requests.py"),
+                os.path.join("agent_interface", "key_request_logic.py")):
         path = os.path.join(REPO, rel)
         if os.path.exists(path):
             parts.append(open(path, encoding="utf-8", errors="replace").read())
