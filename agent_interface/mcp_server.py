@@ -628,7 +628,7 @@ async def _h_tools_list(params: dict) -> dict:
     handle_mcp_request - NOT read from the caller's payload, so nobody can widen
     their own door by sending it themselves. The dispatcher calls this handler
     with `params` alone, so taking it as a second argument would have meant it
-    silently never arrived and every door served all 20 tools.
+    silently never arrived and every door served all 22 tools.
 
     `_profile` absent means the full server, byte-identical to before."""
     from agent_interface import profiles as _profiles

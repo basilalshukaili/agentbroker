@@ -567,7 +567,7 @@ def get_llms_txt() -> str:
         "and so on.",
         "",
         "**Pick the narrowest endpoint that covers your use case.** Every tool "
-        "definition costs tokens on every request, so attaching 20 tools when "
+        f"definition costs tokens on every request, so attaching {len(get_full_manifest().get('operations', []))} tools when "
         "you need 8 is a permanent tax on each call:",
         "",
     ] + [

@@ -149,7 +149,7 @@ $ python -m pytest tests/ -q
 ```
 
 **81/81 passing in 0.40s.** The full suite covers:
-- Unit tests for all 20 operation handlers
+- Unit tests for all 22 operation handlers
 - Contract tests verifying every manifest claim is executable
 - Compliance suite (jurisdiction rules, content filtering, audit log)
 - Fault-injection (channel failures, malformed input, circuit breakers)

@@ -15,16 +15,9 @@
 
 name: agent-broker
 displayName: "Agent Broker — SMB Transactions & Bookings"
-# DEPLOY GAP (2026-08-16): the two newest tools (check_booking_link,
-# check_compliance) are merged in manifest/manifest.json but NOT yet live on
-# either Cloudflare edge or the Render origin -- both still answer tools/list
-# with 21 tools as of this writing. Trigger a fresh Render deploy + confirm the
-# edge snapshot (edge/src/snapshots/mcp-tools-list.json, manifest/mcp_tools.json)
-# is regenerated BEFORE claiming 16 anywhere public (this file included). See
-# deploy/registry-submissions/smithery-sync-2026-08-16.md for the full audit.
 description: >
   Agent-callable horizontal layer for finding, verifying, booking, messaging, and
-  calling long-tail small/mid-sized businesses worldwide. 21 operations across 12
+  calling long-tail small/mid-sized businesses worldwide. 22 operations across 12
   booking platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable,
   Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), plus free
   pre-flight checks for booking links, outbound-message compliance, company

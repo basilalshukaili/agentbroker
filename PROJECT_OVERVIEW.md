@@ -18,7 +18,7 @@ A live MCP server that lets any AI agent take a Cal.com / Calendly / Doctolib / 
 ## 2. What's verified live (2026-05-05)
 
 **Primary (edge — use this in all agent configs and submissions):**
-- `https://hatchloop.dev/mcp/agent-broker` — 20 tools, 40–65 ms MCP reads
+- `https://hatchloop.dev/mcp/agent-broker` — 22 tools, 40–65 ms MCP reads
 - `https://hatchloop.dev/.well-known/mcp.json`
 - All discovery endpoints — 40–70 ms globally (embedded snapshots, no origin)
 
