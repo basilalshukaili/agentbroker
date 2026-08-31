@@ -59,7 +59,7 @@ PROTOCOL_VERSION = "2024-11-05"
 # ---------------------------------------------------------------------------
 
 def _total_tool_count() -> int:
-    """Derived, not typed. I hardcoded "12 of the 21 tools" into the
+    """Derived, not typed. I hardcoded "12 of the 22 tools" into the
     instructions string one commit after building a CI gate that fails the
     build for exactly that - the habit is stronger than the rule, which is
     why the rule has to be a function rather than a reminder."""

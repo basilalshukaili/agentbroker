@@ -11,11 +11,11 @@
 | Python service (Render) | ✅ Live — `hatchloop.dev` (origin, internal) |
 | Cloudflare Worker edge | ✅ Live — `hatchloop.dev` |
 | Tests | ✅ 103/103 passing in 0.40 s |
-| MCP tools | ✅ 21 tools, all callable |
+| MCP tools | ✅ 22 tools, all callable |
 | Discovery endpoints | ✅ 40–70 ms globally (embedded snapshots) |
 | Compliance gate | ✅ 22 jurisdictions, non-bypassable |
 | Fortnightly metrics reminder | ✅ Telegram bot, every 14 days |
-| Smithery listing | ✅ Updated — edge URL, 21 tools |
+| Smithery listing | ✅ Updated — edge URL, 22 tools |
 | mcp.so listing | ✅ Submitted |
 | Official MCP Registry | ✅ Published — `io.github.basilalshukaili/agent-broker` v1.0.1 |
 | PulseMCP | ⏳ Pulls from Official MCP Registry — live within ~1 week |

@@ -21,7 +21,7 @@ of small businesses — barbers, plumbers, accountants, dentists — who
 have no API.
 
 What's there:
-- 21 MCP tools (find / verify / message / schedule / import_booking_url / ...)
+- 22 MCP tools (find / verify / message / schedule / import_booking_url / ...)
 - Compliance pre-check that fires per jurisdiction (TCPA, GDPR, CASL,
   10DLC, two-party recording consent for 10 US states)
 - Channel fallback: Cal.com direct API → voice AI (Vapi) → SMS (Twilio) →
