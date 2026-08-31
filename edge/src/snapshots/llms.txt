@@ -243,6 +243,17 @@ Read a two-way conversation thread you started: its state, every message exchang
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/get_conversation`
 
+### mint_key
+
+Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.
+
+- **When to use**: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).
+- **When NOT to use**: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.
+- **Cost: free (no key required).**
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://api.hatchloop.dev/ops/mint_key`
+
 ## Authentication
 
 All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://api.hatchloop.dev/auth/token`. Scopes include allowed operations, budget cap, and verticals.
@@ -273,7 +284,7 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
-- `https://api.hatchloop.dev/mcp/agent-broker` - everything (20 tools)
+- `https://api.hatchloop.dev/mcp/agent-broker` - everything (21 tools)
 
 The same rows work in Claude Code, Codex, and any other MCP client - the transport is standard.
 

@@ -389,6 +389,23 @@
       "output_modes": [
         "application/json"
       ]
+    },
+    {
+      "id": "mint_key",
+      "name": "Mint Key",
+      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.",
+      "tags": [
+        "sync"
+      ],
+      "examples": [
+        ""
+      ],
+      "input_modes": [
+        "application/json"
+      ],
+      "output_modes": [
+        "application/json"
+      ]
     }
   ],
   "supported_protocols": [

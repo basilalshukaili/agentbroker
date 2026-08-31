@@ -846,6 +846,40 @@
           }
         }
       }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "mint_key",
+        "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. Use when: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint). Do NOT use when: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only. Cost: free (no key required).",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "agent_id",
+            "timestamp",
+            "nonce",
+            "signature"
+          ],
+          "properties": {
+            "agent_id": {
+              "type": "string",
+              "description": "A stable unique identifier for this agent (e.g. a UUID). The issued key is deterministically tied to this ID."
+            },
+            "timestamp": {
+              "type": "integer",
+              "description": "Unix epoch seconds at signing time. Must be within 60s of server time."
+            },
+            "nonce": {
+              "type": "string",
+              "description": "Random value (UUID or hex). Prevents replay attacks — use a fresh nonce each call."
+            },
+            "signature": {
+              "type": "string",
+              "description": "HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET) as lowercase hex. The HMAC input is the raw concatenation with no separators."
+            }
+          }
+        }
+      }
     }
   ],
   "endpoint": "https://api.hatchloop.dev/ops/{tool_name}",

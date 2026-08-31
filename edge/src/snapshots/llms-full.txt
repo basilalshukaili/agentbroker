@@ -243,6 +243,17 @@ Read a two-way conversation thread you started: its state, every message exchang
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/get_conversation`
 
+### mint_key
+
+Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.
+
+- **When to use**: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).
+- **When NOT to use**: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.
+- **Cost: free (no key required).**
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://api.hatchloop.dev/ops/mint_key`
+
 ## Authentication
 
 All state-changing operations require an `X-Agent-Identity` JWT header. Get a token from `https://api.hatchloop.dev/auth/token`. Scopes include allowed operations, budget cap, and verticals.
@@ -273,7 +284,7 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
-- `https://api.hatchloop.dev/mcp/agent-broker` - everything (20 tools)
+- `https://api.hatchloop.dev/mcp/agent-broker` - everything (21 tools)
 
 The same rows work in Claude Code, Codex, and any other MCP client - the transport is standard.
 
@@ -3418,6 +3429,120 @@ hello@hatchloop.dev
           "returns": "the thread for reference #4821 at that business"
         }
       ]
+    },
+    {
+      "name": "mint_key",
+      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.",
+      "when_to_use": "Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).",
+      "when_not_to_use": "Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans \u2014 this endpoint issues free-tier keys (100 ops/day) only.",
+      "execution_profile": "sync",
+      "http": {
+        "method": "POST",
+        "path": "/keys/mint",
+        "base_url": "https://api.hatchloop.dev"
+      },
+      "compliance_constraints": [],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "agent_id",
+          "timestamp",
+          "nonce",
+          "signature"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "A stable unique identifier for this agent (e.g. a UUID). The issued key is deterministically tied to this ID."
+          },
+          "timestamp": {
+            "type": "integer",
+            "description": "Unix epoch seconds at signing time. Must be within 60s of server time."
+          },
+          "nonce": {
+            "type": "string",
+            "description": "Random value (UUID or hex). Prevents replay attacks \u2014 use a fresh nonce each call."
+          },
+          "signature": {
+            "type": "string",
+            "description": "HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET) as lowercase hex. The HMAC input is the raw concatenation with no separators."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string",
+            "description": "The API key to use as X-Agent-Identity header."
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "ISO date (YYYY-MM-DD)."
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "free"
+            ]
+          },
+          "daily_limit": {
+            "type": "integer",
+            "description": "Gated operations allowed per day."
+          },
+          "usage": {
+            "type": "string"
+          }
+        }
+      },
+      "cost_model": {
+        "basis": "free",
+        "unit_price_usd": 0.0,
+        "notes": "Free-tier key. The issued key allows 100 gated ops/day at no charge."
+      },
+      "slo": {
+        "p50_ms": 100,
+        "p95_ms": 500
+      },
+      "idempotency": {
+        "safe_to_retry": true,
+        "key": "agent_id \u2014 the same agent_id always resolves to the same key_id"
+      },
+      "failure_modes": [
+        {
+          "reason_code": "invalid_request",
+          "retriable": false,
+          "meaning": "Signature verification failed or timestamp is outside the 60s window.",
+          "agent_action": "Recompute the HMAC with the correct secret and a fresh timestamp+nonce."
+        },
+        {
+          "reason_code": "not_configured",
+          "retriable": false,
+          "meaning": "MACHINE_MINT_SECRET is not set on this server.",
+          "agent_action": "Contact hello@hatchloop.dev \u2014 the endpoint is not yet enabled."
+        }
+      ],
+      "examples": [
+        {
+          "user_says": "I need an API key to call AgentBroker tools",
+          "agent_call": {
+            "tool": "mint_key",
+            "arguments": {
+              "agent_id": "my-agent-abc123",
+              "timestamp": 1725100000,
+              "nonce": "4f8a2c1d",
+              "signature": "<HMAC-SHA256(agent_id+timestamp+nonce, MACHINE_MINT_SECRET)>"
+            }
+          },
+          "returns": "ok=true, key=<JWT>, expires_at=2026-11-28, tier=free, daily_limit=100"
+        }
+      ]
     }
   ],
   "components": {
@@ -5932,6 +6057,97 @@ hello@hatchloop.dev
 
 ### Failure Modes
 - ****: 
+- ****: 
+- ****: 
+
+## Operation: mint_key
+
+### Input Schema
+```json
+{
+  "type": "object",
+  "required": [
+    "agent_id",
+    "timestamp",
+    "nonce",
+    "signature"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "description": "A stable unique identifier for this agent (e.g. a UUID). The issued key is deterministically tied to this ID."
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix epoch seconds at signing time. Must be within 60s of server time."
+    },
+    "nonce": {
+      "type": "string",
+      "description": "Random value (UUID or hex). Prevents replay attacks \u2014 use a fresh nonce each call."
+    },
+    "signature": {
+      "type": "string",
+      "description": "HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET) as lowercase hex. The HMAC input is the raw concatenation with no separators."
+    }
+  }
+}
+```
+
+### Output Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "key": {
+      "type": "string",
+      "description": "The API key to use as X-Agent-Identity header."
+    },
+    "key_id": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "ISO date (YYYY-MM-DD)."
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "free"
+      ]
+    },
+    "daily_limit": {
+      "type": "integer",
+      "description": "Gated operations allowed per day."
+    },
+    "usage": {
+      "type": "string"
+    }
+  }
+}
+```
+
+### Examples
+#### Example 1: 
+```json
+{
+  "user_says": "I need an API key to call AgentBroker tools",
+  "agent_call": {
+    "tool": "mint_key",
+    "arguments": {
+      "agent_id": "my-agent-abc123",
+      "timestamp": 1725100000,
+      "nonce": "4f8a2c1d",
+      "signature": "<HMAC-SHA256(agent_id+timestamp+nonce, MACHINE_MINT_SECRET)>"
+    }
+  },
+  "returns": "ok=true, key=<JWT>, expires_at=2026-11-28, tier=free, daily_limit=100"
+}
+```
+
+### Failure Modes
 - ****: 
 - ****: 
 

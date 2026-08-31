@@ -59,7 +59,7 @@ PROTOCOL_VERSION = "2024-11-05"
 # ---------------------------------------------------------------------------
 
 def _total_tool_count() -> int:
-    """Derived, not typed. I hardcoded "12 of the 20 tools" into the
+    """Derived, not typed. I hardcoded "12 of the 21 tools" into the
     instructions string one commit after building a CI gate that fails the
     build for exactly that - the habit is stronger than the rule, which is
     why the rule has to be a function rather than a reminder."""
@@ -602,7 +602,7 @@ async def _h_initialize(params: dict) -> dict:
         },
         "instructions": (
             f"SMB Transaction & Communication Broker. Use tools/list to see all {op_count} operations. "
-            # "MOST" WAS WRONG AND DISCOURAGING. 12 of the 20 tools need no
+            # "MOST" WAS WRONG AND DISCOURAGING. 12 of the 21 tools need no
             # key at all - 9 outright and 3 up to a daily quota - and this is
             # the first sentence every connecting client reads. Telling an
             # evaluator that most of the product is gated, when most of it is

@@ -31,7 +31,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Capability | Status |
 |---|---|
 | MCP endpoint (streamable-http) | **Live**  -  `https://hatchloop.dev/mcp/agent-broker` |
-| 20 MCP tools | **Live** (callable today) |
+| 21 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
@@ -43,7 +43,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 ---
 
-## 20 MCP Tools
+## 21 MCP Tools
 
 All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
 
@@ -272,7 +272,7 @@ Cloudflare Worker edge  (hatchloop.dev)
         Python FastAPI  (api.hatchloop.dev)
                 |  Cron keep-alive every 2 min (eliminates Render cold starts)
                 |
-                +-- 20 operation handlers  (core/)
+                +-- 21 operation handlers  (core/)
                 +-- Compliance gate        (compliance/pre_check)
                 +-- Channel adapters       (channels/ -- Twilio, Cal.com, Vapi, SendGrid)
                 +-- Billing + outcome store
@@ -302,7 +302,7 @@ Violations surface as `ComplianceViolationError` and are never silently bypassed
 
 ```
 agentbroker/
-+-- core/                  # 20 operation handlers + shared Pydantic models
++-- core/                  # 21 operation handlers + shared Pydantic models
 +-- channels/              # Twilio, SendGrid, Vapi, Bland, Cal.com, Playwright
 +-- compliance/            # pre_check, jurisdiction_rules, consent_store, audit_log
 +-- reliability/           # retry, circuit_breaker, channel_fallback, async_runner
