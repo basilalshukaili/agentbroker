@@ -430,3 +430,74 @@ def html_success(token_value: str, expires_iso: str, key_id: str, paid_url: str)
         "<p style=\"color:#999;font-size:12px;\">Your key was also sent to your email.</p>"
         "</body></html>"
     )
+
+
+async def handle_mint_key_mcp(
+    agent_id: str = "",
+    timestamp: object = 0,
+    nonce: str = "",
+    signature: str = "",
+) -> dict:
+    """MCP dispatch wrapper for machine_mint_key.
+
+    The HTTP handler (key_requests.py) returns FastAPI JSONResponse objects;
+    the MCP dispatcher expects plain dicts.  This function has the same logic
+    but returns a receipt dict so it can be called from _h_tools_call.
+    """
+    agent_id = str(agent_id).strip()
+    try:
+        timestamp = int(timestamp)
+    except (TypeError, ValueError):
+        return {"status": "failure", "error": "invalid_request",
+                "detail": "timestamp must be an integer Unix epoch."}
+    nonce = str(nonce)
+    signature = str(signature)
+
+    ok, reason = verify_machine_signature(agent_id, timestamp, nonce, signature)
+    if not ok:
+        if reason == "not_configured":
+            return {"status": "failure", "error": "not_configured",
+                    "detail": ("MACHINE_MINT_SECRET is not set on this server. "
+                               "The feature is deployed but not yet activated.")}
+        return {"status": "failure", "error": "invalid_request",
+                "detail": ("Signature verification failed. "
+                           "Check that your timestamp is within 60s of server time, "
+                           "your nonce is unique, and your HMAC key is correct.")}
+
+    safe_id = agent_id[:200]
+    customer_id = f"free_machine_{hashlib.sha256(safe_id.encode()).hexdigest()[:16]}"
+    ttl_seconds = _FREE_TIER_TTL_DAYS * 86400
+
+    from agent_interface.identity import issue_token, TokenRequest
+    token_resp = issue_token(TokenRequest(
+        agent_id=customer_id,
+        principal_id=customer_id,
+        principal_type="system",
+        allowed_operations=["*"],
+        budget_cap_usd=0.0,
+        allowed_verticals=["*"],
+        ttl_seconds=ttl_seconds,
+    ))
+    token_value = token_resp.token
+    expires_iso = datetime.fromtimestamp(
+        token_resp.expires_at, tz=timezone.utc
+    ).strftime("%Y-%m-%d")
+
+    await store_machine_minted(safe_id, token_value, token_resp.expires_at)
+
+    logger.info(
+        "machine_key_issued_via_mcp customer_id=%s agent_id_hash=%s",
+        customer_id, hashlib.sha256(safe_id.encode()).hexdigest()[:8],
+    )
+
+    return {
+        "status": "success",
+        "ok": True,
+        "key": token_value,
+        "key_id": customer_id,
+        "expires_at": expires_iso,
+        "tier": "free",
+        "daily_limit": 100,
+        "usage": ("Send as the X-Agent-Identity header on every call to "
+                  "https://hatchloop.dev/mcp/agent-broker"),
+    }

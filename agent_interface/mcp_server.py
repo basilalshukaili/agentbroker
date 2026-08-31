@@ -1468,6 +1468,17 @@ async def _dispatch_operation(
             max_results=int(args.get("max_results", 5)),
         )
 
+    elif name == "mint_key":
+        # Agent self-serve key issuance: HMAC-SHA256 proof of MACHINE_MINT_SECRET.
+        # Returns the issued key directly.  503 until MACHINE_MINT_SECRET is set.
+        from agent_interface.key_request_logic import handle_mint_key_mcp
+        receipt = await handle_mint_key_mcp(
+            agent_id=args.get("agent_id", ""),
+            timestamp=args.get("timestamp", 0),
+            nonce=args.get("nonce", ""),
+            signature=args.get("signature", ""),
+        )
+
     else:
         raise _ParamError(f"Tool '{name}' is registered but not yet routed in MCP dispatcher.")
 
