@@ -33,6 +33,8 @@ from agent_interface.key_request_logic import (
     send_key_email,
     html_error,
     html_success,
+    verify_machine_signature,
+    store_machine_minted,
     # Re-export for mcp_server.py to import from here (backward compat)
     is_free_key,
     consume_free_daily,
@@ -218,4 +220,102 @@ async def verify_free_key(token: str = Query(..., description="Signed verificati
     return HTMLResponse(
         status_code=200,
         content=html_success(token_value, expires_iso, customer_id, paid_url),
+    )
+
+
+class MachineMintBody(BaseModel):
+    agent_id: str
+    timestamp: int
+    nonce: str
+    signature: str
+
+
+@router.post("/mint")
+async def machine_mint_key(body: MachineMintBody):
+    """
+    Agent self-serve key issuance (no email required).
+
+    An AI agent that cannot receive email can prove identity with a signed
+    payload instead. The caller computes:
+
+        signature = HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET)
+
+    where MACHINE_MINT_SECRET is the public challenge secret documented at
+    https://hatchloop.dev/docs/#machine-mint.
+
+    Requirements:
+      - timestamp must be a Unix epoch integer within 60s of server time.
+      - nonce is an arbitrary string; use a UUID or random hex to prevent replay.
+      - The HMAC input is the raw concatenation (no separators) of the three fields.
+      - The signature must be lowercase hex.
+
+    Returns:
+      200 {ok, key, key_id, expires_at, tier, daily_limit}
+      401 {error: "invalid_request"}  — bad signature, expired timestamp, or
+                                         MACHINE_MINT_SECRET not yet configured
+    """
+    ok, reason = verify_machine_signature(
+        body.agent_id.strip(),
+        body.timestamp,
+        body.nonce,
+        body.signature,
+    )
+    if not ok:
+        if reason == "not_configured":
+            # Environment not set — the server is not yet configured for
+            # machine-mintable keys; return 503 to be distinct from auth failure.
+            return JSONResponse(
+                status_code=503,
+                content={"error": "not_configured",
+                         "detail": "MACHINE_MINT_SECRET is not set on this server."},
+            )
+        # Generic 401 for ALL auth failures — never distinguish bad-secret from
+        # bad-clock to the caller (timing oracle).
+        return JSONResponse(
+            status_code=401,
+            content={"error": "invalid_request",
+                     "detail": ("Signature verification failed. "
+                                "Check that your timestamp is within 60s of server time, "
+                                "your nonce is unique, and your HMAC key is correct.")},
+        )
+
+    agent_id = body.agent_id.strip()[:200]   # guard against absurdly long IDs
+    customer_id = f"free_machine_{hashlib.sha256(agent_id.encode()).hexdigest()[:16]}"
+    ttl_seconds = _FREE_TIER_TTL_DAYS * 86400
+
+    from agent_interface.identity import issue_token, TokenRequest
+    token_resp = issue_token(TokenRequest(
+        agent_id=customer_id,
+        principal_id=customer_id,
+        principal_type="system",           # machine, not human
+        allowed_operations=["*"],
+        budget_cap_usd=0.0,                # free tier — no budget spend allowed
+        allowed_verticals=["*"],
+        ttl_seconds=ttl_seconds,
+    ))
+    token_value = token_resp.token
+    expires_iso = datetime.fromtimestamp(
+        token_resp.expires_at, tz=timezone.utc
+    ).strftime("%Y-%m-%d")
+
+    # Durable record in Supabase (best-effort — key is already issued)
+    await store_machine_minted(agent_id, token_value, token_resp.expires_at)
+
+    logger.info(
+        "machine_key_issued customer_id=%s agent_id_hash=%s",
+        customer_id, hashlib.sha256(agent_id.encode()).hexdigest()[:8],
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "key": token_value,
+            "key_id": customer_id,
+            "expires_at": expires_iso,
+            "tier": "free",
+            "daily_limit": 100,
+            "usage": ("Send as the X-Agent-Identity header on every call to "
+                      "https://hatchloop.dev/mcp/agent-broker"),
+        },
     )

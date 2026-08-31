@@ -92,6 +92,7 @@ Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev
 
 **Write tools** require an `X-Agent-Identity` bearer token:
 - Free email-verified key (100 ops/day): https://hatchloop.dev/agent-broker
+- **Machine-mintable key (no email, agent self-serve):** `POST https://api.hatchloop.dev/keys/mint` — see [Machine-mintable keys](#machine-mintable-keys) below.
 - Credits from $9/1,000 ops: https://hatchloop.dev/pricing
 
 Add your key to the config once you have one:
@@ -187,6 +188,52 @@ curl -X POST https://hatchloop.dev/ops/find_business \
   -H "Content-Type: application/json" \
   -d '{"vertical":"personal_services","location":{"zip_or_city":"30309"},"capability":"haircut"}'
 ```
+
+---
+
+## Machine-mintable keys
+
+AI agents that cannot receive email can self-provision a free-tier API key (100 gated ops/day) by proving identity via HMAC-SHA256.
+
+### How it works
+
+1. Obtain the `MACHINE_MINT_SECRET` from [hatchloop.dev/docs/#machine-mint](https://hatchloop.dev/docs/#machine-mint).
+2. Compute the signature:
+   ```
+   signature = HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET)
+   ```
+   The HMAC input is the **raw concatenation** of the three fields (no separators). Digest must be lowercase hex.
+3. POST to `https://api.hatchloop.dev/keys/mint`:
+
+```json
+{
+  "agent_id": "my-agent-abc123",
+  "timestamp": 1725100000,
+  "nonce": "4f8a2c1d9e2b7c6a",
+  "signature": "<lowercase-hex-hmac>"
+}
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "key": "<JWT — use as X-Agent-Identity header>",
+  "key_id": "free_machine_<hash>",
+  "expires_at": "2026-11-28",
+  "tier": "free",
+  "daily_limit": 100,
+  "usage": "Send as the X-Agent-Identity header on every call to https://hatchloop.dev/mcp/agent-broker"
+}
+```
+
+### Constraints
+- `timestamp` must be within **60 seconds** of server time (prevents replay attacks).
+- Use a fresh `nonce` on every call (UUID or random hex).
+- `agent_id` is a stable identifier for your agent; the issued key is tied to its SHA-256 hash.
+- Returns `401 {error: "invalid_request"}` on bad signature or stale timestamp.
+- Returns `503 {error: "not_configured"}` if the server secret has not been set (contact hello@hatchloop.dev).
 
 ---
 

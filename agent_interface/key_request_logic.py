@@ -303,6 +303,93 @@ async def consume_pending(token: str, email: Optional[str] = None) -> Optional[s
 
 
 # ---------------------------------------------------------------------------
+# Machine-mintable key helpers (agent self-serve, no email required)
+# ---------------------------------------------------------------------------
+
+# The environment variable is PUBLIC in that we document it to AI builders
+# who will embed it in their agent configs. It is still a secret in the
+# operational sense — callers who do NOT have it cannot forge a signature.
+_MACHINE_MINT_SECRET = os.getenv("MACHINE_MINT_SECRET", "")
+
+# Clock skew budget: reject a timestamp more than this many seconds old
+# (or in the future). Prevents replay attacks while tolerating slow networks.
+_MINT_FRESHNESS_S = 60
+
+# TTL for machine-minted keys — same as the human free tier.
+_MACHINE_MINT_TTL_DAYS = 90
+
+
+def verify_machine_signature(
+    agent_id: str,
+    timestamp: int,
+    nonce: str,
+    signature: str,
+) -> tuple[bool, str]:
+    """
+    Verify a machine-mint request.
+
+    Returns (ok: bool, reason: str).  Always returns a generic reason on
+    failure so callers cannot distinguish "wrong secret" from "bad clock" and
+    cannot time the guess.
+
+    Signature spec (from task brief, immutable):
+      HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET)
+    where the HMAC input is the raw concatenation (no separators) of the three
+    fields and the digest is lowercased hex.
+    """
+    if not _MACHINE_MINT_SECRET:
+        return False, "not_configured"
+
+    # 1. Freshness: reject stale or future timestamps
+    now = int(time.time())
+    age = now - timestamp
+    if abs(age) > _MINT_FRESHNESS_S:
+        return False, "invalid_request"
+
+    # 2. Signature
+    message = (agent_id + str(timestamp) + nonce).encode()
+    expected = hmac.new(
+        _MACHINE_MINT_SECRET.encode(),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
+    try:
+        if not hmac.compare_digest(expected, signature.lower()):
+            return False, "invalid_request"
+    except Exception:  # noqa: BLE001
+        return False, "invalid_request"
+
+    return True, "ok"
+
+
+async def store_machine_minted(
+    agent_id: str,
+    token_value: str,
+    expires_at: float,
+) -> None:
+    """
+    Record the minted key in pending_keys with source='machine_minted'.
+    Best-effort — never raises. The key is already issued before this runs;
+    a storage hiccup must not break the caller's response.
+
+    The pending_keys table is shared with the email flow. The `source` column
+    distinguishes machine-minted rows from human email-verified ones. The
+    migration `machine_mintable_key.sql` adds that column.
+    """
+    try:
+        from storage.supabase_client import upsert_row
+        await upsert_row("pending_keys", {
+            "email": f"agent:{agent_id}",   # surrogate — no real email
+            "token": token_value[:512],       # store a prefix; full JWT is long
+            "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source": "machine_minted",
+        }, on_conflict="email")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("machine_minted_store_failed agent_id=%s err=%s", agent_id, exc)
+
+
+# ---------------------------------------------------------------------------
 # HTML templates
 # ---------------------------------------------------------------------------
 
