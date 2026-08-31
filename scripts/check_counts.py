@@ -90,7 +90,8 @@ SURFACES = [
     # HANDOFF.md, AGENT_DISTRIBUTION.md, LAUNCH_STATUS.md and OUTREACH_KIT.md
     # were stale pre-pivot operational docs, removed in 4a78f11. A surface that
     # no longer exists must be dropped here, not left to fail as "never checked".
-    "docs/PRICING.md", "docs/BENCHMARKS.md", "docs/mission.md",
+    # docs/mission.md and docs/NEXT_STEPS.md removed in 1d06fa6 (same reason).
+    "docs/PRICING.md", "docs/BENCHMARKS.md",
     "server.json", "glama.json", "manifest/manifest.json",
     "manifest/mcp_tools.json",
     "deploy/registry-submissions/smithery.yaml",
