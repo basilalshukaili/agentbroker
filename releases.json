@@ -10,6 +10,19 @@
   },
   "releases": [
     {
+      "version": "0.2.11",
+      "date": "2026-09-01",
+      "headline": "Tool #22: look up US federal contract history for any company, free.",
+      "added": [
+        "lookup_us_contracts - query USASpending.gov FPDS for a company's US federal contract awards: award amounts, awarding agency, NAICS code, and contract period. Free, no API key required.",
+        "mint_key is now fully callable via MCP: an agent can issue its own free API key by signing an HMAC-SHA256 challenge with a shared MACHINE_MINT_SECRET, with no human in the loop."
+      ],
+      "changed": [
+        "Total tool count raised to 22 (13 free with no key, 3 premium data tools free within a daily quota, 6 write tools requiring a key).",
+        "MCP discovery descriptor now derives the tool count from the manifest so it cannot drift from the actual tool list."
+      ]
+    },
+    {
       "version": "0.2.10",
       "date": "2026-08-30",
       "headline": "Sanctions screening now covers the EU and UK lists, not just OFAC",
