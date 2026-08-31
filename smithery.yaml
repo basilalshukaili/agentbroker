@@ -1,0 +1,17 @@
+startCommand:
+  type: http
+  url: "https://hatchloop.dev/mcp/agent-broker"
+  configSchema:
+    type: object
+    properties:
+      apiKey:
+        type: string
+        title: API Key (optional)
+        description: >
+          Free email-verified key for write tools and premium data tools
+          (100 ops/day, no cost). 9 read tools work with no key at all.
+          Get one at https://hatchloop.dev/agent-broker.
+          Pass as request header: X-Agent-Identity: <your-key>.
+    required: []
+  exampleConfig:
+    apiKey: ""
