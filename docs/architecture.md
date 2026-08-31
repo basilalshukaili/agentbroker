@@ -1,3 +1,5 @@
+> WARNING: HISTORICAL ARCHIVE (2026-05-05) — pre-pivot build record. Module map reflects v0.1 scaffolding, not current live code. Do not update.
+
 # Architecture — SMB Transaction & Communication Broker
 
 **Last updated: 2026-05-05**

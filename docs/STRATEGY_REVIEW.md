@@ -1,3 +1,5 @@
+> WARNING: HISTORICAL ARCHIVE (2026-04-28) — pre-pivot record. Do not update.
+
 # Strategy Review — Honest Audit
 <!-- historical-record: numbers are correct AS OF the date above; do not update -->
 

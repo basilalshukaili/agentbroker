@@ -1,3 +1,5 @@
+> WARNING: HISTORICAL ARCHIVE — simulated numbers from pre-pivot era. Do not update.
+
 # Benchmarks
 
 > **THESE NUMBERS COME FROM A SIMULATION, NOT FROM REAL USE.** Read that

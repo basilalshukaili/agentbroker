@@ -1,3 +1,5 @@
+> WARNING: HISTORICAL ARCHIVE (2026-04-27) — compliance sign-off for v0.1.0 development/staging release. Current version is v0.2.11. Do not update.
+
 # ComplianceAgent P14 Sign-Off — SMB Broker v0.1.0
 
 **Date:** 2026-04-27  

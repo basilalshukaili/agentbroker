@@ -1,3 +1,5 @@
+> WARNING: HISTORICAL ARCHIVE — Phase P4 artifact from pre-pivot era (v0.1). Compliance architecture and gate logic carry forward, but jurisdiction scope and sign-off checklist are from 2026-04. Do not update.
+
 # Compliance Module Documentation
 
 **Phase P4 Artifact | ComplianceAgent**
