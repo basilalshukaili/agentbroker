@@ -188,6 +188,26 @@ class TestHandleInbound:
             receipt = run(handle_inbound(req))
         assert receipt.result.get("opt_out_processed") is True
 
+    def test_stop_with_failed_durable_write_is_not_charged(self):
+        # A STOP whose durable write fails (insert_row -> None) must NOT be
+        # billed and must NOT report success: charging for a lost opt-out is a
+        # wrong charge and a compliance failure. It downgrades to a retriable
+        # zero-cost FAILURE so the billing rail releases its hold.
+        from unittest.mock import AsyncMock, patch
+        req = HandleInboundRequest(
+            smb_id="smb_001",
+            inbound_channel=InboundChannel.SMS,
+            sender=InboundSender(phone="+14045550002"),
+            raw_message="STOP",
+        )
+        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=None):
+            receipt = run(handle_inbound(req))
+        assert receipt.result.get("opt_out_processed") is False
+        assert receipt.status == OperationStatus.FAILURE
+        assert receipt.reason_code == "opt_out_not_recorded"
+        assert receipt.cost.amount == 0.0
+        assert receipt.retriable is True
+
 
 class TestGetStatusAndOutcome:
     def test_get_status_unknown_operation(self):

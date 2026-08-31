@@ -93,6 +93,29 @@ async def handle_inbound(
         inserted = await insert_row("consent_optouts", opt_out_row)
         result["opt_out_processed"] = inserted is not None
 
+    # A STOP that was NOT durably recorded must never be reported as success or
+    # billed: charging for a lost opt-out is both a wrong charge and a
+    # compliance failure (the revocation is gone). Downgrade to a retriable
+    # failure with zero cost so the billing rail releases its hold and the
+    # caller retries until the opt-out actually lands.
+    if intent == "opt_out" and result.get("opt_out_processed") is False:
+        return OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="opt_out_not_recorded",
+            human_message=("Inbound classified as opt-out (STOP), but the "
+                           "opt-out could not be durably recorded. Nothing was "
+                           "charged — retry so the opt-out is honored."),
+            result=result,
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            channel_used=f"inbound:{request.inbound_channel.value}",
+            estimated_completion_time=None,
+            next_actions=["retry handle_inbound"],
+            retriable=True,
+            trace_id=trace_id,
+        )
+
     return OutcomeReceipt(
         operation_id=operation_id,
         status=OperationStatus.SUCCESS,
