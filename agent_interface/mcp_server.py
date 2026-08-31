@@ -322,6 +322,8 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
         # Fire-and-forget usage telemetry — never blocks, never raises.
         # FIX 1 (cred hygiene): pass the PARSED agent_id to fire_log_usage,
         # never a slice of the raw bearer token.
+        # FIX (2026-09-01): also pass principal_type so classify_session_kind
+        # can emit 'verified_agent_key' vs 'verified_human_key' correctly.
         try:
             tool_name = params.get("name") if method == "tools/call" else None
             arguments = params.get("arguments") if method == "tools/call" else None
@@ -329,8 +331,10 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
             ua = norm_headers.get("user-agent", "")
             raw_key = norm_headers.get("x-agent-identity", "")
             key_id = _agent_id_from_token(raw_key)
+            principal_type = _principal_type_from_token(raw_key)
             from billing.usage_logger import fire_log_usage
-            fire_log_usage(method, tool_name, arguments, ip, ua, key_id)
+            fire_log_usage(method, tool_name, arguments, ip, ua, key_id,
+                           principal_type=principal_type)
         except Exception:  # noqa: BLE001
             pass  # telemetry must never break the response
 
@@ -533,6 +537,36 @@ def _agent_id_from_token(raw_token: str) -> str:
     except Exception:  # noqa: BLE001
         pass
     return "anonymous"
+
+
+def _principal_type_from_token(raw_token: str) -> Optional[str]:
+    """Extract the principal type ('system' or 'human') from a bearer token.
+
+    Used by usage telemetry to distinguish AI agent sessions from human
+    subscriber sessions — the two groups have different quota/billing semantics
+    and must not be merged into a single 'verified_human_key' bucket.
+
+    Returns None for anonymous/invalid tokens; the classifier treats None as
+    the safe default ('verified_human_key'), preserving backward compatibility
+    for older tokens that pre-date this field.
+    """
+    if not raw_token or raw_token in ("", "anonymous"):
+        return None
+    try:
+        from agent_interface.identity import validate_token
+        result = validate_token(raw_token)
+        if result.valid and result.identity and result.identity.principal:
+            # PrincipalKind maps: "business" ← JWT "system", "consumer" ← JWT "human"
+            kind = getattr(result.identity.principal.kind, "value",
+                           result.identity.principal.kind)
+            # Normalise back to the raw JWT terminology used by classify_session_kind.
+            if kind == "business":
+                return "system"
+            if kind == "consumer":
+                return "human"
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------

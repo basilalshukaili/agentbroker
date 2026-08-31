@@ -59,6 +59,38 @@ class TestClassifySessionKind:
         result = self.classify("tools/list", None, "python-requests/2.28.0", None)
         assert result == "crawler"
 
+    # --- human vs agent principal distinction (2026-09-01) ---
+
+    def test_system_principal_is_verified_agent_key(self):
+        """A tools/call with a valid key AND principal_type='system' is 'verified_agent_key'."""
+        result = self.classify("tools/call", "send_message", "Claude/1.0",
+                               "sub_abc123", principal_type="system")
+        assert result == "verified_agent_key"
+
+    def test_business_principal_is_verified_agent_key(self):
+        """'business' is the PrincipalKind value for system principals after validate_token mapping."""
+        result = self.classify("tools/call", "find_business", "Claude/1.0",
+                               "sub_xyz", principal_type="business")
+        assert result == "verified_agent_key"
+
+    def test_human_principal_is_verified_human_key(self):
+        """A tools/call with a valid key AND principal_type='human' stays 'verified_human_key'."""
+        result = self.classify("tools/call", "preview_cost", "Mozilla/5.0",
+                               "sub_human999", principal_type="human")
+        assert result == "verified_human_key"
+
+    def test_none_principal_type_defaults_to_verified_human_key(self):
+        """Older tokens without a principal type default to 'verified_human_key' (backward compat)."""
+        result = self.classify("tools/call", "send_message", "Claude/1.0",
+                               "sub_oldtoken", principal_type=None)
+        assert result == "verified_human_key"
+
+    def test_system_principal_on_non_work_method_is_crawler(self):
+        """Even with a system key, initialize is a non-work method -> crawler."""
+        result = self.classify("initialize", None, "Claude/1.0",
+                               "sub_agent001", principal_type="system")
+        assert result == "crawler"
+
 
 # ---------------------------------------------------------------------------
 # usage_logger: hash helpers
@@ -254,7 +286,7 @@ class TestMCPTelemetryWiring:
 
         fired = []
 
-        def fake_fire(method, tool_name, arguments, ip, ua, key_id):
+        def fake_fire(method, tool_name, arguments, ip, ua, key_id, **kwargs):
             fired.append({"method": method, "tool": tool_name})
 
         with mpatch("billing.usage_logger.fire_log_usage", fake_fire):
@@ -276,7 +308,7 @@ class TestMCPTelemetryWiring:
 
         fired = []
 
-        def fake_fire(method, tool_name, arguments, ip, ua, key_id):
+        def fake_fire(method, tool_name, arguments, ip, ua, key_id, **kwargs):
             fired.append(method)
 
         with mpatch("billing.usage_logger.fire_log_usage", fake_fire):

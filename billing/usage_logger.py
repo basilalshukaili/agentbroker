@@ -58,24 +58,37 @@ def classify_session_kind(
     tool_name: Optional[str],
     user_agent: str,
     key_id: Optional[str],
+    principal_type: Optional[str] = None,
 ) -> str:
     """
-    Classify the caller into one of three buckets:
-      'crawler'            — registry bot, no meaningful work
-      'anon_agent'         — tools/call with no key
-      'verified_human_key' — tools/call with a minted key (paid or free-verified)
+    Classify the caller into one of four buckets:
+      'crawler'             — registry bot, no meaningful work
+      'anon_agent'          — tools/call with no key
+      'verified_agent_key'  — tools/call with a minted key for a system/AI principal
+      'verified_human_key'  — tools/call with a minted key for a human/consumer principal
 
     KEY PRESENCE WINS (FIX 3, 2026-08-23): a call carrying a valid key_id is
-    always 'verified_human_key', regardless of User-Agent.  Registry bots and
+    always 'verified_*_key', regardless of User-Agent.  Registry bots and
     CI tooling sometimes use curl/python-httpx UAs while sending a real key;
     labelling those as 'crawler' poisoned the session_kind metric.
     Crawler classification is reserved for keyless traffic only.
+
+    HUMAN vs AGENT (FIX, 2026-09-01): `principal_type` from the validated JWT
+    distinguishes a human/consumer subscriber from an autonomous AI agent running
+    under a system principal.  Without this, AI-agent sessions were logged as
+    'verified_human_key', leading to billing discrepancy and wrong quota tracking.
+    'system' principal → 'verified_agent_key'; 'human'/'consumer' → 'verified_human_key'.
+    When principal_type is absent (older tokens / free-key callers), the safe
+    default is 'verified_human_key' so existing quota paths are unchanged.
     """
     # Key presence wins — checked FIRST, before any UA inspection.
     if key_id and key_id not in ("", "anonymous"):
         # Non-work methods (initialize / tools/list) are still discovery, even
         # when keyed — mark them crawler so they don't inflate work counts.
         if method not in _NON_WORK_METHODS:
+            # Distinguish AI agent (system principal) from human subscriber.
+            if principal_type in ("system", "business"):
+                return "verified_agent_key"
             return "verified_human_key"
 
     ua_lower = (user_agent or "").lower()
@@ -105,6 +118,7 @@ async def log_usage_event(
     ip: Optional[str],
     user_agent: Optional[str],
     key_id: Optional[str],
+    principal_type: Optional[str] = None,
 ) -> None:
     """
     Fire-and-forget insert into `usage_events`. Never raises.
@@ -114,7 +128,8 @@ async def log_usage_event(
         args_hash = _hash8(str(sorted((arguments or {}).items()))) if arguments else None
         ip_hash = _hash8(ip) if ip else None
         ua = (user_agent or "")[:512]
-        session_kind = classify_session_kind(method, tool_name, ua, key_id)
+        session_kind = classify_session_kind(method, tool_name, ua, key_id,
+                                             principal_type=principal_type)
         clean_key_id = (key_id[:64] if key_id and key_id != "anonymous" else None)
 
         row = {
@@ -141,6 +156,7 @@ def fire_log_usage(
     ip: Optional[str],
     user_agent: Optional[str],
     key_id: Optional[str],
+    principal_type: Optional[str] = None,
 ) -> None:
     """
     Schedule a fire-and-forget usage log. Safe to call from sync or async context.
@@ -151,7 +167,8 @@ def fire_log_usage(
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.ensure_future(
-                log_usage_event(method, tool_name, arguments, ip, user_agent, key_id)
+                log_usage_event(method, tool_name, arguments, ip, user_agent,
+                                key_id, principal_type=principal_type)
             )
     except Exception:  # noqa: BLE001
         pass
