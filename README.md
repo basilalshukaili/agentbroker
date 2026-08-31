@@ -92,7 +92,7 @@ Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev
 
 **Write tools** require an `X-Agent-Identity` bearer token:
 - Free email-verified key (100 ops/day): https://hatchloop.dev/agent-broker
-- **Machine-mintable key (no email, agent self-serve):** `POST https://api.hatchloop.dev/keys/mint` — see [Machine-mintable keys](#machine-mintable-keys) below.
+- **Machine-mintable key (no email, agent self-serve):** `POST https://api.hatchloop.dev/keys/mint` - see [Machine-mintable keys](#machine-mintable-keys) below.
 - Credits from $9/1,000 ops: https://hatchloop.dev/pricing
 
 Add your key to the config once you have one:
@@ -219,7 +219,7 @@ AI agents that cannot receive email can self-provision a free-tier API key (100 
 ```json
 {
   "ok": true,
-  "key": "<JWT — use as X-Agent-Identity header>",
+  "key": "<JWT - use as X-Agent-Identity header>",
   "key_id": "free_machine_<hash>",
   "expires_at": "2026-11-28",
   "tier": "free",
