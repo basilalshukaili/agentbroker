@@ -69,7 +69,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 18 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
 | 19 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
 | 20 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
-| 21 | `mint_key` | Issue a free-tier agent identity key via HMAC proof — no email required, no human in the loop | **free** |
+| 21 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email required, no human in the loop | **free** |
 
 Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
 
