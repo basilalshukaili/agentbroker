@@ -30,6 +30,7 @@ _PRICING_CENTS: dict[str, int] = {
     "check_compliance":            0,
     "get_conversation":            0,   # read the thread you started - free
     "import_booking_url":          0,   # adoption wedge -- free so agents import without friction
+    "mint_key":                    0,   # agent self-serve key issuance -- always free (only issues free-tier keys)
     # VOICE. Vapi is live and a call costs us ~$0.30, so the at-cost floor is
     # 44 credits (floor_credits(0.30)). We charge 20 - a DELIBERATE subsidy of
     # roughly $0.10-0.14 per call, per the founder's 2026-08-26 decision to
