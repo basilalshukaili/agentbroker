@@ -970,7 +970,7 @@
       },
       {
         "name": "mint_key",
-        "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.\n\nEXAMPLE USER QUERIES THAT MATCH THIS TOOL:\n  user: \"I need an API key to call AgentBroker tools\"\n  -> call mint_key({\"agent_id\": \"my-agent-abc123\", \"timestamp\": 1725100000, \"nonce\": \"4f8a2c1d\", \"signature\": \"<HMAC-SHA256(agent_id+timestamp+nonce, MACHINE_MINT_SECRET)>\"})\n\nWHEN TO USE: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).\nWHEN NOT TO USE: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans â€” this endpoint issues free-tier keys (100 ops/day) only.\nCOST: free - no key required\nLATENCY: ~100ms",
+        "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.\n\nEXAMPLE USER QUERIES THAT MATCH THIS TOOL:\n  user: \"I need an API key to call AgentBroker tools\"\n  -> call mint_key({\"agent_id\": \"my-agent-abc123\", \"timestamp\": 1725100000, \"nonce\": \"4f8a2c1d\", \"signature\": \"<HMAC-SHA256(agent_id+timestamp+nonce, MACHINE_MINT_SECRET)>\"})\n\nWHEN TO USE: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).\nWHEN NOT TO USE: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.\nCOST: free - no key required\nLATENCY: ~100ms",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -990,7 +990,7 @@
             },
             "nonce": {
               "type": "string",
-              "description": "Random value (UUID or hex). Prevents replay attacks â€” use a fresh nonce each call."
+              "description": "Random value (UUID or hex). Prevents replay attacks — use a fresh nonce each call."
             },
             "signature": {
               "type": "string",

@@ -31,7 +31,7 @@ def _load_manifest() -> dict:
     global _manifest_cache, _cache_loaded_at
     now = time.time()
     if _manifest_cache is None or (now - _cache_loaded_at) > _CACHE_TTL_SECONDS:
-        _manifest_cache = json.loads(MANIFEST_PATH.read_text())
+        _manifest_cache = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         _cache_loaded_at = now
     return _manifest_cache
 
