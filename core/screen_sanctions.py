@@ -2078,6 +2078,37 @@ async def handle_screen_sanctions(
                f"possible_matches_unverified. They are not findings - our "
                f"matcher is uncalibrated and only asserts a match on an exact "
                f"token-set equality - but a human should look at them.")
+            # THE UNQUALIFIED CLEAN IS THE DANGEROUS ONE.
+            #
+            # An external black-box review (2026-09-01, run from a different
+            # machine) landed on this exact sentence as the single most likely
+            # source of real-world harm in the service. Its evidence: screening
+            # the everyday spelling "Vladimir Putin" confirms only on the UK
+            # list, because OFAC's canonical "PUTIN, Vladimir Vladimirovich"
+            # carries a patronymic our exact-token-set rule treats as a
+            # different name. Any variant spelling, transliteration, or
+            # missing/extra middle name can therefore produce ZERO candidates
+            # and land here - where, until now, the caller read a bare "No
+            # matches on the screened lists" with nothing qualifying it.
+            #
+            # The limitation was disclosed in `matching_method` and in the
+            # receipt's `does_not_assert`, so this was never dishonest. But a
+            # caveat only in a field a hurried caller does not parse is not the
+            # same as telling them: the branch above already learned that
+            # lesson for the candidates case, and this is the same lesson for
+            # the zero-candidate case. A clean screen from a crude matcher must
+            # not read like a clean screen from an exhaustive one.
+            #
+            # Deliberately NOT done here: promoting exact-token subset hits to
+            # confirmed matches. That would trade these false negatives for
+            # false positives, and telling a caller an innocent party IS
+            # sanctioned is its own serious harm. Changing match semantics on a
+            # sanctions tool is a founder decision, not a patch.
+            + ("" if unverified else
+               ". NOTE: this screen matches on exact name-token equality only, "
+               "so a variant spelling, transliteration, or a missing or extra "
+               "middle name can read as clean. Treat this as 'nothing matched "
+               "the name as written', not as 'this party is not sanctioned'.")
         )
         if all_sources_unavailable:
             no_match_detail += ". NOTE: some sources were unavailable -- screening may be incomplete."
