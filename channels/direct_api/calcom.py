@@ -86,6 +86,78 @@ class CalComAdapter:
         except Exception:
             return []
 
+    async def get_event_types(self) -> list[dict[str, Any]]:
+        """List event types on the wired Cal.com account (v2 GET /v2/event-types).
+
+        Used to resolve an event type id for SMBs imported via import_booking_url,
+        which store no calcom_event_type_id. SINGLE-TENANT: only one Cal.com key
+        is wired (the founder's cal_live key), so this always returns that one
+        account's event types. Raises RuntimeError (honest, no-charge) if the
+        lookup cannot be performed.
+        """
+        if not self._api_key:
+            from channels.stub_policy import stubs_allowed
+            if not stubs_allowed():
+                raise RuntimeError(
+                    "event-type lookup not configured (CALCOM_API_KEY missing) -- "
+                    "no event type could be resolved and nothing was charged")
+            return [{"id": 1001, "slug": "stub-consult", "lengthInMinutes": 30}]
+        try:
+            import httpx
+            params = {"username": self._username} if self._username else None
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{self._base_url}/event-types",
+                    headers=self._headers(),
+                    params=params,
+                )
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+        except Exception as exc:
+            raise RuntimeError(f"Cal.com event-types lookup failed: {exc}") from exc
+        # Cal.com v2 has shipped two shapes for this endpoint; accept both a
+        # flat list and the grouped {eventTypeGroups:[{eventTypes:[...]}]} form.
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            flat: list[dict[str, Any]] = []
+            for grp in (data.get("eventTypeGroups") or []):
+                if isinstance(grp, dict):
+                    flat.extend(grp.get("eventTypes") or [])
+            if not flat and isinstance(data.get("eventTypes"), list):
+                flat = data["eventTypes"]
+            return flat
+        return []
+
+    async def get_default_event_type_id(self) -> str:
+        """Resolve a usable event type id on the wired Cal.com account.
+
+        Prefers the shortest-duration event type (a short consult is the safest
+        default for an imported business whose real service length is unknown),
+        falling back to the first available. Raises RuntimeError (honest,
+        no-charge) when none can be resolved so the caller reports the true
+        reason instead of booking against a guessed id.
+        """
+        types = await self.get_event_types()
+        usable = [t for t in types
+                  if isinstance(t, dict) and t.get("id") is not None]
+        if not usable:
+            raise RuntimeError(
+                "no Cal.com event type is available on the connected account to "
+                "book against -- nothing was booked and nothing was charged")
+
+        def _dur(t: dict) -> int:
+            v = t.get("lengthInMinutes")
+            if v is None:
+                v = t.get("length")
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return 10 ** 9
+
+        usable.sort(key=_dur)
+        return str(usable[0]["id"])
+
     async def book_slot(
         self,
         event_type_id: str,

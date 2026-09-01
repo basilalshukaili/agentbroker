@@ -30,14 +30,16 @@ from core.models import (
 from channels.voice_ai.vapi import VapiVoiceAdapter
 from channels.adapter_interface import ChannelRequest
 from storage.outcome_store import get_outcome_store
+from billing.pricing import receipt_usd as _receipt_usd
 
 _VOICE_ADAPTER = VapiVoiceAdapter()
 
-# Flat price per call attempt. Vapi runs ~$0.05-0.13/min; a typical business
-# call is 1-3 min (~$0.10-0.40 cost). $0.50 covers cost + modest margin and
-# is bounded by max_duration_seconds. Mirrors edge/src/x402.ts and
-# core/preview_cost.py — keep all three in sync.
-_CALL_PRICE_USD = 0.50
+# Price per call attempt. SINGLE SOURCE OF TRUTH is billing/pricing.py
+# ("call_business": 20 credits = $0.20 — a deliberate subsidy below the ~$0.30
+# Vapi cost, per the founder's 2026-08-26 decision). Deriving it here keeps the
+# receipt, preview_cost, and the credits deduction in lockstep; a hardcoded
+# value drifted to $0.50 and overstated the charge on every successful call.
+_CALL_PRICE_USD = _receipt_usd("call_business")
 
 
 def _resolve_phone(request: CallBusinessRequest) -> str | None:

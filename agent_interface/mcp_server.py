@@ -1630,7 +1630,34 @@ async def _dispatch_operation(
             _cq_auth = (headers or {}).get("authorization", "")
             if _cq_auth.lower().startswith("bearer "):
                 _cq_token = _cq_auth[7:].strip()
-        return _handle_check_quota(_cq_token)
+        _cq_result = _handle_check_quota(_cq_token)
+        # Credit-balance visibility: a funded (non-free) credit account must be
+        # able to see its remaining credits HERE, not only incidentally on a
+        # paid-tool receipt. This is a read-only SELECT (billing.credits.get_balance
+        # is fail-open and never writes), so it can NEVER turn check_quota into a
+        # charged or failing call: any lookup error is swallowed and the base
+        # quota response is returned unchanged. key_id is the same account_id the
+        # paid path bills (resolve_account -> identity.agent_id).
+        try:
+            _cq_key = _cq_result.get("key_id")
+            if _cq_key and _cq_result.get("tier") != "free":
+                from billing.credits import (
+                    get_balance as _cq_get_balance,
+                    is_free_key as _cq_is_free,
+                )
+                if not _cq_is_free(_cq_key):
+                    _cq_balance = await _cq_get_balance(_cq_key)
+                    # None == no credit_accounts row (e.g. a pure subscription
+                    # token) or a lookup error -> omit rather than show a
+                    # misleading zero. A genuine spent-to-zero account returns
+                    # int 0 and is shown honestly.
+                    if _cq_balance is not None:
+                        _cq_result["credit_balance"] = _cq_balance
+                        # 1 credit == 1 US cent (billing.pricing single source of truth).
+                        _cq_result["credit_balance_usd"] = round(_cq_balance / 100.0, 2)
+        except Exception:  # noqa: BLE001 - balance visibility is best-effort; never break check_quota
+            pass
+        return _cq_result
 
     elif name == "mint_key":
         # Agent self-serve key issuance: HMAC-SHA256 proof of MACHINE_MINT_SECRET.

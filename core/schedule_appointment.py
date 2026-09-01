@@ -209,9 +209,28 @@ async def handle_schedule_appointment(
     # Note: CalComAdapter raises RuntimeError when CALCOM_API_KEY is absent and
     # stubs are not allowed (production). Those exceptions are caught below and
     # routed to the no-worker honest-failure path.
-    if "direct_api:calcom" in smb.channels_available and smb.calcom_event_type_id:
+    # A Cal.com SMB uses the calcom fast path whether or not it carries an
+    # explicit calcom_event_type_id. import_booking_url stores NONE, so the old
+    # `and smb.calcom_event_type_id` clause sent every imported Cal.com business
+    # straight to the async/no-worker branch and the false "CALCOM_API_KEY
+    # absent" failure. We now derive an event type on the fly from the wired
+    # account when the SMB has none.
+    is_calcom = "direct_api:calcom" in smb.channels_available
+    _calcom_err: str | None = None
+    if is_calcom:
         adapter = CalComAdapter()
         try:
+            # book / check_availability need an event type id; cancel does not
+            # (it targets an existing booking uid), so resolve LAZILY — a cancel
+            # must never fail on an event-type lookup it does not use.
+            #
+            # SINGLE-TENANT LIMITATION: only the founder's cal_live key is
+            # wired, so a derived event type always belongs to that one account
+            # and every imported-SMB booking currently lands there. Accepted
+            # for launch; per-SMB Cal.com mapping is tracked separately.
+            event_type_id = smb.calcom_event_type_id
+            if request.action.value in ("book", "check_availability") and not event_type_id:
+                event_type_id = await adapter.get_default_event_type_id()
             if request.action.value == "book":
                 rt = request.requested_time
                 # PREFERRED_ISO WAS READ NOWHERE, AND slots[0] WAS BOOKED.
@@ -268,9 +287,9 @@ async def handle_schedule_appointment(
                         trace_id=trace_id,
                     ))
 
-                slots = await adapter.get_availability(smb.calcom_event_type_id, date_from, date_to)
+                slots = await adapter.get_availability(event_type_id, date_from, date_to)
                 if not slots:
-                    pass  # fall through to async/sync failure path
+                    pass  # fall through to the honest calcom failure below
                 else:
                     # Cal.com has used both keys across API versions, and our
                     # own stub emits "start" while this read "time" - a
@@ -311,7 +330,7 @@ async def handle_schedule_appointment(
                             trace_id=trace_id,
                         ))
                     booking = await adapter.book_slot(
-                        event_type_id=smb.calcom_event_type_id,
+                        event_type_id=event_type_id,
                         start=_slot_time(slot),
                         name=request.customer.name if request.customer else "Customer",
                         email=request.customer.email if request.customer and request.customer.email else "noreply@example.com",
@@ -361,7 +380,7 @@ async def handle_schedule_appointment(
                     if request.requested_time and request.requested_time.window_end_iso
                     else (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
                 )
-                slots = await adapter.get_availability(smb.calcom_event_type_id, date_from, date_to)
+                slots = await adapter.get_availability(event_type_id, date_from, date_to)
                 return _store_terminal(OutcomeReceipt(
                     operation_id=operation_id,
                     status=OperationStatus.SUCCESS,
@@ -376,23 +395,42 @@ async def handle_schedule_appointment(
                 ))
 
         except Exception as exc:
-            _calcom_err = str(exc)  # capture for the failure path below
-        else:
-            _calcom_err = None
-    else:
-        _calcom_err = "direct_api:calcom not available for this SMB"
+            _calcom_err = str(exc)  # captured for the honest failure below
 
-    # Async path: voice_ai or web_form via Celery.
+        # Reaching here for a Cal.com SMB means the sync path returned no
+        # receipt: either the book action found no slots (fell through), or a
+        # call raised. Report the TRUE reason. The old hardcoded "CALCOM_API_KEY
+        # absent / VAPI_API_KEY absent / no async worker" string was false (the
+        # key is present and working) and told agents to abandon a live service.
+        # status=FAILURE => x402 skips settlement, so this is always no-charge.
+        return _store_terminal(OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="calcom_booking_failed",
+            human_message=(
+                f"Booking via Cal.com did not complete for {smb.name}: "
+                f"{_calcom_err or 'no availability was returned for the requested window'}. "
+                "Nothing was booked and nothing was charged."
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            channel_used="direct_api:calcom",
+            retriable=True,
+            trace_id=trace_id,
+        ))
+
+    # Async path: voice_ai or web_form via Celery (non-Cal.com SMBs only).
     # FIX 2c: if no Celery broker is configured, executing async would leave the
     # operation pending forever. Return an honest synchronous failure instead.
     if not _has_celery_worker():
         return _store_terminal(OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
-            reason_code="voice_not_provisioned",
+            reason_code="async_channel_not_provisioned",
             human_message=(
-                "No booking channel is configured for this deployment "
-                "(CALCOM_API_KEY absent, VAPI_API_KEY absent, no async worker available). "
+                f"{smb.name} can only be booked through an async channel "
+                f"({', '.join(smb.channels_available) or 'none'}), which needs a "
+                "background worker that is not deployed on this tier. "
                 "Nothing was booked and nothing was charged."
             ),
             cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),

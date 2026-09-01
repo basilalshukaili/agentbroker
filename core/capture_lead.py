@@ -54,7 +54,7 @@ async def handle_capture_lead(
 
     # MEDIUM-2 fix: capture_lead currently performs no real CRM write — it only
     # computes a deterministic UUID and selects a channel name. Returning
-    # status=success and charging /usr/bin/bash.05 for this stub work is dishonest billing.
+    # status=success and charging $0.05 for this stub work is dishonest billing.
     # Return status=partial / cost=0 until a real CRM write (DB row, webhook,
     # or API call) is implemented. The lead_id is still returned so callers can
     # reference the dedup key in a follow-up once CRM is wired.
@@ -76,7 +76,7 @@ async def handle_capture_lead(
         reason_code="lead_logged_no_crm",
         human_message=(
             f"Lead noted for {smb.name} (lead_id={lead_id}). "
-            "No external CRM write performed — charged /usr/bin/bash until real CRM persistence is wired."
+            "No external CRM write performed — charged $0 (not charged) until real CRM persistence is wired."
         ),
         result={
             "lead_id": lead_id,
