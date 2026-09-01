@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.hatchloop/sms-whatsapp-messaging",
+  "title": "Message a Business",
+  "description": "Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in.",
+  "websiteUrl": "https://hatchloop.dev/agent-broker/",
+  "repository": {
+    "url": "https://github.com/basilalshukaili/agentbroker",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hatchloop.dev/mcp/sms-whatsapp-messaging"
+    }
+  ]
+}

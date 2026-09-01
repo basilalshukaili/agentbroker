@@ -96,6 +96,30 @@ PROFILES: dict[str, dict] = {
             "verify_business",
         ),
     },
+    # "compliance" is a 31-competitor registry search we were absent from
+    # (measured 2026-08-29). Its own door owns that name. Every tool here is a
+    # FREE, read-only pre-flight — the door works standalone with no key.
+    "compliance-check": {
+        "title": "Compliance pre-flight for AI agents",
+        "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening before you act. Free, no key.",
+        "tools": (
+            "check_compliance",
+            "screen_sanctions",
+            "verify_company_record",
+            "map_trade_restriction",
+        ),
+    },
+    # "verify company" is a distinct capability search; the door leads with the
+    # official-registry data (GLEIF LEI, SEC EDGAR) that is the moat. Free reads.
+    "company-verification": {
+        "title": "Verify a company",
+        "description": "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free.",
+        "tools": (
+            "verify_company_record",
+            "screen_sanctions",
+            "lookup_us_contracts",
+        ),
+    },
 }
 
 
