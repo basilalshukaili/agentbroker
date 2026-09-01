@@ -108,6 +108,13 @@ def _seed_smbs() -> dict[str, SMBEntry]:
                  channels_available=["direct_api:calcom", "email"],
                  calcom_event_type_id="1004",
                  price_range={"min_usd": 20, "max_usd": 90}, verified_at=now),
+        SMBEntry("smb_008", "Salon 718 Brooklyn", Vertical.PERSONAL_SERVICES,
+                 "45 Atlantic Ave", "Brooklyn", "NY", "11201",
+                 capabilities=["haircut", "color", "blowdry", "keratin_treatment"],
+                 channels_available=["direct_api:calcom", "sms"],
+                 calcom_event_type_id="1011",
+                 phone="+17185550101",
+                 price_range={"min_usd": 60, "max_usd": 150}, verified_at=now),
 
         # --- Home Services ---
         SMBEntry("smb_044", "FastFix Plumbing", Vertical.HOME_SERVICES,
@@ -368,6 +375,20 @@ class SMBDirectory:
         except Exception as exc:
             _log.warning("smb_supply_schedule_failed smb_id=%s err=%s", entry.smb_id, exc)
 
+    # Common metro areas where an agent may search the MSA name but businesses
+    # are registered under a borough/suburb city name.
+    _METRO_ALIASES: dict[str, list[str]] = {
+        "new york": ["manhattan", "brooklyn", "queens", "bronx", "staten island", "new york", "nyc"],
+        "nyc": ["manhattan", "brooklyn", "queens", "bronx", "staten island", "new york"],
+        "los angeles": ["los angeles", "santa monica", "pasadena", "burbank", "glendale", "culver city"],
+        "chicago": ["chicago", "evanston", "oak park", "cicero"],
+        "dallas": ["dallas", "fort worth", "arlington", "irving", "plano", "garland"],
+        "san francisco": ["san francisco", "oakland", "berkeley", "san jose", "palo alto"],
+        "washington": ["washington", "arlington", "alexandria", "bethesda", "silver spring"],
+        "miami": ["miami", "miami beach", "hialeah", "coral gables", "fort lauderdale"],
+        "boston": ["boston", "cambridge", "somerville", "brookline", "quincy"],
+    }
+
     @staticmethod
     def _location_matches(smb: SMBEntry, zip_or_city: str) -> bool:
         needle = zip_or_city.lower().strip()
@@ -379,7 +400,14 @@ class SMBDirectory:
             return True
         # Split "City, STATE" format and check parts independently
         parts = [p.strip() for p in needle.replace(",", " ").split() if p.strip()]
-        return any(p in city_l or p in state_l or p in zip_l for p in parts if len(p) > 1)
+        if any(p in city_l or p in state_l or p in zip_l for p in parts if len(p) > 1):
+            return True
+        # Metro-area expansion: "New York" → also matches Brooklyn, Queens, etc.
+        for metro_key, boroughs in SMBDirectory._METRO_ALIASES.items():
+            if metro_key in needle or any(metro_key == p for p in parts):
+                if city_l in boroughs or any(b in city_l for b in boroughs):
+                    return True
+        return False
 
 
 _directory = SMBDirectory()
