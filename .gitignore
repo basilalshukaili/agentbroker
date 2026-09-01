@@ -73,3 +73,8 @@ reports/*.md
 playwright-report/
 test-results/
 .cache/ms-playwright/
+
+# Internal company vault — CEO tick logs, board state, spend figures.
+# This repo is PUBLIC. A tick writes here and a stray `git add -A` published
+# one of these on 2026-09-01 (ops notes only, no secrets). Never again.
+obsidian-vault/
