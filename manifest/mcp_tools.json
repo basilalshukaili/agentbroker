@@ -182,7 +182,7 @@
   },
   {
     "name": "capture_lead",
-    "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.",
+    "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
     "inputSchema": {
       "type": "object",
       "required": [

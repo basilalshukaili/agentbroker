@@ -35,12 +35,25 @@ Design notes / honesty guarantees:
     marketing consent, 10DLC). It does NOT evaluate two-party voice *recording*
     consent — that is decided at call time inside the voice adapter. The result
     says so explicitly so an agent never over-trusts a voice "legal": true.
+  * Evidence: every decision (permitted or blocked) carries a
+    `compliance_receipt` — a self-contained, hash-bound, optionally Ed25519-
+    signed record of WHICH gate code decided, under WHICH jurisdiction rules,
+    over WHICH inputs, WHEN, and WHAT it returned. See core/compliance_receipt.
+    The operator, not us, is the one who has to produce that record later, so
+    it is handed to them and stored nowhere. It is purely additive: a caller
+    who ignores the field sees the identical answer it saw before.
 """
 from __future__ import annotations
 
 import time
 import uuid
 
+from core.compliance_receipt import (
+    attach_receipt,
+    service_version,
+    sha256_text as _sha256_text,
+    source_fingerprint,
+)
 from core.models import (
     ComplianceViolationError,
     CostRecord,
@@ -77,6 +90,118 @@ def _infer_channel(recipient_id: str) -> str:
     return "email" if "@" in recipient_id else "sms"
 
 
+# ---------------------------------------------------------------------------
+# Evidence record (see core/compliance_receipt.py)
+# ---------------------------------------------------------------------------
+
+# WHAT THIS RECEIPT REFUSES TO CLAIM, carried inside the record itself.
+#
+# A limit that lives in our documentation is a limit the auditor reading the
+# customer's evidence file will never see. Every one of these is a claim a
+# reader could otherwise reasonably infer from "AgentBroker checked this and
+# said it was legal", and not one of them is ours to make.
+_DOES_NOT_ASSERT = [
+    "This is a PREVIEW decision. It does not assert that any message was sent, "
+    "nor that the send was still permitted when it happened - the gate re-runs "
+    "at dispatch, and an opt-out or consent change between the two produces a "
+    "different answer.",
+    "It does not assert where the recipient actually is. The jurisdiction "
+    "recorded here was supplied by the caller or defaulted when none was "
+    "given; we did not verify the recipient's location.",
+    "It does not assert that the recipient identifier belongs to the person "
+    "the caller believes it belongs to.",
+    "It does not cover two-party voice RECORDING consent, which is decided at "
+    "call time inside the voice adapter and is outside this gate.",
+    "It does not assert compliance with any obligation this gate does not "
+    "implement, and it is not legal advice or a determination by any regulator.",
+]
+
+_ASSERTS = (
+    "AgentBroker ran its outbound-messaging compliance gate "
+    "(compliance.pre_check - the same code path send_message and call_business "
+    "run before dispatching) in preview mode, over the inputs whose digest is "
+    "recorded here, at the instant recorded here, and returned the decision "
+    "recorded here. No message was sent and no state changed."
+)
+
+
+def _ruleset_evidence(country_code, state_code) -> dict:
+    """Which rules decided, identified by content rather than by a label.
+
+    THERE IS NO RULESET VERSION NUMBER TO QUOTE, so this does not invent one.
+    A hand-maintained version constant is only correct until the first person
+    who edits the rules forgets to bump it, and the whole value of this field
+    to an auditor is that it cannot be wrong. Source fingerprints cannot drift
+    from the code that ran: identical fingerprints mean identical decision
+    logic. They are conservative in the safe direction - a comment edit changes
+    them, so they can over-report a change and never under-report one.
+
+    `rules_applied` is the concrete part: the actual jurisdiction rule values
+    that governed THIS decision, as data, so a reader does not need our source
+    to see what was enforced.
+    """
+    import dataclasses
+
+    import compliance.jurisdiction_rules as _jr
+    import compliance.pre_check as _pc
+
+    rules = _jr.infer_jurisdiction(country_code, state_code)
+    return {
+        "gate": "compliance.pre_check (preview mode: decision only, no send, "
+                "no audit-log write)",
+        "gate_source_sha256": source_fingerprint(_pc),
+        "jurisdiction_rules_source_sha256": source_fingerprint(_jr),
+        "jurisdiction_applied": rules.jurisdiction_code,
+        # An unknown jurisdiction is NOT the same fact as a stated one, and the
+        # gate treats them differently (a marketing send with no country_code
+        # is refused outright). The receipt has to record which of the two
+        # produced this decision.
+        "jurisdiction_supplied_by_caller": bool(country_code),
+        "supported_jurisdictions": len(_jr.list_supported_jurisdictions()),
+        "rules_applied": dataclasses.asdict(rules),
+    }
+
+
+def _attach(result: dict, operation_id: str, subject: dict, inputs: dict,
+            country_code, state_code, channel: str, decision: dict) -> None:
+    """Put the evidence record into `result`. Never raises, never charges.
+
+    Called on both decision branches and on NEITHER failure branch: a
+    bad_input receipt would be a record of a check that never ran, and an
+    evidence artefact whose subject is "nothing happened" is noise in the file
+    an auditor has to read.
+    """
+    attach_receipt(
+        result,
+        tool="check_compliance",
+        operation_id=operation_id,
+        service_version=service_version(),
+        asserts=_ASSERTS,
+        does_not_assert=_DOES_NOT_ASSERT,
+        subject=subject,
+        inputs=inputs,
+        evidence={
+            "mode": "preview",
+            "decision": decision,
+            "ruleset": _ruleset_evidence(country_code, state_code),
+            "content_digest_note": (
+                "subject.content_sha256 is sha256 over the raw UTF-8 bytes of "
+                "the message body. The body itself is not reproduced here; "
+                "hash the copy you kept to prove it is the text that was "
+                "checked."),
+            "scope": (
+                "Outbound-messaging gate only: restricted content, opt-out, "
+                "marketing consent, quiet hours and 10DLC campaign "
+                "registration. Two-party voice RECORDING consent is decided "
+                "at call time in the voice adapter and is NOT covered."
+                if channel == "voice" else
+                "Outbound-messaging gate only: restricted content, opt-out, "
+                "marketing consent, quiet hours and 10DLC campaign "
+                "registration."),
+        },
+    )
+
+
 async def handle_check_compliance(
     recipient_id: str,
     content: str,
@@ -88,10 +213,14 @@ async def handle_check_compliance(
     trace_id: str | None = None,
 ) -> OutcomeReceipt:
     t0 = time.monotonic()
+    # ONE id for the call, so the evidence receipt and the OutcomeReceipt name
+    # the same operation. Two uuid4()s in the same call would have produced a
+    # record the caller could not tie back to the answer it came with.
+    operation_id = str(uuid.uuid4())
 
     def _bad_input(msg: str) -> OutcomeReceipt:
         return OutcomeReceipt(
-            operation_id=str(uuid.uuid4()),
+            operation_id=operation_id,
             status=OperationStatus.FAILURE,
             reason_code="bad_input",
             human_message=msg,
@@ -138,6 +267,30 @@ async def handle_check_compliance(
         "checked_live": False,
     }
 
+    # The subject and inputs the evidence record will name. `content` is
+    # DIGESTED, NOT COPIED: the caller already holds the message body, the
+    # receipt may be filed and forwarded, and a record that reproduces the
+    # message text turns an evidence artefact into a second copy of the
+    # customer's data. The digest still lets them prove which exact text was
+    # checked, which is the only thing the evidence has to support.
+    _subject = {
+        "recipient_id": recipient_id,
+        "channel": channel,
+        "message_type": message_type,
+        "country_code": country_code,
+        "state_code": state_code,
+        "content_sha256": _sha256_text(content),
+        "content_length_chars": len(content),
+    }
+    _inputs = {
+        "recipient_id": recipient_id,
+        "channel": channel,
+        "message_type": message_type,
+        "country_code": country_code,
+        "state_code": state_code,
+        "content": content,
+    }
+
     try:
         pre_check(
             recipient_id=recipient_id,
@@ -159,8 +312,16 @@ async def handle_check_compliance(
             "human_message": cve.message,
             "remediation": _remediation_for(cve.rule),
         }
+        # A BLOCKED send is worth MORE evidence than a permitted one, not less:
+        # "we ran the gate and it refused, here is the rule and the ruleset" is
+        # the record that shows an operator's system stopped an unlawful send.
+        _attach(result, operation_id, _subject, _inputs,
+                country_code, state_code, channel,
+                decision={"permitted": False,
+                          "rule": cve.rule,
+                          "jurisdiction": cve.jurisdiction})
         return OutcomeReceipt(
-            operation_id=str(uuid.uuid4()),
+            operation_id=operation_id,
             status=OperationStatus.SUCCESS,        # a truthful "no" is a successful check
             reason_code="not_compliant",
             human_message=(
@@ -180,8 +341,13 @@ async def handle_check_compliance(
 
     # --- compliant branch -------------------------------------------------
     result = {**base_result, "legal": True, "rule": None}
+    _attach(result, operation_id, _subject, _inputs,
+            country_code, state_code, channel,
+            decision={"permitted": True,
+                      "rule": None,
+                      "jurisdiction": result["jurisdiction"]})
     return OutcomeReceipt(
-        operation_id=str(uuid.uuid4()),
+        operation_id=operation_id,
         status=OperationStatus.SUCCESS,
         reason_code="compliant",
         human_message=(

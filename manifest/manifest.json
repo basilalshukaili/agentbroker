@@ -3,7 +3,7 @@
   "service": {
     "name": "AgentBroker",
     "id": "agent-broker",
-    "version": "0.2.11",
+    "version": "0.2.12",
     "description": "A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.",
     "base_url": "https://api.hatchloop.dev",
     "discovery_url": "https://api.hatchloop.dev/.well-known/mcp.json",
@@ -671,7 +671,7 @@
     },
     {
       "name": "capture_lead",
-      "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.",
+      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
       "when_to_use": "Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.",
       "when_not_to_use": "Do not use for confirmed bookings \u00e2\u20ac\u201d use schedule_appointment. Do not use for bulk list imports.",
       "execution_profile": "sync_fast",
@@ -3627,5 +3627,5 @@
   "manifest_version": "0.1.0",
   "generated_at": "2026-04-27T00:00:00Z",
   "slo_data_freshness": "static_seed \u00e2\u20ac\u201d replace with telemetry-driven values at P8",
-  "version": "0.2.11"
+  "version": "0.2.12"
 }

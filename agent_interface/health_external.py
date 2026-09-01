@@ -14,7 +14,6 @@ What it knows how to check:
   Vapi         — /assistant returns 200
   Resend       — /domains returns 401 'restricted_api_key' (which is correct
                  for a send-only key; we treat that response as healthy)
-  Paddle       — /event-types is the cheapest authenticated read
   Internal     — manifest + MCP + discovery surfaces
 
 Safe to surface publicly: nothing in the response leaks an API key,
@@ -133,22 +132,16 @@ async def _check_resend(client: "httpx.AsyncClient") -> dict:
         return _bucket(False, int((time.monotonic() - t0) * 1000), message=str(e)[:80])
 
 
-async def _check_paddle(client: "httpx.AsyncClient") -> dict:
-    key = os.getenv("PADDLE_API_KEY", "")
-    if not key:
-        return _bucket(False, 0, message="not_configured")
-    env = os.getenv("PADDLE_ENVIRONMENT", "production").lower()
-    base = "https://sandbox-api.paddle.com" if env == "sandbox" else "https://api.paddle.com"
-    t0 = time.monotonic()
-    try:
-        r = await client.get(
-            f"{base}/event-types",
-            headers={"Authorization": f"Bearer {key}", "Paddle-Version": "1"},
-        )
-        latency = int((time.monotonic() - t0) * 1000)
-        return _bucket(r.status_code == 200, latency, message=f"http_{r.status_code}")
-    except Exception as e:
-        return _bucket(False, int((time.monotonic() - t0) * 1000), message=str(e)[:80])
+# A `_check_paddle` used to sit here (GET /event-types) and it is deliberately
+# gone — do not re-add it. Paddle was evaluated and never wired: there is no
+# PADDLE_API_KEY on the production service, so the probe returned HTTP 403 on
+# every single poll and was the ONLY reason /healthz/external reported overall
+# "fail" while Twilio, Cal.com, Vapi, Resend and internal discovery were all
+# green. The live money rails are credits, x402 and Polar; this gauge should
+# only watch rails we actually depend on. A permanently-failing probe doesn't
+# report a problem, it trains everyone to ignore the gauge — which is worse
+# than having no gauge at all. If Paddle is ever genuinely adopted, add the
+# check back at that time, not before.
 
 
 async def _check_internal_discovery() -> dict:
@@ -186,12 +179,11 @@ async def run_external_health() -> dict:
         return {"status": "fail", "error": "httpx not installed"}
     started = time.time()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        twilio, calcom, vapi, resend, paddle, internal = await asyncio.gather(
+        twilio, calcom, vapi, resend, internal = await asyncio.gather(
             _check_twilio(client),
             _check_calcom(client),
             _check_vapi(client),
             _check_resend(client),
-            _check_paddle(client),
             _check_internal_discovery(),
             return_exceptions=False,
         )
@@ -200,7 +192,6 @@ async def run_external_health() -> dict:
         "calcom": calcom,
         "vapi": vapi,
         "resend": resend,
-        "paddle": paddle,
         "internal_discovery": internal,
     }
     all_ok = all(s["status"] == "ok" for s in services.values())

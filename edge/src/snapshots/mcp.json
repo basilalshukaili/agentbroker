@@ -1,6 +1,6 @@
 {
   "name": "agent-broker",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "transport": {
     "type": "streamable-http",
     "endpoint": "https://api.hatchloop.dev/mcp",
@@ -61,6 +61,18 @@
       "endpoint": "https://api.hatchloop.dev/mcp/appointment-booking",
       "description": "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms.",
       "tool_count": 9
+    },
+    {
+      "name": "company-verification",
+      "endpoint": "https://api.hatchloop.dev/mcp/company-verification",
+      "description": "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free.",
+      "tool_count": 7
+    },
+    {
+      "name": "compliance-check",
+      "endpoint": "https://api.hatchloop.dev/mcp/compliance-check",
+      "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening before you act. Free, no key.",
+      "tool_count": 8
     },
     {
       "name": "sanctions-screening",

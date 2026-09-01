@@ -58,7 +58,7 @@ Send a message on behalf of an agent's user or an SMB across WhatsApp (free duri
 
 ### capture_lead
 
-Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available.
+Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.
 
 - **When to use**: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.
 - **When NOT to use**: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.

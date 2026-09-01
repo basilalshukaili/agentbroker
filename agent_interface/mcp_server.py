@@ -1393,7 +1393,16 @@ async def _dispatch_operation(
             prospect=ProspectData(**_as_dict(prospect_data, "prospect")),
             source=args.get("source", "agent"),
         )
-        receipt = await handle_capture_lead(req)
+        # PASS THE CALLER'S IDENTITY. capture_lead now performs a REAL durable
+        # write to the `leads` table, and the row carries agent_id — which was
+        # NULL on every MCP-dispatched lead because this call site dropped it
+        # (the dispatch-layer blindspot this codebase has hit before: the
+        # handler advertises a parameter, the dispatcher never supplies it).
+        # Without it the SMB cannot tell which agent sent a prospect.
+        receipt = await handle_capture_lead(
+            req,
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "call_business":
         from core.call_business import handle_call_business

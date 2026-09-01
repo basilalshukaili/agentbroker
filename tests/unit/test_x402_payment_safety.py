@@ -75,8 +75,24 @@ class TestPartialNotChargeable:
     def test_receipt_is_error_partial_casing(self):
         assert _receipt_is_error({"status": "PARTIAL"}) is True
 
-    def test_capture_lead_nondemo_returns_partial(self):
+    def test_capture_lead_unwritten_lead_is_not_chargeable(self, monkeypatch):
+        # WAS test_capture_lead_nondemo_returns_partial, asserting
+        # status=partial / reason_code='lead_logged_no_crm' -- the stub that
+        # persisted nothing. capture_lead now writes a real row (2026-09-01),
+        # so the outcome this class exists to pin is the write FAILING: the
+        # agent must not be charged for a lead that was never stored.
+        import storage.supabase_client as sb
         from supply.smb_directory import get_directory
+
+        async def _no_write(table, row):
+            return None
+
+        async def _cannot_read(table, **kw):
+            raise sb.SupabaseUnavailable("leads unreachable")
+
+        monkeypatch.setattr(sb, "insert_row", _no_write)
+        monkeypatch.setattr(sb, "select_rows_strict", _cannot_read)
+
         smb = get_directory().get("smb_001")
         orig_demo, orig_name = smb.is_demo, smb.name
         try:
@@ -84,9 +100,10 @@ class TestPartialNotChargeable:
             smb.name = "Real Test"
             req = CaptureLeadRequest(smb_id="smb_001", prospect=ProspectData(name="A"), source="test")
             r = run(handle_capture_lead(req))
-            assert r.status == OperationStatus.PARTIAL, f"got {r.status!r}"
-            assert r.reason_code == "lead_logged_no_crm"
+            assert r.status == OperationStatus.FAILURE, f"got {r.status!r}"
+            assert r.reason_code == "upstream_failure"
             assert r.cost.amount == 0.0
+            assert r.result is None, "a failed capture must not hand back a lead_id"
             assert _receipt_is_error(r.model_dump(mode="json")) is True
         finally:
             smb.is_demo = orig_demo

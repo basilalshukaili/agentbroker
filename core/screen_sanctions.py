@@ -38,6 +38,12 @@ Design:
   * Telemetry: fires via the existing mcp_server dispatch hook (usage_events row).
   * Disclaimer: every response carries "informational screening, not legal advice;
     confirm against the official source before acting."
+  * Evidence: every screen carries a `compliance_receipt` - a self-contained,
+    hash-bound, optionally Ed25519-signed record of WHICH lists were screened,
+    HOW OLD each copy was, WHEN, and WHAT came back. See core/compliance_receipt.
+    The operator is the party who has to produce that record years later, so it
+    is handed to them and stored nowhere here. Purely additive: a caller that
+    ignores the field sees the identical answer it saw before.
 """
 from __future__ import annotations
 
@@ -52,6 +58,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 
 # ---------------------------------------------------------------------------
@@ -1504,6 +1511,139 @@ async def _call_ofac_sdn(
 
 
 # ---------------------------------------------------------------------------
+# Evidence record (see core/compliance_receipt.py)
+# ---------------------------------------------------------------------------
+
+# WHAT THE RECEIPT REFUSES TO CLAIM, carried inside the record itself.
+#
+# Everything this file is arranged to prevent - a clean screen from a screen
+# that never ran, a name collision presented as a finding, a stale copy read as
+# current - becomes readable again the moment the answer is filed away as "we
+# screened them and they were clean". The limits have to travel WITH the
+# evidence, in the artefact the auditor opens, not in documentation nobody
+# keeps next to it.
+_DOES_NOT_ASSERT = [
+    "It does NOT assert that the subject is not sanctioned. A 'clean' outcome "
+    "means the lists named in evidence.lists_screened returned no confirmed "
+    "match against the copies whose ages are recorded here. That is all it "
+    "means.",
+    "It does not assert coverage of any list absent from "
+    "evidence.lists_screened. The UN Consolidated List is never screened, and "
+    "PEP databases, adverse media, export-control party lists and internal "
+    "watchlists are outside this tool entirely.",
+    "It does not assert that the list copies matched the publishers' live "
+    "lists at the moment of screening. It records how old each copy was so "
+    "that judgement stays with you.",
+    "It does not assert identity. A match is a NAME similarity produced by an "
+    "uncalibrated matcher with no name-frequency data behind it - not a "
+    "determination that your counterparty is the listed party - and a "
+    "non-match does not rule out an alias, transliteration or spelling that "
+    "does not appear in the copies screened.",
+    "It is not legal advice, not a KYC/AML clearance, and not a sanctions "
+    "determination by any authority.",
+]
+
+_ASSERTS = (
+    "AgentBroker screened the name recorded here against the sanctions list "
+    "copies described in evidence.data_provenance, at the instant recorded "
+    "here, using the matching method recorded here, and returned the outcome "
+    "recorded here. Every field is a statement about what this service did, "
+    "not about the party screened."
+)
+
+
+async def _refreshed_on(list_code: str) -> Optional[str]:
+    """The refresh date the screen ACTUALLY USED for this list, or None.
+
+    Reads _age_cache directly first. The screen populated it microseconds ago,
+    so this reports the value the decision was made on rather than a fresh
+    lookup that could disagree with it - and it adds no database round trip to
+    a free tool. Falls back to the normal (cached) accessor when the cache is
+    empty, which is the case when a test has replaced _list_refreshed_at.
+    """
+    hit = _age_cache.get(list_code)
+    if hit:
+        return hit[1]
+    try:
+        return await _list_refreshed_at(list_code)
+    except Exception:                           # noqa: BLE001
+        return None
+
+
+async def _data_provenance(ofac_ok: bool, eu_ok: bool, uk_ok: bool) -> list[dict]:
+    """Which data answered this screen, from whom, under what licence, how old.
+
+    THE MOST VALUABLE FIELD IN THE WHOLE RECEIPT. An auditor's first question
+    about a sanctions screen from 2026 is not what it said - it is what it was
+    screened against and whether that copy was current. The tool already
+    enforces a 7-day limit and already knows every one of these numbers; until
+    now it spent them on a prose sentence and threw the structure away.
+    """
+    entries: list[dict] = []
+
+    ofac_age_s = list_cache_age_s(_OFAC_SDN_CSV_URL)
+    ofac_stale = any(u in _stale_ages
+                     for u in (_OFAC_SDN_CSV_URL, _OFAC_ALT_CSV_URL))
+    entries.append({
+        "list": "OFAC-SDN",
+        "publisher": "US Department of the Treasury, Office of Foreign Assets "
+                     "Control",
+        "sources": [_OFAC_SDN_CSV_URL, _OFAC_ALT_CSV_URL],
+        "licence": "US Government work, public domain",
+        "screened_on_this_call": bool(ofac_ok),
+        "copy_fetched_hours_ago": (int(ofac_age_s // 3600)
+                                   if ofac_age_s is not None else None),
+        "refresh_state": ("stale_copy_after_failed_refresh" if ofac_stale
+                          else "refreshed_within_ttl" if ofac_age_s is not None
+                          else "unknown"),
+        "refresh_ttl_hours": int(_LIST_TTL_S // 3600),
+        "max_copy_age_days": _STALE_AFTER_DAYS,
+    })
+
+    for code, label, publisher, source, licence, ok in (
+        ("EU", "EU-CONSOLIDATED", "European Commission",
+         _EU_CSV_URL,
+         "European Commission open-data licence (commercial reuse permitted)",
+         eu_ok),
+        ("UK", "UK-SANCTIONS", "UK Foreign, Commonwealth & Development Office",
+         _UK_CSV_URL, "Open Government Licence v3.0", uk_ok),
+    ):
+        day = await _refreshed_on(code)
+        age = _days_since(day)
+        entries.append({
+            "list": label,
+            "publisher": publisher,
+            "source": source,
+            "licence": licence,
+            "screened_on_this_call": bool(ok),
+            "index_refreshed_on": day,
+            "index_age_days": age,
+            "max_index_age_days": _STALE_AFTER_DAYS,
+            # None, not False, when the age could not be read. "We do not know"
+            # and "we know it is outside the limit" are different facts, and
+            # the gate in _screen_list_db refuses to screen on either.
+            "within_freshness_limit": (None if age is None
+                                       else age <= _STALE_AFTER_DAYS),
+        })
+
+    # THE LIST WE DO NOT SCREEN, NAMED IN THE EVIDENCE.
+    #
+    # A reader deciding whether this receipt covers their obligation needs the
+    # boundary as explicitly as the coverage. Leaving it out would let the
+    # record be read as "the sanctions lists" rather than "these three".
+    entries.append({
+        "list": "UN-CONSOLIDATED (UN Security Council)",
+        "publisher": "United Nations Security Council",
+        "screened_on_this_call": False,
+        "reason_not_screened": (
+            "No open licence permitting commercial redistribution, so "
+            "AgentBroker never screens this list. A permanent boundary of the "
+            "service, not an outage on this call."),
+    })
+    return entries
+
+
+# ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
 
@@ -1943,6 +2083,53 @@ async def handle_screen_sanctions(
             no_match_detail += ". NOTE: some sources were unavailable -- screening may be incomplete."
         human_message = no_match_detail
         reason_code = "no_match" if not all_sources_unavailable else "partial_screening"
+
+    # --- evidence record ---------------------------------------------------
+    #
+    # `screened_ok` is ANDed in deliberately. A reduced screen - the weak-name
+    # path above, where only exact whole-name matches were checked - is not a
+    # screen, and the receipt must not record one list as covered when the very
+    # branch that set screened_ok=False exists to say it was not.
+    _ofac_ok = screened_ok and not ofac_unavail
+    _eu_ok = screened_ok and not eu_unavail
+    _uk_ok = screened_ok and not uk_unavail
+    attach_receipt(
+        result_payload,
+        tool="screen_sanctions",
+        operation_id=op_id,
+        service_version=service_version(),
+        asserts=_ASSERTS,
+        does_not_assert=_DOES_NOT_ASSERT,
+        subject={
+            "name_screened": _ascii(name_clean),
+            "country_hint": country_upper,
+            "entity_type_hint": entity_type,
+        },
+        inputs={"name": name_clean, "country": country, "type": entity_type},
+        evidence={
+            "screened_at": screened_at,
+            "data_provenance": await _data_provenance(_ofac_ok, _eu_ok, _uk_ok),
+            "lists_screened": screened_lists,
+            "sources_queried": all_sources_queried,
+            "sources_unavailable": all_sources_unavailable,
+            "matching_method": (
+                "Exact normalised token-set equality, order-insensitive, and "
+                "UNCALIBRATED: no name-frequency data, so a partial overlap is "
+                "never asserted as a finding. Entries sharing some but not all "
+                "of the query's words are returned as unverified candidates."),
+            "outcome": {
+                "screening_status": result_payload["screening_status"],
+                "reason_code": reason_code,
+                "confirmed_matches": len(merged),
+                "unverified_candidates": len(unverified),
+                # The names of confirmed matches, so the record says WHAT was
+                # found and not merely how many. Candidates are counted, not
+                # named: they are not findings, and copying them into an
+                # evidence file is how a coincidence becomes an allegation.
+                "confirmed_match_names": [m.get("name") for m in merged],
+            },
+        },
+    )
 
     return OutcomeReceipt(
         operation_id=op_id,

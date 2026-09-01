@@ -196,7 +196,7 @@
       "type": "function",
       "function": {
         "name": "capture_lead",
-        "description": "Structured intake of a prospect into an SMB's funnel with validation, enrichment hooks, and deduplication. Inserts into the SMB's CRM or direct-booking pipeline if available. Use when: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up. Do NOT use when: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports. Cost: $0.05 per call. Execution: sync_fast — returns pending_async.",
+        "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM. Use when: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up. Do NOT use when: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports. Cost: $0.05 per call. Execution: sync_fast — returns pending_async.",
         "parameters": {
           "type": "object",
           "required": [
