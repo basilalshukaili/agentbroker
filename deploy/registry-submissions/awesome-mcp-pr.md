@@ -7,7 +7,7 @@ Section to insert into: `### 💼 Business & Productivity` (alphabetical).
 
 ```markdown
 - [agent-broker](https://github.com/basilalshukaili/agentbroker) —
-  Horizontal agent-to-business action layer. 22 tools for finding,
+  Horizontal agent-to-business action layer. 23 tools for finding,
   scheduling, messaging SMBs worldwide; `import_booking_url` turns any
   Cal.com / Calendly / Doctolib / Booksy / OpenTable URL into a bookable SMB.
   Built-in TCPA/GDPR/CASL compliance.
@@ -16,7 +16,7 @@ Section to insert into: `### 💼 Business & Productivity` (alphabetical).
 ## PR title
 
 ```
-Add agent-broker (agent-to-business horizontal layer, 22 tools)
+Add agent-broker (agent-to-business horizontal layer, 23 tools)
 ```
 
 ## PR body
@@ -26,7 +26,7 @@ Adding agent-broker — horizontal MCP server for agent-to-business actions.
 Most existing servers are single-vertical (Cal.com, Twilio, etc.); this one
 stitches them together with compliance + channel fallback.
 
-- 22 tools including import_booking_url (the differentiator)
+- 23 tools including import_booking_url (the differentiator)
 - Worldwide coverage (22 jurisdictions with native compliance rules)
 - Free tier: 100 ops/month
 - Edge: Cloudflare Worker (40–70 ms globally)

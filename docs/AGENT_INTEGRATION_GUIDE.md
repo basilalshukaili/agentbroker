@@ -78,7 +78,7 @@ on an unmeasured prior means aborting on our guess.
 }
 ```
 
-After restart, all 22 operations appear as tools in Claude. No code needed.
+After restart, all 23 operations appear as tools in Claude. No code needed.
 
 ### Protocol B: OpenAI function calling
 

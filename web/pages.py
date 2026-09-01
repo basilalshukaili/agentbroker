@@ -131,7 +131,7 @@ def render_home() -> str:
 
 <section class="section" id="how">
   <h2>Connect in one line, in any agent ecosystem.</h2>
-  <p class="lead">We expose the same 22 tools through every protocol agents speak today.</p>
+  <p class="lead">We expose the same 23 tools through every protocol agents speak today.</p>
   <div class="grid grid-3">
     <div class="card">
       <h3>MCP &mdash; Claude Desktop / Cursor / Continue</h3>
@@ -226,7 +226,7 @@ def render_home() -> str:
 </section>
 """ + f'<script>{_HOME_LIVE_JS}</script>'
     return page("Home", body, active="home",
-                description=f"{BRAND} — horizontal MCP server. 22 tools, 7 discovery protocols, 26 jurisdictions, free tier for AI agents.")
+                description=f"{BRAND} — horizontal MCP server. 23 tools, 7 discovery protocols, 26 jurisdictions, free tier for AI agents.")
 
 
 # ---------------------------------------------------------------------------

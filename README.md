@@ -31,7 +31,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Capability | Status |
 |---|---|
 | MCP endpoint (streamable-http) | **Live**  -  `https://hatchloop.dev/mcp/agent-broker` |
-| 22 MCP tools | **Live** (callable today) |
+| 23 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
@@ -43,7 +43,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 ---
 
-## 22 MCP Tools
+## 23 MCP Tools
 
 All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
 

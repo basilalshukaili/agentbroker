@@ -638,6 +638,22 @@
         }
       },
       {
+        "name": "check_quota",
+        "description": "Returns the caller's current quota state: how many operations have been used today, how many remain, the daily limit, the tier (free / credits / unlimited), and when the quota resets. Read-only and free. Works with any valid X-Agent-Identity token; returns tier='anonymous' for keyless callers with the anonymous daily limits.\n\nEXAMPLE USER QUERIES THAT MATCH THIS TOOL:\n  user: \"How many API calls do I have left today?\"\n  -> call check_quota({})\n  user: \"Check my quota before sending messages\"\n  -> call check_quota({})\n  user: \"When does my rate limit reset?\"\n  -> call check_quota({})\n\nWHEN TO USE: Call at session start or before a batch of write operations to confirm you have enough remaining quota. Use when a user asks how many API calls they have left today. Also useful after a rate_limited error to understand when the quota resets.\nWHEN NOT TO USE: Do not call on every single tool invocation — quota is also injected into every write-tool response in the 'quota' field. Only call proactively when you need the current state without performing an operation.\nCOST: free - no key required\nLATENCY: ~5ms",
+        "inputSchema": {
+          "type": "object",
+          "required": [],
+          "properties": {}
+        },
+        "annotations": {
+          "title": "Check Quota",
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
+      },
+      {
         "name": "check_booking_link",
         "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.\n\nEXAMPLE USER QUERIES THAT MATCH THIS TOOL:\n  user: \"Is this a bookable link? https://cal.com/jane\"\n  -> call check_booking_link({\"url\": \"https://cal.com/jane\"})\n  -> then import_booking_url({\"booking_url\": \"https://cal.com/jane\"})\n  user: \"Can you book me here: https://www.opentable.com/r/acme-bistro\"\n  -> call check_booking_link({\"url\": \"https://www.opentable.com/r/acme-bistro\"})\n\nWHEN TO USE: Call this the moment a user pastes a URL and you are not sure it is a bookable page, or before you commit to a paid schedule_appointment. It is free and sub-100ms, so run it as a guard: if supported=true, proceed to import_booking_url with confidence; if supported=false, fall back to find_business or call_business instead of wasting a booking attempt.\nWHEN NOT TO USE: Do not use to confirm the page is currently live/available — this tool does not fetch the URL, it only classifies its shape. It is not a substitute for import_booking_url (which actually registers the business) or verify_business (which confirms an already-imported smb_id).\nCOST: free - no key required\nLATENCY: ~20ms",
         "inputSchema": {

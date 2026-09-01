@@ -12,6 +12,7 @@
     "free_tools": [
       "check_booking_link",
       "check_compliance",
+      "check_quota",
       "find_business",
       "get_conversation",
       "get_outcome",
@@ -47,9 +48,9 @@
       "screen_sanctions",
       "verify_company_record"
     ],
-    "note": "THREE NUMBERS, because 'free' means three things here. 11 tools are callable with NO key and NO credits. 3 more are callable with no key up to a daily quota, then cost credits. That is 14 usable without signing up. The remaining 8 need a free key, and 10 spend credits once past any quota. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing No account needed to pay per call: attach an x402 payment in params._meta['x402/payment'] and the server returns a signed price offer (USDC on Base) for any paid tool."
+    "note": "THREE NUMBERS, because 'free' means three things here. 12 tools are callable with NO key and NO credits. 3 more are callable with no key up to a daily quota, then cost credits. That is 15 usable without signing up. The remaining 8 need a free key, and 10 spend credits once past any quota. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing No account needed to pay per call: attach an x402 payment in params._meta['x402/payment'] and the server returns a signed price offer (USDC on Base) for any paid tool."
   },
-  "description": "MCP server for HatchLoop AgentBroker. Exposes 22 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation, mint_key, lookup_us_contracts.",
+  "description": "MCP server for HatchLoop AgentBroker. Exposes 23 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_quota, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation, mint_key, lookup_us_contracts.",
   "auth": {
     "header": "X-Agent-Identity",
     "scheme": "bearer"

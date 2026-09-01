@@ -9,7 +9,7 @@ File to edit: `README.md` — section **"Community Servers"** (alphabetical).
 
 ```markdown
 - **[Agent Broker](https://github.com/basilalshukaili/agentbroker)** —
-  Horizontal agent-to-business action layer. 22 tools for finding, verifying,
+  Horizontal agent-to-business action layer. 23 tools for finding, verifying,
   messaging, and scheduling with small/mid-sized businesses worldwide, with
   built-in TCPA / GDPR / CASL / 10DLC compliance and channel fallback
   (Cal.com → voice AI → SMS → email → web form). Free tier for agents:
@@ -31,7 +31,7 @@ This PR adds **Agent Broker** to the Community Servers list.
 ### What it does
 Horizontal MCP server that lets any agent discover, verify, communicate
 with, and schedule appointments with small/mid-sized businesses worldwide.
-22 tools; channel fallback handles SMBs whether they use Cal.com, Calendly,
+23 tools; channel fallback handles SMBs whether they use Cal.com, Calendly,
 Doctolib, Booksy, OpenTable, or no booking system at all. The key
 differentiator: `import_booking_url` turns any public booking page URL into
 a bookable SMB in one call.

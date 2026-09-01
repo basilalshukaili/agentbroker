@@ -17,7 +17,7 @@ Add this to your Cline MCP settings (`cline_mcp_settings.json`):
 }
 ```
 
-That is the whole install. On connect, the server exposes **22 tools**.
+That is the whole install. On connect, the server exposes **23 tools**.
 
 **9 utility tools are unconditionally free (no key, no limit):** `find_business`, `verify_business`,
 `check_compliance`, `check_booking_link`, `preview_cost`, `get_status`, `get_outcome`, `self_test`,
