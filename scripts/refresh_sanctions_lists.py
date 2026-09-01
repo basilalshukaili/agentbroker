@@ -366,7 +366,19 @@ def main(argv: list[str]) -> int:
     for code, url, parser in (("EU", _EU_CSV_URL, _eu_parse),
                               ("UK", _UK_CSV_URL, _uk_parse)):
         print(f"\n{code}: downloading")
-        raw = _fetch(url)
+        # A SLOW/UNSTABLE SOURCE MUST NOT ABORT THE OTHERS. The EU feed
+        # (webgate.ec.europa.eu) intermittently serves ~25MB then stalls past
+        # the 300s curl budget; an uncaught _fetch exception here used to kill
+        # the whole run so UK never refreshed either. Skip the failed source,
+        # keep its existing rows, and let the >7-day staleness guard surface the
+        # miss. total>0 (any source succeeded) still returns 0.
+        try:
+            raw = _fetch(url)
+        except Exception as exc:                       # noqa: BLE001
+            print(f"  {code}: FETCH FAILED ({str(exc)[:160]}) - skipping. "
+                  f"Existing {code} rows are left alone; screen_sanctions warns "
+                  f"from day 4 and refuses from an index >7 days old.")
+            continue
         if not raw.strip():
             print(f"  {code}: EMPTY RESPONSE - skipping. The existing rows are "
                   f"left alone; a stale list beats an empty one.")
