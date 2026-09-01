@@ -290,12 +290,12 @@ Any client that speaks MCP over streamable HTTP can attach this server directly;
 
 Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 
-**Pick the narrowest endpoint that covers your use case.** Every tool definition costs tokens on every request, so attaching 22 tools when you need 8 is a permanent tax on each call:
+**Pick the narrowest endpoint that covers your use case.** Every tool definition costs tokens on every request, so attaching 23 tools when you need 8 is a permanent tax on each call:
 
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
-- `https://api.hatchloop.dev/mcp/agent-broker` - everything (22 tools)
+- `https://api.hatchloop.dev/mcp/agent-broker` - everything (23 tools)
 
 The same rows work in Claude Code, Codex, and any other MCP client - the transport is standard.
 

@@ -275,7 +275,7 @@ Cloudflare Worker edge  (hatchloop.dev)
         Python FastAPI  (api.hatchloop.dev)
                 |  Cron keep-alive every 2 min (eliminates Render cold starts)
                 |
-                +-- 22 operation handlers  (core/)
+                +-- 23 operation handlers  (core/)
                 +-- Compliance gate        (compliance/pre_check)
                 +-- Channel adapters       (channels/ -- Twilio, Cal.com, Vapi, SendGrid)
                 +-- Billing + outcome store
@@ -305,7 +305,7 @@ Violations surface as `ComplianceViolationError` and are never silently bypassed
 
 ```
 agentbroker/
-+-- core/                  # 22 operation handlers + shared Pydantic models
++-- core/                  # 23 operation handlers + shared Pydantic models
 +-- channels/              # Twilio, SendGrid, Vapi, Bland, Cal.com, Playwright
 +-- compliance/            # pre_check, jurisdiction_rules, consent_store, audit_log
 +-- reliability/           # retry, circuit_breaker, channel_fallback, async_runner
