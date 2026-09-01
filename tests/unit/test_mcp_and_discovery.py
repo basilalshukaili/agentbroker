@@ -44,6 +44,7 @@ class TestMcpServer:
             "find_business", "verify_business", "send_message", "capture_lead",
             "schedule_appointment", "send_transactional_confirmation", "handle_inbound",
             "escalate_to_human", "get_status", "get_outcome", "preview_cost", "self_test",
+            "check_quota",
             "import_booking_url", "call_business", "check_booking_link", "check_compliance",
             "verify_company_record", "screen_sanctions", "map_trade_restriction",
             "get_conversation", "mint_key", "lookup_us_contracts",

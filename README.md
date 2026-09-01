@@ -35,11 +35,11 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  11 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
+| Billing | **Live**  -  12 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
 | x402 payment rail | **Offered, opt-in.** Enabled on the service since the founder lifted the crypto restriction on 2026-08-29. A caller attaches a payment in `params._meta["x402/payment"]` and the call is served without a key (USDC on Base, proven once on mainnet, tx 0x38a0d9ec). Callers who do not attach one fall through to credits and the free quota, so nothing is gated behind it. `/.well-known/x402` is still a 404 - discovery is via `/.well-known/mcp.json`, which lists the rail. |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. 11 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+> The MCP server is live and callable right now. Bookings hit demo data. 12 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ---
 
@@ -55,22 +55,23 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 4 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) | **free** |
 | 5 | `preview_cost` | Estimate cost, latency, and success probability before committing | **free** |
 | 6 | `self_test` | Verify service health and all claimed capabilities are responding | **free** |
-| 7 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it  -  sub-100ms pre-flight | **free** |
-| 8 | `check_compliance` | Preview TCPA/GDPR/CASL/10DLC gate result before spending a paid send | **free** |
-| 9 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
-| 10 | `screen_sanctions` | Check a name or entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List | **free up to daily limit** |
-| 11 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
-| 12 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | **free** |
-| 13 | `lookup_us_contracts` | Search US federal contract awards by company name via USASpending.gov  -  awardee, agency, amount, NAICS, period | **free** |
-| 14 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
-| 15 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
-| 16 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
-| 17 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
-| 18 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
-| 19 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
-| 20 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
-| 21 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
-| 22 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email required, no human in the loop | **free** |
+| 7 | `check_quota` | Inspect your remaining daily quota and tier without consuming any ops  -  call at session start or after a rate_limited error | **free** |
+| 8 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it  -  sub-100ms pre-flight | **free** |
+| 9 | `check_compliance` | Preview TCPA/GDPR/CASL/10DLC gate result before spending a paid send | **free** |
+| 10 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
+| 11 | `screen_sanctions` | Check a name or entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List | **free up to daily limit** |
+| 12 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
+| 13 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | **free** |
+| 14 | `lookup_us_contracts` | Search US federal contract awards by company name via USASpending.gov  -  awardee, agency, amount, NAICS, period | **free** |
+| 15 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
+| 16 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
+| 17 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
+| 18 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
+| 19 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
+| 20 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
+| 21 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
+| 22 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
+| 23 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email required, no human in the loop | **free** |
 
 Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
 

@@ -64,7 +64,7 @@ def test_the_free_keyless_count_is_nine_or_this_test_is_stale(counts):
     """A canary on the fixture itself. If this fails the product changed, and
     the README needs updating - which is the point - but it also means every
     other assertion here was comparing against a moved target."""
-    assert counts["free_and_keyless"] == 11, (
+    assert counts["free_and_keyless"] == 12, (
         f"free-and-keyless tool count moved to {counts['free_and_keyless']}; "
         f"update README.md and this docstring together")
 

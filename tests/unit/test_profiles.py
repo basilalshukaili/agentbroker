@@ -81,10 +81,10 @@ def test_a_door_still_runs_its_own_tools():
 
 
 def test_the_full_server_is_unchanged():
-    """profile=None must expose the full tool surface (currently 22:
-    the 21 at the time profiles landed, plus lookup_us_contracts)."""
+    """profile=None must expose the full tool surface (currently 23:
+    the 22 at the time check_quota landed, plus check_quota itself)."""
     r = call("tools/list", {})
-    assert len(r["result"]["tools"]) == 22
+    assert len(r["result"]["tools"]) == 23
 
 
 # --------------------------------------------------------------------------

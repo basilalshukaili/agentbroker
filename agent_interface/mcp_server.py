@@ -116,6 +116,7 @@ def _build_tool_list() -> list[dict]:
                 "check_booking_link", "check_compliance", "get_conversation",
                 "verify_company_record", "screen_sanctions",
                 "map_trade_restriction", "lookup_us_contracts",
+                "check_quota",
             },
             "destructiveHint": op["name"] in {
                 "send_message", "schedule_appointment",
@@ -134,6 +135,7 @@ def _build_tool_list() -> list[dict]:
                 "screen_sanctions",    # read-only live sanctions lookup
                 "map_trade_restriction",  # read-only compliance snapshot
                 "lookup_us_contracts",  # read-only USASpending.gov contract search
+                "check_quota",         # read-only quota state — never consumes quota
             },
             "openWorldHint": op["name"] in {
                 "send_message", "schedule_appointment", "call_business",
@@ -1192,6 +1194,118 @@ def _x402_live() -> bool:
         return False
 
 
+def _handle_check_quota(token: str) -> dict:
+    """
+    check_quota handler — pure read, never consumes quota, never raises.
+
+    Returns the caller's current quota state so an agent or human can inspect
+    remaining ops without triggering a write tool first.  Three tiers:
+
+      free        — email-verified free key (prefix 'free_'); daily write-tool cap
+                    tracked by key_request_logic._free_key_daily.
+      unlimited   — subscription token (principal_type 'system'/'business'/etc.);
+                    scope.budget_cap_usd > 0 but no daily op cap.
+      anonymous   — no valid token; no quota tracked server-side for write tools.
+
+    DATA_METERING_ENABLED controls whether the premium-data-tool quota is
+    included in the response.  When false (default prod state) that block is
+    omitted entirely — it would be misleading to show a quota for tools running
+    free and unmetered.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    now_utc = datetime.now(timezone.utc)
+    midnight_utc = (now_utc + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+    resets_str = midnight_utc.strftime("%Y-%m-%dT00:00:00Z")
+
+    # Anonymous / missing token.
+    if not token or token in ("", "anonymous"):
+        return {
+            "tier": "anonymous",
+            "daily_limit": None,
+            "used_today": 0,
+            "remaining_today": None,
+            "resets": resets_str,
+            "key_id": None,
+        }
+
+    try:
+        from agent_interface.identity import validate_token
+        from agent_interface.key_request_logic import (
+            is_free_key, get_free_daily_remaining,
+            FREE_TIER_DAILY_LIMIT as _free_limit,
+        )
+
+        result = validate_token(token)
+        if not (result and result.valid and result.identity):
+            # Invalid/expired token — treat as anonymous.
+            return {
+                "tier": "anonymous",
+                "daily_limit": None,
+                "used_today": 0,
+                "remaining_today": None,
+                "resets": resets_str,
+                "key_id": None,
+            }
+
+        aid = result.identity.agent_id
+
+        if is_free_key(aid):
+            remaining = get_free_daily_remaining(aid)
+            used = _free_limit - remaining
+            out: dict = {
+                "tier": "free",
+                "daily_limit": _free_limit,
+                "used_today": used,
+                "remaining_today": remaining,
+                "resets": resets_str,
+                "key_id": aid,
+            }
+        else:
+            # Subscription / paid token — no per-day op cap on write tools.
+            out = {
+                "tier": "unlimited",
+                "daily_limit": None,
+                "used_today": 0,
+                "remaining_today": None,
+                "resets": resets_str,
+                "key_id": aid,
+            }
+
+        # Premium data quota block — only present when DATA_METERING_ENABLED=true.
+        import os as _os_dq
+        if _os_dq.getenv("DATA_METERING_ENABLED", "").lower() in ("1", "true", "yes"):
+            try:
+                from billing.data_quota import (
+                    _is_free_tier_key, get_free_key_data_remaining, _get_free_limit,
+                )
+                if _is_free_tier_key(aid):
+                    data_limit = _get_free_limit()
+                    data_remaining = get_free_key_data_remaining(aid)
+                    out["data_quota"] = {
+                        "daily_limit": data_limit,
+                        "remaining_today": data_remaining,
+                        "resets": resets_str,
+                    }
+            except Exception:  # noqa: BLE001
+                pass  # data quota block is optional; never break the response
+
+        return out
+
+    except Exception:  # noqa: BLE001
+        # Any unexpected failure: return anonymous shape so check_quota never breaks.
+        return {
+            "tier": "anonymous",
+            "daily_limit": None,
+            "used_today": 0,
+            "remaining_today": None,
+            "resets": resets_str,
+            "key_id": None,
+        }
+
+
 async def _dispatch_operation(
     name: str, args: dict, headers: Optional[dict] = None, skip_auth: bool = False
 ) -> dict:
@@ -1502,6 +1616,14 @@ async def _dispatch_operation(
             max_results=int(args.get("max_results", 5)),
         )
 
+    elif name == "check_quota":
+        # Read-only quota visibility: returns the caller's current quota state
+        # without consuming any ops. Free, no key required.
+        # The token is drawn from headers (same path as _inject_quota_block) so
+        # the result always reflects the actual caller even when REQUIRE_AUTH is off.
+        _cq_token = (headers or {}).get("x-agent-identity", "")
+        return _handle_check_quota(_cq_token)
+
     elif name == "mint_key":
         # Agent self-serve key issuance: HMAC-SHA256 proof of MACHINE_MINT_SECRET.
         # Returns the issued key directly.  503 until MACHINE_MINT_SECRET is set.
@@ -1581,6 +1703,7 @@ async def _dispatch_operation(
         "find_business", "verify_business", "preview_cost", "self_test",
         "check_booking_link", "check_compliance", "verify_company_record",
         "screen_sanctions", "map_trade_restriction", "lookup_us_contracts",
+        "check_quota",  # read-only — never writes a durable row
     })
 
     # FIX 1 (durable store) + FIX 5 (quota strip): persist operation to durable

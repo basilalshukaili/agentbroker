@@ -357,4 +357,4 @@ def test_tool_list_reaches_22():
         "params": {},
     }))
     tools = resp.get("result", {}).get("tools", [])
-    assert len(tools) == 22
+    assert len(tools) == 23

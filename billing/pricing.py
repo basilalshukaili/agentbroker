@@ -32,6 +32,7 @@ _PRICING_CENTS: dict[str, int] = {
     "lookup_us_contracts":         0,   # free demand probe: US federal contract awards via USASpending.gov
     "import_booking_url":          0,   # adoption wedge -- free so agents import without friction
     "mint_key":                    0,   # agent self-serve key issuance -- always free (only issues free-tier keys)
+    "check_quota":                 0,   # quota visibility -- read-only, never consumes quota, no key required
     # VOICE. Vapi is live and a call costs us ~$0.30, so the at-cost floor is
     # 44 credits (floor_credits(0.30)). We charge 20 - a DELIBERATE subsidy of
     # roughly $0.10-0.14 per call, per the founder's 2026-08-26 decision to
