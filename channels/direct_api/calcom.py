@@ -65,23 +65,32 @@ class CalComAdapter:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     f"{self._base_url}/slots",
-                    headers=self._headers(),
+                    # The /slots route only exists under cal-api-version
+                    # 2024-09-04 (older versions 404) and takes start/end, not
+                    # startTime/endTime (verified against live Cal.com v2).
+                    headers={**self._headers(), "cal-api-version": "2024-09-04"},
                     params={
                         "eventTypeId": event_type_id,
-                        "startTime": date_from,
-                        "endTime": date_to,
+                        "start": date_from,
+                        "end": date_to,
                     },
                 )
                 if resp.status_code != 200:
                     return []
                 payload = resp.json().get("data", {})
-                slots_by_day = payload.get("slots", {})
-                # Flatten {date: [{time: ...}, ...]} → [{time: ...}, ...]
+                # 2024-09-04 returns data AS the {date: [slots]} map directly;
+                # older shapes nested it under data.slots. Handle both.
+                if isinstance(payload, dict) and isinstance(payload.get("slots"), dict):
+                    slots_by_day = payload["slots"]
+                elif isinstance(payload, dict):
+                    slots_by_day = payload
+                else:
+                    slots_by_day = {}
+                # Flatten {date: [{start: ...}, ...]} → [{start: ...}, ...]
                 flat: list[dict[str, Any]] = []
-                if isinstance(slots_by_day, dict):
-                    for day_slots in slots_by_day.values():
-                        if isinstance(day_slots, list):
-                            flat.extend(day_slots)
+                for day_slots in slots_by_day.values():
+                    if isinstance(day_slots, list):
+                        flat.extend(day_slots)
                 return flat
         except Exception:
             return []
@@ -108,7 +117,10 @@ class CalComAdapter:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     f"{self._base_url}/event-types",
-                    headers=self._headers(),
+                    # The /event-types route only responds under cal-api-version
+                    # 2024-06-14 (2024-08-13 => 404); token scopes it to this
+                    # account, so username is optional (verified live).
+                    headers={**self._headers(), "cal-api-version": "2024-06-14"},
                     params=params,
                 )
                 resp.raise_for_status()
