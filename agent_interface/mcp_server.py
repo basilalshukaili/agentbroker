@@ -332,6 +332,10 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
             ip = norm_headers.get("x-forwarded-for", norm_headers.get("x-real-ip", ""))
             ua = norm_headers.get("user-agent", "")
             raw_key = norm_headers.get("x-agent-identity", "")
+            if not raw_key:
+                auth = norm_headers.get("authorization", "")
+                if auth.lower().startswith("bearer "):
+                    raw_key = auth[7:].strip()
             key_id = _agent_id_from_token(raw_key)
             principal_type = _principal_type_from_token(raw_key)
             from billing.usage_logger import fire_log_usage
@@ -1622,6 +1626,10 @@ async def _dispatch_operation(
         # The token is drawn from headers (same path as _inject_quota_block) so
         # the result always reflects the actual caller even when REQUIRE_AUTH is off.
         _cq_token = (headers or {}).get("x-agent-identity", "")
+        if not _cq_token:
+            _cq_auth = (headers or {}).get("authorization", "")
+            if _cq_auth.lower().startswith("bearer "):
+                _cq_token = _cq_auth[7:].strip()
         return _handle_check_quota(_cq_token)
 
     elif name == "mint_key":
