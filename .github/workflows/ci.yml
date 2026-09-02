@@ -99,14 +99,33 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # pytest-timeout is a CI-only diagnostic, deliberately not in
+          # requirements.txt - it must not ship in the production image.
+          pip install pytest-timeout
 
       # Fails rather than skips when a gating dependency is absent, so CI can
       # never quietly run a smaller suite than it reports.
       - name: Suite is fully exercised
         run: python -m pytest tests/unit/test_suite_is_fully_exercised.py -q
 
+      # --timeout NAMES THE HANG INSTEAD OF SWALLOWING IT.
+      #
+      # On 2026-09-02 three runs in a row died at exactly twenty minutes with
+      # the single word "cancelled", which is how GitHub reports a job hitting
+      # timeout-minutes. Nothing said which test, because -q prints a dot per
+      # test and the job is killed before pytest writes its summary - so the
+      # only evidence of a twenty-minute hang was its duration.
+      #
+      # The trigger was pinning this job to Python 3.11 to match the
+      # production image (the previous run, on 3.12, was green). Something in
+      # the suite blocks on 3.11 and not on 3.12, and finding it by pushing
+      # commits blind costs twenty minutes an attempt.
+      #
+      # thread method dumps the stack of the STUCK test rather than only
+      # failing it, which is the difference between "a test hangs" and knowing
+      # the line. 120s is many times the slowest legitimate test here.
       - name: Tests
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q --timeout=120 --timeout-method=thread
 
       # 17 release gates - the manifest/pricing/compliance invariants.
       - name: Release gates
