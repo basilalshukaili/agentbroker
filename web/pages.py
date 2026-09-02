@@ -10,6 +10,42 @@ from __future__ import annotations
 from web._partials import (page, BRAND, DOMAIN, SUPPORT_EMAIL,
                           PRIVACY_EMAIL, LEGAL_ENTITY)
 
+# Prices are DERIVED, never hand-typed. billing/pricing.py is the single
+# source of truth for per-operation cost (see its own docstring); this page
+# must not fork a second copy of those numbers the way the old flat-rate
+# $49/$499 "Developer"/"Business" plan table did -- that table was retired
+# (docs/PRICING.md, "What we do not promise") but the numbers kept rendering
+# here because nothing imported the real ones.
+from billing.pricing import price_cents, max_credits, price_usd_str
+# Credit COUNTS per package are code (billing/packages.py); the USD price of
+# each package is set on Polar's dashboard and cannot be imported -- see
+# _PACKAGE_USD below, mirrored from docs/PRICING.md / the live pricing page.
+from billing.packages import PACKAGE_CREDITS
+
+# The 8 write tools that require a key and spend credits (see
+# agent_interface/mcp_server.py::_WRITE_TOOLS_REQUIRING_AUTH -- kept in sync
+# with that frozenset by test coverage there, not duplicated here).
+_WRITE_OPS_FOR_CHECKOUT = [
+    "send_message", "capture_lead", "schedule_appointment",
+    "send_transactional_confirmation", "handle_inbound",
+    "escalate_to_human", "import_booking_url", "call_business",
+]
+
+_PACKAGE_USD = {"starter": 9, "growth": 29, "scale": 99}
+
+
+def _op_cost_label(op: str) -> str:
+    """Human-readable cost for a write op, derived from billing/pricing.py."""
+    base = price_cents(op)
+    cap = max_credits(op)
+    if base == 0 and cap == 0:
+        return "Free &mdash; adoption wedge, no charge."
+    if cap > base:
+        return (f"{base}&ndash;{cap} credits (${price_usd_str(op)}"
+                f"&ndash;${cap / 100:.2f}). Reserves the max, settles the "
+                f"actual cost from the receipt.")
+    return f"{base} credits (${price_usd_str(op)}) per call."
+
 
 # ---------------------------------------------------------------------------
 # Home — landing page + live dashboard
@@ -164,24 +200,15 @@ def render_home() -> str:
 </section>
 
 <section class="section" id="tools">
-  <h2>19 operations. One contract. Worldwide.</h2>
+  <h2>23 tools. One contract. Worldwide.</h2>
   <p class="lead">
     Same OutcomeReceipt schema for every operation. Same compliance gate.
     Same idempotency contract. No surprises.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>find_business</h3><p>Search verified SMBs by vertical + location + capability. <code>~$0.01</code></p></div>
-    <div class="card"><h3>verify_business</h3><p>Confirm an SMB's capabilities before committing. <code>~$0.02</code></p></div>
-    <div class="card"><h3>send_message</h3><p>Consumer-initiated transactional message (SMS / email / voice premium). <code>~$0.05</code> base</p></div>
-    <div class="card"><h3>capture_lead</h3><p>Structured intake when a consumer asks to be contacted by an SMB. <code>~$0.05</code></p></div>
-    <div class="card"><h3>schedule_appointment</h3><p>Direct API or voice fallback. <code>$0.25 attempt + $0.75 on confirmed booking</code></p></div>
-    <div class="card"><h3>send_transactional_confirmation</h3><p>Booking / receipt / reminder — reliable delivery, OTP-grade. <code>~$0.03</code></p></div>
-    <div class="card"><h3>handle_inbound</h3><p>Classify and route inbound messages an SMB received. <code>~$0.08</code></p></div>
-    <div class="card"><h3>escalate_to_human</h3><p>Hand a stuck operation to a human operator. <code>~$0.50</code></p></div>
-    <div class="card"><h3>get_status / get_outcome</h3><p>Async polling and final result retrieval. <code>~$0.001</code></p></div>
-    <div class="card"><h3>preview_cost</h3><p>&plusmn;5% accurate cost estimate before committing. <strong>Free</strong></p></div>
-    <div class="card"><h3>self_test</h3><p>Live capability probe / health check. <strong>Free</strong></p></div>
-    <div class="card"><h3>import_booking_url</h3><p>Turn any supported booking URL into a callable SMB. <code>~$0.005</code></p></div>
+    <div class="card"><h3>12 tools &mdash; always free</h3><p><code class="inline">find_business</code>, <code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">get_conversation</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered.</p></div>
+    <div class="card"><h3>3 tools &mdash; free within a daily quota</h3><p><code class="inline">verify_company_record</code> (GLEIF LEI + SEC EDGAR), <code class="inline">screen_sanctions</code> (OFAC SDN + EU Consolidated + UK Sanctions List), <code class="inline">map_trade_restriction</code>. 500/day with a free key, 100/day anonymous, then $0.02/call.</p></div>
+    <div class="card"><h3>8 tools &mdash; need a free key</h3><p><code class="inline">send_message</code>, <code class="inline">capture_lead</code>, <code class="inline">schedule_appointment</code>, <code class="inline">send_transactional_confirmation</code>, <code class="inline">handle_inbound</code>, <code class="inline">escalate_to_human</code>, <code class="inline">import_booking_url</code>, <code class="inline">call_business</code>. 100 write ops/day free, then credits or x402.</p></div>
   </div>
 </section>
 
@@ -193,21 +220,21 @@ def render_home() -> str:
     just what the live service does today.
   </p>
   <div class="grid grid-4">
-    <div class="card metric"><div class="num">13</div><div class="label">Callable tools</div></div>
+    <div class="card metric"><div class="num">23</div><div class="label">Callable tools</div></div>
     <div class="card metric"><div class="num">12</div><div class="label">Booking platforms supported</div></div>
-    <div class="card metric"><div class="num">22</div><div class="label">Jurisdictions with native compliance</div></div>
-    <div class="card metric"><div class="num">1</div><div class="label">Payment rail (card via Polar)</div></div>
+    <div class="card metric"><div class="num">26</div><div class="label">Jurisdictions with native compliance</div></div>
+    <div class="card metric"><div class="num">2</div><div class="label">Payment rails (card via Polar, or x402/USDC)</div></div>
   </div>
   <div class="grid grid-4" style="margin-top:18px;">
     <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols</div></div>
-    <div class="card metric"><div class="num">&lt;50ms</div><div class="label">p50 latency, edge-served globally</div></div>
+    <div class="card metric"><div class="num">15</div><div class="label">Tools usable with no key at all</div></div>
     <div class="card metric"><div class="num">$0</div><div class="label">Free tier &middot; reads always free</div></div>
-    <div class="card metric"><div class="num">~$0.001</div><div class="label">Base-chain gas per agent call</div></div>
+    <div class="card metric"><div class="num">100/day</div><div class="label">Free write ops with a key</div></div>
   </div>
   <p style="margin-top:18px; font-size:14px; color:var(--text-muted);">
     Verify each: <a href="/.well-known/mcp.json">/.well-known/mcp.json</a> for tools,
     <a href="__ORIGIN__/supply/platforms">/supply/platforms</a> for the 12 booking integrations,
-    <a href="__ORIGIN__/compliance/jurisdictions">/compliance/jurisdictions</a> for the 22 rule sets,
+    <a href="__ORIGIN__/compliance/jurisdictions">/compliance/jurisdictions</a> for the 26 rule sets,
     <a href="__ORIGIN__/manifest">/manifest</a> for the canonical contract,
     <a href="__ORIGIN__/health">/health</a> for live status.
   </p>
@@ -221,7 +248,7 @@ def render_home() -> str:
     <div class="card"><span class="tag tag-ok">Reliability</span><h3>Fallback chain</h3><p>direct_api &rarr; voice_ai &rarr; sms &rarr; email &rarr; web_form. Circuit breakers per channel.</p></div>
     <div class="card"><span class="tag tag-ok">Idempotency</span><h3>24h TTL</h3><p>Scoped per <code>(agent_id, operation, key)</code>. Safe to retry.</p></div>
     <div class="card"><span class="tag tag-ok">Async</span><h3>Webhook callbacks</h3><p>HMAC-SHA256 signed. Up to 24h retry with exponential backoff.</p></div>
-    <div class="card"><span class="tag tag-ok">Worldwide</span><h3>Jurisdiction-detected</h3><p>22 countries with native rules. International conservative default for the rest.</p></div>
+    <div class="card"><span class="tag tag-ok">Worldwide</span><h3>Jurisdiction-detected</h3><p>26 jurisdictions with native rules. International conservative default for the rest.</p></div>
   </div>
 </section>
 """ + f'<script>{_HOME_LIVE_JS}</script>'
@@ -234,82 +261,99 @@ def render_home() -> str:
 # ---------------------------------------------------------------------------
 
 def render_pricing() -> str:
+    op_rows = "".join(
+        f"<div class=\"card\"><h3><code class=\"inline\">{op}</code></h3>"
+        f"<p>{_op_cost_label(op)}</p></div>"
+        for op in _WRITE_OPS_FOR_CHECKOUT
+    )
+    package_rows = "".join(
+        f"<tr><td>{name.title()}</td><td>${_PACKAGE_USD[name]}</td>"
+        f"<td>{PACKAGE_CREDITS.get(name, 0):,}</td></tr>"
+        for name in ("starter", "growth", "scale")
+    )
     body = """
 <header class="hero">
-  <h1>Pay per call. No subscription required.</h1>
+  <h1>Pay per call. No subscription, ever.</h1>
   <p class="lead">
-    Credits, bought by card. <strong>Crypto payment is not offered</strong>
-    micropayments &mdash; no signup, no card, no account. <strong>Human developers</strong>
-    can email us for a metered plan with higher quota + SLA. Reads are free on both
-    rails; writes are a few cents each. The compliance gate, not the price page,
-    decides what gets sent &mdash; marketing requires verified opt-in regardless of plan.
+    Two rails, both metered per call: credits bought by card through Polar,
+    or pay-per-call in USDC on Base via <strong>x402</strong> &mdash; no
+    signup, no card, no account. Reads are free on both rails; writes cost a
+    few cents each. The compliance gate, not the price page, decides what
+    gets sent &mdash; marketing requires verified opt-in regardless of how
+    you pay.
   </p>
   <div class="cta" style="margin-top:8px;">
     <a class="btn btn-primary" href="/billing/checkout">Pay with card via Polar &rarr;</a>
     <a class="btn btn-secondary" href="/docs">See the live API &rarr;</a>
-    <a class="btn btn-secondary" href="mailto:""" + SUPPORT_EMAIL + """?subject=Enterprise%20inquiry">Enterprise &mdash; let's talk</a>
+    <a class="btn btn-secondary" href="mailto:""" + SUPPORT_EMAIL + """?subject=Question">Questions &mdash; email us</a>
   </div>
 </header>
 
 <section class="section">
-  <h2>Plans</h2>
-  <table>
-    <thead>
-      <tr><th>Tier</th><th>Monthly</th><th>Included ops</th><th>Overage</th><th>SLA</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>Free</td><td>$0</td><td>100</td><td>$0.10/op</td><td>none</td></tr>
-      <tr><td>Developer</td><td>$49</td><td>10,000</td><td>$0.04/op</td><td>99.0%</td></tr>
-      <tr><td>Business</td><td>$499</td><td>100,000</td><td>$0.025/op</td><td>99.5%</td></tr>
-      <tr><td>Enterprise</td><td>negotiated</td><td>negotiated</td><td>$0.015/op</td><td>99.9%</td></tr>
-    </tbody>
-  </table>
-  <p style="margin-top:18px;color:var(--text-muted);font-size:14px;">
-    <strong>Outcome-based premium:</strong> <code class="inline">schedule_appointment</code> charges
-    <code class="inline">$0.15</code> per attempt + <code class="inline">$0.85</code> only on a confirmed booking.
-    Cost-per-success is bounded.
-  </p>
+  <h2>What's free</h2>
+  <p class="lead">12 utility tools are free, no key, unmetered, forever:
+  <code class="inline">find_business</code>, <code class="inline">verify_business</code>,
+  <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>,
+  <code class="inline">preview_cost</code>, <code class="inline">get_status</code>,
+  <code class="inline">get_outcome</code>, <code class="inline">self_test</code>,
+  <code class="inline">get_conversation</code>, <code class="inline">check_quota</code>,
+  <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>.</p>
+  <p class="lead">3 premium data tools are free up to a daily quota &mdash;
+  <code class="inline">verify_company_record</code>, <code class="inline">screen_sanctions</code>,
+  <code class="inline">map_trade_restriction</code>: 500/day with a free key, 100/day
+  anonymous, then $0.02/call past the quota. Past the quota the tool returns an
+  honest failure (<code class="inline">free_quota_exceeded</code>), never a silent charge.</p>
 </section>
 
 <section class="section">
-  <h2>Per-operation cost</h2>
-  <p class="lead">All prices in USD. <code class="inline">preview_cost</code> returns the same numbers programmatically (free) and is the authoritative source: any drift between this page and <code class="inline">preview_cost</code> is a bug. We price for volume, not extraction &mdash; reads are free, writes are cheap enough that any agent can afford them.</p>
-  <div class="grid grid-3">
-    <div class="card"><h3>find_business</h3><p><strong>Free</strong> (anonymous evaluation). Subscription overage: ~$0.01.</p></div>
-    <div class="card"><h3>verify_business</h3><p><strong>Free</strong>. Subscription overage: ~$0.02.</p></div>
-    <div class="card"><h3>send_message</h3><p>~$0.02 per send (SMS / email). +$0.20 voice premium when fallback hits Vapi.</p></div>
-    <div class="card"><h3>capture_lead</h3><p>~$0.05 per dedup&#8209;handoff into the SMB&rsquo;s pipeline.</p></div>
-    <div class="card"><h3>schedule_appointment</h3><p>$0.15 attempt + $0.35 only on a confirmed booking. Cost-per-success bounded.</p></div>
-    <div class="card"><h3>send_transactional_confirmation</h3><p>~$0.02 per send (OTP / booking confirmation / receipt).</p></div>
-    <div class="card"><h3>handle_inbound</h3><p>~$0.03 per classified inbound message.</p></div>
-    <div class="card"><h3>escalate_to_human</h3><p>~$0.20 per escalation (full context bundle handoff).</p></div>
-    <div class="card"><h3>get_status / get_outcome</h3><p><strong>Free</strong>. Subscription overage: ~$0.001.</p></div>
-    <div class="card"><h3>import_booking_url</h3><p>~$0.005 per supported booking URL imported.</p></div>
-    <div class="card"><h3>preview_cost</h3><p><strong>Free.</strong> Read-only quote, ±5% accurate.</p></div>
-    <div class="card"><h3>self_test</h3><p><strong>Free.</strong> Live capability probe / health check.</p></div>
-  </div>
-  <p style="margin-top:18px; font-size:14px; color:var(--text-muted);"><strong>One payment rail:</strong> credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup.</p>
+  <h2>Credit packages</h2>
+  <p class="lead">1 credit = 1 US cent. Credits never expire. There is no
+  subscription and nothing recurs &mdash; buy a package, spend it per call,
+  buy another when you want more.</p>
+  <table>
+    <thead><tr><th>Package</th><th>Price</th><th>Credits</th></tr></thead>
+    <tbody>""" + package_rows + """</tbody>
+  </table>
+  <p style="margin-top:12px;color:var(--text-muted);font-size:14px;">
+  Buy at <a href="/billing/checkout">/billing/checkout</a>. Need volume beyond
+  these packages, or a human conversation about your use case? Email
+  <a href="mailto:""" + SUPPORT_EMAIL + """">""" + SUPPORT_EMAIL + """</a>.</p>
+</section>
+
+<section class="section">
+  <h2>Write-tool cost per call</h2>
+  <p class="lead">The 8 write tools require a free email-verified key (100
+  write ops/day, no cost) &mdash; beyond that, credits or x402.
+  <code class="inline">preview_cost</code> returns these same numbers
+  programmatically (free) and is the authoritative source: any drift between
+  this page and <code class="inline">preview_cost</code> is a bug.</p>
+  <div class="grid grid-3">""" + op_rows + """</div>
 </section>
 
 <section class="section">
   <h2>Billing &amp; payments</h2>
   <p class="lead">
-    Payments processed by <strong>Polar</strong> (Merchant of Record).
-    Polar handles VAT/sales tax worldwide on our behalf, so any
-    customer can pay with card &mdash; and your <a href="/billing/checkout">pre-paid API key</a>
-    is emailed automatically on payment.
+    Card payments are processed by <strong>Polar</strong> (Merchant of
+    Record) &mdash; Polar handles VAT/sales tax worldwide, and your
+    <a href="/billing/checkout">pre-paid API key</a> is emailed automatically
+    on payment. The x402 rail settles on-chain (USDC on Base); attach a
+    signed payment in <code class="inline">params._meta["x402/payment"]</code>
+    on a <code class="inline">tools/call</code> and the server answers an
+    unpaid attempt with a priced offer first &mdash; no key, no account.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>Free tier</h3><p>No card required. 100 gated ops per day, any agent.</p></div>
-    <div class="card"><h3>Self-serve paid</h3><p><a href="/billing/checkout">Card via Polar Checkout</a> &mdash; instant API key.</p></div>
-    <div class="card"><h3>Enterprise</h3><p>Wire transfer / PO. Email <a href="mailto:""" + SUPPORT_EMAIL + """">""" + SUPPORT_EMAIL + """</a>.</p></div>
+    <div class="card"><h3>Free tier</h3><p>No card required. 15 tools need no key at all; write tools get 100 free ops/day with a key.</p></div>
+    <div class="card"><h3>Card (Polar)</h3><p><a href="/billing/checkout">Buy credits</a> &mdash; instant, emailed API key.</p></div>
+    <div class="card"><h3>x402 (USDC on Base)</h3><p>Pay per call, no signup. See <a href="/docs">the API docs</a> for the payment flow.</p></div>
   </div>
 </section>
 
 <section class="section">
   <h2>FAQ</h2>
   <h3>Do you offer a free tier?</h3>
-  <p style="color:var(--text-muted);">Yes. 100 gated operations per DAY per agent identity, forever. No card required, and twelve tools need no key at all.</p>
+  <p style="color:var(--text-muted);">Yes. 12 tools are free, no key, unmetered.
+  3 more are free up to a daily quota. Write tools get 100 free ops/day with a
+  free email-verified key &mdash; no card required for any of it.</p>
   <h3>Can I change plan at any time?</h3>
   <p style="color:var(--text-muted);">There are no plans to change. Credits are
   bought in packages, spent per call, and never expire - buy a bigger package
@@ -317,59 +361,89 @@ def render_pricing() -> str:
   prorated upgrades and downgrades at the end of a billing period, which was
   left over from a subscription we retired.</p>
   <h3>What payment methods do you accept?</h3>
-  <p style="color:var(--text-muted);">Cards (Visa, Mastercard, AmEx), Apple Pay, Google Pay, PayPal, and SEPA &mdash; all routed through Polar. Enterprise plans can pay by wire.</p>
+  <p style="color:var(--text-muted);">Cards (Visa, Mastercard, AmEx), Apple Pay,
+  and Google Pay, routed through Polar &mdash; or USDC on Base via x402, with
+  no signup at all.</p>
   <h3>Is there a contract?</h3>
   <p style="color:var(--text-muted);">No, and there is nothing to cancel -
   we do not bill on a recurring basis at all.</p>
 </section>
 """
     return page("Pricing", body, active="pricing",
-                description=f"{BRAND} pricing. 9 utility tools free with no key. Write tools: free email-verified key (100 ops/day), then credits from $9 per 1,000. No subscription.")
+                description=f"{BRAND} pricing. 12 utility tools free with no key, 3 more free within a daily quota. Write tools: free email-verified key (100 ops/day), then credits from $9 per 1,000, or x402. No subscription.")
 
 
 # ---------------------------------------------------------------------------
-# Checkout - Polar Merchant-of-Record (card). Crypto is not offered.
+# Checkout - Polar (card, Merchant of Record) + x402 (USDC on Base). Two
+# metered rails; no subscription at any price (the retired "Developer $49" /
+# "Business $499" flat-rate plan table lived here until this pass -- it never
+# existed as a real product, per docs/PRICING.md's "What we do not promise").
 # ---------------------------------------------------------------------------
-
-_PLAN_PRICES = {
-    "developer": {"label": "Developer", "monthly_usd": 49, "ops": "10,000"},
-    "business":  {"label": "Business",  "monthly_usd": 499, "ops": "100,000"},
-}
-
 
 def render_checkout(plan: str | None) -> str:
-    plan_key = (plan or "developer").lower()
-    if plan_key not in _PLAN_PRICES:
-        plan_key = "developer"
-    p = _PLAN_PRICES[plan_key]
+    plan_key = (plan or "starter").lower()
+    if plan_key not in _PACKAGE_USD:
+        plan_key = "starter"
+
+    package_rows = "".join(
+        f'<tr{" style=\"color:var(--accent)\"" if name == plan_key else ""}>'
+        f"<td>{name.title()}{' &larr; selected' if name == plan_key else ''}</td>"
+        f"<td>${_PACKAGE_USD[name]}</td>"
+        f"<td>{PACKAGE_CREDITS.get(name, 0):,}</td></tr>"
+        for name in ("starter", "growth", "scale")
+    )
+    op_rows = "".join(
+        f'<tr><td><code class="inline">{op}</code></td>'
+        f"<td>{_op_cost_label(op)}</td></tr>"
+        for op in _WRITE_OPS_FOR_CHECKOUT
+    )
+
     body = f"""
 <header class="hero">
   <h1>How you pay</h1>
   <p class="lead">
-    Two rails. Credits, bought by card &mdash; or pay per call in USDC on Base
+    Two rails, both metered per call &mdash; no subscription at any price.
+    Credits, bought by card through Polar. Or pay per call in USDC on Base
     via <strong>x402</strong>, with no signup and no account: attach a signed
-    payment in <code>params._meta["x402/payment"]</code> on any paid tool call
-    and the server answers an unpaid attempt with a priced offer first.
-    Read tools are free without a key. Write tools spend credits, and a tool
-    costs what it costs us to run.
+    payment in <code class="inline">params._meta["x402/payment"]</code> on any
+    paid tool call and the server answers an unpaid attempt with a priced
+    offer first. 15 of 23 tools are free without a key either way.
   </p>
 </header>
 
-
-
 <section class="section">
-  <h2>Developer plan (fiat, prepay by card)</h2>
+  <h2>Credit packages (card, via Polar)</h2>
   <p style="color:var(--text-muted);">
-    Buy credits
-    via <strong>Polar</strong> (Merchant of Record &mdash; handles tax worldwide). On
-    payment we email you a pre-paid API key (an <code class="inline">X-Agent-Identity</code>
-    token); your agent sends it as a header. Need a
-    larger metered plan or human SLA? Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.
+    1 credit = 1 US cent. Credits never expire. On payment we email you a
+    pre-paid API key (an <code class="inline">X-Agent-Identity</code> token);
+    your agent sends it as a header.
   </p>
+  <table>
+    <thead><tr><th>Package</th><th>Price</th><th>Credits</th></tr></thead>
+    <tbody>{package_rows}</tbody>
+  </table>
   <div class="cta" style="margin-top:18px;">
     <a class="btn btn-primary" href="/billing/checkout">Pay with card via Polar &rarr;</a>
-    <a class="btn btn-secondary" href="/docs">Or just try the API directly &rarr;</a>
+    <a class="btn btn-secondary" href="/docs">Or just try the free tools directly &rarr;</a>
   </div>
+  <p style="margin-top:12px;color:var(--text-muted);font-size:14px;">
+    Need volume beyond these packages? Email
+    <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.
+  </p>
+</section>
+
+<section class="section">
+  <h2>Write-tool cost per call</h2>
+  <p style="color:var(--text-muted);">
+    These 8 tools need a free email-verified key (100 write ops/day, no
+    cost) before they spend anything; beyond that, credits or x402.
+    <code class="inline">preview_cost</code> returns these same numbers
+    programmatically for free.
+  </p>
+  <table>
+    <thead><tr><th>Tool</th><th>Cost</th></tr></thead>
+    <tbody>{op_rows}</tbody>
+  </table>
 </section>
 
 <section class="section">
@@ -379,8 +453,7 @@ def render_checkout(plan: str | None) -> str:
         <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
         PDPL across 26 jurisdictions. Marketing without a verified consent_record_id
         is rejected at runtime regardless of how you paid.</li>
-    <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.
-
+    <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.</li>
     <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
         See <a href="/privacy">Privacy Policy</a>.</li>
     <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
@@ -388,8 +461,8 @@ def render_checkout(plan: str | None) -> str:
   </ul>
 </section>
 """
-    return page(f"How you pay", body, active="pricing",
-                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the free tools.")
+    return page("How you pay", body, active="pricing",
+                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the 15 free tools.")
 
 
 # ---------------------------------------------------------------------------

@@ -265,8 +265,8 @@ def page(title: str, body_html: str, *, active: str, description: str | None = N
     """Render a complete HTML page. ``body_html`` is inserted between nav and footer."""
     desc = description or (
         "Horizontal MCP server for AI agents. Find, verify, message, and "
-        "schedule appointments with small businesses worldwide. Free for any "
-        "agent up to 100 ops/month."
+        "schedule appointments with small businesses worldwide. 15 of 23 "
+        "tools need no key at all; write tools get 100 free ops/day."
     )
     # Resolve origin-only links LAST, after the body is built. Doing it here
     # rather than at the call site is the whole point: a body written as a
