@@ -98,9 +98,24 @@ def _fetch(url: str) -> str:
     os.close(fd)
     try:
         p = subprocess.run(
+            # THE EU FILE IS ~25 MB FROM A SLOW, UNSTABLE SERVER.
+            #
+            # 300s was not a safety limit, it was the failure: the EU
+            # consolidated list timed out on it repeatedly, so the daily refresh
+            # died before UK ran at all (that ordering bug is fixed separately),
+            # and the EU index stopped advancing. Screening then quietly counts
+            # down to the 7-day staleness limit, after which screen_sanctions
+            # refuses to answer — a compliance tool going dark because a
+            # download budget was set for a small file.
+            #
+            # This is a DAILY job with nothing waiting on it, so a generous
+            # budget costs nothing and a tight one costs the whole capability.
+            # --speed-limit/--speed-time still abort a genuinely dead transfer
+            # (under 1 KB/s for 60s) rather than hanging for the full window.
             ["curl", "-sS", "-L", "--fail", "--retry", "3",
-             "--retry-all-errors", "-D", hdr_path, "--max-time", "300", url],
-            capture_output=True, timeout=360)
+             "--retry-all-errors", "-D", hdr_path, "--max-time", "900",
+             "--speed-limit", "1024", "--speed-time", "60", url],
+            capture_output=True, timeout=960)
         got = len(p.stdout)
 
         if p.returncode != 0:
