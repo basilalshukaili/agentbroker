@@ -83,7 +83,7 @@ Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev
 `screen_sanctions` and `check_compliance` attach a **compliance receipt**: a
 hash-bound record of which list copies were screened (and how fresh they were),
 which ruleset decided, what inputs it was given, and what it returned. It is
-signed with **Ed25519** and verifiable **offline** — months later, with no call
+signed with **Ed25519** and verifiable **offline**  -  months later, with no call
 back to us. It asserts facts about *our system's actions only*; it never claims
 "this party is clean."
 
@@ -108,7 +108,7 @@ Ed25519PublicKey.from_public_bytes(bytes.fromhex(PINNED_KEY_HEX)).verify(
 ```
 
 If no signing key is configured on the server, the receipt says
-`signature_status: "unsigned"` with the reason — it never claims a signature it
+`signature_status: "unsigned"` with the reason  -  it never claims a signature it
 does not have.
 
 ---

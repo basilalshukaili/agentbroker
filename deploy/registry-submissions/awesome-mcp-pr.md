@@ -46,7 +46,7 @@ What makes it different from other business/scheduling MCP servers:
 2. Real data from official sources, no key required. `screen_sanctions`
    (OFAC SDN + EU Consolidated list + UK Sanctions List), `verify_company_record`
    (GLEIF LEI + SEC EDGAR), and `lookup_us_contracts` (USASpending.gov federal
-   award data) are 3 of the 15 tools usable with no authentication at all (the
+   award data) are 3 of the 15 (out of 23) tools usable with no authentication at all (the
    other 12 are always-free and unmetered).
 
 It also finds, verifies, messages, and schedules with small/mid-sized
