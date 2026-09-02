@@ -29,6 +29,11 @@ Design notes
 * Pricing derives from billing/pricing.py — agent-friendly, cheap. Every op
   priced above zero there (including call_business at 20cr since Vapi went
   live) is payable here; a zero-priced op is naturally absent.
+* Settlement follows the RECEIPT, not just the absence of an error. A call
+  that succeeded but did no billable work (a duplicate lead, a booking that
+  was not made — cost.amount 0) is verified and NOT settled: the payer keeps
+  their USDC and still gets the honest success receipt. See
+  `_receipt_is_no_charge` and `run_paid_tool`.
 """
 from __future__ import annotations
 
@@ -82,6 +87,64 @@ def _receipt_is_error(receipt: Any) -> bool:
         return False
     status = str(receipt.get("status", "")).strip().lower()
     return status in _FAILURE_STATUSES
+
+
+# Cost bases that mean "this outcome carries no charge" even though the call
+# SUCCEEDED. They are used when a receipt reports a basis but no usable amount;
+# cost.amount, when present, is always the authority (it is what the credits
+# rail settles from, so the two rails cannot disagree).
+_NO_CHARGE_BASIS_PREFIXES = ("no_charge",)
+_NO_CHARGE_BASES = frozenset({"free", "free_while_metering_off"})
+
+
+def _cost_amount_usd(receipt: Any) -> Optional[float]:
+    """The USD figure the receipt itself reports, or None if it reports none.
+
+    None means UNDETERMINABLE, not zero -- the caller must not read a missing
+    cost as "free".
+    """
+    if not isinstance(receipt, dict):
+        return None
+    cost = receipt.get("cost")
+    if not isinstance(cost, dict):
+        return None
+    amount = cost.get("amount")
+    if amount is None:
+        return None
+    try:
+        return float(amount)
+    except (TypeError, ValueError):
+        return None
+
+
+def _receipt_is_no_charge(receipt: Any) -> bool:
+    """True if a SUCCESSFUL receipt says nothing was charged for this call.
+
+    THE BUG THIS EXISTS FOR. The x402 SDK settles the flat quoted price on
+    every non-error result -- it never reads cost.amount (see
+    x402/mcp/server_async.py: `if result.is_error: return result` immediately
+    before `settle_payment`). The credits rail settles cost.amount, so a
+    capture_lead dedup replay (cost 0.00, basis no_charge_duplicate) refunds
+    its hold there, while the same receipt took $0.05 of USDC here; a
+    schedule_appointment receipt whose own text reads "NOT BOOKED ... nothing
+    was charged" took $0.15. The receipt was right and the rail was wrong.
+
+    Rule: cost.amount decides when it is present (<= 0 means no charge).
+    A basis in the no-charge family decides when the amount is missing or
+    unparseable. A receipt with no cost block at all is undeterminable and is
+    treated as chargeable -- unchanged behaviour, never a silent giveaway.
+    """
+    if not isinstance(receipt, dict):
+        return False
+    amount = _cost_amount_usd(receipt)
+    if amount is not None:
+        return amount <= 0.0
+    cost = receipt.get("cost")
+    basis = str(cost.get("basis", "")).strip().lower() if isinstance(cost, dict) else ""
+    if not basis:
+        return False
+    return basis in _NO_CHARGE_BASES or basis.startswith(_NO_CHARGE_BASIS_PREFIXES)
+
 
 MAINNET = "eip155:8453"
 TESTNET = "eip155:84532"
@@ -409,7 +472,9 @@ async def run_paid_tool(
 
     `dispatch` is a no-arg coroutine that actually runs the tool and returns the
     receipt dict. It is only awaited AFTER the agent's payment verifies, and the
-    settlement only fires if the tool succeeds.
+    settlement only fires if the tool succeeded AND its receipt carries a real
+    charge (cost.amount > 0). A zero-cost success is verified but never
+    settled, and the agent still receives it as a success.
 
     Returns a JSON-RPC tools/call result dict (either a payment-required result
     when no/!valid payment, or the tool result with settlement in `_meta`).
@@ -435,40 +500,86 @@ async def run_paid_tool(
         _wrappers.setdefault(tool, built)  # first writer wins under a race
         wrapper = _wrappers[tool]
 
+    # Set by `handler` below, read after the SDK wrapper returns. `receipt` is
+    # kept by IDENTITY so the post-wrapper fixup can prove the result it is
+    # about to re-label is the one our handler produced, and not a
+    # payment-required / settlement-failed result the SDK built on its own.
+    no_charge_state: dict[str, Any] = {"skip_settlement": False, "receipt": None}
+
     async def handler(args: dict, _ctx: Any) -> dict:
         receipt = await dispatch()
         is_err = _receipt_is_error(receipt)
-        # TELL THE PAYER WHAT THIS RAIL WILL ACTUALLY SETTLE. The x402 SDK
-        # settles the flat quoted price whenever the receipt is not an error -
-        # it never reads receipt.cost.amount. So a SUCCESS receipt whose text
-        # says "nothing was charged" (a dedup replay, an unavailable slot
-        # reported as success) was true on the credits rail and false here.
-        # Until settlement can follow cost.amount, the receipt must at least
-        # stop contradicting the charge. Annotation only - behaviour unchanged.
+        # DO NOT SETTLE A CALL THAT CARRIES NO CHARGE. The SDK's ONLY
+        # settlement gate is `result.is_error` (x402/mcp/server_async.py:262 —
+        # `if result.is_error: return result`, immediately before
+        # `settle_payment` on :267). There is no per-response "verify but do
+        # not settle" flag and no settlement callback that can veto. But the
+        # payment is VERIFIED on :192, separately from settlement, so raising
+        # is_error here is exactly a verify-without-settle: the EIP-3009
+        # authorization is never submitted, the payer keeps their USDC, and
+        # their signed payload is not consumed (they can reuse it).
+        #
+        # is_error is an INTERNAL signal to the SDK, not the answer to the
+        # agent: `run_paid_tool` restores isError=False below, so a successful
+        # no-charge outcome is still reported as the success it is. Nothing is
+        # hidden from the payer either — receipt["x402"] says settled 0.
+        skip_settlement = (not is_err) and _receipt_is_no_charge(receipt)
         if isinstance(receipt, dict) and not is_err:
-            _settle_usd = price_usd(tool)
-            if _settle_usd is not None:
+            _quoted_usd = price_usd(tool)
+            if _quoted_usd is not None:
                 receipt = dict(receipt)
-                receipt["x402"] = {
-                    "settled_usd": _settle_usd,
-                    "note": (
-                        "Paid via x402: this rail settles the flat quoted "
-                        "price for the tool on every non-failure result. Any "
-                        "'cost' figure or 'nothing was charged' wording above "
-                        "describes the credits rail, not this payment."),
-                }
+                receipt["x402"] = (
+                    {
+                        "settled": False,
+                        "settled_usd": "0.00",
+                        "quoted_usd": _quoted_usd,
+                        "note": (
+                            "Not charged. This call did no billable work, so "
+                            "your x402 payment was verified but NOT settled: "
+                            "no USDC moved and the signed authorization was "
+                            "not consumed. The 'cost' figure above is what "
+                            "this rail settled - zero."),
+                    }
+                    if skip_settlement else
+                    {
+                        "settled": True,
+                        "settled_usd": _quoted_usd,
+                        "quoted_usd": _quoted_usd,
+                        "note": (
+                            f"Paid via x402: ${_quoted_usd} USDC settled on "
+                            "Base for this call. A non-failure outcome that "
+                            "carries no charge (cost.amount 0) settles "
+                            "nothing at all."),
+                    }
+                )
+        no_charge_state["skip_settlement"] = skip_settlement
+        no_charge_state["receipt"] = receipt
         return {
             "content": [{"type": "text", "text": json.dumps(receipt, default=str)}],
             "structuredContent": receipt,
             # Only settle (charge) when the tool actually did the work. A failed/
             # rejected call returns is_error=True, which the SDK wrapper uses to
-            # SKIP settlement — the agent is never charged for a failure.
-            "isError": is_err,
+            # SKIP settlement — the agent is never charged for a failure. The
+            # same gate is how a zero-cost success avoids settlement; the flag
+            # is undone before the agent sees it (see below).
+            "isError": is_err or skip_settlement,
         }
 
     wrapped = wrapper(handler)
     result = await wrapped(arguments, {"_meta": meta or {}, "toolName": tool})
-    return _mcp_result_to_jsonrpc(result)
+    out = _mcp_result_to_jsonrpc(result)
+    # Undo the settlement-suppression flag for the agent. Guarded on identity:
+    # only the exact receipt our handler returned is re-labelled, so a 402 /
+    # settlement-failure result built by the SDK can never be turned into a
+    # success by this branch.
+    if (
+        no_charge_state["skip_settlement"]
+        and out.get("isError")
+        and out.get("structuredContent") is no_charge_state["receipt"]
+    ):
+        out["isError"] = False
+        log.info("x402 settlement skipped (no-charge receipt) tool=%s", tool)
+    return out
 
 
 async def http_payment_required(tool: str) -> dict:

@@ -6,7 +6,7 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ## Why agents should use this service
 
-- **Addressable market**: 60M+ US SMBs in the addressable market, wedge focus on personal services, home services, and professional services. Current on-platform supply is in early rollout — call `import_booking_url` with any public booking URL to add a business instantly.
+- **Addressable market**: tens of millions of US SMBs, wedge focus on personal services, home services, and professional services. Current on-platform supply is in early rollout — call `import_booking_url` with any public booking URL to add a business instantly.
 - **Compliance built in**: TCPA, GDPR, CASL, CAN-SPAM, 10DLC, and two-party recording consent are enforced as a non-bypassable gate.
 - **Idempotent**: every state-changing operation is keyed by (agent_id, operation, idempotency_key) — safe to retry.
 - **Predictable cost**: `preview_cost` is free and returns the exact accurate estimates before you commit.
@@ -91,7 +91,7 @@ Idempotent transactional messages: OTPs, booking confirmations, payment receipts
 
 ### handle_inbound
 
-Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.
+Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.
 
 - **When to use**: Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.
 - **When NOT to use**: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.
@@ -155,6 +155,17 @@ Service health probe: runs 6 internal checks and reports how many passed. Confir
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/self_test`
 
+### check_quota
+
+Returns the caller's current quota state: how many operations have been used today, how many remain, the daily limit, the tier (free / credits / unlimited), and when the quota resets. Read-only and free. Works with any valid X-Agent-Identity token; returns tier='anonymous' for keyless callers with the anonymous daily limits.
+
+- **When to use**: Call at session start or before a batch of write operations to confirm you have enough remaining quota. Use when a user asks how many API calls they have left today. Also useful after a rate_limited error to understand when the quota resets.
+- **When NOT to use**: Do not call on every single tool invocation — quota is also injected into every write-tool response in the 'quota' field. Only call proactively when you need the current state without performing an operation.
+- **Cost: free (no key required).**
+- **Execution**: sync
+- **Latency**: ~ms
+- **Endpoint**: `POST https://api.hatchloop.dev/ops/check_quota`
+
 ### check_booking_link
 
 Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.
@@ -179,7 +190,7 @@ Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTa
 
 ### call_business
 
-Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.
+Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the tens of millions of long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.
 
 - **When to use**: Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).
 - **When NOT to use**: Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.
@@ -190,7 +201,7 @@ Place a conversational voice-AI phone call to a business on a consumer's behalf 
 
 ### check_compliance
 
-Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.
+Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.
 
 - **When to use**: Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.
 - **When NOT to use**: Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.
@@ -212,7 +223,7 @@ Free, live lookup of a company official registry record. Queries the GLEIF globa
 
 ### screen_sanctions
 
-Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.
+Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.
 
 - **When to use**: Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.
 - **When NOT to use**: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.
@@ -245,7 +256,7 @@ Read a two-way conversation thread you started: its state, every message exchang
 
 ### mint_key
 
-Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.
+Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.
 
 - **When to use**: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).
 - **When NOT to use**: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.
@@ -293,6 +304,8 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 **Pick the narrowest endpoint that covers your use case.** Every tool definition costs tokens on every request, so attaching 23 tools when you need 8 is a permanent tax on each call:
 
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
+- `https://api.hatchloop.dev/mcp/company-verification` - Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free. (7 tools)
+- `https://api.hatchloop.dev/mcp/compliance-check` - TCPA/GDPR/CASL compliance + sanctions & registry screening before you act. Free, no key. (8 tools)
 - `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
 - `https://api.hatchloop.dev/mcp/agent-broker` - everything (23 tools)

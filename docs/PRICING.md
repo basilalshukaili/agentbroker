@@ -55,6 +55,11 @@ no key and no account — the server answers an unpaid attempt with a priced
 offer first. It is the one payment path an autonomous agent can complete
 without a human.
 
+A call that fails, and a call that succeeds without doing billable work (a
+duplicate lead, a booking that was not made — any receipt whose `cost.amount`
+is 0), is verified but **not settled**: no USDC moves and the receipt says so
+in `x402.settled_usd`.
+
 Get a free key at <https://hatchloop.dev/agent-broker>.
 
 ### Credit packages

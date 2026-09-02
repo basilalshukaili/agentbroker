@@ -20,6 +20,6 @@
       },
       "logging": {}
     },
-    "instructions": "SMB Transaction & Communication Broker. Use tools/list to see all 23 operations. 15 of the 23 tools need no key at all; the 8 write tools require an X-Agent-Identity token in the underlying HTTP request. For state-changing operations (send_message, schedule_appointment), call preview_cost first to confirm the budget impact."
+    "instructions": "SMB Transaction & Communication Broker. Use tools/list to see all 23 operations. 15 of the 23 tools need no key at all; the 8 write tools require an X-Agent-Identity token in the underlying HTTP request. For state-changing operations (send_message, schedule_appointment), call preview_cost first to confirm the budget impact. screen_sanctions and check_compliance answer from live official sources (OFAC/EU/UK lists, GLEIF, SEC EDGAR) and return an Ed25519-signed compliance receipt you can verify offline against the public key at https://hatchloop.dev/agents.md. Need fewer tools in context? Narrow endpoints serve one capability each: /mcp/compliance-check, /mcp/company-verification, /mcp/sanctions-screening (all free, no key), /mcp/appointment-booking, /mcp/sms-whatsapp-messaging."
   }
 }

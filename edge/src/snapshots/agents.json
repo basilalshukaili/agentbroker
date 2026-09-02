@@ -143,7 +143,7 @@
     {
       "id": "handle_inbound",
       "name": "Handle Inbound",
-      "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.",
+      "description": "Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.",
       "tags": [
         "async_by_default",
         "compliance_gated"
@@ -246,6 +246,24 @@
       ]
     },
     {
+      "id": "check_quota",
+      "name": "Check Quota",
+      "description": "Returns the caller's current quota state: how many operations have been used today, how many remain, the daily limit, the tier (free / credits / unlimited), and when the quota resets. Read-only and free. Works with any valid X-Agent-Identity token; returns tier='anonymous' for keyless callers with the anonymous daily limits.",
+      "tags": [
+        "sync"
+      ],
+      "examples": [
+        "",
+        ""
+      ],
+      "input_modes": [
+        "application/json"
+      ],
+      "output_modes": [
+        "application/json"
+      ]
+    },
+    {
       "id": "check_booking_link",
       "name": "Check Booking Link",
       "description": "Free, instant pre-flight check for a booking URL. Classifies which booking platform a URL belongs to and tells you whether import_booking_url will accept it, WITHOUT fetching the page or spending money. Returns the platform, the exact smb_id import_booking_url would assign, the channels the booking will route through, and the inferred country. Use it to de-risk a paid booking BEFORE calling import_booking_url + schedule_appointment.",
@@ -284,7 +302,7 @@
     {
       "id": "call_business",
       "name": "Call Business",
-      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the tens of millions of long-tail SMBs that have NO API and NO booking page — only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
       "tags": [
         "async_by_default",
         "compliance_gated"
@@ -302,7 +320,7 @@
     {
       "id": "check_compliance",
       "name": "Check Compliance",
-      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.",
       "tags": [
         "sync"
       ],
@@ -339,7 +357,7 @@
     {
       "id": "screen_sanctions",
       "name": "Screen Sanctions",
-      "description": "Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.",
+      "description": "Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.",
       "tags": [
         "sync"
       ],
@@ -393,7 +411,7 @@
     {
       "id": "mint_key",
       "name": "Mint Key",
-      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.",
+      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.",
       "tags": [
         "sync"
       ],

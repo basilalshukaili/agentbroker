@@ -17,7 +17,7 @@ openapi: "3.1.0"
 # read "call https://hatchloop.dev - a domain that does not exist".
 info:
   title: AgentBroker
-  version: "0.2.11"
+  version: "0.2.12"
   description: |
     A horizontal, agent-callable broker for the long-tail SMB layer.
     Lets autonomous AI agents discover, verify, screen, communicate with,
@@ -272,7 +272,7 @@ components:
           description: Filter to specific operations; omit for all
 
 paths:
-  /.well-known/agent-manifest.json:
+  /manifest:
     get:
       summary: Full capability manifest
       operationId: getAgentManifest
@@ -285,7 +285,7 @@ paths:
               schema:
                 type: object
 
-  /mcp/tools:
+  /manifest/ops:
     get:
       summary: MCP-style tool listing
       operationId: getMcpTools
@@ -298,8 +298,8 @@ paths:
               schema:
                 type: object
 
-  /self-test:
-    get:
+  /ops/self_test:
+    post:
       summary: Live capability probe
       operationId: selfTest
       security: []
@@ -355,7 +355,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /preview-cost:
+  /ops/preview_cost:
     post:
       summary: Preview cost and success probability for a proposed call
       operationId: previewCost
@@ -399,7 +399,7 @@ paths:
                   cost_accuracy_slo:
                     type: string
 
-  /find-business:
+  /ops/find_business:
     post:
       summary: Find verified SMBs matching criteria
       operationId: findBusiness
@@ -423,7 +423,7 @@ paths:
                 $ref: "#/components/schemas/Error"
           description: Bad input
 
-  /verify-business:
+  /ops/verify_business:
     post:
       summary: Confirm an SMB is real and capable
       operationId: verifyBusiness
@@ -447,7 +447,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutcomeReceipt"
 
-  /send-message:
+  /ops/send_message:
     post:
       summary: Send outbound message to SMB or customer
       operationId: sendMessage
@@ -481,7 +481,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /capture-lead:
+  /ops/capture_lead:
     post:
       summary: Intake a prospect into an SMB's pipeline
       operationId: captureLead
@@ -513,7 +513,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutcomeReceipt"
 
-  /schedule-appointment:
+  /ops/schedule_appointment:
     post:
       summary: Book, reschedule, or cancel an appointment (async)
       operationId: scheduleAppointment
@@ -545,7 +545,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutcomeReceipt"
 
-  /send-transactional-confirmation:
+  /ops/send_transactional_confirmation:
     post:
       summary: Send OTPs, receipts, and confirmations
       operationId: sendTransactionalConfirmation
@@ -580,7 +580,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutcomeReceipt"
 
-  /handle-inbound:
+  /ops/handle_inbound:
     post:
       summary: Classify and route inbound messages for an SMB
       operationId: handleInbound
@@ -617,7 +617,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutcomeReceipt"
 
-  /escalate-to-human:
+  /ops/escalate_to_human:
     post:
       summary: Hand off to human operator with full context
       operationId: escalateToHuman
@@ -653,7 +653,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutcomeReceipt"
 
-  /operations/{operation_id}/status:
+  /ops/get_status/{operation_id}:
     get:
       summary: Get current status of an async operation
       operationId: getStatus
@@ -681,7 +681,7 @@ paths:
                   last_updated_at:
                     type: string
 
-  /operations/{operation_id}/outcome:
+  /ops/get_outcome/{operation_id}:
     get:
       summary: Retrieve final OutcomeReceipt for a completed operation
       operationId: getOutcome
