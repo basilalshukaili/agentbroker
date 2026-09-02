@@ -385,8 +385,15 @@ def render_checkout(plan: str | None) -> str:
     if plan_key not in _PACKAGE_USD:
         plan_key = "starter"
 
+    # NO BACKSLASH INSIDE AN f-STRING EXPRESSION.
+    # Python 3.12 allows it; the production image is python:3.11-slim, which
+    # raises SyntaxError at import so the container exits 1. CI runs 3.12, so
+    # this parsed everywhere it was checked and failed only in production -
+    # four deploys in a row, each reported as "update_failed" with a perfectly
+    # healthy build. The escaped quotes are hoisted out of the f-string.
+    _SELECTED_STYLE = ' style="color:var(--accent)"'
     package_rows = "".join(
-        f'<tr{" style=\"color:var(--accent)\"" if name == plan_key else ""}>'
+        f"<tr{_SELECTED_STYLE if name == plan_key else ''}>"
         f"<td>{name.title()}{' &larr; selected' if name == plan_key else ''}</td>"
         f"<td>${_PACKAGE_USD[name]}</td>"
         f"<td>{PACKAGE_CREDITS.get(name, 0):,}</td></tr>"
