@@ -479,14 +479,33 @@ def test_sweep_respects_a_closed_window(db):
 
 
 def test_sweep_loop_survives_a_failing_pass(db, monkeypatch):
-    """One bad sweep must not kill the loop for the life of the process."""
+    """One bad sweep must not kill the loop for the life of the process.
+
+    WAITS ON AN EVENT, NOT ON A NUMBER OF EVENT-LOOP TICKS. The first version
+    of this test spun `for _ in range(50): await asyncio.sleep(0)` and hoped
+    the sweep task had run twice by then. How many ticks that actually takes is
+    an implementation detail of asyncio.wait_for, and it changed: on
+    2026-09-02 this repository pinned CI to Python 3.11 to match the production
+    container, and this single test hung the job until GitHub killed it at
+    twenty minutes - three runs in a row, reported only as "cancelled". Python
+    3.12 reimplemented wait_for on top of asyncio.timeout and needs fewer ticks
+    per pass, so fifty was enough there and is not here.
+
+    Counting ticks is not a synchronisation primitive. An Event says exactly
+    what the test means - "wake me when the loop has run a second time" - and
+    is correct on any version. The outer wait_for turns a real regression (the
+    loop dying on the first failure) into a five-second failure with a clear
+    message, instead of a twenty-minute silence.
+    """
     import main
     calls = {"n": 0}
+    ran_again = asyncio.Event()
 
     async def _boom(*a, **k):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("supabase blip")
+        ran_again.set()
         return {"businesses": 0, "dispatched": 0, "skipped": 0}
 
     import core.demand_queue as _dq
@@ -494,16 +513,21 @@ def test_sweep_loop_survives_a_failing_pass(db, monkeypatch):
 
     async def go():
         task = asyncio.create_task(main._digest_sweep_loop(interval_s=0))
-        for _ in range(50):
-            await asyncio.sleep(0)
-            if calls["n"] >= 2:
-                break
-        task.cancel()
         try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    asyncio.run(go())
+            await asyncio.wait_for(ran_again.wait(), timeout=5)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    try:
+        asyncio.run(go())
+    except asyncio.TimeoutError:                    # pragma: no cover
+        raise AssertionError(
+            "the sweep loop did not run again after a failing pass - one bad "
+            "sweep killed it for the life of the process") from None
     assert calls["n"] >= 2, "loop should have run again after the failure"
 
 
