@@ -21,7 +21,7 @@
 
 ## Why this exists
 
-There are ~60 million long-tail small businesses in the US  -  barbers, plumbers, accountants, home cleaners  -  and they have **no API surface**. AI agents that need to schedule a haircut, get a quote, or send a confirmation today must either drive a browser, cold-call by voice, or give up.
+There are tens of millions of long-tail small businesses in the US  -  barbers, plumbers, accountants, home cleaners  -  and they have **no API surface**. AI agents that need to schedule a haircut, get a quote, or send a confirmation today must either drive a browser, cold-call by voice, or give up.
 
 This server is the missing middle layer. Agents call us; we route to the right SMB through whichever channel reaches them fastest  -  Cal.com -> WhatsApp -> SMS -> voice AI -> email  -  with full TCPA / GDPR / CASL / 10DLC compliance enforced as a non-bypassable gate.
 
@@ -65,8 +65,8 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 13 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | **free** |
 | 14 | `lookup_us_contracts` | Search US federal contract awards by company name via USASpending.gov  -  awardee, agency, amount, NAICS, period | **free** |
 | 15 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
-| 16 | `capture_lead` | Structured intake of a prospect into an SMB pipeline with CRM integration | key |
-| 17 | `schedule_appointment` | Book, reschedule, or cancel  -  tries direct booking API, falls back to voice AI | key |
+| 16 | `capture_lead` | Structured intake of a prospect into the SMB's AgentBroker lead store (not the business's own CRM), deduplicated | key |
+| 17 | `schedule_appointment` | Book, reschedule, or cancel via the direct booking API (Cal.com); SMBs reachable only through async channels fail honestly until a background worker is deployed | key |
 | 18 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
 | 19 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
 | 20 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
@@ -75,6 +75,41 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 23 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email required, no human in the loop | **free** |
 
 Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
+
+---
+
+## Verifiable compliance receipts
+
+`screen_sanctions` and `check_compliance` attach a **compliance receipt**: a
+hash-bound record of which list copies were screened (and how fresh they were),
+which ruleset decided, what inputs it was given, and what it returned. It is
+signed with **Ed25519** and verifiable **offline** — months later, with no call
+back to us. It asserts facts about *our system's actions only*; it never claims
+"this party is clean."
+
+Verify one in ~12 lines (pin the public key from
+[hatchloop.dev/agents.md](https://hatchloop.dev/agents.md)):
+
+```python
+import json, hashlib
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+PINNED_KEY_HEX = "<hex public key from hatchloop.dev/agents.md>"
+
+receipt = json.load(open("receipt.json"))          # the compliance_receipt object
+payload, integrity = receipt["payload"], receipt["integrity"]
+
+canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=True, allow_nan=False).encode()
+assert integrity["payload_sha256"] == "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+Ed25519PublicKey.from_public_bytes(bytes.fromhex(PINNED_KEY_HEX)).verify(
+    bytes.fromhex(integrity["signature"]), canonical)   # raises if tampered
+```
+
+If no signing key is configured on the server, the receipt says
+`signature_status: "unsigned"` with the reason — it never claims a signature it
+does not have.
 
 ---
 
@@ -92,7 +127,7 @@ Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev
 }
 ```
 
-**12 tools require no key** (find_business, verify_business, verify_company_record, screen_sanctions, map_trade_restriction, check_booking_link, check_compliance, get_conversation, get_status, get_outcome, preview_cost, self_test).
+**15 tools require no key.** 12 are always free (find_business, verify_business, check_booking_link, check_compliance, get_conversation, get_status, get_outcome, preview_cost, self_test, check_quota, mint_key, lookup_us_contracts) and 3 more are free within a daily quota (verify_company_record, screen_sanctions, map_trade_restriction).
 
 **Write tools** require an `X-Agent-Identity` bearer token:
 - Free email-verified key (100 ops/day): https://hatchloop.dev/agent-broker

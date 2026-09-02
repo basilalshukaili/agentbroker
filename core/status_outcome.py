@@ -84,14 +84,37 @@ async def handle_get_outcome(
         try:
             return OutcomeReceipt(**outcome)
         except Exception:
-            # outcome may be a plain dict from Supabase; build best-effort receipt
+            # outcome may be a plain dict from Supabase; build best-effort receipt.
+            #
+            # BEST-EFFORT MUST NOT MEAN OPTIMISTIC. This fallback used to
+            # default a missing/invalid status to "success", the message to
+            # "Operation completed." and the cost to a hardcoded $0.001 - so a
+            # malformed stored FAILURE could be echoed back as a successful,
+            # charged operation, and get_outcome (a free tool) reported a
+            # charge that never existed. Unknown is unknown: preserve what the
+            # record actually says, and where it says nothing, say that.
+            try:
+                _status = OperationStatus(outcome.get("status"))
+            except Exception:  # noqa: BLE001 - missing or unrecognised status
+                _status = OperationStatus.FAILURE
+            _reason = outcome.get("reason_code") or (
+                "completed" if _status != OperationStatus.FAILURE
+                else "outcome_record_malformed")
+            try:
+                _cost = CostRecord(**(outcome.get("cost") or {}))
+            except Exception:  # noqa: BLE001
+                # get_outcome itself is free; never invent a charge here.
+                _cost = CostRecord(amount=0.0, currency="USD", basis="free")
             return OutcomeReceipt(
                 operation_id=outcome.get("operation_id", operation_id),
-                status=OperationStatus(outcome.get("status", "success")),
-                reason_code=outcome.get("reason_code", "completed"),
-                human_message=outcome.get("human_message", "Operation completed."),
+                status=_status,
+                reason_code=_reason,
+                human_message=outcome.get("human_message") or (
+                    "The stored outcome record for this operation could not be "
+                    "fully reconstructed. The fields returned are exactly what "
+                    "was stored - nothing has been assumed."),
                 result=outcome.get("result"),
-                cost=CostRecord(**(outcome.get("cost") or {"amount": 0.001, "currency": "USD", "basis": "per_call"})),
+                cost=_cost,
                 latency_ms=int((time.monotonic() - t0) * 1000),
                 retriable=False,
                 trace_id=trace_id,

@@ -346,10 +346,12 @@ def render_checkout(plan: str | None) -> str:
 <header class="hero">
   <h1>How you pay</h1>
   <p class="lead">
-    One rail: credits, bought by card. Read tools are free without a key.
-    Write tools spend credits, and a tool costs what it costs us to run.
-    <strong>Crypto payment is not offered</strong> &mdash; a per-call crypto rail
-    was built and proven in testing, and is switched off.
+    Two rails. Credits, bought by card &mdash; or pay per call in USDC on Base
+    via <strong>x402</strong>, with no signup and no account: attach a signed
+    payment in <code>params._meta["x402/payment"]</code> on any paid tool call
+    and the server answers an unpaid attempt with a priced offer first.
+    Read tools are free without a key. Write tools spend credits, and a tool
+    costs what it costs us to run.
   </p>
 </header>
 
@@ -705,8 +707,8 @@ def render_refund() -> str:
 
   <h2>4. Free tier</h2>
   <p>The free tier (100 gated operations per day with a verified key) is
-  provided without charge; nothing to refund. Twelve of the twenty tools
-  need no key at all.</p>
+  provided without charge; nothing to refund. Fifteen of the twenty-three
+  tools need no key at all.</p>
 
   <h2>5. How to request a refund</h2>
   <ol>

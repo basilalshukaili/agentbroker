@@ -9,7 +9,7 @@ startCommand:
         title: API Key (optional)
         description: >
           Free email-verified key for write tools and premium data tools
-          (100 ops/day, no cost). 13 tools work with no key at all.
+          (100 ops/day, no cost). 15 of the 23 tools work with no key at all (12 always-free + 3 free within a daily quota).
           Get one at https://hatchloop.dev/agent-broker.
           Pass as request header: X-Agent-Identity: <your-key>.
     required: []

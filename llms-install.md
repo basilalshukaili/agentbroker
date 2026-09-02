@@ -19,15 +19,17 @@ Add this to your Cline MCP settings (`cline_mcp_settings.json`):
 
 That is the whole install. On connect, the server exposes **23 tools**.
 
-**9 utility tools are unconditionally free (no key, no limit):** `find_business`, `verify_business`,
+**12 utility tools are unconditionally free (no key, no limit):** `find_business`, `verify_business`,
 `check_compliance`, `check_booking_link`, `preview_cost`, `get_status`, `get_outcome`, `self_test`,
+`get_conversation`, `check_quota`, `mint_key`, and
 `lookup_us_contracts` (US federal contract awards via USASpending.gov).
 
 **3 premium data tools are free up to a daily quota, then $0.02/call:** `verify_company_record`
 (live GLEIF/SEC company data), `screen_sanctions` (live OFAC/EU/UK sanctions screening),
 `map_trade_restriction` (cross-border embargo/export-control mapping). Anonymous callers get
-100 calls/day; email-verified free keys get 500/day. Beyond the quota: top up credits at
-https://hatchloop.dev/pricing. Card only - there is no crypto rail.
+100 calls/day; email-verified free keys get 500/day. Beyond the quota: top up credits by card
+at https://hatchloop.dev/pricing, or pay per call in USDC on Base by attaching an x402 payment
+in `params._meta["x402/payment"]` (no account needed).
 
 ## Optional: unlock the write tools (free)
 

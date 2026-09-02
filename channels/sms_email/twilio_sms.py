@@ -100,14 +100,28 @@ class TwilioSMSAdapter(ChannelAdapter):
             )
 
         try:
-            # Production path: Twilio REST API
+            # Production path: Twilio REST API.
+            #
+            # The Twilio SDK is SYNCHRONOUS (requests-based) and its default
+            # http client carries timeout=None. Called inline from this async
+            # method it blocked the single uvicorn worker's entire event loop
+            # for the full round trip - indefinitely on a network stall. So:
+            # a bounded timeout on the SDK client, and the blocking call moved
+            # off the loop with asyncio.to_thread.
+            import asyncio as _asyncio
             client = self._build_client()
+            try:
+                from twilio.http.http_client import TwilioHttpClient as _THC
+                client.http_client = _THC(timeout=15)
+            except Exception:  # noqa: BLE001 - SDK layout change: keep the
+                pass           # send working; to_thread still frees the loop
             create_kwargs: dict = dict(body=request.content, to=request.recipient_id)
             if self._messaging_service_sid:
                 create_kwargs["messaging_service_sid"] = self._messaging_service_sid
             else:
                 create_kwargs["from_"] = self._from_number
-            message = client.messages.create(**create_kwargs)
+            message = await _asyncio.to_thread(
+                client.messages.create, **create_kwargs)
             return ChannelResponse(
                 success=message.status not in ("failed", "undelivered"),
                 provider_message_id=message.sid,

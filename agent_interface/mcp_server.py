@@ -652,7 +652,19 @@ async def _h_initialize(params: dict) -> dict:
             f"key at all; the {len(_WRITE_TOOLS_REQUIRING_AUTH)} write tools "
             f"require an X-Agent-Identity token in the underlying HTTP request. "
             "For state-changing operations (send_message, schedule_appointment), call preview_cost "
-            "first to confirm the budget impact."
+            "first to confirm the budget impact. "
+            # The differentiator, stated at first contact — and only because it
+            # is true: both tools attach an Ed25519-signed receipt (see
+            # core/compliance_receipt.py), verifiable offline against the
+            # public key published on hatchloop.dev/agents.md.
+            "screen_sanctions and check_compliance answer from live official "
+            "sources (OFAC/EU/UK lists, GLEIF, SEC EDGAR) and return an "
+            "Ed25519-signed compliance receipt you can verify offline against "
+            "the public key at https://hatchloop.dev/agents.md. "
+            "Need fewer tools in context? Narrow endpoints serve one "
+            "capability each: /mcp/compliance-check, /mcp/company-verification, "
+            "/mcp/sanctions-screening (all free, no key), "
+            "/mcp/appointment-booking, /mcp/sms-whatsapp-messaging."
         ),
     }
 
@@ -779,7 +791,20 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
 
     op = get_operation(name)
     if not op:
-        raise _ParamError(f"Unknown tool: '{name}'")
+        # Name the nearest real tool. An agent that typos or shortens a tool
+        # name ("verify_company" for "verify_company_record") gets one useless
+        # round-trip from a bare "Unknown tool"; naming the close matches lets
+        # it fix the call immediately instead of re-fetching tools/list.
+        try:
+            import difflib
+            known = [o.get("name", "") for o in
+                     get_full_manifest().get("operations", [])]
+            close = difflib.get_close_matches(name, known, n=3, cutoff=0.5)
+        except Exception:  # noqa: BLE001 - suggestion is best-effort
+            close = []
+        hint = f" Did you mean: {', '.join(close)}?" if close else ""
+        raise _ParamError(f"Unknown tool: '{name}'.{hint} Call tools/list "
+                          f"for the full catalog.")
 
     # -----------------------------------------------------------------------
     # DATA TOOL BYPASS (DATA_METERING_ENABLED=false, which is the default)
@@ -1136,7 +1161,7 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             f"params._meta['x402/payment'] and this call is served without "
             f"a key - USDC on Base. This is the only option that needs no "
             f"human. "
-            f"Both options email you an X-Agent-Identity token; send it as a header on every call. "
+            f"Options 1 and 2 email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
             f" Get a free API key at {free_key_url} ({_free_limit_msg} ops/day, email verification required). "

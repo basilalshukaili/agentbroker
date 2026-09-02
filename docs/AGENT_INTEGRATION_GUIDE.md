@@ -8,7 +8,7 @@ Every example below is copy-paste runnable.
 
 ## Step 0: Get an Agent-Identity token
 
-Every state-changing operation requires `X-Agent-Identity`. Read-only ops (`find_business`, `verify_business`, `preview_cost`, `self_test`, `get_status`, `get_outcome`) do not require auth in development.
+Every state-changing operation requires `X-Agent-Identity`. On the MCP endpoint, read-only ops require no auth at all - 15 of the 23 tools work keyless (12 always-free plus 3 free within a daily quota; see docs/PRICING.md). NOTE: on this REST surface (`/ops/*`), production currently requires `X-Agent-Identity` on most reads too (only `/ops/preview_cost` is open); use MCP for keyless evaluation.
 
 ```python
 import httpx
@@ -41,7 +41,7 @@ preview = httpx.post(
 ).json()
 print(preview)
 # {
-#   "estimated_cost_usd": 0.625,
+#   "estimated_cost_usd": 0.15,   # reserve max is 0.50; settled from the receipt
 #   "cost_accuracy_slo": "exact",
 #   "estimated_latency_p50_ms": 2500,
 #   "success_probability_estimate": 0.87,
@@ -164,7 +164,7 @@ Every operation returns the same shape:
   "reason_code": "ok",
   "human_message": "Found 3 hair salons in 30309 matching 'haircut'.",
   "result": { "businesses": [...] },
-  "cost": {"amount": 0.01, "currency": "USD"},
+  "cost": {"amount": 0.0, "currency": "USD", "basis": "free"},
   "latency_ms": 287,
   "channel_used": "directory",
   "channel_fallback_chain": ["directory"],
@@ -388,5 +388,5 @@ Full catalog: [api/errors.md](../api/errors.md).
 
 - Service status: `https://api.hatchloop.dev/health`
 - Self-test: `POST /ops/self_test`
-- Email: support@hatchloop.dev
-- File a feedback ticket: agents who flag a missing capability that we add inside 30 days get 1 month free at their tier.
+- Email: hello@hatchloop.dev
+- File a feedback ticket: we read every capability request. (There are no subscription tiers, so no tier-credit promise here - see docs/PRICING.md.)

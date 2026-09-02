@@ -5,7 +5,7 @@
   ],
   "name": "agent-broker",
   "displayName": "Agent Broker",
-  "description": "23 MCP tools to find, verify, message, book, and transact at small businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening, cross-border trade-restriction mapping. 13 read tools free.",
+  "description": "23 MCP tools to find, verify, message, book, and transact at small businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification, TCPA/GDPR/CASL compliance, live sanctions screening, cross-border trade-restriction mapping. 15 tools usable with no key (12 always-free + 3 free within a daily quota).",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker"
   },
@@ -41,6 +41,6 @@
     "type": "optional",
     "header": "X-Agent-Identity",
     "scheme": "bearer",
-    "note": "11 read tools require no auth. Write ops require X-Agent-Identity bearer token (free email-verified key for 100 ops/day, or buy credits at https://hatchloop.dev/pricing)."
+    "note": "15 tools require no auth (12 always-free + 3 free within a daily quota). Write ops require X-Agent-Identity bearer token (free email-verified key for 100 ops/day, or buy credits at https://hatchloop.dev/pricing)."
   }
 }

@@ -26,8 +26,9 @@ Design notes
   blocking GET /supported against CDP, so we run it once in a thread executor.
 * CDP auth is an EdDSA (Ed25519) JWT minted per request, injected via the SDK's
   `create_headers` hook. Validated working against CDP /supported and /verify.
-* Pricing mirrors the (now-retired) edge table exactly — agent-friendly, cheap.
-  call_business is intentionally NOT payable (the voice path is disabled).
+* Pricing derives from billing/pricing.py — agent-friendly, cheap. Every op
+  priced above zero there (including call_business at 20cr since Vapi went
+  live) is payable here; a zero-priced op is naturally absent.
 """
 from __future__ import annotations
 
@@ -436,13 +437,33 @@ async def run_paid_tool(
 
     async def handler(args: dict, _ctx: Any) -> dict:
         receipt = await dispatch()
+        is_err = _receipt_is_error(receipt)
+        # TELL THE PAYER WHAT THIS RAIL WILL ACTUALLY SETTLE. The x402 SDK
+        # settles the flat quoted price whenever the receipt is not an error -
+        # it never reads receipt.cost.amount. So a SUCCESS receipt whose text
+        # says "nothing was charged" (a dedup replay, an unavailable slot
+        # reported as success) was true on the credits rail and false here.
+        # Until settlement can follow cost.amount, the receipt must at least
+        # stop contradicting the charge. Annotation only - behaviour unchanged.
+        if isinstance(receipt, dict) and not is_err:
+            _settle_usd = price_usd(tool)
+            if _settle_usd is not None:
+                receipt = dict(receipt)
+                receipt["x402"] = {
+                    "settled_usd": _settle_usd,
+                    "note": (
+                        "Paid via x402: this rail settles the flat quoted "
+                        "price for the tool on every non-failure result. Any "
+                        "'cost' figure or 'nothing was charged' wording above "
+                        "describes the credits rail, not this payment."),
+                }
         return {
             "content": [{"type": "text", "text": json.dumps(receipt, default=str)}],
             "structuredContent": receipt,
             # Only settle (charge) when the tool actually did the work. A failed/
             # rejected call returns is_error=True, which the SDK wrapper uses to
             # SKIP settlement — the agent is never charged for a failure.
-            "isError": _receipt_is_error(receipt),
+            "isError": is_err,
         }
 
     wrapped = wrapper(handler)

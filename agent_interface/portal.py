@@ -535,7 +535,7 @@ async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONRe
         # No account yet — create one with the free key attached
         try:
             from storage.supabase_client import upsert_row
-            await upsert_row(
+            written = await upsert_row(
                 "credit_accounts",
                 {
                     "account_id": customer_id,
@@ -551,6 +551,15 @@ async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONRe
             )
         except Exception as exc:  # noqa: BLE001
             logger.error("portal.key_generate upsert_account failed email=%s err=%s", email, exc)
+            return JSONResponse({"ok": False, "reason": "key_store_failed"})
+        # upsert_row returns None on EVERY failure and cannot raise, so the
+        # except above was dead code for the common failure shapes (409 on a
+        # concurrent create for the same email, RLS, outage) - and the user was
+        # told their key was generated when nothing was stored, making the
+        # later /key/reveal come back empty. Same class as the outcome-store
+        # persist check: a write you did not confirm is not a write.
+        if written is None:
+            logger.error("portal.key_generate upsert_account returned None email=%s", email)
             return JSONResponse({"ok": False, "reason": "key_store_failed"})
 
     logger.info("portal.free_key_generated customer_id=%s", customer_id)

@@ -87,7 +87,7 @@
   },
   {
     "name": "send_message",
-    "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content \u00e2\u20ac\u201d marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+    "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content \u2014 marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -182,7 +182,7 @@
   },
   {
     "name": "capture_lead",
-    "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
+    "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel \u2014 this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -350,7 +350,7 @@
   },
   {
     "name": "handle_inbound",
-    "description": "Receive, classify, and route inbound messages on behalf of an SMB. Classifies intent (booking request, cancellation, inquiry, complaint), enriches with context, and routes to the appropriate handler or escalation path.",
+    "description": "Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -546,7 +546,7 @@
   },
   {
     "name": "import_booking_url",
-    "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent \u00e2\u20ac\u201d calling twice returns the same smb_id.",
+    "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent \u2014 calling twice returns the same smb_id.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -599,7 +599,7 @@
   },
   {
     "name": "call_business",
-    "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the ~60M long-tail SMBs that have NO API and NO booking page \u00e2\u20ac\u201d only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers \u00e2\u20ac\u201d but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
+    "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf and return a structured answer. THE differentiated capability: reach the tens of millions of long-tail SMBs that have NO API and NO booking page \u2014 only a phone number. An AI agent cannot pick up a phone and hold a conversation; this tool does. Give a plain-language objective; the voice AI navigates the call and extracts the answer. Business-directed (B2B), far less restricted than calling consumers \u2014 but the compliance gate still enforces recording consent per jurisdiction. Async: returns a call handle; poll get_outcome for the transcript + extracted fields.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -643,7 +643,7 @@
   },
   {
     "name": "check_compliance",
-    "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run \u00e2\u20ac\u201d but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking.",
+    "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run \u2014 but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -710,7 +710,7 @@
   },
   {
     "name": "screen_sanctions",
-    "description": "Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked.",
+    "description": "Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -764,10 +764,11 @@
         },
         "parties": {
           "type": "array",
+          "maxItems": 20,
           "items": {
             "type": "string"
           },
-          "description": "Optional list of party names to screen (exporter, importer, freight forwarder, end-user, etc.). Each name is screened against OFAC SDN (US Treasury), the EU Consolidated list (European Commission) and the UK Sanctions List (FCDO)."
+          "description": "Optional list of party names to screen (exporter, importer, freight forwarder, end-user, etc.). Each name is screened against OFAC SDN (US Treasury), the EU Consolidated list (European Commission) and the UK Sanctions List (FCDO). At most 20 parties per call - a longer list is refused outright (bad_input) rather than partially screened; split it across calls."
         }
       }
     }
@@ -795,7 +796,7 @@
   },
   {
     "name": "mint_key",
-    "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required.",
+    "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -815,7 +816,7 @@
         },
         "nonce": {
           "type": "string",
-          "description": "Random value (UUID or hex). Prevents replay attacks \u00e2\u20ac\u201d use a fresh nonce each call."
+          "description": "Random value (UUID or hex). Prevents replay attacks \u2014 use a fresh nonce each call."
         },
         "signature": {
           "type": "string",

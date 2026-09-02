@@ -10,6 +10,24 @@
   },
   "releases": [
     {
+      "version": "0.2.12",
+      "date": "2026-09-02",
+      "headline": "Tool #23 check_quota, real lead persistence, Ed25519-signed compliance receipts.",
+      "added": [
+        "check_quota - read-only view of your remaining daily quota, tier and credit balance; free, no key, never consumes quota.",
+        "screen_sanctions and check_compliance now attach an Ed25519-signed compliance receipt, verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md. When no signing key is configured the receipt says 'unsigned' rather than pretending."
+      ],
+      "changed": [
+        "Total tool count is 23: 12 always-free with no key, 3 premium data tools free within a daily quota (15 usable keyless), 8 write tools requiring a key. (The 0.2.11 entry said 22 total with 6 write tools - the write-tool count was wrong at publication: it was 8.)",
+        "capture_lead now performs a real durable write to the leads store; the lead_id is the actual inserted row id, deduplicated on (smb_id, phone-or-email), and a duplicate replay is free."
+      ],
+      "fixed": [
+        "Sanctions list refresh: the EU/UK daily refresh had been failing on a too-short download timeout; lists refresh daily again and every screen names the age of the copy it used.",
+        "A CLEAN sanctions result now says it matched on exact name-tokens only; a HIT discloses further candidates and calls itself a floor on exposure, not a complete picture.",
+        "Health no longer reports a permanent failure for a payment probe (Paddle) that was never wired; it has been removed."
+      ]
+    },
+    {
       "version": "0.2.11",
       "date": "2026-09-01",
       "headline": "Tool #22: look up US federal contract history for any company, free.",

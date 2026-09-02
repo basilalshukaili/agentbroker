@@ -139,8 +139,18 @@ def health_check() -> dict:
         checks["compliance"] = f"error: {type(exc).__name__}"
 
     broken = [k for k, v in checks.items() if v != "ok"]
+    # version: so a post-deploy smoke can PROVE the new build is serving.
+    # Render reports a deploy "live" ~45s before the new code answers, and the
+    # old smoke checks (200 on /health, find_business in tools/list) pass
+    # identically on the OLD build - a deploy that never flipped read green.
+    # Compare this field to the pushed SERVICE_VERSION and the gap is visible.
+    try:
+        from config import SERVICE_VERSION as _sv
+    except Exception:                           # noqa: BLE001
+        _sv = "unknown"
     return {
         "status": "healthy" if not broken else "unhealthy",
+        "version": _sv,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "checks": checks,
         # Present for a reader, never for the restart decision - see above.

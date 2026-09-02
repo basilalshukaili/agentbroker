@@ -371,6 +371,30 @@ async def handle_map_trade_restriction(
     hs_code_clean = hs_code.strip() if hs_code else None
     parties_list: list[str] = [p for p in (parties or []) if p and str(p).strip()]
 
+    # Bound the fan-out. Each party runs a full concurrent sanctions screen
+    # (network + a CPU-heavy CSV scan), and this tool is free and keyless -
+    # an uncapped list was the cheapest way for one request to occupy the
+    # single worker for minutes. Refusing honestly beats truncating silently:
+    # a truncated screen would read as "screened" for parties never checked.
+    _MAX_PARTIES = 20
+    if len(parties_list) > _MAX_PARTIES:
+        return OutcomeReceipt(
+            operation_id=op_id,
+            status=OperationStatus.FAILURE,
+            reason_code="bad_input",
+            human_message=(
+                f"{len(parties_list)} parties were given; this tool screens at "
+                f"most {_MAX_PARTIES} per call so one request cannot occupy the "
+                f"service. Split the list across calls - each call screens "
+                f"every party it is given, completely. Nothing was screened on "
+                f"this call and nothing was charged."
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        )
+
     # --- 1. Destination risk assessment (hardcoded, no network) -------------
     (
         dest_restricted,

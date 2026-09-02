@@ -8,7 +8,10 @@ preview_cost, or the edge TypeScript -- import from here instead.
 Design decisions (locked 2026-08-24, from credits-billing-spec.md):
 - Variable-price ops: reserve MAX, settle ACTUAL from receipt.cost.amount.
 - import_booking_url = 0cr (adoption wedge -- agents import freely, pay for action).
-- call_business = 0cr until voice is provisioned (parity with x402_gate).
+- call_business = 20cr since Vapi went live (2026-08-26; a deliberate subsidy
+  below the ~$0.30 vendor cost -- see the table comment below). An earlier
+  version of this line said "0cr until voice is provisioned" long after voice
+  was provisioned, which is exactly the drift this file exists to prevent.
 - Reads and probes are always free; gating them would break catalog scorers.
 """
 from __future__ import annotations
@@ -109,8 +112,13 @@ def price_usd_str(op: str) -> str:
 
 def price_atomic(op: str) -> int:
     """Return the price in USDC atomic units (6 decimals; 1 cent = 10000 atomic).
-    Matches the edge x402.ts PRICING_ATOMIC values for every paid op.
-    Zero = free."""
+    Zero = free.
+
+    An earlier docstring claimed this "matches the edge x402.ts PRICING_ATOMIC
+    for every paid op" - it did not: edge/src/x402.ts has no entries for the
+    three paid data tools, so isPricedTool() is false for them at the edge.
+    The edge x402 gate is meant to stay OFF (see the dual-gate warning in
+    billing/x402_gate.py); do not treat the two tables as in sync."""
     return price_cents(op) * 10_000
 
 

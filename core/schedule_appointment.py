@@ -445,7 +445,26 @@ async def handle_schedule_appointment(
     get_outcome_store().set_pending(operation_id, "schedule_appointment")
 
     estimated = datetime.now(timezone.utc) + timedelta(seconds=90)
-    _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id)
+    if not _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id):
+        # The broker is configured but the enqueue itself failed (broker down,
+        # import error). Without this check the caller got PENDING_ASYNC with a
+        # quoted cost and a 90s estimate for a job that no worker will ever
+        # pick up - a booking that wedges in "pending" for the life of the
+        # process, silently. Same honest shape as the no-worker branch above.
+        return _store_terminal(OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="async_channel_not_provisioned",
+            human_message=(
+                f"The booking job for {smb.name} could not be handed to the "
+                "background worker (queue unavailable). Nothing was booked and "
+                "nothing was charged. Retry in a moment."
+            ),
+            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=True,
+            trace_id=trace_id,
+        ))
 
     channel_chain = ["direct_api:calcom (unavailable)"] if "direct_api:calcom" not in smb.channels_available else []
 
@@ -468,19 +487,23 @@ async def handle_schedule_appointment(
     )
 
 
-def _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id):
+def _enqueue_async_booking(operation_id, request, smb, agent_id, trace_id) -> bool:
     """
     Enqueue a Celery task for async booking execution.
-    The caller already wrote a 'pending' record to outcome_store, so even if
-    Celery is unavailable the operation_id remains queryable via get_status.
+    Returns True only when the task was actually handed to the broker. The
+    caller MUST turn False into an honest failure receipt: a swallowed enqueue
+    error here used to leave the operation pending forever while the caller
+    held a receipt quoting a cost and a completion estimate.
     """
     try:
         from reliability.async_runner import enqueue_booking  # type: ignore
         enqueue_booking.delay(operation_id, request.model_dump(), smb.smb_id, agent_id, trace_id)
-    except Exception:
-        # Celery not available — pending record is already in the store from
-        # the handler; nothing further to do here.
-        pass
+        return True
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("smb_broker.schedule_appointment").error(
+            "async booking enqueue failed op=%s err=%s", operation_id, exc)
+        return False
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -12,17 +12,17 @@ minimum. Credits do not expire.
 
 ## What is free
 
-**8 utility tools — free, no key, unmetered.**
+**12 utility tools — free, no key, unmetered.**
 
 `find_business`, `verify_business`, `check_booking_link`, `check_compliance`,
-`preview_cost`, `get_status`, `get_outcome`, `self_test`
+`preview_cost`, `get_status`, `get_outcome`, `self_test`, `get_conversation`,
+`check_quota`, `mint_key`, `lookup_us_contracts`
 
 An agent can discover businesses, pre-check a booking link, preview what an
-action would cost, and read the outcome of its own operations without ever
-authenticating or spending anything.
-
-`get_conversation` is also free — it just needs your key, because it returns
-only the threads you started.
+action would cost, check its quota, and read the outcome of its own operations
+without ever authenticating or spending anything. (`get_conversation` returns
+only threads tied to the identity that started them, so anonymous callers see
+nothing — but the call itself needs no key and costs nothing.)
 
 ## Premium data tools — free up to a daily quota
 
@@ -47,7 +47,13 @@ The 8 write tools perform real outbound actions, so they require an
 |---|---|---|
 | Free email-verified key | $0 | 100 write ops/day |
 | Credits | see packages | no daily cap |
-| Crypto | not offered - built and proven in testing, currently disabled |  |
+| x402 (USDC on Base) | per call, same prices as credits | no signup, no daily cap |
+
+The x402 rail has been live since 2026-08-29: attach a signed payment in
+`params._meta["x402/payment"]` on a `tools/call` and the call is served with
+no key and no account — the server answers an unpaid attempt with a priced
+offer first. It is the one payment path an autonomous agent can complete
+without a human.
 
 Get a free key at <https://hatchloop.dev/agent-broker>.
 
@@ -76,7 +82,7 @@ figure before committing.
 | `schedule_appointment` | 15 (up to 50) | $0.15 – $0.50 |
 | `escalate_to_human` | 20 | $0.20 |
 | `import_booking_url` | 0 | free — adoption wedge |
-| `call_business` | 0 | free until voice billing is enabled |
+| `call_business` | 20 | $0.20 — deliberately below our ~$0.30 vendor cost while we build trust |
 
 WhatsApp sends currently cost us nothing, so they cost you nothing.
 

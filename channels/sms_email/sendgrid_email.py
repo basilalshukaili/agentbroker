@@ -53,6 +53,7 @@ class SendGridEmailAdapter(ChannelAdapter):
             )
 
         try:
+            import asyncio as _asyncio
             import sendgrid  # type: ignore
             from sendgrid.helpers.mail import Mail  # type: ignore
             sg = sendgrid.SendGridAPIClient(api_key=self._api_key)
@@ -62,7 +63,13 @@ class SendGridEmailAdapter(ChannelAdapter):
                 subject=request.subject or "Message from your service provider",
                 plain_text_content=body,
             )
-            response = sg.send(message)
+            # The SendGrid SDK is SYNCHRONOUS (urllib) with no timeout knob.
+            # Called inline it blocked the single worker's event loop for the
+            # whole round trip - indefinitely on a stall. to_thread keeps the
+            # loop free; wait_for bounds how long the caller waits (the receipt
+            # then reports an honest upstream_failure instead of hanging).
+            response = await _asyncio.wait_for(
+                _asyncio.to_thread(sg.send, message), timeout=15.0)
             success = response.status_code in (200, 202)
             return ChannelResponse(
                 success=success,

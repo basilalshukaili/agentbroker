@@ -348,6 +348,11 @@ async def run_metered_tool(
 
     # --- Step 3: Commit or release based on success ---
     is_error = _receipt_is_error(receipt)
+    # What the ledger actually did with the hold on the success path:
+    # "committed" | "released" (commit failed, refund confirmed) | "unknown"
+    # (commit AND release both failed). Set before the branch so the note
+    # builder below can never hit an unbound name.
+    _charge_state = "committed"
 
     if is_error:
         # Tool failed -- release hold, no charge
@@ -394,6 +399,7 @@ async def run_metered_tool(
             except Exception:  # noqa: BLE001 - measurement must not break billing
                 pass
 
+        _charge_state = "committed"
         try:
             commit_result = await commit(hold_id, actual_cents)
             # None, not 0. A missing key means the ledger did not tell us the
@@ -403,9 +409,10 @@ async def run_metered_tool(
             log.error("credits commit failed hold=%s err=%s", hold_id, exc)
             # Could not confirm -- attempt release to avoid permanent hold
             try:
-                await release(hold_id, reason="commit_failed")
+                rel = await release(hold_id, reason="commit_failed")
+                _charge_state = "released" if rel.get("ok") else "unknown"
             except Exception:
-                pass
+                _charge_state = "unknown"
             # WAS `balance_after = 0`, AND THAT NUMBER REACHED THE CUSTOMER
             # TWICE. It went onto the receipt, so someone holding 50,000
             # credits was told their balance was zero; and it fell through the
@@ -415,7 +422,13 @@ async def run_metered_tool(
             #
             # Unknown is a value. It is the honest one here.
             balance_after = None
-        actual_charged = actual_cents
+        # `charged` must describe what the LEDGER did, not what we intended.
+        # When the commit failed and the release succeeded, the customer paid
+        # nothing - reporting actual_cents here told them they were charged
+        # for a call the ledger refunded. When the release ALSO failed the
+        # truth is unknown; claim the intended charge (the pessimistic figure)
+        # and say so in the note rather than inventing a zero.
+        actual_charged = 0 if _charge_state == "released" else actual_cents
 
     # --- Step 4: Attach credits info to receipt ---
     if isinstance(receipt, dict):
@@ -425,10 +438,24 @@ async def run_metered_tool(
             "balance": balance_after,
         }
         if balance_after is None:
+            # Say what actually happened to the money, not a one-size claim.
+            # This note used to assert "the charge was applied" even on paths
+            # where the hold had just been refunded (commit failed, release
+            # succeeded) or nothing was ever charged (tool failed, release
+            # errored while reading the balance back).
+            if not is_error and _charge_state == "unknown":
+                _note_lead = (
+                    "The ledger could not confirm whether this charge settled - "
+                    "`charged` shows the intended amount as the pessimistic "
+                    "figure.")
+            elif actual_charged == 0:
+                _note_lead = "No charge was applied on this call."
+            else:
+                _note_lead = "The charge was applied."
             receipt["credits"]["balance_note"] = (
-                "Your balance could not be confirmed on this call - the charge "
-                "was applied but the ledger did not return a balance. This is "
-                "NOT a balance of zero. Check the portal for the real figure.")
+                f"{_note_lead} Your balance could not be read on this call - "
+                "this is NOT a balance of zero. Check the portal for the real "
+                "figure.")
 
     # --- Step 5: Fire low-balance nudge (slice 6) ---
     # Non-blocking; never raises. Dedup enforced by low_balance_notified_at (24h).
