@@ -2018,6 +2018,32 @@ async def handle_screen_sanctions(
             + (f", program={top['program']}" if top.get("program") else "")
             + f"). Screened {len(screened_lists)} source(s). "
             "Verify against the official source before acting."
+            # A HIT THAT NAMES ONE LIST UNDERSTATES THE EXPOSURE.
+            #
+            # Found by an independent external review (2026-09-02) and it is the
+            # more dangerous direction of error. Screening "Vladimir Putin"
+            # returns matched=true on the UK list and says nothing here about
+            # four candidates — including OFAC's "PUTIN, Vladimir Vladimirovich"
+            # at score 1.0. Our exact-token-set rule demoted the OFAC and EU
+            # listings to "candidate" purely because their stored form carries
+            # the patronymic, so WHICH list happens to store the bare two-token
+            # form decides what the sentence reports. A reader skimming this
+            # line would conclude "UK only" about a party listed on three.
+            #
+            # The structured payload separates confirmed from candidate clearly,
+            # but the sentence a human actually reads did not — and the
+            # exact-spelling caveat added earlier appeared only on a CLEAN
+            # result, which is exactly backwards: the near-miss warning matters
+            # MOST on the result where near-misses were demoted.
+            + ("" if not unverified else
+               f" IMPORTANT: {len(unverified)} further name-similarity "
+               f"candidate(s) were found on the screened lists and are NOT "
+               f"included above — see possible_matches_unverified. Our matcher "
+               f"asserts a match only on exact name-token equality, so the SAME "
+               f"party listed under a fuller or different spelling (a "
+               f"patronymic, a middle name, a transliteration) appears there "
+               f"rather than here. Treat this result as a FLOOR on exposure, "
+               f"not a complete picture.")
         )
         reason_code = "matched"
     elif not screened_ok:
