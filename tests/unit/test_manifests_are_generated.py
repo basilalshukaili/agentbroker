@@ -67,18 +67,26 @@ def test_every_generated_file_matches_the_registry(cfg):
         "run: python scripts/gen_manifests.py --write\n  " + "\n  ".join(drifted))
 
 
-def test_one_version_across_every_manifest(cfg):
-    """The exact drift that started this: 0.2.12, 0.2.10 and 0.1.0 at once."""
+@pytest.mark.parametrize("parent_published", [True, False])
+def test_each_door_uses_its_own_products_version(cfg, parent_published):
+    """A product may publish in other catalogues while its registry doors remain."""
+    from copy import deepcopy
+
+    cfg = deepcopy(cfg)
+    products = {s["slug"]: s for s in cfg["servers"] if s["kind"] == "product"}
+    products["agent-broker"]["publish"]["registry"] = parent_published
+    assert gm.validate(cfg) == []
     versions = {}
     for s in cfg["servers"]:
         if not s.get("live", True) or not (s.get("publish") or {}).get("registry"):
             continue
-        path = (os.path.join(AB, "server.json") if s["kind"] == "product"
-                else os.path.join(AB, "registry", s["slug"], "server.json"))
+        path = os.path.join(gm.manifest_directory(s), "server.json")
         versions[s["slug"]] = json.load(open(path, encoding="utf-8"))["version"]
     # Doors are views of one product built from one deployment, so they cannot
     # honestly carry different versions from it.
-    assert len(set(versions.values())) == 1, versions
+    for s in cfg["servers"]:
+        if s.get("kind") == "door" and s["slug"] in versions:
+            assert versions[s["slug"]] == str(products[s["of"]]["version"]), versions
 
 
 def test_a_door_never_advertises_the_products_url(cfg):
@@ -159,6 +167,48 @@ def test_a_server_marked_not_live_is_never_published(cfg):
     assert not_live, "the fixture for this test needs a not-live server"
     for slug in not_live:
         assert slug not in written, f"{slug} is not live but appears in a manifest"
+
+
+@pytest.mark.parametrize("new_first", [False, True])
+def test_second_product_keeps_every_existing_manifest(cfg, new_first):
+    """Adding a independently versioned product used to replace the root files."""
+    from copy import deepcopy
+
+    original = gm.targets(cfg)
+    expanded = deepcopy(cfg)
+    product = _server(slug="second-product", prefix="second_", version="1.2.3",
+                      docs="https://hatchloop.dev/second-product/",
+                      publish={"registry": True, "glama": True, "smithery": True})
+    expanded["servers"].insert(0 if new_first else len(expanded["servers"]), product)
+    assert gm.validate(expanded) == []
+    generated = gm.targets(expanded)
+
+    for path, content in original.items():
+        if os.path.basename(path) != "mcp_endpoints.json":
+            assert generated[path] == content, path
+    directory = os.path.join(AB, "registry", "second-product")
+    server = json.loads(generated[os.path.join(directory, "server.json")])
+    assert server["name"] == "dev.hatchloop/second-product"
+    assert server["version"] == "1.2.3"
+    assert server["remotes"][0]["url"].endswith("/mcp/second-product")
+    glama = json.loads(generated[os.path.join(directory, "glama.json")])
+    assert glama["name"] == "second-product"
+    assert glama["remotes"][0]["url"].endswith("/mcp/second-product")
+    assert "/mcp/second-product" in generated[os.path.join(directory, "smithery.yaml")]
+    assert len(generated) == len(original) + 3
+
+
+def test_a_door_publishing_to_more_catalogues_cannot_replace_its_product(cfg):
+    from copy import deepcopy
+
+    expanded = deepcopy(cfg)
+    door = next(s for s in expanded["servers"] if s["slug"] == "sanctions-screening")
+    door["publish"].update(glama=True, smithery=True)
+    generated = gm.targets(expanded)
+    original = gm.targets(cfg)
+    for filename in ("server.json", "glama.json", "smithery.yaml"):
+        assert generated[os.path.join(AB, filename)] == original[os.path.join(AB, filename)]
+        assert os.path.join(AB, "registry", "sanctions-screening", filename) in generated
 
 
 # ---------------------------------------------------------------------------

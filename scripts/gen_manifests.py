@@ -333,6 +333,17 @@ def probe(cfg: dict, timeout: int = 20) -> int:
     return 0
 
 
+def manifest_directory(server: dict) -> str:
+    """Keep AgentBroker's published root paths; namespace every other server.
+
+    Choosing the root by kind=product silently replaced all three of the first
+    product's manifests when a second product enabled publishing.
+    """
+    if server["slug"] == "agent-broker":
+        return AB
+    return os.path.join(AB, "registry", server["slug"])
+
+
 def targets(cfg: dict) -> dict[str, str]:
     defaults = cfg["defaults"]
     servers = [s for s in cfg["servers"]]
@@ -341,10 +352,7 @@ def targets(cfg: dict) -> dict[str, str]:
     for s in servers:
         if not s.get("live", True) or not (s.get("publish") or {}).get("registry"):
             continue
-        if s["kind"] == "product":
-            path = os.path.join(AB, "server.json")
-        else:
-            path = os.path.join(AB, "registry", s["slug"], "server.json")
+        path = os.path.join(manifest_directory(s), "server.json")
         files[path] = json.dumps(server_json(defaults, s), indent=2) + "\n"
 
     for s in servers:
@@ -352,10 +360,10 @@ def targets(cfg: dict) -> dict[str, str]:
             continue
         pub = s.get("publish") or {}
         if pub.get("glama"):
-            files[os.path.join(AB, "glama.json")] = (
+            files[os.path.join(manifest_directory(s), "glama.json")] = (
                 json.dumps(glama_json(defaults, s), indent=2) + "\n")
         if pub.get("smithery"):
-            files[os.path.join(AB, "smithery.yaml")] = smithery_yaml(defaults, s)
+            files[os.path.join(manifest_directory(s), "smithery.yaml")] = smithery_yaml(defaults, s)
 
     files[os.path.join(AB, "state", "mcp_endpoints.json")] = (
         json.dumps(probe_list(defaults, servers), indent=1) + "\n")
