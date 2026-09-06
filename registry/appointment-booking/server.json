@@ -8,7 +8,7 @@
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.2.10",
+  "version": "0.2.12",
   "remotes": [
     {
       "type": "streamable-http",

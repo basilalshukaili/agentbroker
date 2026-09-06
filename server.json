@@ -12,7 +12,15 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://hatchloop.dev/mcp/agent-broker"
+      "url": "https://hatchloop.dev/mcp/agent-broker",
+      "headers": [
+        {
+          "name": "X-Agent-Identity",
+          "description": "Agent identity key. Free tier needs no key.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
     }
   ]
 }

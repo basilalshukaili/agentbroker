@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.hatchloop/compliance-check",
   "title": "Compliance Check",
-  "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening before you act. Free, no key.",
+  "description": "Preview a TCPA/GDPR/CASL/10DLC gate result before spending a paid send. Free.",
   "websiteUrl": "https://hatchloop.dev/agent-broker/",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.2.12",
   "remotes": [
     {
       "type": "streamable-http",

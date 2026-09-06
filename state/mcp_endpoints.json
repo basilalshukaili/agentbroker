@@ -1,0 +1,47 @@
+{
+ "generated_from": "agentbroker/registry/servers.yaml",
+ "endpoints": [
+  {
+   "slug": "agent-broker",
+   "kind": "product",
+   "canonical": "https://hatchloop.dev/mcp/agent-broker",
+   "alias": "https://api.hatchloop.dev/mcp",
+   "expect_tools": 23
+  },
+  {
+   "slug": "sanctions-screening",
+   "kind": "door",
+   "canonical": "https://hatchloop.dev/mcp/sanctions-screening",
+   "alias": "https://api.hatchloop.dev/mcp/sanctions-screening",
+   "expect_tools": 4
+  },
+  {
+   "slug": "company-verification",
+   "kind": "door",
+   "canonical": "https://hatchloop.dev/mcp/company-verification",
+   "alias": "https://api.hatchloop.dev/mcp/company-verification",
+   "expect_tools": 3
+  },
+  {
+   "slug": "compliance-check",
+   "kind": "door",
+   "canonical": "https://hatchloop.dev/mcp/compliance-check",
+   "alias": "https://api.hatchloop.dev/mcp/compliance-check",
+   "expect_tools": 4
+  },
+  {
+   "slug": "sms-whatsapp-messaging",
+   "kind": "door",
+   "canonical": "https://hatchloop.dev/mcp/sms-whatsapp-messaging",
+   "alias": "https://api.hatchloop.dev/mcp/sms-whatsapp-messaging",
+   "expect_tools": 6
+  },
+  {
+   "slug": "appointment-booking",
+   "kind": "door",
+   "canonical": "https://hatchloop.dev/mcp/appointment-booking",
+   "alias": "https://api.hatchloop.dev/mcp/appointment-booking",
+   "expect_tools": 5
+  }
+ ]
+}

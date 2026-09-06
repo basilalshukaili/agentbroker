@@ -204,6 +204,24 @@ jobs:
       - name: Tool catalogue is derived, not hand-maintained
         run: python scripts/gen_mcp_tools.py --check
 
+      # THE SAME LESSON, ONE LEVEL UP: the manifests that tell the outside world
+      # where to reach us were maintained by hand across six files, and on
+      # 2026-09-06 they disagreed. server.json said 0.2.12, three door manifests
+      # said 0.1.0, two said 0.2.10, and smithery.yaml named a different host
+      # from the other five. Every one of them worked, so nobody looked - until
+      # a Cloudflare worker was deleted, every hatchloop.dev/mcp/* route 404'd,
+      # and two of the three catalogue listings were advertising a dead address
+      # while the site root kept answering 200. Drift is not untidiness; it is
+      # what makes an outage invisible.
+      #
+      # registry/servers.yaml is now the only place a server is described, and
+      # these two steps are what make that true rather than aspirational.
+      - name: Registry reader still reads correctly
+        run: python scripts/miniyaml.py
+
+      - name: Manifests are derived from registry/servers.yaml
+        run: python scripts/gen_manifests.py --check
+
       # The MCP registry rejects a description over 100 characters with a 422.
       # I found that out from a red publish job, after the commit was pushed
       # and deployed - every local gate passed because none of them knew the
@@ -247,6 +265,16 @@ jobs:
           done
           echo "Health check did not pass - verify the Render dashboard."
           exit 0
+
+      # EVERY ADDRESS WE PUBLISH, NOT ONE OF THEM. The step below checks a
+      # single endpoint, and on 2026-09-06 that was the shape of the blindness:
+      # the deleted worker took out all six MCP routes while the checks we had
+      # kept reporting green from somewhere else. This calls every canonical and
+      # alias URL in registry/servers.yaml and fails the line if the wrong
+      # server answers, not merely if nothing does.
+      - name: Every advertised endpoint answers as itself
+        continue-on-error: true
+        run: python scripts/gen_manifests.py --probe
 
       - name: Production MCP tools/list
         continue-on-error: true

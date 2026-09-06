@@ -41,6 +41,6 @@
     "type": "optional",
     "header": "X-Agent-Identity",
     "scheme": "bearer",
-    "note": "15 of the 23 tools require no auth (12 always-free + 3 free within a daily quota). Write ops require X-Agent-Identity bearer token (free email-verified key for 100 ops/day, or buy credits at https://hatchloop.dev/pricing)."
+    "note": "15 of the 23 tools require no auth (12 always-free + 3 free within a daily quota). Write ops require an X-Agent-Identity bearer token: a free email-verified key gives 100 ops/day, or buy credits at https://hatchloop.dev/pricing"
   }
 }

@@ -1,0 +1,176 @@
+# Every MCP server HatchLoop runs. THIS FILE IS THE ONLY PLACE THEY ARE DEFINED.
+#
+# WHY IT EXISTS. Before this file, the same servers were described in six hand-kept
+# manifests, and on 2026-09-06 they disagreed: server.json said 0.2.12, three door
+# manifests said 0.1.0, two said 0.2.10, and smithery.yaml pointed at a different
+# host from the other five. Both worked, so nobody noticed - until a Cloudflare
+# worker was deleted, every hatchloop.dev/mcp/* route went to 404, and two of the
+# three catalogue listings were advertising a dead URL while the site root kept
+# answering 200. Drift is not untidiness; it is what makes an outage invisible.
+#
+# scripts/gen_manifests.py turns this into server.json, each door's server.json,
+# smithery.yaml, glama.json and the endpoint probe list. Nothing downstream is
+# edited by hand, and CI fails if a generated file differs from what is committed.
+#
+# ADDING A SERVER IS ADDING AN ENTRY HERE. That is the whole point: the founder
+# asked for HatchLoop to "scale multiple mcps", and the thing that does not scale
+# is a human remembering six files.
+#
+# THE TWO IMMUTABLE FIELDS are `slug` and `prefix`. The slug is the registry name
+# and the URL; the prefix is what every tool is called. Both are public the moment
+# they are published and changing either breaks whoever installed us.
+
+version: 1
+
+defaults:
+  namespace: dev.hatchloop
+  canonical_host: https://hatchloop.dev
+  # A permanent second address on the origin itself. The canonical host runs
+  # through Vercel; this one does not, so a listing always has somewhere to point
+  # that cannot be taken down by a rewrite or a deleted worker.
+  #
+  # THE TWO HOSTS ARE NOT SYMMETRIC, and assuming they were nearly cost us the
+  # Smithery listing on the first run of the generator. `hatchloop.dev/mcp/
+  # agent-broker` is a Vercel REWRITE onto the origin's `/mcp`; the origin itself
+  # knew only `/mcp` and its five named doors, so `api.hatchloop.dev/mcp/
+  # agent-broker` answered 404 while the canonical URL answered 200. A server
+  # whose alias path differs states it in `alias_path`. Measured by
+  # `gen_manifests.py --probe`, never assumed.
+  alias_host: https://api.hatchloop.dev
+  repository: https://github.com/basilalshukaili/agentbroker
+  smithery_namespace: lordbasil147
+  transport: streamable-http
+
+servers:
+  # ---------------------------------------------------------------- products
+  - slug: agent-broker
+    kind: product
+    title: Agent Broker
+    # <= 100 characters: the registry schema rejects longer, and it is CC0 the
+    # moment it is published.
+    description: "23 MCP tools: compliance, verification, messaging, booking, US contracts. 15 need no key."
+    prefix: broker_
+    version: 0.2.12
+    tool_count: 23
+    docs: https://hatchloop.dev/agent-broker/
+    auth_header: X-Agent-Identity
+    auth_required: false
+    # The origin's own name for the full server. See the note on alias_host.
+    alias_path: /mcp
+    publish:
+      registry: true
+      smithery: true
+      glama: true
+    # Glama shows a catalogue page rather than a search result and has no
+    # 100-character limit, so it gets the long form. It lives HERE rather than
+    # in glama.json so a description is still edited in exactly one place.
+    long_description: >
+      23 MCP tools to find, verify, message, book, and transact at small
+      businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification,
+      TCPA/GDPR/CASL compliance, live sanctions screening, cross-border
+      trade-restriction mapping. 15 of the 23 tools are usable with no key
+      (12 always-free + 3 free within a daily quota).
+    license: MIT
+    auth_note: >
+      15 of the 23 tools require no auth (12 always-free + 3 free within a daily
+      quota). Write ops require an X-Agent-Identity bearer token: a free
+      email-verified key gives 100 ops/day, or buy credits at
+      https://hatchloop.dev/pricing
+    tags:
+      - mcp
+      - mcp-server
+      - model-context-protocol
+      - smb
+      - business-automation
+      - scheduling
+      - booking
+      - compliance
+      - tcpa
+      - gdpr
+      - gleif
+      - sec
+      - cal-com
+      - calendly
+      - sanctions-screening
+      - verification
+      - hatchloop
+      - ai-agents
+      - whatsapp
+
+  # ------------------------------------------------------------------- doors
+  # A door is a NARROW VIEW of a product, not a product. It exists because the
+  # official registry matches server NAMES and not descriptions: searched for
+  # "sanctions" or "booking" we did not appear at all. Doors share the product's
+  # engine, identity and ledger; they are never separately billed and they never
+  # get their own tools.
+  - slug: sanctions-screening
+    kind: door
+    of: agent-broker
+    title: Sanctions Screening
+    description: "Screen a name or entity against OFAC SDN, the EU Consolidated list and the UK list."
+    prefix: broker_
+    version: 0.2.12
+    tool_count: 4
+    docs: https://hatchloop.dev/agent-broker/
+    publish: {registry: true, smithery: false, glama: false}
+
+  - slug: company-verification
+    kind: door
+    of: agent-broker
+    title: Verify a Company
+    description: "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free."
+    prefix: broker_
+    version: 0.2.12
+    tool_count: 3
+    docs: https://hatchloop.dev/agent-broker/
+    publish: {registry: true, smithery: false, glama: false}
+
+  - slug: compliance-check
+    kind: door
+    of: agent-broker
+    title: Compliance Check
+    description: "Preview a TCPA/GDPR/CASL/10DLC gate result before spending a paid send. Free."
+    prefix: broker_
+    version: 0.2.12
+    tool_count: 4
+    docs: https://hatchloop.dev/agent-broker/
+    publish: {registry: true, smithery: false, glama: false}
+
+  - slug: sms-whatsapp-messaging
+    kind: door
+    of: agent-broker
+    title: SMS and WhatsApp Messaging
+    description: "Send WhatsApp, SMS, email or voice to a business with the compliance gate enforced."
+    prefix: broker_
+    version: 0.2.12
+    tool_count: 6
+    docs: https://hatchloop.dev/agent-broker/
+    publish: {registry: true, smithery: false, glama: false}
+
+  - slug: appointment-booking
+    kind: door
+    of: agent-broker
+    title: Appointment Booking
+    description: "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms."
+    prefix: broker_
+    version: 0.2.12
+    tool_count: 5
+    docs: https://hatchloop.dev/agent-broker/
+    publish: {registry: true, smithery: false, glama: false}
+
+  # -------------------------------------------------------------- not yet live
+  # Present so the generator, the probe and the budget test all know about it
+  # before it ships. `live: false` keeps it out of every published manifest, so
+  # nothing can advertise an endpoint that does not answer.
+  - slug: grocery-cart
+    kind: product
+    live: false
+    title: Grocery Cart
+    description: "Turn a list or a recipe into a priced basket in your own Kroger cart. Checkout on Kroger."
+    prefix: grocery_
+    version: 0.1.0
+    tool_count: 7
+    docs: https://hatchloop.dev/grocery-cart/
+    auth_header: X-Agent-Identity
+    auth_required: false
+    publish: {registry: false, smithery: false, glama: false}
