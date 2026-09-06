@@ -266,8 +266,16 @@ def probe(cfg: dict, timeout: int = 20) -> int:
                     url, data=rpc_body("tools/list"), headers=headers),
                     timeout=timeout).read(200000).decode("utf-8", "replace")
                 seg2 = raw2[raw2.index("data:") + 5:] if "data:" in raw2 else raw2
-                tools = [t.get("name") for t in
-                         json.loads(seg2.strip()).get("result", {}).get("tools", [])]
+                packet = json.loads(seg2.strip())
+                result = packet.get("result")
+                if "error" in packet or not isinstance(result, dict):
+                    raise ValueError("tools/list did not return a result")
+                descriptors = result.get("tools")
+                if not isinstance(descriptors, list):
+                    raise ValueError("tools/list did not return a tool array")
+                tools = [t["name"] for t in descriptors]
+                if any(not isinstance(name, str) or not name for name in tools):
+                    raise ValueError("tools/list returned an invalid tool name")
             except Exception:                        # noqa: BLE001
                 tools = None
             return slug, which, url, r.status, name, tools
@@ -303,7 +311,7 @@ def probe(cfg: dict, timeout: int = 20) -> int:
         # checked is a tidier place to be wrong.
         if tools is None and code == 200:
             problems.append("tools/list did not answer")
-        elif tools:
+        elif tools is not None:
             want = entry.get("tool_count")
             if want is not None and len(tools) != want:
                 problems.append(f"serves {len(tools)} tools, servers.yaml says {want}")

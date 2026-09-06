@@ -211,6 +211,43 @@ def test_a_door_publishing_to_more_catalogues_cannot_replace_its_product(cfg):
         assert os.path.join(AB, "registry", "sanctions-screening", filename) in generated
 
 
+@pytest.mark.parametrize("payload,tool_count,expected", [
+    ({"result": {"tools": []}}, 23, 1),
+    ({"error": {"code": -32603, "message": "tool registry unavailable"}}, 23, 1),
+    ({}, 23, 1),
+    ({"error": {"code": -32603, "message": "unavailable"}}, 0, 1),
+    ({}, None, 1),
+    ({"result": {"tools": [{"name": None}]}}, 1, 1),
+    ({"result": {"tools": []}}, 0, 0),
+    ({"result": {"tools": [{"name": f"tool_{i}"} for i in range(23)]}}, 23, 0),
+])
+def test_endpoint_probe_validates_the_tool_response(cfg, monkeypatch, payload, tool_count, expected):
+    """HTTP 200 and a correct initialize cannot hide a missing tool registry."""
+    import urllib.request
+
+    product = dict(next(s for s in cfg["servers"] if s["slug"] == "agent-broker"),
+                   tool_count=tool_count)
+
+    class Response:
+        status = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        def read(self, limit):
+            return json.dumps(self.body).encode("utf-8")[:limit]
+
+    def respond(request, timeout):
+        method = json.loads(request.data)["method"]
+        if method == "initialize":
+            return Response({"result": {"serverInfo": {"name": "agent-broker"}}})
+        assert method == "tools/list"
+        return Response(payload)
+
+    monkeypatch.setattr(urllib.request, "urlopen", respond)
+    assert gm.probe({"defaults": cfg["defaults"], "servers": [product]}) == expected
+
+
 # ---------------------------------------------------------------------------
 # Counts on public pages are derived, never typed.
 # ---------------------------------------------------------------------------
