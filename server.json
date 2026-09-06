@@ -16,7 +16,7 @@
       "headers": [
         {
           "name": "X-Agent-Identity",
-          "description": "Agent identity key. Free tier needs no key.",
+          "description": "Agent identity key. Free tier needs no key. Also accepted as 'Authorization: Bearer <key>' or 'X-Api-Key: <key>'.",
           "isRequired": false,
           "isSecret": true
         }

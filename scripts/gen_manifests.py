@@ -99,7 +99,13 @@ def server_json(defaults: dict, s: dict) -> dict:
     if s.get("auth_header"):
         doc["remotes"][0]["headers"] = [{
             "name": s["auth_header"],
-            "description": "Agent identity key. Free tier needs no key.",
+            # SAY THAT AUTHORIZATION WORKS TOO. Anthropic reviews any header
+            # name other than `authorization` and `x-api-key` before an admin
+            # can save a connector, so a manifest advertising only our custom
+            # name describes a paid tier that surface cannot reach.
+            "description": ("Agent identity key. Free tier needs no key. "
+                            "Also accepted as 'Authorization: Bearer <key>' "
+                            "or 'X-Api-Key: <key>'."),
             "isRequired": bool(s.get("auth_required", False)),
             "isSecret": True,
         }]

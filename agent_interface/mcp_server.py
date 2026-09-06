@@ -300,6 +300,35 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
         for k, v in dict(headers).items():
             norm_headers[k.lower()] = v
 
+    # ACCEPT THE HEADERS THE BIGGEST CLIENT CAN ACTUALLY SEND.
+    #
+    # We read exactly one credential header, `X-Agent-Identity`, and Anthropic's
+    # connector documentation says: "Standard header names such as
+    # `authorization` and `x-api-key` work for every connector; Anthropic
+    # reviews and approves any other header name before administrators can save
+    # the connector."
+    # (https://claude.com/docs/connectors/building/authentication)
+    #
+    # So on Claude's hosted surfaces - the largest place anyone would install us
+    # - a custom header cannot be entered without Anthropic's review. Our free
+    # tools worked, which is exactly why nobody noticed: every PAID tool was
+    # unreachable from that surface, and it looked like nobody wanted them.
+    #
+    # A fallback already existed here and only fed TELEMETRY. The logger saw the
+    # bearer token; the auth gate, ten call sites below, did not. So we recorded
+    # the identity of callers we then refused. Normalising once, here, fixes
+    # every one of those readers without touching them - which is the point of
+    # doing it at the door rather than at each gate.
+    #
+    # X-Agent-Identity stays first and stays supported: it is published in our
+    # manifests, our docs and every key we have ever emailed.
+    if not norm_headers.get("x-agent-identity"):
+        auth = str(norm_headers.get("authorization") or "")
+        if auth[:7].lower() == "bearer ":
+            norm_headers["x-agent-identity"] = auth[7:].strip()
+        elif norm_headers.get("x-api-key"):
+            norm_headers["x-agent-identity"] = str(norm_headers["x-api-key"]).strip()
+
     if not method:
         return JsonRpcResponse(
             id=rpc_id,
