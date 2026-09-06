@@ -37,7 +37,7 @@ The 8 write tools (send a message, book an appointment, etc.) need a free,
 email-verified key. Get one:
 
 ```bash
-curl -X POST https://hatchloop.dev/mcp/agent-broker/keys/request \
+curl -X POST https://hatchloop.dev/keys/request \
   -H "Content-Type: application/json" \
   -d '{"email": "you@example.com"}'
 ```
