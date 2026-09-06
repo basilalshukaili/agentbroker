@@ -138,7 +138,7 @@ servers:
     kind: door
     of: agent-broker
     title: Verify a Company
-    description: "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free."
+    description: "Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free data."
     prefix: ""
     legacy_unprefixed: true
     version: 0.2.12
@@ -153,7 +153,7 @@ servers:
     kind: door
     of: agent-broker
     title: Compliance Check
-    description: "Preview a TCPA/GDPR/CASL/10DLC gate result before spending a paid send. Free."
+    description: "Preview a TCPA/GDPR/CASL/10DLC gate result before spending a paid send. No key needed."
     prefix: ""
     legacy_unprefixed: true
     version: 0.2.12

@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "dev.hatchloop/company-verification",
   "title": "Verify a Company",
-  "description": "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free.",
+  "description": "Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free data.",
   "websiteUrl": "https://hatchloop.dev/agent-broker/",
   "repository": {
     "url": "https://github.com/basilalshukaili/agentbroker",

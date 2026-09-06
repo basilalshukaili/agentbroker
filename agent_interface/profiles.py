@@ -62,7 +62,7 @@ PROFILES: dict[str, dict] = {
         # commercial carve-out, unlike OFAC (public domain), the EU list (EC
         # open-data) and the UK list (OGL v3.0). We screen what we are licensed
         # to screen and say exactly that. See core/screen_sanctions.py.
-        "description": "Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup.",
+        "description": "Sanctions screening (OFAC, EU, UK) + company verification. No key; free within a daily quota.",
         "tools": (
             "screen_sanctions",
             "verify_company_record",
@@ -116,7 +116,7 @@ PROFILES: dict[str, dict] = {
     # FREE, read-only pre-flight — the door works standalone with no key.
     "compliance-check": {
         "title": "Compliance pre-flight for AI agents",
-        "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening before you act. Free, no key.",
+        "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening. No key; premium data quota-free.",
         "tools": (
             "check_compliance",
             "screen_sanctions",
@@ -128,7 +128,7 @@ PROFILES: dict[str, dict] = {
     # official-registry data (GLEIF LEI, SEC EDGAR) that is the moat. Free reads.
     "company-verification": {
         "title": "Verify a company",
-        "description": "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free.",
+        "description": "Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free premium data.",
         "tools": (
             "verify_company_record",
             "screen_sanctions",
