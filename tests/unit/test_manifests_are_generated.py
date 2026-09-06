@@ -200,3 +200,41 @@ def test_pages_render_no_unsubstituted_token():
         html = getattr(pages, name)()
         left = re.findall(r"\{n_[a-z_]+\}", html)
         assert not left, f"{name} rendered {left}"
+
+
+def test_only_the_known_six_are_unprefixed(cfg):
+    """A new server must namespace its tools. The six that already shipped cannot.
+
+    Agent Broker published 23 unprefixed tool names - find_business, send_message,
+    get_status - and tool names are as immutable as the slug: renaming them breaks
+    every agent that installed us. Those six declare `legacy_unprefixed: true`
+    rather than being quietly exempted, and this fails if a seventh appears, so
+    the exception has to be an argued decision instead of a default.
+
+    The registry's FIRST version claimed `prefix: broker_` on all six. Zero live
+    tools carry it. That is what a source of truth looks like when nothing checks
+    it against the running system.
+    """
+    legacy = {s["slug"] for s in cfg["servers"] if s.get("legacy_unprefixed")}
+    assert legacy == {"agent-broker", "sanctions-screening", "company-verification",
+                      "compliance-check", "sms-whatsapp-messaging",
+                      "appointment-booking"}, legacy
+    for s in cfg["servers"]:
+        if s["slug"] in legacy:
+            assert not s.get("prefix")
+        else:
+            assert str(s.get("prefix", "")).endswith("_"), s["slug"]
+
+
+def test_door_counts_include_the_orientation_tools(cfg):
+    """A door serves its capability tools PLUS the four orientation tools.
+
+    servers.yaml first recorded only the capability count, so every door claimed
+    four fewer tools than tools/list returns. The count published anywhere must be
+    what a caller actually sees.
+    """
+    for s in cfg["servers"]:
+        if s.get("kind") != "door" or not s.get("live", True):
+            continue
+        assert s.get("capability_tools"), f"{s['slug']} has no capability_tools"
+        assert s["tool_count"] == s["capability_tools"] + 4, s["slug"]

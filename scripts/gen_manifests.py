@@ -224,11 +224,13 @@ def probe(cfg: dict, timeout: int = 20) -> int:
     import urllib.error
     import urllib.request
 
-    body = json.dumps({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                   "clientInfo": {"name": "gen_manifests-probe", "version": "1"}},
-    }).encode()
+    def rpc_body(method, params=None):
+        return json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
+                           "params": params or {}}).encode()
+
+    body = rpc_body("initialize", {
+        "protocolVersion": "2025-06-18", "capabilities": {},
+        "clientInfo": {"name": "gen_manifests-probe", "version": "1"}})
     # A default urllib User-Agent is refused by some edges as a bot; see memory
     # `heartbeat-wedge-and-ops-gotchas`.
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -247,11 +249,26 @@ def probe(cfg: dict, timeout: int = 20) -> int:
                     "serverInfo", {}).get("name", "")
             except ValueError:
                 name = "(unparsed)"
-            return slug, which, url, r.status, name
+            # AND THE TOOLS, not only the handshake. The registry claimed
+            # `prefix: broker_` on six servers and door counts four short of
+            # reality; both survived because nothing compared the file to the
+            # running system. A single source of truth that is never checked is
+            # a tidier place to be wrong.
+            tools = []
+            try:
+                raw2 = urllib.request.urlopen(urllib.request.Request(
+                    url, data=rpc_body("tools/list"), headers=headers),
+                    timeout=timeout).read(200000).decode("utf-8", "replace")
+                seg2 = raw2[raw2.index("data:") + 5:] if "data:" in raw2 else raw2
+                tools = [t.get("name") for t in
+                         json.loads(seg2.strip()).get("result", {}).get("tools", [])]
+            except Exception:                        # noqa: BLE001
+                tools = None
+            return slug, which, url, r.status, name, tools
         except urllib.error.HTTPError as e:
-            return slug, which, url, e.code, ""
+            return slug, which, url, e.code, "", None
         except Exception as e:                       # noqa: BLE001 - report, never raise
-            return slug, which, url, f"ERR {type(e).__name__}", ""
+            return slug, which, url, f"ERR {type(e).__name__}", "", None
 
     defaults = cfg["defaults"]
     jobs = []
@@ -261,25 +278,52 @@ def probe(cfg: dict, timeout: int = 20) -> int:
         jobs.append((s["slug"], "canonical", canonical_url(defaults, s)))
         jobs.append((s["slug"], "alias", alias_url(defaults, s)))
 
+    by_slug = {s["slug"]: s for s in cfg["servers"]}
     bad = []
     with cf.ThreadPoolExecutor(8) as ex:
         results = list(ex.map(one, jobs))
-    print(f"{'server':24} {'which':10} {'code':>6}  answered as")
-    for slug, which, url, code, name in results:
-        ok = code == 200 and name == slug
-        if not ok:
-            bad.append((slug, which, url, code, name))
-        print(f"{slug:24} {which:10} {str(code):>6}  {name or '-':24} {url}")
+    print(f"{'server':24} {'which':10} {'code':>6}  {'answered as':24} tools")
+    for slug, which, url, code, name, tools in results:
+        entry = by_slug.get(slug, {})
+        problems = []
+        if code != 200:
+            problems.append(f"HTTP {code}")
+        elif name != slug:
+            problems.append(f"answered as {name!r}")
+        # AND THE TOOLS, not only the handshake. servers.yaml shipped claiming
+        # `prefix: broker_` on six servers that serve no prefixed tool at all,
+        # and door counts four short of reality, because nothing compared the
+        # file to the running system. A single source of truth that is never
+        # checked is a tidier place to be wrong.
+        if tools is None and code == 200:
+            problems.append("tools/list did not answer")
+        elif tools:
+            want = entry.get("tool_count")
+            if want is not None and len(tools) != want:
+                problems.append(f"serves {len(tools)} tools, servers.yaml says {want}")
+            pfx = entry.get("prefix") or ""
+            if pfx:
+                off = [t for t in tools if not str(t).startswith(pfx)]
+                if off:
+                    problems.append(f"{len(off)} tool(s) lack the declared prefix "
+                                    f"{pfx!r}, e.g. {off[0]!r}")
+            elif not entry.get("legacy_unprefixed"):
+                problems.append("no prefix declared and not marked legacy_unprefixed")
+        if problems:
+            bad.append((slug, which, url, "; ".join(problems)))
+        print(f"{slug:24} {which:10} {str(code):>6}  {name or '-':24} "
+              f"{'-' if tools is None else len(tools)}")
 
     if bad:
-        print(f"\n{len(bad)} advertised URL(s) do not answer as themselves:")
-        for slug, which, url, code, name in bad:
-            why = f"HTTP {code}" if name in ("", "(unparsed)") else f"answered as {name!r}"
-            print(f"  {slug} {which}: {why}  {url}")
-        print("\nA manifest pointing here is a product that does not exist to the "
-              "caller. Fix the route or correct servers.yaml.")
+        print(f"\n{len(bad)} advertised URL(s) disagree with servers.yaml:")
+        for slug, which, url, why in bad:
+            print(f"  {slug} {which}: {why}\n      {url}")
+        print("\nEither the route is wrong or the registry is. A manifest built "
+              "from a registry nobody checks against reality is a tidier way to "
+              "be wrong.")
         return 1
-    print(f"\nall {len(results)} advertised URL(s) answered as themselves")
+    print(f"\nall {len(results)} advertised URL(s) answered as themselves, with the "
+          f"tool count and prefix servers.yaml declares")
     return 0
 
 
@@ -331,9 +375,22 @@ def validate(cfg: dict) -> list[str]:
                             f"date would permanently hold isLatest in the registry")
         if s.get("kind") == "door" and not s.get("of"):
             problems.append(f"{slug}: a door must name the product it belongs to")
+        # PREFIX RULE. Every NEW server namespaces its tools, so two of ours
+        # loaded side by side cannot collide. The six servers that already
+        # shipped have UNPREFIXED names - find_business, send_message, get_status
+        # - and tool names are as immutable as the slug, so renaming them would
+        # break every agent that installed us. They declare the exception
+        # explicitly rather than being quietly exempted, and
+        # test_only_the_known_six_are_unprefixed fails if a seventh appears.
         pfx = s.get("prefix")
-        if not pfx or not pfx.endswith("_"):
-            problems.append(f"{slug}: prefix {pfx!r} must end with an underscore")
+        if s.get("legacy_unprefixed"):
+            if pfx:
+                problems.append(f"{slug}: legacy_unprefixed servers must have an "
+                                f"empty prefix, not {pfx!r}")
+        elif not pfx or not pfx.endswith("_"):
+            problems.append(f"{slug}: prefix {pfx!r} must end with an underscore "
+                            f"(or set legacy_unprefixed: true, which is only "
+                            f"honest for names that already shipped)")
         seen_prefix.setdefault(pfx, []).append(slug)
 
     # Two PRODUCTS sharing a tool prefix would collide in any client that loads

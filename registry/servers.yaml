@@ -19,6 +19,15 @@
 # THE TWO IMMUTABLE FIELDS are `slug` and `prefix`. The slug is the registry name
 # and the URL; the prefix is what every tool is called. Both are public the moment
 # they are published and changing either breaks whoever installed us.
+#
+# ⚠️ THIS FILE ALREADY LIED ONCE, ON THE DAY IT WAS WRITTEN. Its first version
+# gave all six servers `prefix: broker_` and gave the doors the count of their
+# CAPABILITY tools. Neither was true: zero of the 23 live tools carry a prefix,
+# and every door serves four more tools than the file claimed, because
+# `profiles.tools_for()` adds the four orientation tools to every door. A single
+# source of truth that is not checked against the running system is just a
+# tidier place to be wrong. `gen_manifests.py --probe` now calls every endpoint
+# and fails if the live tool names and count disagree with what is written here.
 
 version: 1
 
@@ -49,7 +58,14 @@ servers:
     # <= 100 characters: the registry schema rejects longer, and it is CC0 the
     # moment it is published.
     description: "23 MCP tools: compliance, verification, messaging, booking, US contracts. 15 need no key."
-    prefix: broker_
+    # EMPTY ON PURPOSE, AND PERMANENTLY. Agent Broker shipped 23 unprefixed tool
+    # names and they are public: `find_business`, `send_message`, `get_status`
+    # and the rest. Tool names are as immutable as the slug - renaming them
+    # breaks every agent that installed us - so this records what IS, not what
+    # was planned. Those 23 names are reserved platform-wide; no future server
+    # may reuse one. Every NEW server takes a unique prefix (see `validate`).
+    prefix: ""
+    legacy_unprefixed: true
     version: 0.2.12
     tool_count: 23
     docs: https://hatchloop.dev/agent-broker/
@@ -108,9 +124,13 @@ servers:
     of: agent-broker
     title: Sanctions Screening
     description: "Screen a name or entity against OFAC SDN, the EU Consolidated list and the UK list."
-    prefix: broker_
+    prefix: ""
+    legacy_unprefixed: true
     version: 0.2.12
-    tool_count: 4
+    # What tools/list actually returns: 4 capability tools plus the four
+    # orientation tools profiles.tools_for() adds to every door.
+    tool_count: 8
+    capability_tools: 4
     docs: https://hatchloop.dev/agent-broker/
     publish: {registry: true, smithery: false, glama: false}
 
@@ -119,9 +139,13 @@ servers:
     of: agent-broker
     title: Verify a Company
     description: "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free."
-    prefix: broker_
+    prefix: ""
+    legacy_unprefixed: true
     version: 0.2.12
-    tool_count: 3
+    # What tools/list actually returns: 3 capability tools plus the four
+    # orientation tools profiles.tools_for() adds to every door.
+    tool_count: 7
+    capability_tools: 3
     docs: https://hatchloop.dev/agent-broker/
     publish: {registry: true, smithery: false, glama: false}
 
@@ -130,9 +154,13 @@ servers:
     of: agent-broker
     title: Compliance Check
     description: "Preview a TCPA/GDPR/CASL/10DLC gate result before spending a paid send. Free."
-    prefix: broker_
+    prefix: ""
+    legacy_unprefixed: true
     version: 0.2.12
-    tool_count: 4
+    # What tools/list actually returns: 4 capability tools plus the four
+    # orientation tools profiles.tools_for() adds to every door.
+    tool_count: 8
+    capability_tools: 4
     docs: https://hatchloop.dev/agent-broker/
     publish: {registry: true, smithery: false, glama: false}
 
@@ -141,9 +169,13 @@ servers:
     of: agent-broker
     title: SMS and WhatsApp Messaging
     description: "Send WhatsApp, SMS, email or voice to a business with the compliance gate enforced."
-    prefix: broker_
+    prefix: ""
+    legacy_unprefixed: true
     version: 0.2.12
-    tool_count: 6
+    # What tools/list actually returns: 6 capability tools plus the four
+    # orientation tools profiles.tools_for() adds to every door.
+    tool_count: 10
+    capability_tools: 6
     docs: https://hatchloop.dev/agent-broker/
     publish: {registry: true, smithery: false, glama: false}
 
@@ -152,9 +184,13 @@ servers:
     of: agent-broker
     title: Appointment Booking
     description: "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms."
-    prefix: broker_
+    prefix: ""
+    legacy_unprefixed: true
     version: 0.2.12
-    tool_count: 5
+    # What tools/list actually returns: 5 capability tools plus the four
+    # orientation tools profiles.tools_for() adds to every door.
+    tool_count: 9
+    capability_tools: 5
     docs: https://hatchloop.dev/agent-broker/
     publish: {registry: true, smithery: false, glama: false}
 
