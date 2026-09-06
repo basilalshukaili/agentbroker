@@ -65,19 +65,19 @@
     {
       "name": "company-verification",
       "endpoint": "https://api.hatchloop.dev/mcp/company-verification",
-      "description": "Verify a company on official registries (GLEIF LEI, SEC EDGAR), screen sanctions. Free.",
+      "description": "Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free premium data.",
       "tool_count": 7
     },
     {
       "name": "compliance-check",
       "endpoint": "https://api.hatchloop.dev/mcp/compliance-check",
-      "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening before you act. Free, no key.",
+      "description": "TCPA/GDPR/CASL compliance + sanctions & registry screening. No key; premium data quota-free.",
       "tool_count": 8
     },
     {
       "name": "sanctions-screening",
       "endpoint": "https://api.hatchloop.dev/mcp/sanctions-screening",
-      "description": "Sanctions screening (OFAC, EU, UK) and company verification. Free, no key, no signup.",
+      "description": "Sanctions screening (OFAC, EU, UK) + company verification. No key; free within a daily quota.",
       "tool_count": 8
     },
     {
