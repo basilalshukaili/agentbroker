@@ -134,7 +134,7 @@ def _env_bool(key: str, default: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 
 SERVICE_NAME = _env("SERVICE_NAME", "agent-broker")
-SERVICE_VERSION = _env("SERVICE_VERSION", "0.2.12")
+SERVICE_VERSION = _env("SERVICE_VERSION", "0.2.13")
 ENVIRONMENT = _env("ENVIRONMENT", "development")   # development | staging | production
 DEBUG = _env_bool("DEBUG", default=ENVIRONMENT == "development")
 LOG_LEVEL = _env("LOG_LEVEL", "INFO")

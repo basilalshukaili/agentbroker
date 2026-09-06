@@ -66,7 +66,7 @@ servers:
     # may reuse one. Every NEW server takes a unique prefix (see `validate`).
     prefix: ""
     legacy_unprefixed: true
-    version: 0.2.12
+    version: 0.2.13
     tool_count: 23
     docs: https://hatchloop.dev/agent-broker/
     auth_header: X-Agent-Identity
@@ -126,7 +126,7 @@ servers:
     description: "Screen a name or entity against OFAC SDN, the EU Consolidated list and the UK list."
     prefix: ""
     legacy_unprefixed: true
-    version: 0.2.12
+    version: 0.2.13
     # What tools/list actually returns: 4 capability tools plus the four
     # orientation tools profiles.tools_for() adds to every door.
     tool_count: 8
@@ -141,7 +141,7 @@ servers:
     description: "Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free data."
     prefix: ""
     legacy_unprefixed: true
-    version: 0.2.12
+    version: 0.2.13
     # What tools/list actually returns: 3 capability tools plus the four
     # orientation tools profiles.tools_for() adds to every door.
     tool_count: 7
@@ -156,7 +156,7 @@ servers:
     description: "Preview a TCPA/GDPR/CASL/10DLC gate result before spending a paid send. No key needed."
     prefix: ""
     legacy_unprefixed: true
-    version: 0.2.12
+    version: 0.2.13
     # What tools/list actually returns: 4 capability tools plus the four
     # orientation tools profiles.tools_for() adds to every door.
     tool_count: 8
@@ -171,7 +171,7 @@ servers:
     description: "Send WhatsApp, SMS, email or voice to a business with the compliance gate enforced."
     prefix: ""
     legacy_unprefixed: true
-    version: 0.2.12
+    version: 0.2.13
     # What tools/list actually returns: 6 capability tools plus the four
     # orientation tools profiles.tools_for() adds to every door.
     tool_count: 10
@@ -186,7 +186,7 @@ servers:
     description: "Find real businesses and book appointments. Books via Cal.com; imports 12 platforms."
     prefix: ""
     legacy_unprefixed: true
-    version: 0.2.12
+    version: 0.2.13
     # What tools/list actually returns: 5 capability tools plus the four
     # orientation tools profiles.tools_for() adds to every door.
     tool_count: 9

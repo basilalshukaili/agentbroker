@@ -380,6 +380,47 @@ def targets(cfg: dict) -> dict[str, str]:
 
 def validate(cfg: dict) -> list[str]:
     problems, seen_slug, seen_prefix = [], set(), {}
+
+    # THE VERSION THE SERVER REPORTS MUST BE THE VERSION WE PUBLISH.
+    #
+    # config.SERVICE_VERSION is a second, hand-typed copy of a number this file
+    # is meant to own, and the two had already parted company in effect: the
+    # registry was serving a stale 0.2.12 record whose description said "13
+    # keyless" while the manifest generated here said 15. A registry entry
+    # claiming one version while serverInfo answers another is precisely the
+    # invisible drift servers.yaml exists to prevent, and nothing was comparing
+    # them.
+    # READ THE FILE, DO NOT IMPORT IT. The first version did `import config`
+    # and wrapped it in a bare except. This script lives in scripts/, so
+    # config.py at the repo root is not importable, the ImportError was
+    # swallowed, and the check passed cleanly while I fed it a deliberate
+    # mismatch. A guard whose failure mode is silent success is worse than no
+    # guard, and it is the third time that exact shape has appeared here.
+    #
+    # A regex over the source needs no import path and cannot be defeated by
+    # one; and if the assignment is ever renamed, the check says so instead of
+    # quietly passing.
+    cfgpy = os.path.join(AB, "config.py")
+    product = next((s for s in cfg["servers"] if s.get("kind") == "product"), None)
+    declared = str((product or {}).get("version", ""))
+    if declared:
+        try:
+            src = open(cfgpy, encoding="utf-8").read()
+        except OSError as exc:
+            problems.append(f"cannot read config.py to check the runtime version: {exc}")
+        else:
+            m = re.search(r"SERVICE_VERSION\s*=\s*_env\(\s*[\"']SERVICE_VERSION[\"']\s*,"
+                          r"\s*[\"']([^\"']+)[\"']", src)
+            if not m:
+                problems.append(
+                    "config.py no longer declares SERVICE_VERSION in the expected "
+                    "form - this check can no longer see the runtime version")
+            elif m.group(1) != declared:
+                problems.append(
+                    f"config.SERVICE_VERSION is {m.group(1)!r} but servers.yaml "
+                    f"declares {declared!r} - the registry would advertise a version "
+                    f"the running server does not report")
+
     for s in cfg["servers"]:
         slug = s.get("slug")
         if not slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
