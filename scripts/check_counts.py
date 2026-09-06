@@ -81,6 +81,13 @@ def _derive() -> dict:
 NOUNS = {
     "tools": "tools",
     "operation handlers": "tools",
+    # "operations" IS THE SAME NUMBER. manifest.json calls them operations and
+    # `_derive` counts exactly that list, so prose saying "22 operations" is a
+    # false claim about the tool count in different clothes. It went unguarded
+    # for weeks in deploy/registry-submissions/smithery.yaml - a file three
+    # gates scanned and all three called clean, because none of them knew this
+    # word. A guard is only as wide as its vocabulary.
+    "operations": "tools",
     "jurisdictions": "jurisdictions",
     "booking platforms": "booking platforms",
 }

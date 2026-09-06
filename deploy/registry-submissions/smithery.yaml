@@ -1,126 +1,33 @@
-# NOTE (2026-08-29): every URL in this file used to point at
-# agent-broker-edge.techmate.workers.dev - a hostname on a DIFFERENT Cloudflare
-# account belonging to a separate business. Submitting it would have published
-# that account's hostname as HatchLoop's public identity, on the vendor field,
-# the homepage, the MCP endpoint and every asset link.
+# SUPERSEDED. Do not submit this file, and do not add claims to it.
 #
-# It is not a dead link either: that worker is still live and still serving
-# AgentBroker content. Retiring it is the founder's call, not mine, because the
-# account is not this project's.
+# WHAT IT WAS: a hand-written Smithery submission template. On 2026-09-06 it was
+# wrong in eight measurable ways at once. It enumerated four fewer tools than we
+# ship. It understated the operation count and the jurisdiction count, each by a
+# figure that had been correct months earlier. It described a per-IP daily free
+# tier we do not offer. It split the free tools three different ways from the
+# site. And it declared the licence proprietary while glama.json says MIT. Any
+# one of those, submitted, would have been a false public claim.
 #
-# All URLs now use the canonical branded host.
-# Smithery MCP server registry entry.
-# Submit this file via PR to https://github.com/smithery-ai/registry
-# Or paste the contents into the Smithery web form: https://smithery.ai/server/new
-
-name: agent-broker
-displayName: "Agent Broker — SMB Transactions & Bookings"
-description: >
-  Agent-callable horizontal layer for finding, verifying, booking, messaging, and
-  calling long-tail small/mid-sized businesses worldwide. 22 operations across 12
-  booking platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable,
-  Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), plus free
-  pre-flight checks for booking links, outbound-message compliance, company
-  registry verification (GLEIF + SEC EDGAR), live sanctions screening (OFAC
-  SDN, the EU Consolidated list and the UK Sanctions List), and
-  cross-border trade compliance (OFAC embargo map + party sanctions + tariff
-  guidance). Built-in compliance gate (TCPA / GDPR / CASL / PDPL across 22
-  jurisdictions). 11 read tools always free (100 ops/IP/day free tier) -- 8
-  write tools need a free email-verified key (100 ops/day) or credits.
-
-vendor: hatchloop.dev
-homepage: https://hatchloop.dev/agent-broker/
-repository: https://github.com/basilalshukaili/agentbroker
-license: proprietary
-
-categories:
-  - business
-  - automation
-  - scheduling
-  - messaging
-  - compliance
-
-tags:
-  - mcp
-  - smb
-  - business-automation
-  - scheduling
-  - cal.com
-  - twilio
-  - vapi
-  - voice-ai
-  - sms
-  - compliance
-  - tcpa
-  - gdpr
-
-connection:
-  type: http
-  # CANONICAL target (rate-limited, founder-controlled Cloudflare account
-  # lordbasil147@gmail.com). The LIVE Smithery listing still points at the
-  # OLD edge (agent-broker-edge.basil-agent.workers.dev, different Cloudflare
-  # account, credentials unknown) -- see smithery-sync-2026-08-16.md founder
-  # gate "agentbroker-smithery-url" for the fix.
-  url: https://hatchloop.dev/mcp/agent-broker
-  authentication:
-    type: bearer
-    header: X-Agent-Identity
-    description: "9 utility tools are always free with no key. 3 premium data tools are free up to a daily limit. Write tools need a free email-verified key (100 ops/day) from https://hatchloop.dev/agent-broker, or credits from https://hatchloop.dev/pricing (Starter $9/1,000 credits). Send the key as the X-Agent-Identity header."
-
-tools:
-  - name: find_business
-    description: "Search SMBs by vertical + location + capability"
-  - name: verify_business
-    description: "Confirm an SMB has a specific capability"
-  - name: send_message
-    description: "Send WhatsApp / SMS / email / voice with full compliance pre-check (WhatsApp free during launch)"
-  - name: capture_lead
-    description: "Hand off a prospect to an SMB with dedup"
-  - name: schedule_appointment
-    description: "Book / reschedule / cancel via Cal.com → voice fallback"
-  - name: send_transactional_confirmation
-    description: "TCPA-exempt transactional confirmations (booking / receipt)"
-  - name: handle_inbound
-    description: "Classify customer messages (booking / cancel / opt-out / question)"
-  - name: escalate_to_human
-    description: "Hand off to a human when the agent is stuck"
-  - name: get_status
-    description: "Poll status of an async operation"
-  - name: get_outcome
-    description: "Retrieve final outcome of an async operation"
-  - name: preview_cost
-    description: "Free cost / latency / success-probability estimate"
-  - name: self_test
-    description: "Free service health check"
-  - name: import_booking_url
-    description: "Turn any public booking URL into a structured booking object"
-  - name: call_business
-    description: "Place a voice-AI phone call to a business on behalf of an agent"
-  - name: check_booking_link
-    description: "Free pre-flight: classify a booking URL before spending on import_booking_url"
-  - name: check_compliance
-    description: "Free pre-flight: preview the TCPA/GDPR/CASL compliance gate before spending on send_message"
-  - name: verify_company_record
-    description: "Free live registry lookup: verify a company exists and return its official GLEIF LEI / SEC EDGAR record"
-  - name: screen_sanctions
-    description: "Free live sanctions screening: check a name/entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List"
-  - name: map_trade_restriction
-    description: "Free cross-border trade compliance snapshot: OFAC embargo map + party sanctions screening + tariff guidance links for any product + destination"
-
-screenshots:
-  - url: https://hatchloop.dev/og?title=AgentBroker
-    caption: "MCP tools surface in Claude Desktop"
-  - url: https://hatchloop.dev/og?title=AgentBroker+tools
-    caption: "Live booking via Cal.com integration"
-
-documentation:
-  - url: https://hatchloop.dev/docs
-    type: getting_started
-  - url: https://hatchloop.dev/.well-known/mcp.json
-    type: mcp_descriptor
-  - url: https://hatchloop.dev/llms.txt
-    type: llms_txt
-
-pricing:
-  free_tier: "100 ops/IP/day free — all 8 read tools + write-tool calls up to the daily cap with no key"
-  paid_tiers: "9 utility tools free with no key; 3 premium data tools free up to a daily limit; write tools need a free email-verified key (100 ops/day) or credits from https://hatchloop.dev/pricing (Starter $9/1,000)"
+# (This paragraph deliberately does not restate the wrong figures. check_counts
+# reads prose, cannot tell a claim from a description of a past claim, and fired
+# on the first draft of this comment - correctly. Weakening a guard so it will
+# tolerate your own prose is how guards die; the exemption list in that script
+# already carries a warning about exactly that.)
+#
+# WHAT MAKES THAT WORTH A COMMENT: three gates scanned this file - check_counts,
+# check_branding, check_sanctions_claims - and all three reported it clean. They
+# were looking for the word "tools" and it said "operations". A guard is only as
+# wide as its vocabulary, and a guard that inspects a file without understanding
+# it is worse than no guard, because it certifies the file. `operations` is a
+# guarded noun in check_counts as of today, which is how this was found.
+#
+# WHAT REPLACED IT: ../../smithery.yaml at the repository root, GENERATED by
+# scripts/gen_manifests.py from registry/servers.yaml. CI fails if it is edited
+# by hand. Change the registry, never a manifest.
+#
+# THE HISTORY WORTH KEEPING, from the file this replaces (2026-08-29): every URL
+# here once pointed at agent-broker-edge.techmate.workers.dev - a hostname on a
+# DIFFERENT Cloudflare account belonging to a separate business. Submitting it
+# would have published that account's hostname as HatchLoop's public identity.
+# That worker was still live and still serving AgentBroker content at the time;
+# retiring it is the founder's call, because the account is not this project's.

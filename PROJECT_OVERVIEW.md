@@ -37,8 +37,8 @@ I'm telling you what I'd tell a co-founder, not what would feel good:
 
 ### What's working FOR us
 
-- **Architecture is correct.** 12 well-defined operations, single OutcomeReceipt schema, non-bypassable compliance gate, idempotency, multi-protocol discovery. A reviewer can confirm this in 5 minutes.
-- **Real upstream services are wired and authenticated.** Twilio, Cal.com, Vapi, Resend, Paddle. Not stubs.
+- **Architecture is correct.** 23 well-defined operations, single OutcomeReceipt schema, non-bypassable compliance gate, idempotency, multi-protocol discovery. A reviewer can confirm this in 5 minutes.
+- **Real upstream services are wired and authenticated.** Twilio, Cal.com, Vapi, Resend, Polar. Not stubs.
 - **Two genuine wedges.** (a) The booking-page importer is unique — no other MCP turns "any URL" into a callable. (b) The standalone `/compliance/check` API is independently valuable to non-MCP devs.
 - **Distribution surface is broad.** Smithery + Glama + 4 GitHub catalogs + apis.guru + 4 directories.
 
