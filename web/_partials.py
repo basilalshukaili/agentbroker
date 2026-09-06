@@ -265,14 +265,27 @@ def page(title: str, body_html: str, *, active: str, description: str | None = N
     """Render a complete HTML page. ``body_html`` is inserted between nav and footer."""
     desc = description or (
         "Horizontal MCP server for AI agents. Find, verify, message, and "
-        "schedule appointments with small businesses worldwide. 15 of 23 "
-        "tools need no key at all; write tools get 100 free ops/day."
+        "schedule appointments with small businesses worldwide. {n_no_key} of "
+        "{n_tools} tools need no key at all; write tools get 100 free ops/day."
     )
     # Resolve origin-only links LAST, after the body is built. Doing it here
     # rather than at the call site is the whole point: a body written as a
     # plain triple-quoted string cannot interpolate anything, and that is the
     # form most of pages.py uses. A token survives both forms identically.
     body_html = body_html.replace(ORIGIN_TOKEN, API_ORIGIN)
+
+    # AND THE SAME TRICK FOR EVERY COUNT WE STATE. The founder caught a tool
+    # count belonging to ONE product typed onto the page that describes the
+    # credit rails for the WHOLE platform, and HatchLoop is being built to run
+    # fifty servers. Templates write {n_tools}, {n_keyless}, {n_quota},
+    # {n_needs_key}, {n_no_key}; they are substituted here, on every page and
+    # every description, so no renderer can forget. Doing it in the wrapper is
+    # deliberate: most bodies in pages.py are plain triple-quoted strings that
+    # cannot interpolate anything, and a token works in both forms.
+    # scripts/check_no_typed_counts.py fails the build if a digit is typed back.
+    from web import facts
+    body_html = facts.substitute(body_html)
+    desc = facts.substitute(desc)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>

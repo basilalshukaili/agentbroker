@@ -17,6 +17,11 @@ from web._partials import (page, BRAND, DOMAIN, SUPPORT_EMAIL,
 # (docs/PRICING.md, "What we do not promise") but the numbers kept rendering
 # here because nothing imported the real ones.
 from billing.pricing import price_cents, max_credits, price_usd_str
+# Every count the public pages state is DERIVED. The founder caught the payment
+# page - which describes the credit rails for the whole platform - asserting a
+# tool count belonging to one product. See web/facts.py for why the free-tool
+# counts are two different numbers rather than one.
+from web import facts
 # Credit COUNTS per package are code (billing/packages.py); the USD price of
 # each package is set on Polar's dashboard and cannot be imported -- see
 # _PACKAGE_USD below, mirrored from docs/PRICING.md / the live pricing page.
@@ -167,7 +172,7 @@ def render_home() -> str:
 
 <section class="section" id="how">
   <h2>Connect in one line, in any agent ecosystem.</h2>
-  <p class="lead">We expose the same 23 tools through every protocol agents speak today.</p>
+  <p class="lead">We expose the same {n_tools} tools through every protocol agents speak today.</p>
   <div class="grid grid-3">
     <div class="card">
       <h3>MCP &mdash; Claude Desktop / Cursor / Continue</h3>
@@ -200,15 +205,15 @@ def render_home() -> str:
 </section>
 
 <section class="section" id="tools">
-  <h2>23 tools. One contract. Worldwide.</h2>
+  <h2>{n_tools} tools. One contract. Worldwide.</h2>
   <p class="lead">
     Same OutcomeReceipt schema for every operation. Same compliance gate.
     Same idempotency contract. No surprises.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>12 tools &mdash; always free</h3><p><code class="inline">find_business</code>, <code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">get_conversation</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered.</p></div>
-    <div class="card"><h3>3 tools &mdash; free within a daily quota</h3><p><code class="inline">verify_company_record</code> (GLEIF LEI + SEC EDGAR), <code class="inline">screen_sanctions</code> (OFAC SDN + EU Consolidated + UK Sanctions List), <code class="inline">map_trade_restriction</code>. 500/day with a free key, 100/day anonymous, then $0.02/call.</p></div>
-    <div class="card"><h3>8 tools &mdash; need a free key</h3><p><code class="inline">send_message</code>, <code class="inline">capture_lead</code>, <code class="inline">schedule_appointment</code>, <code class="inline">send_transactional_confirmation</code>, <code class="inline">handle_inbound</code>, <code class="inline">escalate_to_human</code>, <code class="inline">import_booking_url</code>, <code class="inline">call_business</code>. 100 write ops/day free, then credits or x402.</p></div>
+    <div class="card"><h3>{n_keyless} tools &mdash; always free</h3><p><code class="inline">find_business</code>, <code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">get_conversation</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered.</p></div>
+    <div class="card"><h3>{n_quota} tools &mdash; free within a daily quota</h3><p><code class="inline">verify_company_record</code> (GLEIF LEI + SEC EDGAR), <code class="inline">screen_sanctions</code> (OFAC SDN + EU Consolidated + UK Sanctions List), <code class="inline">map_trade_restriction</code>. 500/day with a free key, 100/day anonymous, then $0.02/call.</p></div>
+    <div class="card"><h3>{n_needs_key} tools &mdash; need a free key</h3><p><code class="inline">send_message</code>, <code class="inline">capture_lead</code>, <code class="inline">schedule_appointment</code>, <code class="inline">send_transactional_confirmation</code>, <code class="inline">handle_inbound</code>, <code class="inline">escalate_to_human</code>, <code class="inline">import_booking_url</code>, <code class="inline">call_business</code>. 100 write ops/day free, then credits or x402.</p></div>
   </div>
 </section>
 
@@ -253,7 +258,9 @@ def render_home() -> str:
 </section>
 """ + f'<script>{_HOME_LIVE_JS}</script>'
     return page("Home", body, active="home",
-                description=f"{BRAND} — horizontal MCP server. 23 tools, 7 discovery protocols, 26 jurisdictions, free tier for AI agents.")
+                description=f"{BRAND} — horizontal MCP server. "
+                            f"{facts.total_tools()} tools, 7 discovery protocols, "
+                            f"26 jurisdictions, free tier for AI agents.")
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +298,7 @@ def render_pricing() -> str:
 
 <section class="section">
   <h2>What's free</h2>
-  <p class="lead">12 utility tools are free, no key, unmetered, forever:
+  <p class="lead">{n_keyless} utility tools are free, no key, unmetered, forever:
   <code class="inline">find_business</code>, <code class="inline">verify_business</code>,
   <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>,
   <code class="inline">preview_cost</code>, <code class="inline">get_status</code>,
@@ -322,7 +329,7 @@ def render_pricing() -> str:
 
 <section class="section">
   <h2>Write-tool cost per call</h2>
-  <p class="lead">The 8 write tools require a free email-verified key (100
+  <p class="lead">The {n_needs_key} write tools require a free email-verified key (100
   write ops/day, no cost) &mdash; beyond that, credits or x402.
   <code class="inline">preview_cost</code> returns these same numbers
   programmatically (free) and is the authoritative source: any drift between
@@ -342,7 +349,7 @@ def render_pricing() -> str:
     unpaid attempt with a priced offer first &mdash; no key, no account.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>Free tier</h3><p>No card required. 15 tools need no key at all; write tools get 100 free ops/day with a key.</p></div>
+    <div class="card"><h3>Free tier</h3><p>No card required. {n_no_key} tools need no key at all; write tools get 100 free ops/day with a key.</p></div>
     <div class="card"><h3>Card (Polar)</h3><p><a href="/billing/checkout">Buy credits</a> &mdash; instant, emailed API key.</p></div>
     <div class="card"><h3>x402 (USDC on Base)</h3><p>Pay per call, no signup. See <a href="/docs">the API docs</a> for the payment flow.</p></div>
   </div>
@@ -351,7 +358,7 @@ def render_pricing() -> str:
 <section class="section">
   <h2>FAQ</h2>
   <h3>Do you offer a free tier?</h3>
-  <p style="color:var(--text-muted);">Yes. 12 tools are free, no key, unmetered.
+  <p style="color:var(--text-muted);">Yes. {n_keyless} tools are free, no key, unmetered.
   3 more are free up to a daily quota. Write tools get 100 free ops/day with a
   free email-verified key &mdash; no card required for any of it.</p>
   <h3>Can I change plan at any time?</h3>
@@ -370,7 +377,7 @@ def render_pricing() -> str:
 </section>
 """
     return page("Pricing", body, active="pricing",
-                description=f"{BRAND} pricing. 12 utility tools free with no key, 3 more free within a daily quota. Write tools: free email-verified key (100 ops/day), then credits from $9 per 1,000, or x402. No subscription.")
+                description=f"{BRAND} pricing. {{n_keyless}} utility tools free with no key, {{n_quota}} more free within a daily quota. Write tools: free email-verified key (100 ops/day), then credits from $9 per 1,000, or x402. No subscription.")
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +411,6 @@ def render_checkout(plan: str | None) -> str:
         f"<td>{_op_cost_label(op)}</td></tr>"
         for op in _WRITE_OPS_FOR_CHECKOUT
     )
-
     body = f"""
 <header class="hero">
   <h1>How you pay</h1>
@@ -414,7 +420,7 @@ def render_checkout(plan: str | None) -> str:
     via <strong>x402</strong>, with no signup and no account: attach a signed
     payment in <code class="inline">params._meta["x402/payment"]</code> on any
     paid tool call and the server answers an unpaid attempt with a priced
-    offer first. 15 of 23 tools are free without a key either way.
+    offer first. {{n_no_key}} of the {{n_tools}} tools are free without a key either way.
   </p>
 </header>
 
@@ -442,7 +448,7 @@ def render_checkout(plan: str | None) -> str:
 <section class="section">
   <h2>Write-tool cost per call</h2>
   <p style="color:var(--text-muted);">
-    These 8 tools need a free email-verified key (100 write ops/day, no
+    These {{n_needs_key}} tools need a free email-verified key (100 write ops/day, no
     cost) before they spend anything; beyond that, credits or x402.
     <code class="inline">preview_cost</code> returns these same numbers
     programmatically for free.
@@ -469,7 +475,7 @@ def render_checkout(plan: str | None) -> str:
 </section>
 """
     return page("How you pay", body, active="pricing",
-                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the 15 free tools.")
+                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the {{n_no_key}} free tools.")
 
 
 # ---------------------------------------------------------------------------

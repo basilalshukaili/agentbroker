@@ -159,3 +159,44 @@ def test_a_server_marked_not_live_is_never_published(cfg):
     assert not_live, "the fixture for this test needs a not-live server"
     for slug in not_live:
         assert slug not in written, f"{slug} is not live but appears in a manifest"
+
+
+# ---------------------------------------------------------------------------
+# Counts on public pages are derived, never typed.
+# ---------------------------------------------------------------------------
+def test_no_typed_tool_counts_on_public_pages():
+    """The founder found "23 tools" on the page describing the credit rails for
+    the whole platform. Eight more were in the same two files. The numbers were
+    right; the defect is that a product fact reached a public surface by being
+    typed, in a company being built to run fifty servers."""
+    import subprocess
+    p = subprocess.run([sys.executable,
+                        os.path.join(AB, "scripts", "check_no_typed_counts.py")],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", cwd=AB)
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_every_tool_falls_in_exactly_one_bucket():
+    """keyless + quota + needs-key must equal the total.
+
+    The first version of needs_key() subtracted the daily-quota tools, which are
+    not in the auth set, and would have published 5 where the truth is 8.
+    Deriving a number is not the same as deriving it correctly.
+    """
+    sys.path.insert(0, AB)
+    from web import facts
+    assert facts.total_tools() > 0
+    assert facts.keyless() + facts.quota_free() + facts.needs_key() == facts.total_tools()
+
+
+def test_pages_render_no_unsubstituted_token():
+    """A token that reaches a reader is worse than the digit it replaced."""
+    import re
+    sys.path.insert(0, AB)
+    from web import pages
+    for name in ("render_home", "render_pricing", "render_status",
+                 "render_terms", "render_refund", "render_privacy"):
+        html = getattr(pages, name)()
+        left = re.findall(r"\{n_[a-z_]+\}", html)
+        assert not left, f"{name} rendered {left}"

@@ -216,6 +216,15 @@ jobs:
       #
       # registry/servers.yaml is now the only place a server is described, and
       # these two steps are what make that true rather than aspirational.
+      # No page may state a tool count as a digit. The founder caught "23 tools"
+      # on the page that describes the credit rails for the WHOLE platform - a
+      # fact about one product, typed onto a platform surface, in a company being
+      # built to run fifty servers. Eight more were found in the same two files
+      # once anyone looked. web/facts.py derives them; page() substitutes them;
+      # this stops them being typed back.
+      - name: No typed tool counts on public pages
+        run: python scripts/check_no_typed_counts.py
+
       - name: Registry reader still reads correctly
         run: python scripts/miniyaml.py
 
