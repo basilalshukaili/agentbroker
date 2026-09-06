@@ -400,8 +400,16 @@ def validate(cfg: dict) -> list[str]:
     # A regex over the source needs no import path and cannot be defeated by
     # one; and if the assignment is ever renamed, the check says so instead of
     # quietly passing.
+    # SCOPED TO agent-broker, NOT to "the first product".
+    #
+    # config.SERVICE_VERSION is that server's runtime version and nothing else's.
+    # The first draft matched any kind=product, which made validate() fail on the
+    # synthetic two-product configs the manifest tests build - correctly, from
+    # its own point of view, since a fixture product pinned at "1.2.3" will never
+    # equal the running service. CI caught it. A check that fires on a fixture is
+    # a check people delete.
     cfgpy = os.path.join(AB, "config.py")
-    product = next((s for s in cfg["servers"] if s.get("kind") == "product"), None)
+    product = next((s for s in cfg["servers"] if s.get("slug") == "agent-broker"), None)
     declared = str((product or {}).get("version", ""))
     if declared:
         try:
