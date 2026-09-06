@@ -37,6 +37,21 @@ from typing import Optional
 # class of "the narrow server is useless on its own" complaint.
 _ORIENTATION = ("get_status", "get_outcome", "preview_cost", "self_test")
 
+# THE PRODUCT'S OWN NAME, ROUTED TO THE FULL SERVER.
+#
+# The founder, 2026-09-06: "i seen you making mistake of making the hatchloop mcp
+# endpoint specifically points to agentbroker". He is right, and this is half the
+# fix. The origin knew `/mcp` and five door names, so `/mcp/agent-broker` was a
+# 404 there while the canonical host answered 200 - the same server reachable
+# under two different shapes depending on which host you asked. Every listing we
+# publish names the slug, so the slug must work everywhere.
+#
+# A NAME HERE IS NOT A DOOR. It maps to None, which means no filtering at all:
+# the full 23 tools, exactly as `/mcp` serves them. Adding it to PROFILES would
+# have made it a sixth door with a tool list somebody has to keep in step with
+# the product, which is the drift the registry exists to end.
+FULL_SERVER_ALIASES = frozenset({"agent-broker"})
+
 PROFILES: dict[str, dict] = {
     "sanctions-screening": {
         "title": "Sanctions & company verification",
@@ -128,7 +143,8 @@ class ProfileError(ValueError):
 
 
 def exists(profile: Optional[str]) -> bool:
-    return profile is None or profile in PROFILES
+    return (profile is None or profile in PROFILES
+            or profile in FULL_SERVER_ALIASES)
 
 
 def tools_for(profile: Optional[str]) -> Optional[frozenset]:
@@ -137,11 +153,12 @@ def tools_for(profile: Optional[str]) -> Optional[frozenset]:
     None means "no filtering" - that is the monolith, which stays exactly as it
     is for agents doing complex multi-step work.
     """
-    if profile is None:
+    if profile is None or profile in FULL_SERVER_ALIASES:
         return None
     if profile not in PROFILES:
         raise ProfileError(
-            f"unknown profile {profile!r}; known: {', '.join(sorted(PROFILES))}")
+            f"unknown profile {profile!r}; known: "
+            f"{', '.join(sorted(set(PROFILES) | FULL_SERVER_ALIASES))}")
     return frozenset(PROFILES[profile]["tools"]) | frozenset(_ORIENTATION)
 
 
