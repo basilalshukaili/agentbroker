@@ -1,6 +1,6 @@
 {
   "name": "agent-broker",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "transport": {
     "type": "streamable-http",
     "endpoint": "https://api.hatchloop.dev/mcp",
