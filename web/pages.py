@@ -420,16 +420,25 @@ def render_checkout(plan: str | None) -> str:
     via <strong>x402</strong>, with no signup and no account: attach a signed
     payment in <code class="inline">params._meta["x402/payment"]</code> on any
     paid tool call and the server answers an unpaid attempt with a priced
-    offer first. {{n_no_key}} of the {{n_tools}} tools are free without a key either way.
+    offer first.
+  </p>
+  <p class="lead" style="font-size:16px;">
+    One balance covers every HatchLoop server. Credits are the platform's unit,
+    not any one product's: a credit bought today is spendable on whatever we run
+    tomorrow, and each server states its own free tier and its own per-call
+    price on its own page.
   </p>
 </header>
 
 <section class="section">
   <h2>Credit packages (card, via Polar)</h2>
   <p style="color:var(--text-muted);">
-    1 credit = 1 US cent. Credits never expire. On payment we email you a
-    pre-paid API key (an <code class="inline">X-Agent-Identity</code> token);
-    your agent sends it as a header.
+    1 credit = 1 US cent. Credits never expire, and they are not tied to a
+    single server. On payment we email you a pre-paid key; your agent sends it
+    as <code class="inline">X-Agent-Identity</code>, or as
+    <code class="inline">Authorization: Bearer</code> or
+    <code class="inline">X-Api-Key</code> if that is all your client can send
+    &mdash; some connector hosts allow only standard header names.
   </p>
   <table>
     <thead><tr><th>Package</th><th>Price</th><th>Credits</th></tr></thead>
@@ -446,8 +455,10 @@ def render_checkout(plan: str | None) -> str:
 </section>
 
 <section class="section">
-  <h2>Write-tool cost per call</h2>
+  <h2>Write-tool cost per call &mdash; Agent Broker</h2>
   <p style="color:var(--text-muted);">
+    Prices below are Agent Broker's. Every server publishes its own table; the
+    credits are the same credits.
     These {{n_needs_key}} tools need a free email-verified key (100 write ops/day, no
     cost) before they spend anything; beyond that, credits or x402.
     <code class="inline">preview_cost</code> returns these same numbers
