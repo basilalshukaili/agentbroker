@@ -51,7 +51,39 @@ SERVER_NAME = "agent-broker"
 # origin long after the build was 0.2.x - and the edge snapshot, refreshed
 # FROM the origin, would have inherited the regression (2026-08-26).
 SERVER_VERSION = _config.SERVICE_VERSION
-PROTOCOL_VERSION = "2024-11-05"
+# Versions whose framing this server actually honours, newest first. This is a
+# NEGOTIATED field, not a constant: MCP expects the server to answer with the
+# client's requested version when it can speak it, and with its own preference
+# otherwise. We answered a hardcoded "2024-11-05" to every caller regardless of
+# what they offered, which is not a handshake - it is a recording.
+#
+# Measured 2026-09-07: a client offering 2025-06-18 was told 2024-11-05, three
+# revisions behind. That matters beyond tidiness because URL-mode elicitation -
+# the out-of-band approval channel the Warrant work depends on - arrived in
+# 2025-11-25 and a client will not offer what we cannot answer.
+#
+# NOTE ON HONESTY: supporting a version here means we can speak its framing for a
+# tools server, not that we implement every optional feature it defines. Actually
+# USING url-mode elicitation is separate work and is not claimed by this list.
+SUPPORTED_PROTOCOL_VERSIONS = (
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26",
+    "2024-11-05",
+)
+PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
+
+
+def negotiate_protocol_version(params: dict | None) -> str:
+    """The client's version if we speak it, else our newest.
+
+    Never raises and never returns something absent from the supported tuple: a
+    malformed or missing `protocolVersion` falls back rather than echoing input
+    straight into the response, which would let a caller put any string in our
+    handshake.
+    """
+    asked = (params or {}).get("protocolVersion") if isinstance(params, dict) else None
+    return asked if asked in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -639,7 +671,7 @@ async def _h_initialize(params: dict) -> dict:
 
     if profile:
         return {
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": negotiate_protocol_version(params),
             "serverInfo": {"name": profile, "version": SERVER_VERSION},
             "capabilities": {
                 "tools": {"listChanged": False},
@@ -659,7 +691,7 @@ async def _h_initialize(params: dict) -> dict:
 
     op_count = len(get_full_manifest().get("operations", []))
     return {
-        "protocolVersion": PROTOCOL_VERSION,
+        "protocolVersion": negotiate_protocol_version(params),
         "serverInfo": {
             "name": SERVER_NAME,
             "version": SERVER_VERSION,

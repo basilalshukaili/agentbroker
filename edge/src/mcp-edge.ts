@@ -181,6 +181,16 @@ async function ensureJsonRpc(response: Response, id: unknown): Promise<Response>
   }), { status: 200, headers: JSON_HEADERS });
 }
 
+// Mirrors SUPPORTED_PROTOCOL_VERSIONS in agent_interface/mcp_server.py. The edge
+// answers `initialize` from a snapshot, so without this list it cannot negotiate
+// at all - a static document has no way to reply to what the caller asked for.
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
+
 export async function handleMcpRequest(
   request: Request,
   originUrl: string,
@@ -210,7 +220,7 @@ export async function handleMcpRequest(
     jsonrpc?: string;
     method?: string;
     id?: unknown;
-    params?: { name?: string; arguments?: unknown };
+    params?: { name?: string; arguments?: unknown; protocolVersion?: unknown };
   } = {};
   try {
     body = JSON.parse(bodyText);
@@ -300,9 +310,19 @@ export async function handleMcpRequest(
 
   switch (method) {
     case "initialize": {
-      // Use the snapshot but inject the requested protocol version if compatible.
-      const init = snapshots.mcpInitialize as { result?: unknown };
-      return jsonrpcResult(id, init.result);
+      // Inject the requested protocol version if we support it. The comment here
+      // used to promise exactly this while the code returned the snapshot
+      // verbatim, so every caller was answered with the frozen version no matter
+      // what it offered - measured 2026-09-07: offered 2025-06-18, told
+      // 2024-11-05. A comment describing an intention nobody implemented is worse
+      // than no comment, because it stops the next reader looking.
+      const init = snapshots.mcpInitialize as { result?: Record<string, unknown> };
+      const result = { ...(init.result ?? {}) };
+      const asked = body.params?.protocolVersion;
+      if (typeof asked === "string" && SUPPORTED_PROTOCOL_VERSIONS.includes(asked)) {
+        result.protocolVersion = asked;
+      }
+      return jsonrpcResult(id, result);
     }
     case "ping":
       return jsonrpcResult(id, {});
