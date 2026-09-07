@@ -125,3 +125,31 @@ def test_edge_mirrors_the_origin_version_list():
         f"  origin: {list(SUPPORTED_PROTOCOL_VERSIONS)}\n"
         f"  edge:   {ts_versions}\n"
         "The canonical host would negotiate differently from the origin.")
+
+
+def test_edge_snapshot_default_matches_the_origin_preference():
+    """The compiled-in snapshot is the THIRD copy of this value.
+
+    The edge answers `initialize` from this file for any caller whose offer it
+    cannot match, so the snapshot IS the default - and the default must be the
+    origin's own preference or the two hosts disagree about what we prefer.
+
+    It drifted the moment negotiation shipped: the refresher probed the origin
+    with a hardcoded "2025-06-18", the newly-negotiating origin honoured that
+    exact request, and the answer was written back as though it were the default.
+    A refresher that asks a leading question records the answer it asked for.
+    """
+    import json
+    import os
+
+    snap = os.path.join(os.path.dirname(__file__), "..", "..",
+                        "edge", "src", "snapshots", "mcp-initialize.json")
+    snap = os.path.abspath(snap)
+    assert os.path.exists(snap), f"snapshot not found at {snap}"
+    with open(snap, encoding="utf-8") as fh:
+        doc = json.load(fh)
+
+    got = doc.get("result", {}).get("protocolVersion")
+    assert got == PROTOCOL_VERSION, (
+        f"edge snapshot defaults to {got}, origin prefers {PROTOCOL_VERSION}. "
+        "Re-run scripts/refresh_edge_snapshots.py and redeploy the worker.")

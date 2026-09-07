@@ -161,8 +161,14 @@ def fetch_all() -> dict[str, object]:
     for fname, method in RPC_ROUTES.items():
         payload = {"jsonrpc": "2.0", "id": 1, "method": method}
         if method == "initialize":
-            payload["params"] = {"protocolVersion": "2025-06-18",
-                                 "capabilities": {},
+            # DELIBERATELY OFFERS NO protocolVersion. The origin negotiates: it
+            # answers the version the CALLER asked for when it can speak it. So
+            # probing with a concrete version captures that negotiated answer,
+            # and the snapshot is not a negotiated answer - it is the default the
+            # edge gives a caller we could not match, which must be the origin's
+            # own preference. Asking for 2025-06-18 here (as this did) froze the
+            # edge one revision below the origin for every such caller.
+            payload["params"] = {"capabilities": {},
                                  "clientInfo": {"name": "snapshot-refresh",
                                                 "version": "1"}}
         parsed = _parse_maybe_sse(_curl(ORIGIN + "/mcp", json.dumps(payload)))
@@ -182,8 +188,13 @@ def _summarize(fname: str, doc: dict) -> str:
     if fname == "mcp-tools-list.json":
         return f"{len(doc.get('result', {}).get('tools', []))} tools"
     if fname == "mcp-initialize.json":
-        si = doc.get("result", {}).get("serverInfo", {})
-        return f"{si.get('name')}/{si.get('version')}"
+        res = doc.get("result", {})
+        si = res.get("serverInfo", {})
+        # protocolVersion belongs in the fingerprint. Without it this reported
+        # "edge[agent-broker/0.2.13] != origin[agent-broker/0.2.13]" - a drift
+        # message naming two identical strings, because the one field that had
+        # actually changed was not in the summary.
+        return f"{si.get('name')}/{si.get('version')} proto={res.get('protocolVersion')}"
     return f"{len(json.dumps(doc))}B"
 
 
