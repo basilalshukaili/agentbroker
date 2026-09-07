@@ -87,6 +87,30 @@ def latest_deploy() -> dict:
 def commit_of(dep: dict) -> str:
     return ((dep.get("commit") or {}).get("id") or "")
 
+# Paths that cannot change what the origin serves. The origin runs the Python
+# service; the edge worker, the test suite, these scripts and the docs are
+# deployed - or not deployed - by something else entirely.
+IRRELEVANT_PREFIXES = ("edge/", "tests/", "scripts/", "docs/", "deploy/",
+                       "obsidian-vault/", ".github/")
+IRRELEVANT_SUFFIXES = (".md",)
+
+
+def affects_origin(paths):
+    """Which of these changed files could alter what the origin serves."""
+    return [q for q in paths
+            if not q.startswith(IRRELEVANT_PREFIXES)
+            and not q.endswith(IRRELEVANT_SUFFIXES)]
+
+
+def changed_between(a, b):
+    """Files changed between two commits, or None if git cannot compare them."""
+    r = subprocess.run(["git", "diff", "--name-only", a + ".." + b], cwd=ROOT,
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+
+
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
@@ -107,9 +131,29 @@ def main(argv=None) -> int:
         print("\nOK: the live origin is running local HEAD.")
         return 0
 
+    # Not every commit changes what the origin serves. A check that shouts on
+    # a docs or test commit is one people learn to ignore, and then it is
+    # useless on the day it matters - so separate BEHIND from STALE.
+    behind = changed_between(live_commit, head) if live_commit else None
+    material = affects_origin(behind) if behind is not None else None
+
+    if material is not None and not material:
+        print(f"\nOK: {len(behind)} changed file(s) since the deployed "
+              "commit, none of which reach the origin (edge/tests/scripts/docs).")
+        print("The running service is current. No deploy needed.")
+        return 0
+
     if args.check:
         # The whole point: say plainly that a push did not deploy itself.
         print("\nDRIFT: the live origin is NOT running local HEAD.")
+        if material:
+            print("Origin-affecting files not yet deployed:")
+            for f in material[:12]:
+                print("  " + f)
+            if len(material) > 12:
+                print(f"  ... and {len(material) - 12} more")
+        elif material is None:
+            print("(could not diff against the deployed commit - is it fetched?)")
         print("Run without --check to deploy. (A push alone does not do this.)")
         return 1
 
