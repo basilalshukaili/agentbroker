@@ -27,9 +27,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from agent_interface.mcp_server import _build_tool_list
 
 # The serialised tools/list must not exceed this.
-# Set to the measured 2026-09-09 baseline + 10% headroom so the ceiling is
-# real today while the description rewrites are in progress.
-MAX_BYTES_CEILING = 58_000  # current ~52,500 + 10% ≈ 57,750 → round up
+# Set to the measured 2026-09-10 post-rewrite baseline + 10% headroom.
+MAX_BYTES_CEILING = 29_100  # measured 26,450 after compact-description rewrite + 10%
 
 # The target once descriptions are rewritten.  Currently skipped.
 TARGET_BYTES = 10_000  # ~2,500 tokens

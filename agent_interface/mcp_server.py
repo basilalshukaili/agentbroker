@@ -108,18 +108,27 @@ def _keyless_count() -> int:
     return max(0, total - len(_WRITE_TOOLS_REQUIRING_AUTH)) if total else 0
 
 
+def _trim_schema_props(schema: dict) -> dict:
+    """Cap property descriptions at _MAX_PROP_DESC_CHARS to limit context spend."""
+    import copy as _copy_mod
+    schema = _copy_mod.deepcopy(schema)
+    for pval in schema.get("properties", {}).values():
+        if isinstance(pval.get("description"), str) and len(pval["description"]) > _MAX_PROP_DESC_CHARS:
+            pval["description"] = pval["description"][:_MAX_PROP_DESC_CHARS].rsplit(" ", 1)[0] + "…"
+    return schema
+
+
 def _build_tool_list() -> list[dict]:
     """Convert manifest operations to MCP tool descriptors."""
     manifest = get_full_manifest()
     tools = []
     for op in manifest.get("operations", []):
-        input_schema = op.get("input_schema", {"type": "object"})
+        input_schema = _trim_schema_props(op.get("input_schema", {"type": "object"}))
         if op["name"] in _WRITE_TOOLS_REQUIRING_AUTH:
             # Advertise the retry contract on every write tool: optional
             # idempotency_key -> replaying the same key within 24h returns the
             # original receipt with no re-execution and no second charge.
-            import copy as _copy
-            input_schema = _copy.deepcopy(input_schema)
+            # (_trim_schema_props already returned a deepcopy, safe to mutate)
             props = input_schema.setdefault("properties", {})
             props.setdefault("idempotency_key", {
                 "type": "string",
@@ -177,99 +186,48 @@ def _build_tool_list() -> list[dict]:
     return tools
 
 
+_MAX_DESC_CHARS = 450
+_MAX_PROP_DESC_CHARS = 80
+
+
 def _format_description_for_llm(op: dict) -> str:
-    """Build an LLM-optimized description that combines all selection signals.
+    """Compact description for tool selection: core description + cost tag only.
 
-    The order matters: the LLM is most likely to act on the first 200 tokens.
-    Lead with WHEN-TO-USE patterns and example user queries because that's
-    what the LLM matches against when picking a tool from `tools/list`.
+    Phone-resident and small-context models can't afford multi-paragraph tool
+    descriptions. Verbose WHEN_TO_USE / examples / latency are omitted; the
+    raw description already encodes the selection signal.
     """
-    parts = [op["description"], ""]
-
-    # User-query examples block first — LLMs are massively few-shot driven and
-    # match against natural-language user phrases when picking a tool.
-    user_examples = op.get("user_query_examples") or [
-        ex for ex in (op.get("examples") or []) if ex.get("user_says")
-    ]
-    if user_examples:
-        parts.append("EXAMPLE USER QUERIES THAT MATCH THIS TOOL:")
-        for ex in user_examples[:4]:
-            user_says = ex.get("user_says")
-            if not user_says:
-                continue
-            parts.append(f"  user: \"{user_says}\"")
-            call = ex.get("agent_call") or {}
-            if call.get("tool"):
-                parts.append(f"  -> call {call['tool']}({json.dumps(call.get('arguments', {}))})")
-            if ex.get("then_call"):
-                nxt = ex["then_call"]
-                parts.append(f"  -> then {nxt.get('tool')}({json.dumps(nxt.get('arguments', {}))})")
-        parts.append("")
-
-    parts.append(f"WHEN TO USE: {op['when_to_use']}")
-    if op.get("when_not_to_use"):
-        parts.append(f"WHEN NOT TO USE: {op['when_not_to_use']}")
+    raw = op.get("description", "")
+    desc = raw if len(raw) <= _MAX_DESC_CHARS else raw[:_MAX_DESC_CHARS].rsplit(" ", 1)[0] + "…"
 
     cost = op.get("cost_model", {})
+    cost_tag = ""
     if cost:
         cost_basis = cost.get("basis", "per_call")
-        # Manifest uses `unit_price_usd` on most ops, `amount_usd` on one — accept either.
         cost_amount = cost.get("unit_price_usd", cost.get("amount_usd"))
-        # Channel- or outcome-variable pricing (send_message, schedule_appointment): point at preview_cost.
         has_variable = (
             cost_basis == "per_call_variable"
             or any(k in cost for k in ("voice_premium_usd", "success_bonus_usd",
                                        "tiers", "max_price_usd"))
         )
         if cost_basis == "freemium_daily_quota":
-            # Neither "free" nor a flat price is true here: free within the
-            # daily quota, billed after it. Say the actual rule.
-            parts.append(
-                f"COST: free within the daily quota, then ${cost_amount} per call")
+            cost_tag = f" [free in quota, then ${cost_amount}/call]"
         elif cost_basis == "free":
-            # "COST: free" ALONE IS NOT ENOUGH, because free and keyless are two
-            # different things and we were conflating them.
-            #
-            # `import_booking_url` costs zero credits AND requires a free
-            # email-verified key. Labelled just "COST: free" it reads as "call
-            # it now", so an agent's first attempt fails on auth - and a careful
-            # buyer counting our free tools got 13 from tools/list while the
-            # pricing page said 12, concluded our surfaces contradict each
-            # other, and was right that something was wrong even though both
-            # numbers were defensible.
-            #
-            # Twelve tools need no key. Thirteen cost nothing. Say which is
-            # which on the tool itself rather than making the reader reconcile
-            # two counts.
             if op.get("name") in _WRITE_TOOLS_REQUIRING_AUTH:
-                parts.append("COST: free (no credits) - but requires a free "
-                             "email-verified key")
+                cost_tag = " [free, requires key]"
             else:
-                parts.append("COST: free - no key required")
+                cost_tag = " [free, no key]"
         elif cost_amount is not None and not has_variable:
-            parts.append(f"COST: ${cost_amount} {cost_basis}")
+            cost_tag = f" [${cost_amount}/{cost_basis}]"
         elif cost_amount is not None and has_variable:
-            parts.append(f"COST: from ${cost_amount} {cost_basis} (see preview_cost for exact)")
+            cost_tag = f" [from ${cost_amount}/call, variable]"
         else:
-            parts.append("COST: see preview_cost")
-
-    slo = op.get("slo", {})
-    if slo:
-        # Manifest uses `p50_ms` on most ops, `p50_latency_ms` on one — accept either.
-        latency = (
-            slo.get("p50_ms")
-            or slo.get("p50_latency_ms")
-            or slo.get("p95_ms")
-            or slo.get("max_latency_ms")
-        )
-        if latency is not None:
-            parts.append(f"LATENCY: ~{latency}ms")
+            cost_tag = " [see preview_cost]"
 
     profile = op.get("execution_profile", "sync")
-    if profile != "sync":
-        parts.append(f"EXECUTION: {profile} (use get_outcome to retrieve result)")
+    async_tag = " [async→get_outcome]" if profile != "sync" else ""
 
-    return "\n".join(parts)
+    return desc + cost_tag + async_tag
 
 
 # ---------------------------------------------------------------------------

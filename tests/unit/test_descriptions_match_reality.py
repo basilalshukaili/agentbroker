@@ -257,27 +257,26 @@ def test_free_and_keyless_are_never_conflated():
 
     checked = 0
     for t in tools:
-        cost_lines = [l for l in t["description"].splitlines()
-                      if l.startswith("COST:")]
-        if not cost_lines:
-            continue
-        line = cost_lines[0]
-        if "free within the daily quota" in line:
+        desc = t["description"]
+        # Cost tag is now embedded inline as "[free, no key]" / "[free, requires key]"
+        # rather than a standalone "COST:" line. Accept either format.
+        if "[free in quota" in desc:
             continue                      # quota tools state their own rule
-        if not line.startswith("COST: free"):
+        is_free = "[free," in desc or desc.endswith("[free]")
+        if not is_free:
             continue
         checked += 1
         needs_key = t["name"] in ms._WRITE_TOOLS_REQUIRING_AUTH
         if needs_key:
-            assert "key" in line, (
-                f"{t['name']} says {line!r} but requires a key - an agent will "
+            assert "key" in desc, (
+                f"{t['name']} says {desc[-80:]!r} but requires a key - an agent will "
                 f"call it and fail on auth")
         else:
-            assert "no key" in line, (
-                f"{t['name']} says {line!r} without saying no key is needed - "
+            assert "no key" in desc, (
+                f"{t['name']} says {desc[-80:]!r} without saying no key is needed - "
                 f"that is the whole reason to try it first")
     assert checked >= 8, (
-        f"only {checked} free tools were checked - the COST-line format "
+        f"only {checked} free tools were checked - the cost-tag format "
         f"changed and this test is no longer reading it")
 
 

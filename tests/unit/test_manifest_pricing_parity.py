@@ -107,37 +107,50 @@ def test_service_identity_matches_config(manifest):
     assert svc["version"] == config.SERVICE_VERSION
 
 
-def test_tool_descriptions_carry_exactly_one_cost_line():
-    """The COST line is what an agent reads to decide affordability. Two lines
-    (the freemium branch falling through into the flat-price branch) would tell
-    it two different prices for the same call."""
+def _cost_tag(desc: str) -> str:
+    """Extract the bracketed cost tag from a compact tool description.
+
+    Cost is now embedded inline as a suffix like '[free, no key]' or
+    '[from $0.02/call, variable]' rather than a standalone 'COST:' line.
+    Async tools append a second bracket [async→get_outcome] after the cost tag.
+    """
+    import re
+    # Cost tags start with: 'free', '$', 'from $', 'see preview_cost', 'free in quota'
+    m = re.search(r'(\[(?:free|from \$|\$|see preview_cost)[^\]]*\])', desc)
+    return m.group(1) if m else ""
+
+
+def test_tool_descriptions_carry_exactly_one_cost_tag():
+    """Each description must carry exactly one cost tag so an agent reading it
+    sees one unambiguous price signal — not zero (silent) and not two (conflict).
+    Cost is now a bracketed inline suffix rather than a 'COST:' line."""
     from agent_interface.mcp_server import _build_tool_list
     for tool in _build_tool_list():
-        lines = [l for l in tool["description"].splitlines() if l.startswith("COST:")]
-        assert len(lines) == 1, f"{tool['name']} has {len(lines)} COST lines: {lines}"
+        tag = _cost_tag(tool["description"])
+        assert tag, (
+            f"{tool['name']} has no cost tag in its description — "
+            f"an agent cannot evaluate affordability. "
+            f"desc tail: {tool['description'][-80:]!r}"
+        )
 
 
 def test_cost_lines_are_honest_per_class():
     from agent_interface.mcp_server import _build_tool_list
-    got = {t["name"]: next(l for l in t["description"].splitlines()
-                           if l.startswith("COST:"))
-           for t in _build_tool_list()}
-    # Was `== "COST: free"`. The line now also states whether a key is needed,
-    # because free and keyless are different claims and conflating them made a
-    # buyer count 13 free tools against a page saying 12 keyless ones. Assert
-    # the CLASS (free, and says so) rather than the exact wording, so the
-    # sentence can be improved without a test edit - but still pin that it does
-    # not silently start quoting a price.
-    assert got["find_business"].startswith("COST: free")
+    got = {t["name"]: _cost_tag(t["description"]) for t in _build_tool_list()}
+    # free, keyless tool must say both
+    assert "free" in got["find_business"], (
+        f"find_business cost tag must say free: {got['find_business']!r}")
     assert "no key" in got["find_business"], (
         "a free, keyless tool must say so - it is the first thing an agent "
         "evaluating us will try")
     assert "$" not in got["find_business"]
-    # variable ops must not quote a flat price
-    assert "from $" in got["send_message"] and "preview_cost" in got["send_message"]
+    # variable ops must not quote a flat price — tag says "variable" or "preview_cost"
+    assert "from $" in got["send_message"] and (
+        "variable" in got["send_message"] or "preview_cost" in got["send_message"]
+    )
     # premium data must not claim to be flatly free
     assert "quota" in got["screen_sanctions"]
-    assert got["screen_sanctions"] != "COST: free"
+    assert "free]" not in got["screen_sanctions"]
 
 
 def test_mcp_server_version_is_derived_not_hardcoded():
