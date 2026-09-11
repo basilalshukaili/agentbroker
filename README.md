@@ -2,7 +2,7 @@
 
 > **An agent-callable MCP server** that lets autonomous AI agents find, verify, message, schedule with, and transact with small and mid-sized businesses (SMBs) through a single compliance-enforced tool surface.
 
-[![smithery badge](https://smithery.ai/badge/lordbasil147/agent-broker)](https://smithery.ai/servers/lordbasil147/agent-broker)
+[![23 T · 5 R · 4 P on LightNow](https://lightnow.ai/badge/dev.hatchloop/agent-broker)](https://lightnow.ai/servers/dev.hatchloop/agent-broker)
 [![MCP](https://img.shields.io/badge/MCP-streamable--http-blue)](https://hatchloop.dev/mcp/agent-broker)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
