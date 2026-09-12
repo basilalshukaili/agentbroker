@@ -14,6 +14,7 @@ import uuid
 
 from core.models import EscalateToHumanRequest, OutcomeReceipt, OperationStatus, CostRecord
 from billing.pricing import receipt_usd as _receipt_usd
+from storage.outcome_store import get_outcome_store
 
 
 async def handle_escalate_to_human(
@@ -52,7 +53,7 @@ async def handle_escalate_to_human(
 
     if inserted is None:
         # Supabase unreachable or table error -- honest failure, no charge.
-        return OutcomeReceipt(
+        receipt = OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
             reason_code="escalation_not_recorded",
@@ -68,6 +69,8 @@ async def handle_escalate_to_human(
             retriable=True,
             trace_id=trace_id,
         )
+        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+        return receipt
 
     # Insert succeeded -- use the real DB-assigned id as the ticket_id.
     ticket_id = str(inserted.get("id", operation_id))
@@ -81,7 +84,7 @@ async def handle_escalate_to_human(
         "context_bundle_size": len(request.context.transcript or []),
     }
 
-    return OutcomeReceipt(
+    receipt = OutcomeReceipt(
         operation_id=operation_id,
         status=OperationStatus.SUCCESS,
         reason_code="escalation_recorded",
@@ -96,3 +99,5 @@ async def handle_escalate_to_human(
         retriable=False,
         trace_id=trace_id,
     )
+    get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+    return receipt

@@ -24,6 +24,7 @@ from core.models import (
 )
 from channels.adapter_interface import ChannelRequest
 from billing.pricing import receipt_usd as _receipt_usd
+from storage.outcome_store import get_outcome_store
 
 _TEMPLATES = {
     "booking_confirmation": "Hi {name}, your appointment at {smb_name} is confirmed for {appointment_time}. Address: {address}. Reply STOP to unsubscribe.",
@@ -127,6 +128,19 @@ def _build_email_body(confirmation_type: str, data: dict, core_text: str) -> str
 
 
 async def handle_send_transactional_confirmation(
+    request: SendTransactionalConfirmationRequest,
+    agent_id: str | None = None,
+    trace_id: str | None = None,
+) -> OutcomeReceipt:
+    receipt = await _do_send_transactional_confirmation(request, agent_id, trace_id)
+    try:
+        get_outcome_store().set_complete(receipt.operation_id, receipt.model_dump(mode="json"))
+    except Exception:  # noqa: BLE001 - persistence must never break delivery
+        pass
+    return receipt
+
+
+async def _do_send_transactional_confirmation(
     request: SendTransactionalConfirmationRequest,
     agent_id: str | None = None,
     trace_id: str | None = None,

@@ -22,6 +22,7 @@ from channels.voice_ai.vapi import VapiVoiceAdapter
 from channels.whatsapp.cloud_api import WhatsAppCloudAdapter
 from channels.adapter_interface import ChannelRequest
 from telemetry.metrics import increment_messages_sent
+from storage.outcome_store import get_outcome_store
 
 
 _SMS_ADAPTER = TwilioSMSAdapter()
@@ -88,6 +89,19 @@ def _build_channel_chain(preference: ChannelPreference, recipient_id: str) -> li
 
 
 async def handle_send_message(
+    request: SendMessageRequest,
+    agent_id: str | None = None,
+    trace_id: str | None = None,
+) -> OutcomeReceipt:
+    receipt = await _do_send_message(request, agent_id, trace_id)
+    try:
+        get_outcome_store().set_complete(receipt.operation_id, receipt.model_dump(mode="json"))
+    except Exception:  # noqa: BLE001 - persistence must never break delivery
+        pass
+    return receipt
+
+
+async def _do_send_message(
     request: SendMessageRequest,
     agent_id: str | None = None,
     trace_id: str | None = None,
