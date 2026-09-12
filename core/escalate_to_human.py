@@ -46,6 +46,7 @@ async def handle_escalate_to_human(
         "context": context_payload,
         "status": "open",
         "source": agent_id or "anonymous",
+        "project_id": "hatchloop",
     }
     inserted = await insert_row("escalations", row)
 
