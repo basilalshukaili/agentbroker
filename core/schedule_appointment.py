@@ -140,6 +140,19 @@ async def handle_schedule_appointment(
             trace_id=trace_id,
         ))
 
+    # THE BUSINESS NAME IS A STRANGER'S STRING, AND THIS TOOL PRINTS IT TEN
+    # TIMES. `smb.name` is whatever the agent that ran import_booking_url
+    # supplied, or the <title> scraped off the remote booking page - never the
+    # caller's own input, since the caller passes only `smb_id`. Interpolated
+    # bare, it put attacker-chosen prose into the sentence a model reads while
+    # deciding whether a booking went through. Fenced ONCE here, used
+    # everywhere below; `result.smb_name` is fenced by the dispatcher.
+    #
+    # The demo branch below is deliberately NOT fenced: those names are
+    # literals in supply/smb_directory.py, i.e. ours.
+    from core.untrusted import fence as _fence_untrusted
+    smb_display = _fence_untrusted(smb.name)
+
     # CRITICAL-1 fix: demo SMBs must never trigger a real charge.
     # The directory contract (smb_directory.py line 39) promises that bookings
     # against demo SMBs short-circuit with reason_code='demo_smb_no_live_booking'
@@ -192,7 +205,7 @@ async def handle_schedule_appointment(
             status=OperationStatus.FAILURE,
             reason_code="recipient_opted_out",
             human_message=(
-                f"{smb.name} has opted out of contact through HatchLoop, so we "
+                f"{smb_display} has opted out of contact through HatchLoop, so we "
                 "will not create a booking with them. This applies to every "
                 "agent on the network, not just yours."
                 if _blocked != "unknown" else
@@ -310,7 +323,7 @@ async def handle_schedule_appointment(
                             status=OperationStatus.SUCCESS,
                             reason_code="requested_time_unavailable",
                             human_message=(
-                                f"NOT BOOKED: {smb.name} has nothing at the "
+                                f"NOT BOOKED: {smb_display} has nothing at the "
                                 f"requested time ({pref.isoformat() if pref else 'n/a'}). "
                                 f"Nothing was reserved and nothing was charged. "
                                 f"Available instead: {', '.join(offered) or 'no slots'}. "
@@ -340,7 +353,7 @@ async def handle_schedule_appointment(
                         operation_id=operation_id,
                         status=OperationStatus.SUCCESS,
                         reason_code="appointment_confirmed",
-                        human_message=f"Appointment booked at {smb.name} for {_slot_time(slot)}.",
+                        human_message=f"Appointment booked at {smb_display} for {_slot_time(slot)}.",
                         result={
                             "appointment_id": booking.get("uid", operation_id),
                             "confirmed_time": _slot_time(slot),
@@ -385,7 +398,7 @@ async def handle_schedule_appointment(
                     operation_id=operation_id,
                     status=OperationStatus.SUCCESS,
                     reason_code="availability_returned",
-                    human_message=f"Found {len(slots)} available slot(s) at {smb.name}.",
+                    human_message=f"Found {len(slots)} available slot(s) at {smb_display}.",
                     result={"slots": slots, "smb_name": smb.name, "count": len(slots)},
                     cost=CostRecord(amount=_receipt_usd("schedule_appointment"), currency="USD", basis="per_availability_check"),
                     latency_ms=int((time.monotonic() - t0) * 1000),
@@ -408,7 +421,7 @@ async def handle_schedule_appointment(
             status=OperationStatus.FAILURE,
             reason_code="calcom_booking_failed",
             human_message=(
-                f"Booking via Cal.com did not complete for {smb.name}: "
+                f"Booking via Cal.com did not complete for {smb_display}: "
                 f"{_calcom_err or 'no availability was returned for the requested window'}. "
                 "Nothing was booked and nothing was charged."
             ),
@@ -428,7 +441,7 @@ async def handle_schedule_appointment(
             status=OperationStatus.FAILURE,
             reason_code="async_channel_not_provisioned",
             human_message=(
-                f"{smb.name} can only be booked through an async channel "
+                f"{smb_display} can only be booked through an async channel "
                 f"({', '.join(smb.channels_available) or 'none'}), which needs a "
                 "background worker that is not deployed on this tier. "
                 "Nothing was booked and nothing was charged."
@@ -456,7 +469,7 @@ async def handle_schedule_appointment(
             status=OperationStatus.FAILURE,
             reason_code="async_channel_not_provisioned",
             human_message=(
-                f"The booking job for {smb.name} could not be handed to the "
+                f"The booking job for {smb_display} could not be handed to the "
                 "background worker (queue unavailable). Nothing was booked and "
                 "nothing was charged. Retry in a moment."
             ),
@@ -472,7 +485,7 @@ async def handle_schedule_appointment(
         operation_id=operation_id,
         status=OperationStatus.PENDING_ASYNC,
         reason_code="booking_in_progress",
-        human_message=f"Booking request submitted for {smb.name}. Estimated completion: {estimated.isoformat()}.",
+        human_message=f"Booking request submitted for {smb_display}. Estimated completion: {estimated.isoformat()}.",
         cost=CostRecord(amount=_receipt_usd("schedule_appointment"), currency="USD", basis="per_booking_attempt"),
         latency_ms=int((time.monotonic() - t0) * 1000),
         channel_used=None,

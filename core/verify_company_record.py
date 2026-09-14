@@ -24,6 +24,7 @@ import uuid
 from typing import Optional
 
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
+from core.untrusted import fence as _fence_untrusted
 
 _GLEIF_BASE = "https://api.gleif.org/api/v1"
 _EDGAR_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -536,14 +537,20 @@ async def handle_verify_company_record(
         operation_id=op_id,
         status=OperationStatus.SUCCESS,
         reason_code="found",
+        # THE REGISTRY'S WORDS, NOT OURS. legal_name / jurisdiction /
+        # entity_status are whatever GLEIF or SEC EDGAR returned; printing them
+        # as part of our own sentence puts a stranger's text where a model
+        # reads guidance. They are still shown - a record lookup that will not
+        # say which record it found is useless - but fenced, so the boundary is
+        # visible at the point of danger rather than only in the summary block.
         human_message=(
-            f"Found registry record for '{result_payload['legal_name']}'"
+            f"Found registry record for {_fence_untrusted(result_payload['legal_name'])}"
             + (f" (LEI: {result_payload['lei']})" if result_payload.get("lei") else "")
-            + (f", jurisdiction: {result_payload['jurisdiction']}" if result_payload.get("jurisdiction") else "")
-            + (f", status: {result_payload['entity_status']}" if result_payload.get("entity_status") else "")
+            + (f", jurisdiction: {_fence_untrusted(result_payload['jurisdiction'])}" if result_payload.get("jurisdiction") else "")
+            + (f", status: {_fence_untrusted(result_payload['entity_status'])}" if result_payload.get("entity_status") else "")
             + "."
             + (f" NOTE: you asked about '{_ascii(name)}' and SEC EDGAR matched "
-               f"'{_ascii(str(merge_conflict.get('sec_legal_name') or ''))}', a "
+               f"{_fence_untrusted(_ascii(str(merge_conflict.get('sec_legal_name') or '')))}, a "
                f"DIFFERENT company from the registry record above - so no "
                f"ticker or CIK has been attached. The two identifiers you "
                f"supplied may not belong to the same entity."

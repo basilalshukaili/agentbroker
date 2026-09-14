@@ -75,16 +75,40 @@ def test_no_send_at_iso_is_unaffected():
 
 def test_the_manifest_no_longer_promises_scheduling():
     """The description said "Schedule for future delivery; omit for
-    immediate" over a field that scheduled nothing."""
+    immediate" over a field that scheduled nothing.
+
+    2026-09-13, context budget: the field is no longer ADVERTISED at all. It
+    cost 38 tokens on every connection to describe something we refuse. What
+    must hold has not changed, and is asserted here directly instead of
+    through the wording of one property:
+
+      * the manifest must not promise scheduling - if the field is ever
+        re-advertised, the original assertion applies to it again;
+      * the tool must still SAY it sends immediately, so an agent asked for a
+        9am send is told, rather than left to invent a field name. Nothing
+        validates `arguments` against the schema, so an invented `send_at`
+        would be accepted and silently ignored - the failure this whole file
+        exists to prevent.
+
+    UNADVERTISED IS NOT UNHANDLED. The refusal still runs: dispatch still
+    forwards send_at_iso and test_a_future_send_is_refused_not_sent_now still
+    drives it, so a caller on an older tool list is protected exactly as
+    before."""
     repo = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))          # tests/unit/.. -> agentbroker
     with open(os.path.join(repo, "manifest", "manifest.json"),
               encoding="utf-8") as fh:
         man = json.load(fh)
     op = next(o for o in man["operations"] if o["name"] == "send_message")
-    desc = (op["input_schema"]["properties"]["send_at_iso"]["description"])
-    assert "NOT SUPPORTED" in desc.upper()
-    assert "Schedule for future delivery; omit for immediate" not in desc
+    props = op["input_schema"]["properties"]
+    if "send_at_iso" in props:
+        desc = props["send_at_iso"]["description"]
+        assert "NOT SUPPORTED" in desc.upper()
+        assert "Schedule for future delivery; omit for immediate" not in desc
+    assert "no scheduling" in op["description"].lower(), (
+        "nothing on the send_message surface tells an agent we do not "
+        "schedule; an agent wanting a future send will invent a parameter "
+        "name and we will accept it and send now")
 
 
 def test_availability_window_is_disclosed_as_not_applied():

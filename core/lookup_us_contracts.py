@@ -102,8 +102,16 @@ async def _search_awards(company_name: str, max_results: int = 5) -> list[dict]:
                 },
             )
         if resp.status_code != 200:
+            # THE REMOTE BODY IS NOT OUR PROSE. This carried up to 200 chars of
+            # whatever USASpending.gov (or anything answering on its behalf)
+            # returned, straight into `human_message` - a sentence written by
+            # the upstream, printed as ours, to a model that is deciding what
+            # to do next. It is still reported, because a diagnostic that hides
+            # the upstream's answer is useless, but fenced and much shorter.
+            from core.untrusted import fence as _fence
             raise RuntimeError(
-                f"USASpending.gov returned HTTP {resp.status_code}: {resp.text[:200]}"
+                f"USASpending.gov returned HTTP {resp.status_code}: "
+                f"{_fence(resp.text[:120])}"
             )
         data = resp.json()
         return data.get("results", [])
@@ -181,7 +189,11 @@ async def handle_lookup_us_contracts(
             human_message=(
                 f"COULD NOT RETRIEVE contracts for '{_ascii(company_name)}': "
                 f"USASpending.gov was unreachable on this call "
-                f"({_ascii(upstream_error[:200])}). "
+                # 400, not 200. The upstream's own text is capped at 120 chars
+                # INSIDE its fence, so the whole string is ~180; the old 200
+                # would have sliced the closing marker off, and a fence with no
+                # end is no fence.
+                f"({_ascii(upstream_error[:400])}). "
                 f"This is NOT evidence that the company has no federal contracts -- "
                 f"the data source did not respond. Retry, or check "
                 f"https://usaspending.gov directly."
@@ -190,7 +202,7 @@ async def handle_lookup_us_contracts(
                 "status": "unavailable",
                 "queried_name": _ascii(company_name),
                 "source": source_url,
-                "error": _ascii(upstream_error[:300]),
+                "error": _ascii(upstream_error[:400]),
             },
             cost=CostRecord(amount=0.0, currency="USD", basis="free"),
             latency_ms=lat,

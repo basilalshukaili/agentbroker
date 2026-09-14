@@ -44,14 +44,33 @@ _CALL_PRICE_USD = _receipt_usd("call_business")
 
 def _resolve_phone(request: CallBusinessRequest) -> str | None:
     """Resolve the target phone number from business_phone or smb_id."""
+    return _resolve_phone_with_source(request)[0]
+
+
+def _resolve_phone_with_source(request: CallBusinessRequest) -> tuple[str | None, str]:
+    """The number AND where it came from.
+
+    THIS IS THE QUESTION A SECURITY REVIEW ASKS FIRST: can a state-changing
+    call be given its destination by a tool result rather than by the user?
+    For send_message the answer is no - `recipient.id_value` is always the
+    caller's own argument and nothing here resolves it. For THIS tool the
+    answer is yes: pass `smb_id` and we dial the phone on that directory row,
+    and directory rows are written by whichever agent ran import_booking_url.
+    An agent that picked the smb_id out of a find_business result is dialling a
+    number a stranger chose.
+
+    We cannot refuse that - resolving a business from an smb_id is the tool -
+    but the caller must be able to TELL. Hence the source, returned in the
+    receipt as `destination_source`.
+    """
     if request.business_phone:
-        return request.business_phone
+        return request.business_phone, "caller_supplied"
     if request.smb_id:
         from supply.smb_directory import get_directory
         entry = get_directory().get(request.smb_id)
         if entry and entry.phone:
-            return entry.phone
-    return None
+            return entry.phone, "supply_directory_row"
+    return None, "unresolved"
 
 
 async def handle_call_business(
@@ -62,7 +81,7 @@ async def handle_call_business(
     t0 = time.monotonic()
     operation_id = str(uuid.uuid4())
 
-    phone = _resolve_phone(request)
+    phone, destination_source = _resolve_phone_with_source(request)
     if not phone:
         return OutcomeReceipt(
             operation_id=operation_id,
@@ -172,6 +191,17 @@ async def handle_call_business(
             "objective": request.objective,
             "extract_fields": request.extract_fields,
             "target_phone": phone,
+            # WHERE THE DESTINATION CAME FROM, stated rather than inferred.
+            # "supply_directory_row" means this number was written by whichever
+            # agent registered the business, not by you - see
+            # _resolve_phone_with_source.
+            "destination_source": destination_source,
+            **({"destination_note": (
+                "This number came from a supply-directory row written by "
+                "whichever agent registered the business, not from your own "
+                "argument. Pass business_phone explicitly when the number must "
+                "be one your user gave you.")}
+               if destination_source == "supply_directory_row" else {}),
         },
         cost=CostRecord(amount=_CALL_PRICE_USD, currency="USD", basis="per_call"),
         latency_ms=int((time.monotonic() - t0) * 1000),

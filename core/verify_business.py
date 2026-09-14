@@ -75,10 +75,18 @@ async def handle_verify_business(
                 "independently verified, and cannot be transacted with."
             )
     elif not capability_confirmed:
-        valid = ", ".join(smb.capabilities) if smb.capabilities else "(none registered)"
+        # THE TAGS ARE NOT OURS. `capabilities` is whatever the agent that ran
+        # import_booking_url wrote into the shared directory, so joining them
+        # into our own sentence handed a stranger a line of prose in a receipt.
+        # The list is in result.valid_capabilities, where the dispatcher fences
+        # it; the sentence points there instead of reprinting it.
+        n_valid = len(smb.capabilities)
         human_message = (
             f"Capability '{request.capability_to_verify}' not confirmed for this SMB. "
-            f"Valid capabilities: {valid}."
+            + (f"See result.valid_capabilities for the {n_valid} tag(s) this "
+               f"record does list - they were supplied by whoever registered "
+               f"the business, not by us."
+               if n_valid else "This record lists no capabilities at all.")
         )
     else:
         human_message = f"Capability '{request.capability_to_verify}' not confirmed for this SMB."

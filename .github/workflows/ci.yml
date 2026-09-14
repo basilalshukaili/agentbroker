@@ -238,6 +238,25 @@ jobs:
       - name: Registry manifests within the registry's limits
         run: python scripts/check_registry_limits.py
 
+      # A security researcher read our published tools/list and asked what
+      # send_message could be talked into by a hostile tool result. Measured
+      # 2026-09-14: a business name written into the SHARED supply directory by
+      # any free key - or scraped from a remote page's <title> - came back to
+      # every other agent inside result.businesses[].name as plain prose, with
+      # nothing marking it as a stranger's words. Same for the reply a business
+      # types back (get_conversation), the upstream's HTTP body
+      # (lookup_us_contracts) and anything get_outcome replays.
+      #
+      # Third-party text is fenced now. This is what stops the fence rotting:
+      # it classifies every tool against the manifest, refuses any dispatch
+      # path that skips the labelling seam, drives nine hostile payloads it
+      # carries ITSELF through live tool calls, and - on every run - repeats
+      # that probe with labelling disabled and fails if the probe still passes.
+      # A guard that cannot demonstrate its own failure is a guard that prints
+      # CLEAN while matching nothing, which has happened here before.
+      - name: Third-party text is fenced, not printed as ours
+        run: python scripts/check_untrusted_content_is_labelled.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

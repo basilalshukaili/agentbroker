@@ -38,6 +38,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from core.models import OperationStatus, Vertical
+from core.untrusted import fence as _fence, neutralize as _neutralize
 from supply.smb_directory import SMBDirectory, SMBEntry
 
 
@@ -351,11 +352,33 @@ async def import_from_booking_url(req: ImportRequest) -> ImportResult:
             status=OperationStatus.SUCCESS,
             smb_id=smb_id,
             platform=platform,
-            message=f"Already imported as {existing.name}.",
+            # `existing.name` belongs to whichever agent imported this URL
+            # FIRST - possibly not the caller. Fenced for the same reason
+            # find_business fences it.
+            message=f"Already imported as {_fence(existing.name)}.",
         )
 
-    # Best-effort title extraction
-    business_name = req.business_name or await _extract_title(req.booking_url) or req.booking_url
+    # THIS IS THE MOUTH OF THE SHARED DIRECTORY.
+    #
+    # Whatever lands in `name` here is written to the `smb_supply` table that
+    # every other agent's find_business reads, and it comes from one of two
+    # untrusted places: a caller-supplied `business_name` with no advertised
+    # bound, or the <title> of a remote page. `_extract_title` already caps its
+    # own output at 120 chars; the caller-supplied path bypassed that entirely,
+    # so "business name" was an unbounded free-text write into shared storage.
+    #
+    # 120 both ways. A real business name fits; a paragraph of instructions
+    # does not, and the fence at read time does the rest.
+    _MAX_NAME = 120
+    business_name = (
+        (req.business_name or "").strip()[:_MAX_NAME]
+        or await _extract_title(req.booking_url)
+        or req.booking_url
+    )
+    # Strip control/format characters at INGEST as well as at read. A bidi
+    # override stored in the directory is a problem for every consumer of that
+    # row, not only for the MCP response path.
+    business_name, _ = _neutralize(business_name)
 
     country_code = (req.country_code or _infer_country_from_url(req.booking_url) or "INTERNATIONAL").upper()
 
@@ -408,7 +431,7 @@ async def import_from_booking_url(req: ImportRequest) -> ImportResult:
         status=OperationStatus.SUCCESS,
         smb_id=smb_id,
         platform=platform,
-        message=f"Imported '{business_name}' from {platform.value}.",
+        message=f"Imported {_fence(business_name)} from {platform.value}.",
         next_steps=next_steps,
     )
 

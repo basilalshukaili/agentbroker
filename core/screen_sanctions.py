@@ -60,6 +60,7 @@ from typing import Optional
 
 from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
+from core.untrusted import fence as _fence_untrusted
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -2011,11 +2012,16 @@ async def handle_screen_sanctions(
     # --- Human message ---------------------------------------------------
     if matched:
         top = merged[0]
+        # top['name'] and top['program'] are the PUBLISHER'S strings - the
+        # listed name out of Treasury's SDN.CSV or the EC/FCDO rows. They are
+        # data about a match, not part of our sentence, and a model reading a
+        # compliance verdict is exactly the reader you do not want inheriting a
+        # stranger's phrasing unmarked.
         human_message = (
             f"MATCH FOUND for '{_ascii(name_clean)}': "
-            f"'{top['name']}' on {top['list']} "
+            f"{_fence_untrusted(top['name'])} on {top['list']} "
             f"(score={top['match_score']:.2f}"
-            + (f", program={top['program']}" if top.get("program") else "")
+            + (f", program={_fence_untrusted(top['program'])}" if top.get("program") else "")
             + f"). Screened {len(screened_lists)} source(s). "
             "Verify against the official source before acting."
             # A HIT THAT NAMES ONE LIST UNDERSTATES THE EXPOSURE.

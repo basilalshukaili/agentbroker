@@ -30,8 +30,7 @@
               "personal_services",
               "home_services",
               "professional_services"
-            ],
-            "description": "Service vertical to search within"
+            ]
           },
           "location": {
             "type": "object",
@@ -387,7 +386,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Sends immediately; no scheduling. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
       "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
       "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
@@ -477,18 +476,13 @@
             ],
             "default": "auto"
           },
-          "send_at_iso": {
-            "type": "string",
-            "format": "date-time",
-            "description": "NOT SUPPORTED YET. We do not schedule messages. Supplying a time more than 2 minutes in the future is REFUSED (reason_code scheduling_not_supported) rather than sent immediately, which is what used to happen. Call send_message at the moment you want delivery, or omit this field."
-          },
           "on_behalf_of": {
             "type": "string",
             "description": "Who this message is FOR (your end-user's name/label). On WhatsApp this opens a tracked conversation and travels in-message as '#4821 for Sara (via HatchLoop)', so the business knows who it is talking to and their reply is matched back to this exact request instead of guessed. Strongly recommended for two-way channels."
           },
           "business_id": {
             "type": "string",
-            "description": "Optional stable id for the recipient business. Enables global demand shaping (we rate-limit total inbound across ALL agents so businesses stay responsive instead of blocking us)."
+            "description": "Stable id for the recipient business; used for global demand shaping."
           }
         }
       },
@@ -1975,7 +1969,7 @@
           },
           "business_name": {
             "type": "string",
-            "description": "Optional override. If omitted, the business name is auto-extracted from the page's <title> or og:title."
+            "description": "If omitted, auto-extracted from the page's <title> or og:title."
           },
           "vertical": {
             "type": "string",
@@ -1988,19 +1982,18 @@
               "healthcare",
               "fitness"
             ],
-            "description": "Best-guess vertical. If omitted, inferred from the platform (e.g., Doctolib -> healthcare, OpenTable -> restaurants)."
+            "description": "If omitted, inferred from the booking platform."
           },
           "country_code": {
             "type": "string",
-            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'); routes compliance on later sends."
           },
           "contact_phone": {
             "type": "string",
-            "description": "Optional. If omitted, the platform integration handles outreach."
+            "description": "If omitted, the platform integration handles outreach."
           },
           "contact_email": {
-            "type": "string",
-            "description": "Optional."
+            "type": "string"
           },
           "capabilities": {
             "type": "array",
