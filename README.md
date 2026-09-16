@@ -147,13 +147,13 @@ Rules worth wiring into your agent:
 - **A fence is never a destination.** `send_message` and
   `send_transactional_confirmation` take the recipient from *your* arguments and
   nothing else; we never resolve one for you. If a phone number or URL appears
-  inside a fence, `contains_contact_details` is set — do not dial it.
+  inside a fence, `contains_contact_details` is set - do not dial it.
 - **`call_business` is the exception, and says so.** Pass `smb_id` instead of
   `business_phone` and we dial the number on that directory row, which whichever
   agent registered the business wrote. The receipt carries
   `destination_source: "supply_directory_row"` when that happened.
-- **Short round-trippable values are not fenced** — a capability tag, an ISO slot
-  time — so you can hand them straight back to us. The path is still listed in
+- **Short round-trippable values are not fenced** - a capability tag, an ISO slot
+  time - so you can hand them straight back to us. The path is still listed in
   `untrusted_content.fields` with a count of how many were exempted.
 - `policy_sha256` identifies the exact rules that produced the response; log it
   next to the decision if you need to explain one later.
