@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh the edge worker's embedded discovery snapshots from the live origin.
+"""Refresh the edge worker's embedded discovery snapshots.
 
 WHY. hatchloop.dev/mcp/agent-broker routes Vercel -> Cloudflare edge worker ->
 Render origin, and the worker answers `initialize`, `tools/list`, `/manifest`
@@ -13,8 +13,15 @@ That has bitten us repeatedly (stale serverInfo, 17-vs-19 tool counts, the
 manifest advertising prices we do not charge). This script makes the refresh a
 command instead of a memory.
 
-    python scripts/refresh_edge_snapshots.py --check    # report drift only
-    python scripts/refresh_edge_snapshots.py            # rewrite snapshots
+    python scripts/refresh_edge_snapshots.py --check    # compare every snapshot to live origin
+    python scripts/refresh_edge_snapshots.py            # rewrite all snapshots from live origin
+
+The MCP tools snapshot has a second, fully offline path. It calls the exact
+``_build_tool_list`` function used by ``tools/list`` in this checkout, so a
+schema-only code change can be checked or captured before any origin deploy:
+
+    python scripts/refresh_edge_snapshots.py --local-tools --check
+    python scripts/refresh_edge_snapshots.py --local-tools
 
 Then deploy:
     cd agentbroker/edge && CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
@@ -179,6 +186,28 @@ def fetch_all() -> dict[str, object]:
     return out
 
 
+def build_local_tools_snapshot() -> dict:
+    """Build ``tools/list`` from the same local function the origin serves.
+
+    This is deliberately narrower than :func:`fetch_all`: every other snapshot
+    can depend on routing or deployment configuration, while the tools array is
+    a deterministic projection of the checked-out manifest and MCP adapter.
+    Keeping this path local lets CI and release preparation close schema drift
+    without treating a deployed origin as the source of the code under test.
+    """
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from agent_interface.mcp_server import _build_tool_list
+
+    tools = _build_tool_list()
+    if not isinstance(tools, list) or not tools:
+        raise RuntimeError(
+            "local tools/list builder returned no tools; refusing to replace "
+            "the edge snapshot"
+        )
+    return {"jsonrpc": "2.0", "id": 1, "result": {"tools": tools}}
+
+
 def _summarize(fname: str, doc: dict) -> str:
     """A short fingerprint of the things that actually drift."""
     if fname == "manifest.json":
@@ -198,13 +227,22 @@ def _summarize(fname: str, doc: dict) -> str:
     return f"{len(json.dumps(doc))}B"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
                     help="report drift, write nothing, exit 1 if stale")
-    args = ap.parse_args()
+    ap.add_argument(
+        "--local-tools",
+        action="store_true",
+        help=("offline: compare or rewrite only mcp-tools-list.json from the "
+              "checked-out tools/list implementation"),
+    )
+    args = ap.parse_args(argv)
 
-    print(f"origin: {ORIGIN}")
+    if args.local_tools:
+        print("source: local agent_interface.mcp_server._build_tool_list (offline)")
+    else:
+        print(f"origin: {ORIGIN}")
 
     # Refuse to claim "in sync" while a snapshot exists that we never look at.
     uncovered = _every_snapshot_is_covered()
@@ -217,10 +255,20 @@ def main() -> int:
               "no longer serves it.")
         return 2
 
-    fresh = fetch_all()
-    fetch_failures = fresh.pop("__fetch_failures__", [])
+    if args.local_tools:
+        try:
+            fresh = {"mcp-tools-list.json": build_local_tools_snapshot()}
+        except Exception as exc:  # noqa: BLE001 - command must fail closed
+            print(f"refresh_edge_snapshots: FAILED - local tools/list: {exc}")
+            return 2
+        fetch_failures = []
+        source_label = "local tools/list source"
+    else:
+        fresh = fetch_all()
+        fetch_failures = fresh.pop("__fetch_failures__", [])
+        source_label = "origin"
     if not fresh:
-        print("refresh_edge_snapshots: FAILED - origin unreachable")
+        print(f"refresh_edge_snapshots: FAILED - {source_label} unavailable")
         return 2
 
     stale = []
@@ -246,8 +294,9 @@ def main() -> int:
                   f"(encoding bug upstream of here) - snapshot left untouched")
             continue
         stale.append(fname)
+        comparison_source = "local" if args.local_tools else "origin"
         print(f"  STALE {fname}: edge[{_summarize(fname, old or {})}] "
-              f"!= origin[{_summarize(fname, doc)}]")
+              f"!= {comparison_source}[{_summarize(fname, doc)}]")
         if not args.check:
             with open(path, "w", encoding="utf-8", newline="") as fh:
                 if is_text:
@@ -265,15 +314,24 @@ def main() -> int:
         return 2
 
     if not stale:
-        print(f"refresh_edge_snapshots: IN SYNC with origin "
+        print(f"refresh_edge_snapshots: IN SYNC with {source_label} "
               f"({len(fresh)} snapshot(s) compared)")
         return 0
     if args.check:
-        print(f"refresh_edge_snapshots: {len(stale)} snapshot(s) STALE "
-              f"- the canonical host is serving old answers")
+        if args.local_tools:
+            print(f"refresh_edge_snapshots: {len(stale)} snapshot(s) STALE "
+                  "against local code - the committed edge bundle would serve "
+                  "old tool definitions")
+        else:
+            print(f"refresh_edge_snapshots: {len(stale)} snapshot(s) STALE "
+                  f"- the canonical host is serving old answers")
         return 1
-    print(f"refresh_edge_snapshots: rewrote {len(stale)} snapshot(s). "
-          f"Now run: cd edge && npx wrangler deploy")
+    if args.local_tools:
+        print(f"refresh_edge_snapshots: rewrote {len(stale)} snapshot(s) from "
+              "local code. Deployment remains a separate release step.")
+    else:
+        print(f"refresh_edge_snapshots: rewrote {len(stale)} snapshot(s). "
+              f"Now run: cd edge && npx wrangler deploy")
     return 0
 
 

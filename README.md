@@ -426,6 +426,11 @@ pip install -r requirements.txt
 # Run tests (1173 passing at the time of writing)
 python -m pytest tests/ -q
 
+# Check or refresh the compiled edge tools/list snapshot from this checkout.
+# Both commands are offline; deploying the worker remains a separate release step.
+python scripts/refresh_edge_snapshots.py --local-tools --check
+python scripts/refresh_edge_snapshots.py --local-tools
+
 # Start the API
 python main.py
 # --> http://localhost:8000/docs      (Swagger UI)

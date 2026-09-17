@@ -19,8 +19,7 @@
                 "personal_services",
                 "home_services",
                 "professional_services"
-              ],
-              "description": "Service vertical to search within"
+              ]
             },
             "location": {
               "type": "object",
@@ -105,7 +104,7 @@
       },
       {
         "name": "send_message",
-        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured… [from $0.02/call, variable] [async→get_outcome]",
+        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Sends immediately; no scheduling. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected… [from $0.02/call, variable] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -182,23 +181,18 @@
               ],
               "default": "auto"
             },
-            "send_at_iso": {
-              "type": "string",
-              "format": "date-time",
-              "description": "NOT SUPPORTED YET. We do not schedule messages. Supplying a time more than 2…"
-            },
             "on_behalf_of": {
               "type": "string",
               "description": "Who this message is FOR (your end-user's name/label). On WhatsApp this opens a…"
             },
             "business_id": {
               "type": "string",
-              "description": "Optional stable id for the recipient business. Enables global demand shaping…"
+              "description": "Stable id for the recipient business; used for global demand shaping."
             },
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -258,7 +252,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -339,7 +333,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -402,7 +396,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -466,7 +460,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -539,7 +533,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -692,7 +686,7 @@
             },
             "business_name": {
               "type": "string",
-              "description": "Optional override. If omitted, the business name is auto-extracted from the…"
+              "description": "If omitted, auto-extracted from the page's <title> or og:title."
             },
             "vertical": {
               "type": "string",
@@ -705,19 +699,18 @@
                 "healthcare",
                 "fitness"
               ],
-              "description": "Best-guess vertical. If omitted, inferred from the platform (e.g., Doctolib ->…"
+              "description": "If omitted, inferred from the booking platform."
             },
             "country_code": {
               "type": "string",
-              "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later…"
+              "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'); routes compliance on later sends."
             },
             "contact_phone": {
               "type": "string",
-              "description": "Optional. If omitted, the platform integration handles outreach."
+              "description": "If omitted, the platform integration handles outreach."
             },
             "contact_email": {
-              "type": "string",
-              "description": "Optional."
+              "type": "string"
             },
             "capabilities": {
               "type": "array",
@@ -729,7 +722,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
@@ -785,7 +778,7 @@
             "idempotency_key": {
               "type": "string",
               "maxLength": 128,
-              "description": "Optional client-supplied key for safe retries. Replaying the same key within 24h returns the original receipt - the operation is NOT re-executed and NOT re-charged."
+              "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
           }
         },
