@@ -291,6 +291,10 @@ _GENERATORS = [
     "agent_interface/well_known.py",
     "agent_interface/mcp_server.py",
     "agent_interface/discovery.py",
+    # Lives in the parent orchestration repo but emits copy pasted into four
+    # public directories. This exact omission let a hardcoded "crypto is not
+    # offered" survive while production advertised x402.
+    "../scripts/manual_listings.py",
 ]
 
 
