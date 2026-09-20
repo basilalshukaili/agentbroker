@@ -114,6 +114,56 @@ async def insert_row(table: str, row: dict[str, Any]) -> Optional[dict]:
     return None
 
 
+async def update_row(
+    table: str, filters: dict[str, Any], patch: dict[str, Any]
+) -> Optional[dict]:
+    """
+    Update the row(s) in `table` matching equality `filters` with `patch`.
+    Returns the updated row on success, None on failure, missing config, or
+    when nothing matched. Never raises.
+
+    Exists for callers whose natural key is composite and is NOT the table's
+    primary key (e.g. idempotency_keys, keyed by (agent_scope, operation,
+    idem_key)) -- upsert_row's merge-duplicates resolution targets whatever
+    on_conflict names, which is only correct when that is genuinely a unique
+    constraint PostgREST knows about; a PATCH by filter makes no such
+    assumption and matches how PostgREST is meant to update an existing row
+    in place. Use insert_row for the first write and this for every update
+    after it (see agent_interface/idempotency_gate.py's claim/complete).
+    """
+    url, key = _get_config()
+    if not url or not key:
+        logger.debug("supabase_update_skipped table=%s reason=missing_config", table)
+        return None
+    try:
+        import httpx
+        params: dict[str, str] = {}
+        for col, val in (filters or {}).items():
+            params[col] = f"eq.{val}"
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.patch(
+                f"{url}/rest/v1/{table}",
+                headers=_headers(key),
+                params=params,
+                json=patch,
+            )
+        if resp.status_code in (200, 201, 204):
+            try:
+                data = resp.json()
+            except Exception:
+                return dict(patch)
+            result = data[0] if isinstance(data, list) and data else (data or dict(patch))
+            logger.debug("supabase_update_ok table=%s", table)
+            return result
+        logger.warning(
+            "supabase_update_failed table=%s status=%s body=%s",
+            table, resp.status_code, resp.text[:200],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("supabase_update_exception table=%s err=%s", table, exc)
+    return None
+
+
 async def upsert_row(table: str, row: dict[str, Any], on_conflict: str = "id") -> Optional[dict]:
     """
     Upsert a single row. `on_conflict` is the column name for conflict resolution.

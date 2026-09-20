@@ -778,8 +778,9 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     if _scope and idem_key:
         from agent_interface import idempotency_gate as _ig
         _ah = _ig.args_hash(arguments if isinstance(arguments, dict) else {})
-        _hit = await _ig.get(_scope, name, idem_key)
-        if _hit is not None:
+        _status, _hit = await _ig.claim(_scope, name, idem_key)
+
+        if _status == "complete":
             if _hit.get("args_hash") != _ah:
                 return {
                     "content": [{"type": "text", "text": json.dumps({
@@ -794,9 +795,47 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
                     "isError": True,
                 }
             return _hit["response"]
-        resp = await _h_tools_call_impl(params, headers)
+
+        if _status == "in_progress":
+            # ANOTHER call already holds this exact idempotency key and has
+            # not finished -- either a genuinely concurrent duplicate, or a
+            # previous attempt that crashed before confirming completion.
+            # Executing here too is precisely the concurrency hole this gate
+            # exists to close: two requests, one key, both reach the real
+            # tool, both create a real side effect and a real charge. Refuse
+            # to run it a second time; the caller keeps the SAME key and
+            # retries, which will replay the first attempt's result once it
+            # lands (or safely re-execute once a truly abandoned claim is
+            # released -- see idempotency_gate.claim's docstring).
+            return {
+                "content": [{"type": "text", "text": json.dumps({
+                    "status": "failure",
+                    "reason_code": "idempotency_in_progress",
+                    "human_message": (
+                        "A request with this idempotency_key is already "
+                        "being processed. Do not send a new key -- that "
+                        "risks a duplicate side effect (and a duplicate "
+                        "charge) if the in-flight attempt also succeeds. "
+                        "Wait and retry with the SAME idempotency_key; you "
+                        "will receive the original result once it finishes."
+                    ),
+                    "retriable": True,
+                }, indent=2)}],
+                "isError": True,
+            }
+
+        # _status == "claimed": we alone own this key right now. Execute
+        # exactly once, then resolve the claim so either a replay (success)
+        # or a fresh retry (failure) becomes possible.
+        try:
+            resp = await _h_tools_call_impl(params, headers)
+        except Exception:
+            await _ig.release(_scope, name, idem_key)
+            raise
         if isinstance(resp, dict) and not resp.get("isError"):
-            await _ig.put(_scope, name, idem_key, _ah, resp)
+            await _ig.complete(_scope, name, idem_key, _ah, resp)
+        else:
+            await _ig.release(_scope, name, idem_key)
         return resp
 
     return await _h_tools_call_impl(params, headers)
