@@ -4,7 +4,9 @@ FastAPI router for the email-verified free API key flow.
 POST /keys/request  {email}
   -> stores pending verification row in Supabase `pending_keys`
   -> sends a signed verification link via Resend
-  -> returns 200 + instructions (never leaks whether the email already exists)
+  -> returns 200 + instructions ONLY if the email was actually accepted for
+     delivery (never leaks whether the address already exists); returns 503
+     `onboarding_unavailable` if it was not - see request_free_key below
 
 GET /keys/verify?token=<signed_token>
   -> validates the token, mints a free-tier JWT (tier='free', 90d)
@@ -48,6 +50,21 @@ router = APIRouter(prefix="/keys", tags=["Free Keys"])
 _FREE_TIER_TTL_DAYS = 90
 
 
+def _free_tier_sentence() -> str:
+    """How much of the product needs no key, in the words every surface uses.
+
+    Imported lazily and never allowed to fail: this route's job is to tell an
+    agent how to get a key, and it must still do that if the manifest cannot
+    be read. A missing sentence is recoverable; a wrong one sends an agent
+    away believing tools are open that are not.
+    """
+    try:
+        from core.tool_auth import free_tier_sentence
+        return free_tier_sentence()
+    except Exception:                           # noqa: BLE001
+        return "many of our tools work with no key at all"
+
+
 def _public_base() -> str:
     """The branded host, not whatever the request happened to arrive on."""
     import os
@@ -82,8 +99,12 @@ async def describe_free_key_flow():
                      f"-d '{{\"email\":\"you@example.com\"}}'"),
         },
         "then": "We email a verification link. Opening it returns your key.",
-        "note": ("You may not need one: 12 of our 20 tools work with no key at "
-                 "all, including sanctions screening and company verification."),
+        # DERIVED. This said "12 of our 20 tools", stale on both numbers and
+        # served 200 to every agent that asked how to get a key. The sentence
+        # has one source now - core/tool_auth.free_tier_sentence() - which is
+        # the same sentence the website and the registry catalogues publish.
+        "note": ("You may not need one: " + _free_tier_sentence() + ", "
+                 "including sanctions screening and company verification."),
         "no_email_available": {
             "reason": "Autonomous agents often have no inbox.",
             "alternative": ("Pay per call with x402 (USDC on Base) - no signup, "
@@ -99,8 +120,18 @@ async def request_free_key(body: KeyRequestBody):
     """
     Step 1 of the free-key flow.
 
-    Always returns 200 (to avoid email enumeration). Sends a verification
-    email to the supplied address if it looks valid.
+    Returns 200 only when a verification email was actually accepted for
+    delivery (to avoid email enumeration, this still does not reveal whether
+    the address is already known). When delivery could not even be attempted
+    or was rejected, this returns a distinct, honest failure instead of the
+    same success shape — see `onboarding_unavailable` below.
+
+    THIS USED TO ALWAYS RETURN 200 `{"status": "verification_sent"}`, because
+    `send_verification_email` was fire-and-forget and its only failure output
+    was a log line. On production, RESEND_API_KEY is unset today, so every
+    real signup got a success response and no email - a caller had no way to
+    tell "check your inbox" from "nothing happened." A clean refusal here is
+    better than a false success.
     """
     email = body.email.strip().lower()
     if not email or "@" not in email or len(email) > 320:
@@ -118,7 +149,30 @@ async def request_free_key(body: KeyRequestBody):
 
     # Store pending (best-effort) + send email
     await store_pending(email, token, expires_at)
-    await send_verification_email(email, verify_url)
+    sent = await send_verification_email(email, verify_url)
+
+    if not sent:
+        # Honest refusal: no email left this process, so no caller should be
+        # told to go check an inbox. NOT gated on any env var beyond the ones
+        # send_verification_email already checked - this must be correct with
+        # today's production configuration (RESEND_API_KEY unset), not some
+        # future one.
+        logger.warning("onboarding_unavailable email_domain=%s reason=verification_email_not_sent",
+                        email.split("@")[-1])
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "onboarding_unavailable",
+                "detail": (
+                    "We could not send a verification email, so no key was issued and "
+                    "nothing was sent to your inbox. Email-verified signup is not available "
+                    "on this deployment right now. " + _free_tier_sentence() + ", so you may "
+                    "not need a key at all. If you do, contact hello@hatchloop.dev for manual "
+                    "provisioning, or pay per call with x402 (USDC on Base, no signup) - see "
+                    f"{_public_base()}/docs."
+                ),
+            },
+        )
 
     return JSONResponse(content={
         "status": "verification_sent",

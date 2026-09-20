@@ -64,9 +64,16 @@ def _payments_block() -> dict:
         # around this document got 401 auth_required on a tool the manifest
         # told it was free. This is the file agents read to decide what they
         # can do without signing up, so the distinction has to be in it.
+        #
+        # IT HAPPENED AGAIN, ONE FILE OVER. This read the WRITE set only, so
+        # the day get_conversation started refusing keyless callers it was
+        # published in free_tools here - the same defect this comment
+        # describes, reintroduced by the same narrow question. The set now
+        # comes from core/tool_auth.py, which answers "does a stranger get
+        # refused" rather than "is it a write".
         try:
-            from agent_interface.mcp_server import _WRITE_TOOLS_REQUIRING_AUTH
-            needs_key = set(_WRITE_TOOLS_REQUIRING_AUTH)
+            from core.tool_auth import TOOLS_REQUIRING_KEY
+            needs_key = set(TOOLS_REQUIRING_KEY)
         except Exception:                       # noqa: BLE001
             needs_key = set()
         zero = {n for n, c in _PRICING_CENTS.items() if c == 0}
@@ -316,7 +323,14 @@ def get_agents_json() -> dict:
         "authentication": {
             "schemes": ["bearer", "agent-identity-jwt"],
             "header": "X-Agent-Identity",
-            "token_endpoint": f"{BASE_URL}/auth/token",
+            # /auth/token is an internal admin route (X-Admin-Secret; 401 for
+            # every outside caller, disabled outright when ADMIN_SECRET is
+            # unset, which is production today). Free keys are self-serve via
+            # the email-verified flow below; there is no machine-mintable
+            # path in production today (POST /keys/mint returns 503
+            # not_configured and is not something to build against).
+            "free_key_endpoint": f"{BASE_URL}/keys/request",
+            "free_key_method": "POST {\"email\": \"you@example.com\"}",
         },
         "skills": skills,
         "supported_protocols": ["mcp", "openai-tools", "anthropic-tools", "rest", "a2a"],
@@ -524,12 +538,23 @@ def get_llms_txt() -> str:
         lines.append(f"- **Endpoint**: `POST {BASE_URL}/ops/{op['name']}`")
         lines.append("")
 
+    from core.tool_auth import free_tier_sentence
+
     lines += [
         "## Authentication",
         "",
         "All state-changing operations require an `X-Agent-Identity` JWT header. "
-        f"Get a token from `{BASE_URL}/auth/token`. Scopes include allowed "
-        "operations, budget cap, and verticals.",
+        f"Get a free key by emailing yourself a verification link: "
+        f"`POST {BASE_URL}/keys/request` with `{{\"email\": \"you@example.com\"}}`, "
+        "then open the link it sends you. This currently requires a human to click "
+        "that link - there is no machine-mintable path in production today "
+        f"(`POST {BASE_URL}/keys/mint` returns `503 not_configured` and is not "
+        "something to build against). "
+        f"{free_tier_sentence()}, so check whether you need a key at all before "
+        "requesting one. "
+        f"(Note: `{BASE_URL}/auth/token` is an internal admin route, not a public "
+        "endpoint - it 401s for every outside caller.) "
+        "Scopes include allowed operations, budget cap, and verticals.",
         "",
         "## Compliance",
         "",

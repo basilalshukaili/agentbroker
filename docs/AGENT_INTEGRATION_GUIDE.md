@@ -8,25 +8,36 @@ Every example below is copy-paste runnable.
 
 ## Step 0: Get an Agent-Identity token
 
-Every state-changing operation requires `X-Agent-Identity`. On the MCP endpoint, read-only ops require no auth at all - 15 of the 23 tools work keyless (12 always-free plus 3 free within a daily quota; see docs/PRICING.md). NOTE: on this REST surface (`/ops/*`), production currently requires `X-Agent-Identity` on most reads too (only `/ops/preview_cost` is open); use MCP for keyless evaluation.
+Every state-changing operation requires `X-Agent-Identity`. On the MCP endpoint, read-only ops require no auth at all - 14 of the 23 tools work keyless (11 always-free plus 3 free within a daily quota; see docs/PRICING.md). get_conversation is free and still needs a key: a thread is readable only by the identity that opened it. NOTE: on this REST surface (`/ops/*`), production currently requires `X-Agent-Identity` on most reads too (only `/ops/preview_cost` is open); use MCP for keyless evaluation.
+
+**`POST /auth/token` is NOT this route.** It is an internal admin endpoint gated by an
+`X-Admin-Secret` header no outside caller holds, and it is disabled outright when
+`ADMIN_SECRET` is unset on the server (production's state today) - every call from
+here returns `401`. The route an integrator actually uses is the free, email-verified
+key flow:
 
 ```python
 import httpx
 
 resp = httpx.post(
-    "https://api.hatchloop.dev/auth/token",
-    json={
-        "agent_id": "my_agent_v1",
-        "principal_id": "user_123",
-        "allowed_operations": ["*"],
-        "budget_cap_usd": 10.00,
-        "ttl_seconds": 86400,
-    },
+    "https://api.hatchloop.dev/keys/request",
+    json={"email": "you@example.com"},
 )
-TOKEN = resp.json()["token"]
+print(resp.json())
+# {"status": "verification_sent", "detail": "Check your inbox for a verification
+#  link. It expires in 1 hour. If you don't see it, check spam."}
 ```
 
-Store the token; it's good for 24 hours by default. Re-issue when expired.
+Open the link emailed to you; the confirmation page shows your key (also emailed).
+**This currently requires a human to open that link - there is no machine-mintable
+key today.** `POST /keys/mint` (HMAC self-serve, no email) exists in the code but
+returns `503 {"error": "not_configured"}` in production and is not something to
+build against or wait on. If email delivery itself is unavailable, `/keys/request`
+answers honestly with `503 {"error": "onboarding_unavailable"}` instead of a false
+`verification_sent` - if you hit that, email hello@hatchloop.dev for manual
+provisioning rather than retrying.
+
+Store the key; the free tier is good for 90 days. Request a new one after it expires.
 
 ---
 
@@ -373,7 +384,7 @@ receipt = httpx.post("https://.../ops/send_transactional_confirmation", json={
 
 | Error | Meaning | What to do |
 |-------|---------|-----------|
-| `401 Unauthorized` | Token missing or expired | Re-issue from `/auth/token` |
+| `401 Unauthorized` | Token missing or expired | Re-issue via `POST /keys/request` (email-verified; see Step 0) |
 | `403 Forbidden` | Operation not in your scope | Update `allowed_operations` on token |
 | `422 compliance_violation` | Pre-check failed | Do **not** retry. Obtain consent. |
 | `429 rate_limited` | Too many requests in window | Back off; retry-after header included |

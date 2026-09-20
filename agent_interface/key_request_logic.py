@@ -114,12 +114,26 @@ def verify_token(token: str) -> Optional[str]:
 # Resend email helpers
 # ---------------------------------------------------------------------------
 
-async def send_verification_email(email: str, verify_url: str) -> None:
-    """Send the verification link via Resend. Best-effort — never raises."""
+async def send_verification_email(email: str, verify_url: str) -> bool:
+    """Send the verification link via Resend.
+
+    Never RAISES — the caller must not 500 just because a mail provider is
+    unhappy — but it DOES tell the truth about what happened, by returning
+    whether the email was actually accepted for delivery. Every path that
+    does not end in a 2xx from Resend returns False:
+
+      * RESEND_API_KEY unset (the production default today)
+      * Resend rejects the send (bad key, suspended account, invalid payload)
+      * the request to Resend itself fails (network, timeout, DNS, ...)
+
+    This used to return None unconditionally, so `request_free_key` could not
+    tell "sent" from "silently skipped" and told every caller "verification_sent"
+    either way — a 200 that looks like success when nothing left this process.
+    """
     resend_key = os.getenv("RESEND_API_KEY", "")
     if not resend_key:
         logger.warning("RESEND_API_KEY not set — skipping verification email to %s", email)
-        return
+        return False
     try:
         import httpx
         payload = {
@@ -147,8 +161,11 @@ async def send_verification_email(email: str, verify_url: str) -> None:
                 "resend_send_failed email=%s status=%s body=%s",
                 email, resp.status_code, resp.text[:200],
             )
+            return False
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("resend_exception email=%s err=%s", email, exc)
+        return False
 
 
 async def send_key_email(email: str, token_value: str, expires_iso: str) -> None:

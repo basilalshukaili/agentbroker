@@ -74,9 +74,26 @@ Every authorization decision — allow or deny — is written immutably to the c
 
 ## Token Issuance
 
-Tokens are issued by our `/auth/token` endpoint (not in v0.1 scope — use static test tokens from `/auth/dev-token` in dev/test environments).
+**Not `/auth/token`.** That route mints tokens for paying subscribers and is
+gated by an `X-Admin-Secret` header no outside caller holds; it is disabled
+outright when `ADMIN_SECRET` is unset on the server, which is production's
+state today. It was never a public issuance endpoint, and `/auth/dev-token`
+does not exist in this service — do not build against either.
 
-In v0.1, agent registration is manual. The `agent_id` and issuer key are provisioned by the IntegrationAgent during onboarding.
+The route an integrator actually uses is the free, email-verified key flow:
+`POST /keys/request {"email": ...}`, then open the verification link that
+arrives by email. That link's confirmation page shows the key (also emailed).
+This currently requires a human to click the link — there is no
+machine-mintable path in production today; `POST /keys/mint` (HMAC self-serve,
+no email) exists in the code but returns `503 {"error": "not_configured"}` and
+is not something to build against. If email delivery itself is down,
+`/keys/request` answers `503 {"error": "onboarding_unavailable"}` rather than
+a false `verification_sent` — treat that as "email onboarding requires an
+operator right now" and contact hello@hatchloop.dev for manual provisioning.
+
+Paid-plan tokens (`developer` / `business` / `enterprise`) are issued from
+`/auth/token` by an operator after a completed Polar order, or automatically
+by the Polar webhook — never by an integrator calling it directly.
 
 ---
 

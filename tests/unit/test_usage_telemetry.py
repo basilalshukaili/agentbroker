@@ -247,19 +247,62 @@ class TestKeyRequestEndpoints:
         assert "invalid_email" in resp.json()["error"]
 
     def test_request_with_valid_email_returns_200(self):
-        with patch("agent_interface.key_request_logic.store_pending", new=AsyncMock()), \
-             patch("agent_interface.key_request_logic.send_verification_email", new=AsyncMock()):
+        # Patch the names as *imported into key_requests*, not where they are
+        # defined in key_request_logic - key_requests does
+        # `from agent_interface.key_request_logic import store_pending,
+        # send_verification_email, ...`, which binds its own module-level
+        # names at import time, so patching key_request_logic's attributes
+        # after that does not reach request_free_key's calls. This test used
+        # to pass anyway because the real (unpatched) calls both failed
+        # silently in this test env (no Supabase, no RESEND_API_KEY) and the
+        # old code never looked at send_verification_email's return value -
+        # once it started doing that (honest-failure fix), the real,
+        # un-mocked call correctly reported "not sent" and this test's happy
+        # path broke on a mock that was never actually installed.
+        with patch("agent_interface.key_requests.store_pending", new=AsyncMock()), \
+             patch("agent_interface.key_requests.send_verification_email",
+                   new=AsyncMock(return_value=True)):
             client = self._get_client()
             resp = client.post("/keys/request", json={"email": "test@example.com"})
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "verification_sent"
 
+    def test_request_when_email_send_fails_returns_honest_503(self):
+        """The other half of the fix: a failed send must not be reported as
+        verification_sent. See agent_interface/key_requests.py:
+        request_free_key and tests/unit/test_key_request_honest_failure.py
+        for the full reproduction."""
+        with patch("agent_interface.key_requests.store_pending", new=AsyncMock()), \
+             patch("agent_interface.key_requests.send_verification_email",
+                   new=AsyncMock(return_value=False)):
+            client = self._get_client()
+            resp = client.post("/keys/request", json={"email": "test@example.com"})
+            assert resp.status_code == 503
+            data = resp.json()
+            assert data["error"] == "onboarding_unavailable"
+
     def test_verify_with_valid_token_returns_200_html(self):
+        # Patch the names as *imported into key_requests*, not where they are
+        # defined in key_request_logic - same trap as
+        # test_request_with_valid_email_returns_200 above, and the SAME dead
+        # stub in the SAME class: key_requests does `from
+        # agent_interface.key_request_logic import ... consume_pending,
+        # send_key_email, ...`, so patching key_request_logic's attributes
+        # after that does not reach verify_free_key's calls. This test was
+        # passing by pure accident, not for the right reason - confirmed by
+        # running the endpoint with NO mocks installed at all: the real
+        # (unmocked) consume_pending has no Supabase config in this test env,
+        # raises PendingLookupUnavailable, and verify_free_key's fallback path
+        # ("cannot tell - issue on signature alone") mints and returns 200
+        # anyway; the real send_key_email then just logs "RESEND_API_KEY not
+        # set" and returns without raising. Both mocks were dead code that
+        # never ran, and the test still hit real (no-op) I/O paths it was
+        # written to isolate from.
         from agent_interface.key_request_logic import make_verify_token
         token, _ = make_verify_token("hello+test@hatchloop.dev")
-        with patch("agent_interface.key_request_logic.consume_pending", new=AsyncMock(return_value="hello+test@hatchloop.dev")), \
-             patch("agent_interface.key_request_logic.send_key_email", new=AsyncMock()):
+        with patch("agent_interface.key_requests.consume_pending", new=AsyncMock(return_value="hello+test@hatchloop.dev")), \
+             patch("agent_interface.key_requests.send_key_email", new=AsyncMock()):
             client = self._get_client()
             resp = client.get(f"/keys/verify?token={token}")
             assert resp.status_code == 200

@@ -47,8 +47,17 @@ def get_discovery_card(agent_id: Optional[str] = None) -> dict:
         "auth": {
             "scheme": "AgentIdentity",
             "header": "X-Agent-Identity",
-            "token_url": "/auth/token",
-            "token_format": "HS256 signed claims (stub) — use issue_token()",
+            # NOT /auth/token — that route is admin-only (X-Admin-Secret,
+            # 401 for every outside caller; disabled entirely when
+            # ADMIN_SECRET is unset, which is production's state today). The
+            # route an integrator can actually use is the email-verified free
+            # key flow below. It currently requires a human to open the
+            # verification email; there is no machine-mintable path in
+            # production (POST /keys/mint returns 503 not_configured and is
+            # not something to build against).
+            "free_key_url": "/keys/request",
+            "free_key_method": "POST {\"email\": \"you@example.com\"}",
+            "token_format": "HS256 signed claims",
         },
         "manifest_url": "/manifest",
         "operations_url": "/manifest/ops",
