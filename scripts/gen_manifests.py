@@ -52,6 +52,47 @@ MAX_TITLE = 100
 import miniyaml  # noqa: E402
 
 
+def _substitute_counts(value):
+    """Replace {n_tools}/{n_no_key}/... with the derived counts, everywhere.
+
+    THE REGISTRY FILES CANNOT IMPORT ANYTHING. smithery.yaml, server.json and
+    glama.json are data, published into catalogues we do not control, and they
+    all carried the same typed sentence: "15 of the 23 tools require no auth
+    (12 always-free + 3 free within a daily quota)". On 2026-09-20 the truth
+    became 14 / 11 / 3 and all three stayed wrong, because the only thing
+    keeping them right was a human remembering three files.
+
+    So they are GENERATED from tokens instead, and `--check` fails the build
+    when a generated file disagrees. Substitution happens on the whole config
+    before any manifest is built, so every output gets the same numbers from
+    the same call.
+    """
+    if isinstance(value, str):
+        return _counts_source().substitute(value)
+    if isinstance(value, list):
+        return [_substitute_counts(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _substitute_counts(v) for k, v in value.items()}
+    return value
+
+
+def _counts_source():
+    """core.tool_auth, or a loud failure. Never a silent zero.
+
+    A generator that quietly writes "0 of the 0 tools" into three public
+    catalogues is worse than one that refuses to run.
+    """
+    if AB not in sys.path:
+        sys.path.insert(0, AB)
+    from core import tool_auth
+    problem = tool_auth.partition_is_sound()
+    if problem:
+        raise ValueError(
+            f"refusing to generate manifests: the tool counts do not hold up "
+            f"-- {problem}")
+    return tool_auth
+
+
 def load_yaml(path: str) -> dict:
     cfg = miniyaml.load(path)
     # Prove the read produced the shape everything below assumes. A reader that
@@ -66,6 +107,16 @@ def load_yaml(path: str) -> dict:
     missing = [k for k in required if not d.get(k)]
     if missing:
         raise ValueError(f"{path}: defaults is missing {missing}")
+    # Counts last, so a malformed file fails on its shape first and on its
+    # numbers second - and so every generated file below sees the same ones.
+    cfg = _substitute_counts(cfg)
+    leftover = [s.get('slug') for s in cfg['servers']
+                if '{n_' in json.dumps(s)]
+    if leftover:
+        # An unknown token would otherwise be published verbatim into a
+        # catalogue, which is how "{n_freetools}" ends up on a listing page.
+        raise ValueError(f"{path}: unresolved count token(s) in {leftover} -- "
+                         f"the known tokens are {sorted(_counts_source().TOKENS)}")
     return cfg
 
 

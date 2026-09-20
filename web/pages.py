@@ -22,19 +22,20 @@ from billing.pricing import price_cents, max_credits, price_usd_str
 # tool count belonging to one product. See web/facts.py for why the free-tool
 # counts are two different numbers rather than one.
 from web import facts
+from core import tool_auth
 # Credit COUNTS per package are code (billing/packages.py); the USD price of
 # each package is set on Polar's dashboard and cannot be imported -- see
 # _PACKAGE_USD below, mirrored from docs/PRICING.md / the live pricing page.
 from billing.packages import PACKAGE_CREDITS
 
-# The 8 write tools that require a key and spend credits (see
-# agent_interface/mcp_server.py::_WRITE_TOOLS_REQUIRING_AUTH -- kept in sync
-# with that frozenset by test coverage there, not duplicated here).
-_WRITE_OPS_FOR_CHECKOUT = [
-    "send_message", "capture_lead", "schedule_appointment",
-    "send_transactional_confirmation", "handle_inbound",
-    "escalate_to_human", "import_booking_url", "call_business",
-]
+# The write tools that require a key and spend credits, shown with their price
+# on the pricing and checkout pages.
+#
+# THIS WAS A HAND-TYPED COPY of core/tool_auth.WRITE_TOOLS_REQUIRING_AUTH,
+# justified by a comment claiming test coverage kept the two in sync. Nothing
+# did: it is a list literal in a rendering module and no test compared it to
+# the set. Derived now, sorted so the table order is stable between renders.
+_WRITE_OPS_FOR_CHECKOUT = sorted(tool_auth.WRITE_TOOLS_REQUIRING_AUTH)
 
 _PACKAGE_USD = {"starter": 9, "growth": 29, "scale": 99}
 
@@ -211,9 +212,9 @@ def render_home() -> str:
     Same idempotency contract. No surprises.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>{n_keyless} tools &mdash; always free</h3><p><code class="inline">find_business</code>, <code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">get_conversation</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered.</p></div>
+    <div class="card"><h3>{n_keyless} tools &mdash; always free</h3><p><code class="inline">find_business</code>, <code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered.</p></div>
     <div class="card"><h3>{n_quota} tools &mdash; free within a daily quota</h3><p><code class="inline">verify_company_record</code> (GLEIF LEI + SEC EDGAR), <code class="inline">screen_sanctions</code> (OFAC SDN + EU Consolidated + UK Sanctions List), <code class="inline">map_trade_restriction</code>. 500/day with a free key, 100/day anonymous, then $0.02/call.</p></div>
-    <div class="card"><h3>{n_needs_key} tools &mdash; need a free key</h3><p><code class="inline">send_message</code>, <code class="inline">capture_lead</code>, <code class="inline">schedule_appointment</code>, <code class="inline">send_transactional_confirmation</code>, <code class="inline">handle_inbound</code>, <code class="inline">escalate_to_human</code>, <code class="inline">import_booking_url</code>, <code class="inline">call_business</code>. 100 write ops/day free, then credits or x402.</p></div>
+    <div class="card"><h3>{n_needs_key} tools &mdash; need a free key</h3><p><code class="inline">send_message</code>, <code class="inline">capture_lead</code>, <code class="inline">schedule_appointment</code>, <code class="inline">send_transactional_confirmation</code>, <code class="inline">handle_inbound</code>, <code class="inline">escalate_to_human</code>, <code class="inline">import_booking_url</code>, <code class="inline">call_business</code>. 100 write ops/day free, then credits or x402. <code class="inline">get_conversation</code> is in this group and costs nothing &mdash; the key is what proves the thread is yours.</p></div>
   </div>
 </section>
 
@@ -225,14 +226,14 @@ def render_home() -> str:
     just what the live service does today.
   </p>
   <div class="grid grid-4">
-    <div class="card metric"><div class="num">23</div><div class="label">Callable tools</div></div>
+    <div class="card metric"><div class="num">{n_tools}</div><div class="label">Callable tools</div></div>
     <div class="card metric"><div class="num">12</div><div class="label">Booking platforms supported</div></div>
     <div class="card metric"><div class="num">26</div><div class="label">Jurisdictions with native compliance</div></div>
     <div class="card metric"><div class="num">2</div><div class="label">Payment rails (card via Polar, or x402/USDC)</div></div>
   </div>
   <div class="grid grid-4" style="margin-top:18px;">
     <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols</div></div>
-    <div class="card metric"><div class="num">15</div><div class="label">Tools usable with no key at all</div></div>
+    <div class="card metric"><div class="num">{n_no_key}</div><div class="label">Tools usable with no key at all</div></div>
     <div class="card metric"><div class="num">$0</div><div class="label">Free tier &middot; reads always free</div></div>
     <div class="card metric"><div class="num">100/day</div><div class="label">Free write ops with a key</div></div>
   </div>
@@ -303,9 +304,13 @@ def render_pricing() -> str:
   <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>,
   <code class="inline">preview_cost</code>, <code class="inline">get_status</code>,
   <code class="inline">get_outcome</code>, <code class="inline">self_test</code>,
-  <code class="inline">get_conversation</code>, <code class="inline">check_quota</code>,
+  <code class="inline">check_quota</code>,
   <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>.</p>
-  <p class="lead">3 premium data tools are free up to a daily quota &mdash;
+  <p class="lead"><code class="inline">get_conversation</code> is free and unmetered
+  as well, and it still takes a key: a message thread is readable only by the
+  agent identity that opened it, so a call with no key is refused rather than
+  answered.</p>
+  <p class="lead">{n_quota} premium data tools are free up to a daily quota &mdash;
   <code class="inline">verify_company_record</code>, <code class="inline">screen_sanctions</code>,
   <code class="inline">map_trade_restriction</code>: 500/day with a free key, 100/day
   anonymous, then $0.02/call past the quota. Past the quota the tool returns an
@@ -329,8 +334,11 @@ def render_pricing() -> str:
 
 <section class="section">
   <h2>Write-tool cost per call</h2>
-  <p class="lead">The {n_needs_key} write tools require a free email-verified key (100
+  <p class="lead">The {n_write_tools} write tools require a free email-verified key (100
   write ops/day, no cost) &mdash; beyond that, credits or x402.
+  ({n_needs_key} tools need a key in total: these writes plus
+  <code class="inline">get_conversation</code>, which costs nothing and spends
+  no part of that allowance.)
   <code class="inline">preview_cost</code> returns these same numbers
   programmatically (free) and is the authoritative source: any drift between
   this page and <code class="inline">preview_cost</code> is a bug.</p>
@@ -358,7 +366,9 @@ def render_pricing() -> str:
 <section class="section">
   <h2>FAQ</h2>
   <h3>Do you offer a free tier?</h3>
-  <p style="color:var(--text-muted);">Yes. {n_keyless} tools are free, no key, unmetered.
+  <p style="color:var(--text-muted);">Yes. {n_keyless} tools are free, no key, unmetered
+  (<code class="inline">get_conversation</code> is free too and takes a key, because
+  it returns your own message threads).
   3 more are free up to a daily quota. Write tools get 100 free ops/day with a
   free email-verified key &mdash; no card required for any of it.</p>
   <h3>Can I change plan at any time?</h3>
@@ -459,7 +469,7 @@ def render_checkout(plan: str | None) -> str:
   <p style="color:var(--text-muted);">
     Prices below are Agent Broker's. Every server publishes its own table; the
     credits are the same credits.
-    These {{n_needs_key}} tools need a free email-verified key (100 write ops/day, no
+    These {{n_write_tools}} tools need a free email-verified key (100 write ops/day, no
     cost) before they spend anything; beyond that, credits or x402.
     <code class="inline">preview_cost</code> returns these same numbers
     programmatically for free.
@@ -804,7 +814,7 @@ def render_refund() -> str:
 
   <h2>4. Free tier</h2>
   <p>The free tier (100 gated operations per day with a verified key) is
-  provided without charge; nothing to refund. Fifteen of the twenty-three
+  provided without charge; nothing to refund. {{n_no_key}} of the {{n_tools}}
   tools need no key at all.</p>
 
   <h2>5. How to request a refund</h2>

@@ -13,7 +13,7 @@ startCommand:
         description: >
           Get one at https://hatchloop.dev/agent-broker/
           Pass as request header: X-Agent-Identity: <your-key>.
-          15 of the 23 tools require no auth (12 always-free + 3 free within a daily quota). Write
+          14 of the 23 tools require no auth (11 always-free + 3 free within a daily quota). Write
           ops require an X-Agent-Identity bearer token: a free email-verified key gives 100
           ops/day, or buy credits at https://hatchloop.dev/pricing
     required: []

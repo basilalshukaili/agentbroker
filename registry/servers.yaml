@@ -57,7 +57,12 @@ servers:
     title: Agent Broker
     # <= 100 characters: the registry schema rejects longer, and it is CC0 the
     # moment it is published.
-    description: "23 MCP tools: compliance, verification, messaging, booking, US contracts. 15 need no key."
+    # THE COUNTS ARE TOKENS, NOT DIGITS. gen_manifests.py substitutes
+    # {n_tools}/{n_no_key}/{n_keyless}/{n_quota} from core/tool_auth.py before
+    # writing any manifest. Typed here, they were "15 of the 23 (12 + 3)" in
+    # three published catalogues on the day the identity rule made it 14 (11 +
+    # 3) - and a catalogue is read by agents deciding whether to install us.
+    description: "{n_tools} MCP tools: compliance, verification, messaging, booking, US contracts. {n_no_key} need no key."
     # EMPTY ON PURPOSE, AND PERMANENTLY. Agent Broker shipped 23 unprefixed tool
     # names and they are public: `find_business`, `send_message`, `get_status`
     # and the rest. Tool names are as immutable as the slug - renaming them
@@ -81,15 +86,16 @@ servers:
     # 100-character limit, so it gets the long form. It lives HERE rather than
     # in glama.json so a description is still edited in exactly one place.
     long_description: >
-      23 MCP tools to find, verify, message, book, and transact at small
+      {n_tools} MCP tools to find, verify, message, book, and transact at small
       businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification,
       TCPA/GDPR/CASL compliance, live sanctions screening, cross-border
-      trade-restriction mapping. 15 of the 23 tools are usable with no key
-      (12 always-free + 3 free within a daily quota).
+      trade-restriction mapping. {n_no_key} of the {n_tools} tools are usable
+      with no key ({n_keyless} always-free + {n_quota} free within a daily quota).
     license: MIT
     auth_note: >
-      15 of the 23 tools require no auth (12 always-free + 3 free within a daily
-      quota). Write ops require an X-Agent-Identity bearer token: a free
+      {n_no_key} of the {n_tools} tools require no auth ({n_keyless} always-free
+      + {n_quota} free within a daily quota). Write ops require an
+      X-Agent-Identity bearer token: a free
       email-verified key gives 100 ops/day, or buy credits at
       https://hatchloop.dev/pricing
     tags:

@@ -278,8 +278,11 @@ def page(title: str, body_html: str, *, active: str, description: str | None = N
     # count belonging to ONE product typed onto the page that describes the
     # credit rails for the WHOLE platform, and HatchLoop is being built to run
     # fifty servers. Templates write {n_tools}, {n_keyless}, {n_quota},
-    # {n_needs_key}, {n_no_key}; they are substituted here, on every page and
-    # every description, so no renderer can forget. Doing it in the wrapper is
+    # {n_needs_key}, {n_write_tools}, {n_no_key}; they are substituted here, on
+    # every page and every description, so no renderer can forget. {n_needs_key}
+    # is the union (writes + owned reads); {n_write_tools} is the priced write
+    # set alone, and a sentence about the price table or the write allowance
+    # means that one. Doing it in the wrapper is
     # deliberate: most bodies in pages.py are plain triple-quoted strings that
     # cannot interpolate anything, and a token works in both forms.
     # scripts/check_no_typed_counts.py fails the build if a digit is typed back.

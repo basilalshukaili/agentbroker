@@ -48,7 +48,13 @@ def counts():
     import sys
     if ROOT not in sys.path:
         sys.path.insert(0, ROOT)
-    from agent_interface.mcp_server import _WRITE_TOOLS_REQUIRING_AUTH as needs_auth
+    # TOOLS_REQUIRING_KEY, not the write set. This fixture subtracted only the
+    # writes, so it computed 12 and AGREED with a README that said 12 on the
+    # day get_conversation started refusing keyless callers - a parity test
+    # that derives its expectation the same wrong way as the copy it checks
+    # will confirm any error the copy makes.
+    from core.tool_auth import TOOLS_REQUIRING_KEY
+    from core import tool_auth
     from billing import pricing
 
     priced = pricing._PRICING_CENTS
@@ -56,7 +62,8 @@ def counts():
     return {
         "total": len(priced),
         "zero_cost": len(zero_cost),
-        "free_and_keyless": len(zero_cost - set(needs_auth)),
+        "free_and_keyless": len(zero_cost - set(TOOLS_REQUIRING_KEY)),
+        "derived_keyless": tool_auth.keyless(),
     }
 
 
@@ -64,9 +71,15 @@ def test_the_free_keyless_count_is_nine_or_this_test_is_stale(counts):
     """A canary on the fixture itself. If this fails the product changed, and
     the README needs updating - which is the point - but it also means every
     other assertion here was comparing against a moved target."""
-    assert counts["free_and_keyless"] == 12, (
+    assert counts["free_and_keyless"] == 11, (
         f"free-and-keyless tool count moved to {counts['free_and_keyless']}; "
         f"update README.md and this docstring together")
+    # AND THE TWO WAYS OF COUNTING IT MUST AGREE. One walks the price table,
+    # the other walks the manifest; if they diverge, one of the two published
+    # numbers on this page is already wrong.
+    assert counts["free_and_keyless"] == counts["derived_keyless"], (
+        f"the price table says {counts['free_and_keyless']} free keyless tools "
+        f"and the manifest says {counts['derived_keyless']}")
 
 
 def test_every_stated_free_count_matches_the_price_table(readme, counts):
@@ -113,9 +126,16 @@ def test_the_free_table_rows_match_the_stated_count(readme, counts):
 
 def test_import_booking_url_is_not_advertised_as_keyless(readme):
     """It costs nothing AND requires a key. Listing it among the plain-free
-    rows would promise agents they can call it with no credentials."""
+    rows would promise agents they can call it with no credentials.
+
+    get_conversation joined it in that state on 2026-09-20 and its row kept
+    saying **free**; the row now reads "free, key", the same convention.
+    """
     rows = re.findall(r"^\|\s*\d+\s*\|\s*`([a-z_]+)`\s*\|.*\|\s*\*\*free\*\*\s*\|$",
                       readme, flags=re.M)
-    assert "import_booking_url" not in rows, (
-        "import_booking_url is free but needs a key - it must not sit in the "
-        "plain **free** rows")
+    from core.tool_auth import TOOLS_REQUIRING_KEY
+    leaked = sorted(set(rows) & set(TOOLS_REQUIRING_KEY))
+    assert not leaked, (
+        f"{leaked} cost nothing but need a key - they must not sit in the "
+        f"plain **free** rows, which an agent reads as callable with no "
+        f"credentials")
