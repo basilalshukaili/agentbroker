@@ -54,7 +54,12 @@ class _Adapter:
 
     async def book_slot(self, event_type_id, start, name, email, notes=None):
         self.booked = start
-        return {"uid": "bk_1"}
+        # A real provider id AND an accepted status: this file tests WHEN a
+        # booking lands, not whether the confirmation itself is honest (that
+        # is test_booking_confirmation_honesty.py). Both fields are required
+        # by the honesty gate in schedule_appointment.py for a result to be
+        # reported "appointment_confirmed" at all.
+        return {"uid": "bk_1", "status": "accepted"}
 
 
 @pytest.fixture

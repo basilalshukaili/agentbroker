@@ -78,6 +78,14 @@ _FAILURE_STATUSES = frozenset({
     # real external action completed (e.g. capture_lead with no CRM write).
     # Do not charge for stub/incomplete work.
     "partial",
+    # BOOKING-RETRY-SAFETY fix: "unknown" means a mutating call (book/cancel)
+    # failed in a way that does not prove the upstream side effect did not
+    # happen (see core.models.OperationStatus.UNKNOWN). It is charged
+    # cost.amount == 0.0 by construction, but this belt-and-suspenders entry
+    # means an uncertain outcome can never be settled even if some future
+    # caller forgets to zero the cost -- an unknown outcome must never be
+    # billed as if it were a confirmed booking.
+    "unknown",
 })
 
 

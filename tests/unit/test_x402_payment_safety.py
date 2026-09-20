@@ -110,6 +110,35 @@ class TestPartialNotChargeable:
             smb.name = orig_name
 
 
+class TestOperationOutcomeUnknownNotChargeable:
+    """Assignment #8 (booking-retry safety): OperationStatus.UNKNOWN -- a
+    mutating call (book/cancel) whose failure does not prove the upstream
+    side effect never happened (see core.models.OperationStatus.UNKNOWN and
+    channels.direct_api.calcom.BookingOutcomeUnknown) -- must never be
+    settled, on EITHER billing rail. cost.amount == 0.0 already guarantees
+    this via _receipt_is_no_charge; this pins the belt-and-suspenders
+    status-text guard too, so an uncertain outcome could never be billed as
+    a confirmed booking even if some future change forgot to zero the cost."""
+
+    def test_unknown_in_failure_statuses(self):
+        assert "unknown" in _FAILURE_STATUSES
+
+    def test_receipt_is_error_unknown(self):
+        assert _receipt_is_error({"status": "unknown"}) is True
+
+    def test_receipt_is_error_unknown_casing(self):
+        assert _receipt_is_error({"status": "UNKNOWN"}) is True
+        assert _receipt_is_error({"status": "Unknown"}) is True
+
+    def test_receipt_is_error_unknown_with_booking_reason_code(self):
+        # Same shape a real schedule_appointment UNKNOWN receipt carries --
+        # must still be refused settlement despite the reason code naming
+        # "booking", the same word a confirmed success's reason code uses.
+        assert _receipt_is_error({
+            "status": "unknown", "reason_code": "booking_outcome_unknown",
+        }) is True
+
+
 class TestRealSuccessStillChargeable:
     def test_success_not_in_failure_statuses(self):
         assert "success" not in _FAILURE_STATUSES

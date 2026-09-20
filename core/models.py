@@ -105,6 +105,16 @@ class OperationStatus(str, Enum):
     PARTIAL = "partial"
     FAILURE = "failure"
     PENDING_ASYNC = "pending_async"
+    # A mutating call (book / cancel) failed in a way that does NOT prove the
+    # upstream side effect did not happen -- a timeout waiting for Cal.com's
+    # response, a 5xx after the request was received, or a 2xx we could not
+    # parse. Distinct from FAILURE (which means the action provably did not
+    # happen) and from SUCCESS/PARTIAL (which both mean we know a real
+    # provider-side state). A caller must never collapse this into either:
+    # retrying a FAILURE is safe, retrying an UNKNOWN risks a second real
+    # booking and a second charge. See core/schedule_appointment.py and
+    # channels/direct_api/calcom.py's BookingOutcomeUnknown.
+    UNKNOWN = "unknown"
 
 
 class ErrorCode(str, Enum):
