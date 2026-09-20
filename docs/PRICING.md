@@ -12,7 +12,7 @@ minimum. Credits do not expire.
 
 ## What is free
 
-**12 utility tools — free, no key, unmetered.**
+**12 utility tools — free and unmetered; 11 of them need no key.**
 
 `find_business`, `verify_business`, `check_booking_link`, `check_compliance`,
 `preview_cost`, `get_status`, `get_outcome`, `self_test`, `get_conversation`,
@@ -20,9 +20,27 @@ minimum. Credits do not expire.
 
 An agent can discover businesses, pre-check a booking link, preview what an
 action would cost, check its quota, and read the outcome of its own operations
-without ever authenticating or spending anything. (`get_conversation` returns
-only threads tied to the identity that started them, so anonymous callers see
-nothing — but the call itself needs no key and costs nothing.)
+without ever authenticating or spending anything.
+
+**`get_conversation` is the one exception, and it is free but not keyless.** A
+thread is readable only by the agent identity that opened it, so a call with no
+key is refused rather than answered: a request reference is four digits and a
+business number is public, which is not a secret worth treating as one. Send
+the same `X-Agent-Identity` key you send with `send_message` and it costs
+nothing. Two consequences worth stating plainly: a thread opened WITHOUT a key
+cannot be read back by id afterwards (its replies still arrive through the
+inbound webhook), and threads opened before this rule shipped have no recorded
+owner, so they are released to nobody.
+
+`get_status` and `get_outcome` stay keyless, and "its own operations" is now
+enforced rather than described: an operation created with an identity is
+readable only by that identity. An operation created with NO identity at all
+is released to nobody, not even the caller who omitted one — an unrecorded
+owner is indistinguishable from an owner an earlier bug silently dropped, and
+guessing which one happened would be a takeover primitive, not a convenience.
+Send `X-Agent-Identity` when you create the operation and you can poll it
+back; a truly anonymous booking or call can no longer be polled by
+`operation_id` alone.
 
 ## Premium data tools — free up to a daily quota
 

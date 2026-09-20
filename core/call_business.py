@@ -145,7 +145,7 @@ async def handle_call_business(
             retriable=False,
             trace_id=trace_id,
         )
-        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"), agent_id=agent_id)
         return receipt
     except Exception as exc:
         receipt = OutcomeReceipt(
@@ -158,7 +158,7 @@ async def handle_call_business(
             retriable=True,
             trace_id=trace_id,
         )
-        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"), agent_id=agent_id)
         return receipt
 
     if not resp.success:
@@ -172,7 +172,7 @@ async def handle_call_business(
             retriable=True,
             trace_id=trace_id,
         )
-        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"), agent_id=agent_id)
         return receipt
 
     # Vapi calls are async by nature — the conversation happens over the wire.
@@ -211,5 +211,5 @@ async def handle_call_business(
         next_actions=["Poll get_outcome(operation_id) for transcript + answer."],
         trace_id=trace_id,
     )
-    get_outcome_store().set_pending(operation_id, "call_business")
+    get_outcome_store().set_pending(operation_id, "call_business", agent_id=agent_id)
     return receipt

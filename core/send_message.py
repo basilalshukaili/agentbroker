@@ -13,6 +13,7 @@ from core.models import (
     SendMessageRequest, OutcomeReceipt, OperationStatus, CostRecord,
     ChannelPreference, ComplianceViolationError, ErrorCode
 )
+from core.ownership import owner_for_storage
 import os
 
 from channels.sms_email.twilio_sms import TwilioSMSAdapter
@@ -95,7 +96,14 @@ async def handle_send_message(
 ) -> OutcomeReceipt:
     receipt = await _do_send_message(request, agent_id, trace_id)
     try:
-        get_outcome_store().set_complete(receipt.operation_id, receipt.model_dump(mode="json"))
+        # RECORD THE OWNER ON THE OPERATION ROW. get_status and get_outcome
+        # decide who may read this receipt by comparing the caller against it,
+        # and this write happens on BOTH surfaces - the MCP dispatcher writes
+        # the row a second time with the owner, /ops/send_message does not, so
+        # only passing it there would have left the REST path ownerless.
+        get_outcome_store().set_complete(receipt.operation_id,
+                                         receipt.model_dump(mode="json"),
+                                         agent_id=agent_id)
     except Exception:  # noqa: BLE001 - persistence must never break delivery
         pass
     return receipt
@@ -244,7 +252,12 @@ async def _do_send_message(
                         **alloc.sender.as_metadata(),
                     }
                 conversation = await _conv.open_conversation(
-                    agent_id=agent_id,
+                    # owner_for_storage, not the raw value: agent_id arrives
+                    # as the string "anonymous" from a caller that presented
+                    # no identity, and storing that as the OWNER would make
+                    # one account that every unidentified caller matches -
+                    # the hole again, wearing a name. Unowned is honest.
+                    agent_id=owner_for_storage(agent_id),
                     end_user_ref=request.on_behalf_of,
                     business_id=request.business_id,
                     business_number=request.recipient.id_value,

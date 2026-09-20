@@ -424,6 +424,31 @@ def validate_token(token: str) -> ValidationResult:
     return ValidationResult(valid=True, identity=identity)
 
 
+def agent_id_from_token(raw_token: Optional[str]) -> str:
+    """The PARSED agent_id in a bearer token, or 'anonymous'.
+
+    Never returns any slice of the raw token value, so the result is safe to
+    log and safe to store as a row's owner (core/ownership.py converts the
+    sentinel to NULL rather than letting it become a shared account).
+
+    This lives here rather than in mcp_server because /ops/* needs it too:
+    the ownership guards this feeds have to be closed on BOTH surfaces, and
+    main.py cannot import mcp_server without a cycle. mcp_server keeps its
+    `_agent_id_from_token` name and delegates here.
+    """
+    from core.ownership import ANONYMOUS
+
+    if not raw_token or raw_token in ("", ANONYMOUS):
+        return ANONYMOUS
+    try:
+        result = validate_token(raw_token)
+        if result.valid and result.identity:
+            return result.identity.agent_id
+    except Exception:  # noqa: BLE001
+        pass
+    return ANONYMOUS
+
+
 def revoke_token(token: str) -> bool:
     """Add token's JTI to revocation set. Returns True if revocation succeeded."""
     try:

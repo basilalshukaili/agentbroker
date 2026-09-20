@@ -30,6 +30,7 @@ from agent_interface.manifest_server import get_full_manifest, get_operations_li
 from agent_interface.discovery import get_discovery_card, health_check
 from agent_interface.identity import (
     validate_token, check_operation_allowed, issue_subscription_token,
+    agent_id_from_token,
 )
 from agent_interface.self_test import run_self_test
 from agent_interface.mcp_server import handle_mcp_request
@@ -1078,7 +1079,13 @@ async def send_message(
 ):
     _get_identity(x_agent_identity, "send_message")
     from core.send_message import handle_send_message
-    return await handle_send_message(req)
+    # Bind the caller here too, not only in the MCP dispatcher: this route
+    # opens the same conversation rows and writes the same operation rows, and
+    # a guard closed on one surface is not closed. _get_identity returns None
+    # when REQUIRE_AUTH is off, so the owner is parsed from the token itself -
+    # a caller who sends a key gets ownership whatever the gate is set to.
+    return await handle_send_message(
+        req, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.post("/ops/capture_lead", response_model=OutcomeReceipt, tags=["Operations"])
@@ -1098,7 +1105,15 @@ async def schedule_appointment(
 ):
     _get_identity(x_agent_identity, "schedule_appointment")
     from core.schedule_appointment import handle_schedule_appointment
-    return await handle_schedule_appointment(req)
+    # Bind the caller here too, not only in the MCP dispatcher: this route
+    # stores the same operation rows get_status/get_outcome read back, and a
+    # guard closed on one surface is not closed. Dropping this (as this route
+    # did) authenticates the caller and then stores the receipt with NO
+    # owner, so status_outcome.py's unowned-read policy released it to
+    # anyone, including an anonymous caller — reproduced in
+    # tests/unit/test_schedule_appointment_ownership.py.
+    return await handle_schedule_appointment(
+        req, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.post("/ops/send_transactional_confirmation", response_model=OutcomeReceipt, tags=["Operations"])
@@ -1108,7 +1123,9 @@ async def send_transactional_confirmation(
 ):
     _get_identity(x_agent_identity, "send_transactional_confirmation")
     from core.send_transactional_confirmation import handle_send_transactional_confirmation
-    return await handle_send_transactional_confirmation(req)
+    # Bind the caller here too — same reason as schedule_appointment above.
+    return await handle_send_transactional_confirmation(
+        req, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.post("/ops/handle_inbound", response_model=OutcomeReceipt, tags=["Operations"])
@@ -1128,7 +1145,9 @@ async def escalate_to_human(
 ):
     _get_identity(x_agent_identity, "escalate_to_human")
     from core.escalate_to_human import handle_escalate_to_human
-    return await handle_escalate_to_human(req)
+    # Bind the caller here too — same reason as schedule_appointment above.
+    return await handle_escalate_to_human(
+        req, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.post("/ops/call_business", response_model=OutcomeReceipt, tags=["Operations"])
@@ -1138,7 +1157,9 @@ async def call_business(
 ):
     _get_identity(x_agent_identity, "call_business")
     from core.call_business import handle_call_business
-    return await handle_call_business(req)
+    # Bind the caller here too — same reason as schedule_appointment above.
+    return await handle_call_business(
+        req, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.get("/ops/get_status/{operation_id}", response_model=dict, tags=["Operations"])
@@ -1148,7 +1169,8 @@ async def get_status(
 ):
     _get_identity(x_agent_identity, "get_status")
     from core.status_outcome import handle_get_status
-    return await handle_get_status(operation_id)
+    return await handle_get_status(
+        operation_id, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.get("/ops/get_outcome/{operation_id}", response_model=OutcomeReceipt, tags=["Operations"])
@@ -1158,7 +1180,8 @@ async def get_outcome(
 ):
     _get_identity(x_agent_identity, "get_outcome")
     from core.status_outcome import handle_get_outcome
-    return await handle_get_outcome(operation_id)
+    return await handle_get_outcome(
+        operation_id, agent_id=agent_id_from_token(x_agent_identity))
 
 
 @app.post("/ops/preview_cost", tags=["Operations"])

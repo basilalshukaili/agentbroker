@@ -69,7 +69,7 @@ async def handle_escalate_to_human(
             retriable=True,
             trace_id=trace_id,
         )
-        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+        get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"), agent_id=agent_id)
         return receipt
 
     # Insert succeeded -- use the real DB-assigned id as the ticket_id.
@@ -99,5 +99,5 @@ async def handle_escalate_to_human(
         retriable=False,
         trace_id=trace_id,
     )
-    get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"))
+    get_outcome_store().set_complete(operation_id, receipt.model_dump(mode="json"), agent_id=agent_id)
     return receipt

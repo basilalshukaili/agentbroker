@@ -134,7 +134,13 @@ async def handle_send_transactional_confirmation(
 ) -> OutcomeReceipt:
     receipt = await _do_send_transactional_confirmation(request, agent_id, trace_id)
     try:
-        get_outcome_store().set_complete(receipt.operation_id, receipt.model_dump(mode="json"))
+        # RECORD THE OWNER. Every return path in _do_send_transactional_confirmation
+        # funnels through here, and this was called with no agent_id at all -
+        # so every stored receipt was unowned, and status_outcome.py's
+        # unowned-read policy released it to anyone holding the operation_id.
+        get_outcome_store().set_complete(receipt.operation_id,
+                                         receipt.model_dump(mode="json"),
+                                         agent_id=agent_id)
     except Exception:  # noqa: BLE001 - persistence must never break delivery
         pass
     return receipt

@@ -560,17 +560,15 @@ def _agent_id_from_token(raw_token: str) -> str:
     Returns 'anonymous' for empty, missing, or invalid tokens.
     This is the sole safe way to derive a loggable identity — it never stores
     any slice of the raw bearer token value.
+
+    The implementation moved to agent_interface.identity when the same parse
+    became the input to the ownership guards, which /ops/* has to apply too:
+    two copies of "who is calling" is how one surface ends up guarded and the
+    other does not. This name stays because every call site in this file uses
+    it.
     """
-    if not raw_token or raw_token in ("", "anonymous"):
-        return "anonymous"
-    try:
-        from agent_interface.identity import validate_token
-        result = validate_token(raw_token)
-        if result.valid and result.identity:
-            return result.identity.agent_id
-    except Exception:  # noqa: BLE001
-        pass
-    return "anonymous"
+    from agent_interface.identity import agent_id_from_token
+    return agent_id_from_token(raw_token)
 
 
 def _principal_type_from_token(raw_token: str) -> Optional[str]:
@@ -1494,7 +1492,14 @@ async def _dispatch_operation(
             requested_time=args.get("requested_time"),
             notes=args.get("notes"),
         )
-        receipt = await handle_schedule_appointment(req)
+        # BIND THE CALLER. Without this the receipt (and the pending row
+        # written the instant this returns pending_async) is stored with no
+        # owner, and status_outcome.py's unowned-read policy released it to
+        # anyone holding the operation_id, including an anonymous caller.
+        receipt = await handle_schedule_appointment(
+            req,
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "capture_lead":
         from core.capture_lead import handle_capture_lead
@@ -1528,7 +1533,11 @@ async def _dispatch_operation(
             on_behalf_of=args.get("on_behalf_of"),
             max_duration_seconds=args.get("max_duration_seconds", 180),
         )
-        receipt = await handle_call_business(req)
+        # BIND THE CALLER — same reason as schedule_appointment above.
+        receipt = await handle_call_business(
+            req,
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "self_test":
         from agent_interface.self_test import run_self_test
@@ -1590,7 +1599,12 @@ async def _dispatch_operation(
 
     elif name == "get_status":
         from core.status_outcome import handle_get_status
-        return await handle_get_status(args["operation_id"])
+        # PASS THE CALLER, same reason as get_outcome below: a status row is
+        # the other door into the same operation record.
+        return await handle_get_status(
+            args["operation_id"],
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "get_conversation":
         from core.get_conversation import handle_get_conversation
@@ -1604,7 +1618,13 @@ async def _dispatch_operation(
 
     elif name == "get_outcome":
         from core.status_outcome import handle_get_outcome
-        receipt = await handle_get_outcome(args["operation_id"])
+        # PASS THE CALLER. A stored receipt names the end-user we messaged on
+        # somebody's behalf, the business, and - for a booking - the customer
+        # and the time. It was returned to anyone who asked for the id.
+        receipt = await handle_get_outcome(
+            args["operation_id"],
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "send_message":
         from core.send_message import handle_send_message
@@ -1651,13 +1671,30 @@ async def _dispatch_operation(
             business_id=args.get("business_id"),
             send_at_iso=args.get("send_at_iso"),
         )
-        receipt = await handle_send_message(req)
+        # BIND THE CALLER, OR THE THREAD WE OPEN BELONGS TO NOBODY.
+        #
+        # This call built the request from eight arguments and never supplied
+        # the one thing the caller did not have to type: who they are. A
+        # two-way send opens a conversation row (core/conversations.py) whose
+        # agent_id is the ONLY thing get_conversation can check ownership
+        # against - so every thread opened through MCP was stored ownerless,
+        # and the guard in core/get_conversation.py, which let a NULL owner
+        # through for compatibility, admitted every caller to every thread.
+        # Neither half looks wrong on its own; that is why it survived.
+        receipt = await handle_send_message(
+            req,
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "send_transactional_confirmation":
         from core.send_transactional_confirmation import handle_send_transactional_confirmation
         from core.models import SendTransactionalConfirmationRequest
         req = SendTransactionalConfirmationRequest(**_as_dict(args, "arguments"))
-        receipt = await handle_send_transactional_confirmation(req)
+        # BIND THE CALLER — same reason as schedule_appointment above.
+        receipt = await handle_send_transactional_confirmation(
+            req,
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "handle_inbound":
         from core.handle_inbound import handle_inbound as _handle_inbound
@@ -1669,7 +1706,11 @@ async def _dispatch_operation(
         from core.escalate_to_human import handle_escalate_to_human
         from core.models import EscalateToHumanRequest
         req = EscalateToHumanRequest(**_as_dict(args, "arguments"))
-        receipt = await handle_escalate_to_human(req)
+        # BIND THE CALLER — same reason as schedule_appointment above.
+        receipt = await handle_escalate_to_human(
+            req,
+            agent_id=_agent_id_from_token((headers or {}).get("x-agent-identity", "")),
+        )
 
     elif name == "import_booking_url":
         # The differentiator. Turns any public booking URL into a callable smb_id.

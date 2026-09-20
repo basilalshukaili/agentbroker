@@ -15,6 +15,23 @@ import time
 from typing import Any, Optional
 
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
+from core.ownership import Denial, owner_for_storage, read_denial
+
+
+def _refuse(denial: Denial, operation_id: str, t0: float,
+            trace_id: Optional[str]) -> OutcomeReceipt:
+    """A denial, in the same shape as every other refusal this handler makes."""
+    return OutcomeReceipt(
+        operation_id=operation_id,
+        status=OperationStatus.FAILURE,
+        reason_code=denial.reason_code,
+        human_message=denial.human_message,
+        result={},
+        cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+        latency_ms=int((time.monotonic() - t0) * 1000),
+        retriable=False,
+        trace_id=trace_id,
+    )
 
 
 async def handle_get_conversation(
@@ -28,6 +45,24 @@ async def handle_get_conversation(
     from core import conversations as conv
 
     operation_id = f"getconv_{int(time.time() * 1000)}"
+
+    # AN UNIDENTIFIED CALLER IS REFUSED BEFORE WE LOOK ANYTHING UP.
+    #
+    # `reference` is FOUR DIGITS (core/conversations.new_ref_token) scoped only
+    # by a business_number the business itself publishes, so the id a caller
+    # needs is not a secret - it is ten thousand guesses. Answering after the
+    # lookup would let those guesses be told apart by which error came back;
+    # answering before means the reply carries no information about what is
+    # stored. agent_id is None only for an in-process call (core/ownership.py).
+    if agent_id is not None and owner_for_storage(agent_id) is None:
+        return _refuse(
+            Denial(reason_code="identity_required",
+                   human_message=(
+                       "A conversation is readable only by the agent identity "
+                       "that opened it, so this tool needs one. Send your key "
+                       "as X-Agent-Identity - the same key you send with "
+                       "send_message.")),
+            operation_id, t0, trace_id)
 
     row: Optional[dict] = None
     if conversation_id:
@@ -65,20 +100,30 @@ async def handle_get_conversation(
             trace_id=trace_id,
         )
 
-    # Ownership: an agent may only read its own threads. Rows created before
-    # agent attribution (agent_id NULL) stay readable so nothing breaks.
-    if agent_id and row.get("agent_id") and row["agent_id"] != agent_id:
-        return OutcomeReceipt(
-            operation_id=operation_id,
-            status=OperationStatus.FAILURE,
-            reason_code="not_your_conversation",
-            human_message="This conversation belongs to a different agent identity.",
-            result={},
-            cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
-            latency_ms=int((time.monotonic() - t0) * 1000),
-            retriable=False,
-            trace_id=trace_id,
-        )
+    # Ownership: an agent may only read its own threads.
+    #
+    # This guard used to carry `and row.get("agent_id")`, with a comment saying
+    # rows created before agent attribution stayed readable so nothing would
+    # break. The dispatcher never bound a caller onto send_message, so EVERY
+    # thread opened through MCP was such a row: the exception was the rule, and
+    # a live guard protected nothing. Verified by driving both halves in
+    # tests/unit/test_conversation_ownership.py before the fix.
+    #
+    # unowned_is_readable=False - an unowned thread is released to NOBODY.
+    # "We cannot prove this is yours" must not resolve to "yes" on a public
+    # server, and here it cannot even be argued that the id is a capability:
+    # a four-digit reference is guessable (see the guard above). What this
+    # costs is stated in docs/PRICING.md: threads opened before this shipped,
+    # and threads opened by a caller that sent no key, can no longer be read
+    # back by id - their replies still arrive through the inbound webhook.
+    denial = read_denial(
+        caller_agent_id=agent_id,
+        owner_agent_id=row.get("agent_id"),
+        subject="conversation",
+        unowned_is_readable=False,
+    )
+    if denial:
+        return _refuse(denial, operation_id, t0, trace_id)
 
     messages = await conv.messages_for(row["conversation_id"])
     inbound = [m for m in messages if m.get("direction") == "in"]
