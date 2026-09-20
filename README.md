@@ -36,11 +36,12 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  12 utility tools free (no key, unmetered). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day) at hatchloop.dev/agent-broker; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
+| Billing | **Live**  -  11 utility tools free (no key, unmetered; `get_conversation` and `import_booking_url` are free too and need a free key). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day), request via `POST /keys/request`; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
+| Free-key email delivery | **Blocked**  -  no email provider is configured on the deployed server today, so `POST /keys/request` answers honestly with `503 {"error": "onboarding_unavailable"}` instead of a false `verification_sent` (`GET /healthz/external` reports `resend: not_configured`). Until an operator configures it, get a key by emailing hello@hatchloop.dev. |
 | x402 payment rail | **Offered, opt-in.** Enabled on the service since the founder lifted the crypto restriction on 2026-08-29. A caller attaches a payment in `params._meta["x402/payment"]` and the call is served without a key (USDC on Base, proven once on mainnet, tx 0x38a0d9ec). Callers who do not attach one fall through to credits and the free quota, so nothing is gated behind it. `/.well-known/x402` is still a 404 - discovery is via `/.well-known/mcp.json`, which lists the rail. |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. 12 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day)  -  get one at https://hatchloop.dev/agent-broker. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+> The MCP server is live and callable right now. Bookings hit demo data. 11 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day) via `POST /keys/request` - **email delivery for that flow is not configured on production today**, so requests currently get an honest `503 onboarding_unavailable` instead of a key; email hello@hatchloop.dev for manual provisioning until it is. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ---
 
@@ -62,7 +63,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 10 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
 | 11 | `screen_sanctions` | Check a name or entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List | **free up to daily limit** |
 | 12 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
-| 13 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | **free** |
+| 13 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | free, key |
 | 14 | `lookup_us_contracts` | Search US federal contract awards by company name via USASpending.gov  -  awardee, agency, amount, NAICS, period | **free** |
 | 15 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
 | 16 | `capture_lead` | Structured intake of a prospect into the SMB's AgentBroker lead store (not the business's own CRM), deduplicated | key |
@@ -178,12 +179,15 @@ your model's decision.
 }
 ```
 
-**15 tools require no key.** 12 are always free (find_business, verify_business, check_booking_link, check_compliance, get_conversation, get_status, get_outcome, preview_cost, self_test, check_quota, mint_key, lookup_us_contracts) and 3 more are free within a daily quota (verify_company_record, screen_sanctions, map_trade_restriction).
+**14 tools require no key.** 11 are always free (find_business, verify_business, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test, check_quota, mint_key, lookup_us_contracts) and 3 more are free within a daily quota (verify_company_record, screen_sanctions, map_trade_restriction). `get_conversation` costs nothing either, and is the one free tool that still needs a key: a thread is readable only by the agent identity that opened it, so a keyless call is refused.
 
 **Write tools** require an `X-Agent-Identity` bearer token:
-- Free email-verified key (100 ops/day): https://hatchloop.dev/agent-broker
-- **Machine-mintable key (no email, agent self-serve):** `POST https://api.hatchloop.dev/keys/mint` - see [Machine-mintable keys](#machine-mintable-keys) below.
+- Free email-verified key (100 ops/day): `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`, then open the link it emails you.
 - Credits from $9/1,000 ops: https://hatchloop.dev/pricing
+
+There is no machine-mintable key in production today - see
+[Machine-mintable keys (disabled)](#machine-mintable-keys-disabled) below before
+you build against `/keys/mint`.
 
 Add your key to the config once you have one:
 
@@ -281,49 +285,18 @@ curl -X POST https://hatchloop.dev/ops/find_business \
 
 ---
 
-## Machine-mintable keys
+## Machine-mintable keys (disabled)
 
-AI agents that cannot receive email can self-provision a free-tier API key (100 gated ops/day) by proving identity via HMAC-SHA256.
+The code has an HMAC-signed, no-email key-mint path (`POST /keys/mint`) for agents
+that cannot receive email. **It is turned off in production and is not documented
+as a usable integration path.** No `MACHINE_MINT_SECRET` is configured on the
+deployed server, so every call returns `503 {"error": "not_configured"}` - do not
+build against it, and do not wait for it to start working without an explicit
+announcement.
 
-### How it works
-
-1. Obtain the `MACHINE_MINT_SECRET` from [hatchloop.dev/docs/#machine-mint](https://hatchloop.dev/docs/#machine-mint).
-2. Compute the signature:
-   ```
-   signature = HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET)
-   ```
-   The HMAC input is the **raw concatenation** of the three fields (no separators). Digest must be lowercase hex.
-3. POST to `https://api.hatchloop.dev/keys/mint`:
-
-```json
-{
-  "agent_id": "my-agent-abc123",
-  "timestamp": 1725100000,
-  "nonce": "4f8a2c1d9e2b7c6a",
-  "signature": "<lowercase-hex-hmac>"
-}
-```
-
-### Response
-
-```json
-{
-  "ok": true,
-  "key": "<JWT - use as X-Agent-Identity header>",
-  "key_id": "free_machine_<hash>",
-  "expires_at": "2026-11-28",
-  "tier": "free",
-  "daily_limit": 100,
-  "usage": "Send as the X-Agent-Identity header on every call to https://hatchloop.dev/mcp/agent-broker"
-}
-```
-
-### Constraints
-- `timestamp` must be within **60 seconds** of server time (prevents replay attacks).
-- Use a fresh `nonce` on every call (UUID or random hex).
-- `agent_id` is a stable identifier for your agent; the issued key is tied to its SHA-256 hash.
-- Returns `401 {error: "invalid_request"}` on bad signature or stale timestamp.
-- Returns `503 {error: "not_configured"}` if the server secret has not been set (contact hello@hatchloop.dev).
+If you cannot receive email either, the supported options are: many tools need no
+key at all (see the tool list above), or email hello@hatchloop.dev for manual key
+provisioning.
 
 ---
 
