@@ -1,0 +1,35 @@
+name: MCP catalogue health
+
+# A healthy endpoint is still undiscoverable when the registry metadata is
+# stale, absent or retired.  This job runs away from our laptop and checks both
+# halves of the public contract: every advertised endpoint answers as the
+# declared server, and the official registry exposes the exact committed
+# manifest as its active latest version.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-catalogue-health
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Official registry matches every committed manifest
+        run: python scripts/check_live_registry.py
+
+      - name: Every advertised MCP endpoint answers as itself
+        run: python scripts/gen_manifests.py --probe
