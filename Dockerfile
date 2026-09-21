@@ -9,13 +9,26 @@ FROM python:3.11-slim AS runtime
 
 ARG PLAYWRIGHT_INSTALL=false
 
+# Build identity - stamped in by the deploy pipeline (ops/vps/deploy_agentbroker_vps.py
+# passes --build-arg GIT_COMMIT=<sha> --build-arg DEPLOY_TARGET=vps-agentbroker) so
+# /health can expose WHAT WAS ACTUALLY BUILT, not a hand-edited version literal.
+# Left at the "unknown" default, any build that skips the deploy script (a manual
+# `docker build`, a stale cached image) says so honestly instead of silently
+# repeating whatever SERVICE_VERSION happens to say. Baked in as ENV, not written
+# to a file, so it travels with `docker inspect`/`docker run` the same way and
+# cannot be edited on a running container without rebuilding it.
+ARG GIT_COMMIT=unknown
+ARG DEPLOY_TARGET=unknown
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PORT=8000 \
     ENVIRONMENT=production \
-    LOG_LEVEL=INFO
+    LOG_LEVEL=INFO \
+    GIT_COMMIT=${GIT_COMMIT} \
+    DEPLOY_TARGET=${DEPLOY_TARGET}
 
 WORKDIR /app
 

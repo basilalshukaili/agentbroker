@@ -139,6 +139,22 @@ ENVIRONMENT = _env("ENVIRONMENT", "development")   # development | staging | pro
 DEBUG = _env_bool("DEBUG", default=ENVIRONMENT == "development")
 LOG_LEVEL = _env("LOG_LEVEL", "INFO")
 
+# Build identity — stamped into the image at `docker build` time (see
+# deploy/Dockerfile's ARG GIT_COMMIT / ARG DEPLOY_TARGET and
+# ops/vps/deploy_agentbroker_vps.py), NOT hand-edited like SERVICE_VERSION
+# above. Verified 2026-09-21: SERVICE_VERSION sat at "0.2.13" across the
+# entire 19-commit / 11-day gap where api.hatchloop.dev served stale code with
+# four live authorization holes — a hand-maintained literal that nobody
+# happened to bump in that range, so it read identically whether the running
+# container was 0 days or 11 days behind. These two cannot go stale the same
+# way: they are derived from the commit actually baked into the image, not
+# typed by a person, so a build that skips the stamp reads "unknown" instead
+# of quietly repeating the last value. See scripts/system_health.py's
+# check_agentbroker_deploy_drift, which compares this against the last
+# externally-verified deploy instead of trusting either of these at face value.
+GIT_COMMIT = _env("GIT_COMMIT", "unknown")
+DEPLOY_TARGET = _env("DEPLOY_TARGET", "unknown")
+
 # ---------------------------------------------------------------------------
 # API / Auth
 # ---------------------------------------------------------------------------

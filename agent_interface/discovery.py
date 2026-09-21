@@ -153,13 +153,38 @@ def health_check() -> dict:
     # old smoke checks (200 on /health, find_business in tools/list) pass
     # identically on the OLD build - a deploy that never flipped read green.
     # Compare this field to the pushed SERVICE_VERSION and the gap is visible.
+    #
+    # THAT COMMENT WAS THE PLAN, AND IT DID NOT HOLD. SERVICE_VERSION is a
+    # hand-edited literal (config.py) that went 19 commits / 11 days
+    # (2026-09-10 -> 2026-09-21) without a single bump while api.hatchloop.dev
+    # served stale code with four live authorization holes - it read "0.2.13"
+    # on day one and "0.2.13" on day eleven, so nothing that compared against
+    # it could have told the difference. A version field that never moves is
+    # worse than none, because it LOOKS like verification.
+    #
+    # build_commit / deploy_target below are the fields that actually cannot
+    # be stale this way: they are stamped into the image from the commit
+    # `docker build` was actually given (deploy/Dockerfile ARG GIT_COMMIT /
+    # ARG DEPLOY_TARGET, set by ops/vps/deploy_agentbroker_vps.py), not typed
+    # by a person choosing when to bump a number. "unknown" means exactly
+    # that: this image was built without the stamp, which is itself
+    # informative (an old image, or a build that bypassed the deploy script).
     try:
         from config import SERVICE_VERSION as _sv
     except Exception:                           # noqa: BLE001
         _sv = "unknown"
+    try:
+        from config import GIT_COMMIT as _gc, DEPLOY_TARGET as _dt
+    except Exception:                           # noqa: BLE001
+        _gc, _dt = "unknown", "unknown"
     return {
         "status": "healthy" if not broken else "unhealthy",
         "version": _sv,
+        # Short commit sha only - never a path, token, or env dump. See
+        # scripts/system_health.py check_agentbroker_deploy_drift for what
+        # reads these two fields and why.
+        "build_commit": _gc,
+        "deploy_target": _dt,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "checks": checks,
         # Present for a reader, never for the restart decision - see above.
