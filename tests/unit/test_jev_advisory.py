@@ -15,6 +15,7 @@ module the live tests do.
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 
 import pytest
@@ -329,6 +330,25 @@ class TestResolveJevBinary:
     def test_dev_fallback_used_only_when_env_and_path_both_fail(self, monkeypatch):
         monkeypatch.delenv("JEV_BIN", raising=False)
         monkeypatch.setattr(jev_advisory.shutil, "which", lambda name: None)
+        # The dev-fallback script is a laptop-only file
+        # (compliance/jev_advisory.py's _DEV_FALLBACK_SCRIPT, board row 282's
+        # last-resort path) that does not exist in CI or in production - it
+        # is not a real dependency of this test suite, it is the fixture.
+        # When it is genuinely absent, resolve_jev_binary() correctly
+        # reports "binary not found" (see TestBinaryNotFoundIsVisibleAndHarmless
+        # for that contract, pinned independently of this file's presence).
+        # That is "dependency unavailable", not "our resolution logic is
+        # broken" - so skip with a reason instead of failing, the same
+        # distinction the rest of this module draws between "jev did not
+        # run" and "jev ran and failed".
+        if not os.path.isfile(jev_advisory._DEV_FALLBACK_SCRIPT):
+            pytest.skip(
+                "dev fallback script not present on this host "
+                f"({jev_advisory._DEV_FALLBACK_SCRIPT!r}) - the jev-binary "
+                "dev-fallback resolution path is untested in this "
+                "environment (this is a missing local dependency, not a "
+                "regression in resolve_jev_binary())"
+            )
         # The real dev-fallback file happens to exist on THIS laptop; this
         # test proves it is used only as the LAST resort, not stubbed.
         argv, reason = jev_advisory.resolve_jev_binary()
