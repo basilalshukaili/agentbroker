@@ -60,6 +60,29 @@ PROTECTED_DISCLOSURES = {
         "one connected account — the other 11 always fail "
         "schedule_appointment honestly, uncharged."
     ),
+    # 2026-09-22: send_message advertised "WhatsApp ... SMS, email, or voice"
+    # with no disclosure that SMS (Twilio) and voice (Vapi) are unconfigured
+    # on this deployment — core/send_message.py's channel chain reaches each
+    # adapter, which fails honestly (channels/stub_policy.not_configured,
+    # error_code=channel_not_configured, uncharged) but the tool's own
+    # description said nothing, so an agent could not know without paying for
+    # a failed attempt. See tests/unit/test_channel_claims_match_provider_state.py
+    # for the code-level proof this clause describes real behaviour.
+    "send_message": (
+        "SMS and voice are advertised but NOT wired on this deployment: "
+        "they always fail honestly (channel_not_configured), uncharged."
+    ),
+    # 2026-09-22: call_business's ENTIRE purpose is a Vapi voice call — with
+    # Vapi unconfigured on this deployment, core/call_business.py's own
+    # explicit env-var guard (before any network call) returns
+    # reason_code=voice_not_provisioned, uncharged, every single time. The
+    # description used to say nothing about this, so the tool looked
+    # unconditionally usable when it could not execute at all here.
+    "call_business": (
+        "NOT WIRED on this deployment (Vapi unconfigured): every call "
+        "fails honestly with voice_not_provisioned before dialling, "
+        "uncharged."
+    ),
 }
 
 
