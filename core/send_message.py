@@ -14,6 +14,7 @@ from core.models import (
     ChannelPreference, ComplianceViolationError, ErrorCode
 )
 from core.ownership import owner_for_storage
+from channels.error_classification import classify_channel_failure
 import os
 
 from channels.sms_email.twilio_sms import TwilioSMSAdapter
@@ -321,7 +322,24 @@ async def _do_send_message(
                     retriable=False,
                     trace_id=trace_id,
                 )
-            last_error = resp.error_message or "upstream_failure"
+            # CLASSIFY, NEVER INTERPOLATE. `resp.error_message` traces back to
+            # an upstream provider response on every adapter (Twilio SDK
+            # exception text, httpx.HTTPStatusError's body-including str(),
+            # Meta's Graph API error body) — see
+            # channels/error_classification.py's docstring for the full
+            # per-adapter trace. This tool is listed in
+            # core.untrusted.NO_THIRD_PARTY_TEXT ("result carries only a
+            # provider message id and our own conversation ids"), so nothing
+            # here is ever fenced; interpolating the adapter's own text would
+            # let a hostile/misbehaving upstream put arbitrary content -
+            # including a forged [UNTRUSTED] fence or an injection-shaped
+            # sentence - straight into an unfenced field of a STATE-CHANGING
+            # tool. Same pattern as the check_compliance jev_advisory fix:
+            # classify into one of OUR OWN sentences; the raw text is logged,
+            # not returned. See tests/unit/test_send_message_no_leak.py.
+            last_error = classify_channel_failure(
+                channel_name, error_code=resp.error_code,
+                error_message=resp.error_message)
         except ComplianceViolationError as cve:
             # Compliance violation — do NOT fall back, surface immediately
             return OutcomeReceipt(
@@ -337,7 +355,11 @@ async def _do_send_message(
                 trace_id=trace_id,
             )
         except Exception as exc:
-            last_error = str(exc)
+            # Same reasoning as above: `str(exc)` on this path has previously
+            # carried an httpx response body (Resend/SendGrid/Vapi) or a
+            # provider SDK's own formatted error text (Twilio) - never the
+            # raw text on the wire.
+            last_error = classify_channel_failure(channel_name, exc=exc)
 
         # THIS ATTEMPT DID NOT DELIVER, so the thread it opened must not count
         # against the business's inbound budget. The row is written before the

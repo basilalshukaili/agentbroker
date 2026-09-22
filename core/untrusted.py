@@ -211,6 +211,28 @@ _REPLAY_TOOLS = ("get_status", "get_outcome")
 # Tools with no third-party text in their result, each with the reason. Adding
 # a tool here is a CLAIM, and the gate holds you to it: it is checked against
 # the manifest, not against memory.
+#
+# THIS LIST HAS BEEN WRONG TWICE. 2026-09-21 full-registry audit: check_compliance
+# and send_message both interpolated a live upstream's own error text
+# (jev's raw stdout/stderr; a channel adapter's error_message/str(exc)) into
+# an unfenced field, then send_transactional_confirmation was found carrying
+# the identical shape, and self_test's REST-only surface (main.py, which
+# bypasses this module's label() entirely - see its own comment there) was
+# leaking raw TestCheck.error text. All four are fixed by classifying the
+# upstream/exception text into a closed vocabulary at the point the field is
+# built (see compliance/jev_advisory.py + core/check_compliance.py,
+# channels/error_classification.py + core/send_message.py +
+# core/send_transactional_confirmation.py, and main.py's /ops/self_test) -
+# never by widening what this module fences. Every entry below now has a
+# dedicated no-leak test driven with a MOCKED hostile upstream; see
+# tests/unit/test_check_compliance_jev_note_no_leak.py,
+# tests/unit/test_send_message_no_leak.py,
+# tests/unit/test_send_transactional_confirmation_no_leak.py,
+# tests/unit/test_self_test_rest_no_leak.py and
+# tests/unit/test_no_third_party_text_registry_no_leak.py (the remaining
+# entries, as regression guards), all wired into
+# scripts/check_untrusted_content_is_labelled.py's
+# check_no_third_party_text_claims().
 NO_THIRD_PARTY_TEXT: dict[str, str] = {
     "send_message": "result carries only a provider message id and our own conversation ids",
     "send_transactional_confirmation": "result carries only a provider message id",

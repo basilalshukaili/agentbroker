@@ -60,6 +60,7 @@ from core.models import (
     OperationStatus,
     OutcomeReceipt,
 )
+from compliance.jev_advisory import get_restricted_category_advisory
 
 _VALID_CHANNELS = ("sms", "email", "voice")
 
@@ -74,12 +75,81 @@ _REMEDIATION = {
     "GDPR_marketing_consent": "Obtain GDPR Article 6/7 consent before marketing email to EU/UK residents.",
     "CASL_marketing_consent": "Obtain explicit CASL consent before commercial electronic messages to Canadian recipients.",
     "10DLC_campaign_not_registered": "Register a 10DLC campaign with The Campaign Registry (TCR) before sending US A2P SMS. Required by US carriers since 2023.",
+    "restricted_content_jev_advisory": (
+        "The deterministic gate found nothing, but the additional jev "
+        "restricted-category read flagged this content (jev catches "
+        "Arabic/Cyrillic/obfuscated restricted-category phrasing the regex "
+        "classifier measurably misses). Re-word to remove any restricted "
+        "category, in any language or script, then re-run check_compliance. "
+        "This signal is advisory, not authoritative — see result.jev_advisory."
+    ),
 }
 
 
 def _remediation_for(rule: str) -> str:
     return _REMEDIATION.get(
         rule, "Review the cited rule in the jurisdiction reference at /compliance/jurisdictions."
+    )
+
+
+# ---------------------------------------------------------------------------
+# jev-unavailable note: a CLOSED vocabulary, never jev's own free text.
+# ---------------------------------------------------------------------------
+# check_compliance is listed in core.untrusted.NO_THIRD_PARTY_TEXT ("result is
+# our own rule ids and remediation text"), which means core.untrusted.label()
+# never fences or neutralises ANY field of this tool's result - the claim is
+# that there is nothing here THAT NEEDS fencing. `JevAdvisory.error` breaks
+# that claim if interpolated directly: on several of its own failure paths
+# (compliance/jev_advisory.py) it is built from jev's raw stdout/stderr -
+# `f"exit {code}: {stderr}"`, `f"empty stdout (exit {code}): {stderr}"`,
+# `f"unparseable JSON: {exc}: {stdout[:200]}"` - and jev's own error formatter
+# builds ITS text from the upstream HTTP response body, which a validation
+# API can construct by echoing back the very content we sent it. That makes
+# `advisory.error` third-party text in exactly the sense core/untrusted.py
+# exists to fence, arriving at a field this tool never fences. Reproduced
+# with a mocked subprocess.run (zero real jev calls) and pinned by
+# tests/unit/test_check_compliance_jev_note_no_leak.py.
+#
+# The fix is not to fence it (check_compliance's result shape is a flat
+# OutcomeReceipt dict, not one of the receipts core/untrusted.py already
+# walks, and jev's raw diagnostic has no value to a calling agent anyway -
+# it is Chinese-language CLI/HTTP plumbing text, not something an operator
+# acts on). Instead: classify it into ONE of a small set of sentences we
+# wrote ourselves, and never let any byte of `error` reach the result.
+_JEV_UNAVAILABLE_REASONS: tuple[tuple[str, str], ...] = (
+    ("empty content", "no content was supplied to check"),
+    ("test runner", "disabled while running under the test suite"),
+    # Board row 282: this is the ONE bucket that means jev is structurally
+    # missing in THIS deployment (no JEV_BIN, not on PATH, no dev fallback
+    # script — see compliance/jev_advisory.py's resolve_jev_binary) rather
+    # than a one-off failed call. Deliberately worded differently from every
+    # other bucket below and placed before the generic "timeout"/"exit "
+    # matches so it can never be swallowed by them — this is the distinction
+    # that used to be invisible: "jev never even ran here" now reads
+    # differently from "jev ran and the call failed".
+    ("binary not found", "jev is not installed/configured on this host (set JEV_BIN or put `jev` on PATH)"),
+    ("timeout", "the read timed out"),
+    ("empty stdout", "the read returned no answer"),
+    ("unparseable json", "the read returned an answer we could not parse"),
+    ("exit ", "the read failed"),
+)
+
+
+def _jev_unavailable_note(error: str | None) -> str:
+    """Map jev's free-text failure diagnostic to one of a small, fixed set of
+    sentences we wrote. `error` may itself carry text jev's own upstream API
+    echoed back from the content we sent it, so it must never be
+    interpolated into a tool result verbatim - this always returns a string
+    that came from this file, not from jev."""
+    low = (error or "").lower()
+    reason = "the read failed for an unrecognised reason"
+    for needle, human in _JEV_UNAVAILABLE_REASONS:
+        if needle in low:
+            reason = human
+            break
+    return (
+        "jev unavailable this call; deterministic verdict unchanged "
+        f"({reason})."
     )
 
 
@@ -114,6 +184,13 @@ _DOES_NOT_ASSERT = [
     "call time inside the voice adapter and is outside this gate.",
     "It does not assert compliance with any obligation this gate does not "
     "implement, and it is not legal advice or a determination by any regulator.",
+    "When result.rule is 'restricted_content_jev_advisory', the block came "
+    "from an ADDITIONAL, best-effort jev read layered on top of the "
+    "deterministic gate in THIS preview tool only - it is not part of the "
+    "gate compliance.pre_check/send_message enforce, and it is not stable "
+    "near its own decision threshold (a byte-identical rerun can disagree "
+    "roughly 1 time in 8). It can only ever ADD a caution here, never "
+    "remove one.",
 ]
 
 _ASSERTS = (
@@ -341,6 +418,64 @@ async def handle_check_compliance(
 
     # --- compliant branch -------------------------------------------------
     result = {**base_result, "legal": True, "rule": None}
+
+    # UNION MODE (adopted 2026-09-21, 36-agent audit — see
+    # compliance/jev_advisory.py for the full design and invocation
+    # details). jev is an ADDITIONAL, best-effort restricted-category read
+    # layered on top of the deterministic gate, in THIS preview tool ONLY.
+    # It runs ONLY here, on the branch where the deterministic gate found
+    # nothing to block — there is nothing for it to add when the gate has
+    # already said BLOCK, and skipping the call there also saves the cost.
+    # It can only ever move "legal": True down to False; on any jev failure
+    # (bad exit, timeout, empty stdout, unparseable JSON) it is a pure
+    # no-op and the deterministic "legal": True stands unchanged. It never
+    # touches compliance.pre_check or core.send_message — those remain
+    # 100% deterministic, unchanged by this file.
+    advisory = get_restricted_category_advisory(content)
+    result["jev_advisory"] = {
+        "checked": advisory.available,
+        "blocked": advisory.blocked,
+        "probability": advisory.probability,
+        "note": (
+            "Additional restricted-category read (jev-1.13), advisory only — "
+            "not part of the gate send_message enforces, and not stable near "
+            "its own threshold. Present because the deterministic gate found "
+            "nothing to block on its own."
+            if advisory.available else
+            _jev_unavailable_note(advisory.error)
+        ),
+    }
+
+    if advisory.available and advisory.blocked:
+        result["legal"] = False
+        result["rule"] = "restricted_content_jev_advisory"
+        _attach(result, operation_id, _subject, _inputs,
+                country_code, state_code, channel,
+                decision={"permitted": False,
+                          "rule": "restricted_content_jev_advisory",
+                          "jurisdiction": result["jurisdiction"]})
+        return OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.SUCCESS,   # a truthful "no" is a successful check
+            reason_code="not_compliant",
+            human_message=(
+                "The deterministic gate found nothing, but an additional jev "
+                "restricted-category read flagged this content (p="
+                f"{advisory.probability:.2f}). No message was sent — this was "
+                "a preview. This signal is advisory, not authoritative: "
+                "re-check before trusting it on content near the line."
+            ),
+            result=result,
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+            next_actions=[
+                _remediation_for("restricted_content_jev_advisory"),
+                "Re-run check_compliance once the blocker is resolved, then call send_message.",
+            ],
+        )
+
     _attach(result, operation_id, _subject, _inputs,
             country_code, state_code, channel,
             decision={"permitted": True,

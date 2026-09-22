@@ -23,6 +23,7 @@ from core.models import (
     CostRecord, ComplianceViolationError
 )
 from channels.adapter_interface import ChannelRequest
+from channels.error_classification import classify_channel_failure
 from billing.pricing import receipt_usd as _receipt_usd
 from storage.outcome_store import get_outcome_store
 
@@ -193,16 +194,25 @@ async def _do_send_transactional_confirmation(
                 retriable=False,
                 trace_id=trace_id,
             )
-        # Adapter returned success=False — surface the provider's own diagnostics
-        err_code = getattr(resp, "error_code", "unknown")
-        err_msg = getattr(resp, "error_message", "no detail")
+        # Adapter returned success=False. CLASSIFY, NEVER INTERPOLATE:
+        # `resp.error_message` traces back to an upstream provider response on
+        # every adapter (see channels/error_classification.py for the
+        # per-adapter trace). This tool is listed in
+        # core.untrusted.NO_THIRD_PARTY_TEXT ("result carries only a provider
+        # message id"), so nothing here is ever fenced - interpolating the
+        # adapter's own text would let a hostile/misbehaving upstream put
+        # arbitrary content straight into an unfenced field. Same pattern as
+        # the check_compliance and send_message fixes; see
+        # tests/unit/test_send_transactional_confirmation_no_leak.py.
+        reason = classify_channel_failure(
+            channel_name, error_code=getattr(resp, "error_code", None),
+            error_message=getattr(resp, "error_message", None))
         return OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
             reason_code="upstream_failure",
             human_message=(
-                f"Confirmation delivery failed via {channel_name}: "
-                f"[{err_code}] {err_msg}"
+                f"Confirmation delivery failed via {channel_name}: {reason}"
             ),
             cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
             latency_ms=int((time.monotonic() - t0) * 1000),
@@ -221,13 +231,16 @@ async def _do_send_transactional_confirmation(
             trace_id=trace_id,
         )
     except Exception as exc:
+        # Same reasoning as the adapter-returned-failure branch above:
+        # str(exc) has previously carried an httpx response body or a
+        # provider SDK's own formatted error text - never the raw text.
+        reason = classify_channel_failure(channel_name, exc=exc)
         return OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
             reason_code="upstream_failure",
             human_message=(
-                f"Confirmation delivery failed via {channel_name}: "
-                f"[exception:{type(exc).__name__}] {exc}"
+                f"Confirmation delivery failed via {channel_name}: {reason}"
             ),
             cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
             latency_ms=int((time.monotonic() - t0) * 1000),
