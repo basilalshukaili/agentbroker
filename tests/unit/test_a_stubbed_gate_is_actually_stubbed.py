@@ -704,23 +704,6 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
     # tests were updated to patch that instead -- see
     # tests/unit/test_outcome_store_unavailable_vs_absent.py for the new tests
     # this fix added, which patch select_rows_strict the same way.
-    # Added while converting the sanctions-honesty tests that used to skip
-    # for "no database config" (task: make them run against a fake instead).
-    # test_country_never_removes_a_match.py patches both select_rows_strict
-    # and select_rows via its own `import storage.supabase_client as sb`
-    # reference (see `_seed_fake_index`), exercising core.screen_sanctions'
-    # `_screen_list_db` and `_list_refreshed_at` -- BOTH of which do their own
-    # deferred `from storage.supabase_client import select_rows,
-    # select_rows_strict, SupabaseUnavailable` INSIDE the function body
-    # (screen_sanctions.py, inside _screen_list_db and _list_refreshed_at) --
-    # not billing.credits.get_balance, the only eager consumer of
-    # select_rows, which this file never calls or references. Same reasoning
-    # already accepted for test_outcome_durability.py above.
-    ("tests/unit/test_country_never_removes_a_match.py", "storage.supabase_client.select_rows"):
-        "targets core.screen_sanctions._screen_list_db's deferred select_rows import "
-        "(the empty-index probe fallback), exercised only through "
-        "handle_screen_sanctions/_screen_list_db; no reference to get_balance or "
-        "billing.credits anywhere in this file.",
     # Added for board row 206 (2026-09-22): storage/outcome_store.py's
     # _supabase_fetch / _supabase_upsert / _supabase_fetch_by_appointment_id
     # now call `rpc()` -- routed through the operations_* SECURITY DEFINER

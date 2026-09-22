@@ -2058,7 +2058,7 @@
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "No key required, unmetered."
+        "notes": "Free and unmetered. An agent identity key is required."
       },
       "slo": {
         "p50_latency_ms": 600,
@@ -3200,7 +3200,7 @@
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "Free and unmetered. An agent identity IS required: a thread is readable only by the identity that opened it."
+        "notes": "Free and unmetered. An agent identity key is required."
       },
       "slo": {
         "p50_ms": 300,

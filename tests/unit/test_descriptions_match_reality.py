@@ -266,7 +266,8 @@ def test_free_and_keyless_are_never_conflated():
         if not is_free:
             continue
         checked += 1
-        needs_key = t["name"] in ms._WRITE_TOOLS_REQUIRING_AUTH
+        from core.tool_auth import requires_key
+        needs_key = requires_key(t["name"])
         if needs_key:
             assert "key" in desc, (
                 f"{t['name']} says {desc[-80:]!r} but requires a key - an agent will "

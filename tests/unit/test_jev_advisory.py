@@ -326,14 +326,17 @@ class TestResolveJevBinary:
         assert reason is None
         assert argv == ["/fake/path/to/jev"]
 
-    def test_dev_fallback_used_only_when_env_and_path_both_fail(self, monkeypatch):
+    def test_dev_fallback_used_only_when_env_and_path_both_fail(self, monkeypatch, tmp_path):
         monkeypatch.delenv("JEV_BIN", raising=False)
         monkeypatch.setattr(jev_advisory.shutil, "which", lambda name: None)
-        # The real dev-fallback file happens to exist on THIS laptop; this
-        # test proves it is used only as the LAST resort, not stubbed.
+        fallback = tmp_path / "jev"
+        fallback.write_text("fixture", encoding="utf-8")
+        monkeypatch.setattr(jev_advisory, "_DEV_FALLBACK_SCRIPT", str(fallback))
+        # A real temporary file proves the fallback is used last without
+        # coupling CI to one developer laptop's filesystem.
         argv, reason = jev_advisory.resolve_jev_binary()
         assert reason is None
-        assert argv == ["python", jev_advisory._DEV_FALLBACK_SCRIPT]
+        assert argv == ["python", str(fallback)]
 
     def test_jev_bin_takes_priority_over_path(self, monkeypatch):
         """JEV_BIN is an explicit operator override - it must win even when

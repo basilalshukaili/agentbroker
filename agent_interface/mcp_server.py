@@ -103,9 +103,9 @@ def _total_tool_count() -> int:
 
 
 def _keyless_count() -> int:
-    """Tools callable with no key: total minus the write tools that need one."""
-    total = _total_tool_count()
-    return max(0, total - len(_WRITE_TOOLS_REQUIRING_AUTH)) if total else 0
+    """Tools callable with no key, including premium daily-quota tools."""
+    from core.tool_auth import usable_without_key
+    return usable_without_key()
 
 
 def _trim_schema_props(schema: dict) -> dict:
@@ -222,7 +222,8 @@ def _format_description_for_llm(op: dict) -> str:
         if cost_basis == "freemium_daily_quota":
             cost_tag = f" [free in quota, then ${cost_amount}/call]"
         elif cost_basis == "free":
-            if op.get("name") in _WRITE_TOOLS_REQUIRING_AUTH:
+            from core.tool_auth import requires_key
+            if requires_key(op.get("name", "")):
                 cost_tag = " [free, requires key]"
             else:
                 cost_tag = " [free, no key]"
@@ -678,7 +679,7 @@ async def _h_initialize(params: dict) -> dict:
             # evaluator that most of the product is gated, when most of it is
             # not, is a self-inflicted wound at the moment of first contact.
             f"{_keyless_count()} of the {_total_tool_count()} tools need no "
-            f"key at all; the {len(_WRITE_TOOLS_REQUIRING_AUTH)} write tools "
+            "key at all; the remaining tools "
             f"require an X-Agent-Identity token in the underlying HTTP request. "
             "For state-changing operations (send_message, schedule_appointment), call preview_cost "
             "first to confirm the budget impact. "
@@ -1099,16 +1100,9 @@ _PREMIUM_DATA_TOOLS: frozenset[str] = frozenset({
 # Read-only tools (find_business, verify_business, get_status, get_outcome,
 # preview_cost, self_test) stay anonymous-accessible per the manifest's
 # readOnlyHint annotation.
-_WRITE_TOOLS_REQUIRING_AUTH = frozenset({
-    "send_message",
-    "schedule_appointment",
-    "send_transactional_confirmation",
-    "capture_lead",
-    "handle_inbound",
-    "escalate_to_human",
-    "import_booking_url",
-    "call_business",
-})
+from core.tool_auth import (  # noqa: E402 -- keep the established private alias
+    WRITE_TOOLS_REQUIRING_AUTH as _WRITE_TOOLS_REQUIRING_AUTH,
+)
 
 
 def _inject_quota_block(receipt: dict, token: str) -> None:

@@ -37,17 +37,6 @@ SERVICE_NAME = "AgentBroker"
 # they are described by their real rule instead of their current value.
 PREMIUM_DATA = {"verify_company_record", "screen_sanctions", "map_trade_restriction"}
 
-# Free tools that are free but NOT keyless. get_conversation releases a thread
-# only to the agent identity that opened it, so a call with no key refuses
-# every time - and a cost_model reading "No key required" would be exactly the
-# published overclaim this file exists to stop, one line from the truth.
-KEYED_FREE = {
-    "get_conversation": (
-        "Free and unmetered. An agent identity IS required: a thread is "
-        "readable only by the identity that opened it."
-    ),
-}
-
 
 def build_cost_model(op_name: str) -> dict:
     from billing.pricing import _PRICING_CENTS, _MAX_PRICING_CENTS
@@ -77,8 +66,14 @@ def build_cost_model(op_name: str) -> dict:
         }
 
     if cents == 0:
-        return {"basis": "free", "unit_price_usd": 0.0,
-                "notes": KEYED_FREE.get(op_name, "No key required, unmetered.")}
+        from core.tool_auth import requires_key
+
+        notes = (
+            "Free and unmetered. An agent identity key is required."
+            if requires_key(op_name)
+            else "No key required, unmetered."
+        )
+        return {"basis": "free", "unit_price_usd": 0.0, "notes": notes}
 
     model = {"basis": "per_call", "unit_price_usd": round(cents / 100, 4),
              "credits": cents}
