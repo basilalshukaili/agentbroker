@@ -66,8 +66,14 @@ def build_cost_model(op_name: str) -> dict:
         }
 
     if cents == 0:
-        return {"basis": "free", "unit_price_usd": 0.0,
-                "notes": "No key required, unmetered."}
+        from core.tool_auth import requires_key
+
+        notes = (
+            "Free and unmetered. An agent identity key is required."
+            if requires_key(op_name)
+            else "No key required, unmetered."
+        )
+        return {"basis": "free", "unit_price_usd": 0.0, "notes": notes}
 
     model = {"basis": "per_call", "unit_price_usd": round(cents / 100, 4),
              "credits": cents}

@@ -319,11 +319,14 @@ class TestProdGuard:
     def test_stubs_allowed_in_dev_with_flag(self):
         """Outside production, ALLOW_STUB_CHANNELS=1 should still work for local tests."""
         from channels.stub_policy import stubs_allowed
-        env_overrides = {"ALLOW_STUB_CHANNELS": "1"}
-        # Remove production indicators
+        env_overrides = {
+            "ALLOW_STUB_CHANNELS": "1",
+            "ENVIRONMENT": "development",
+        }
+        # Remove host-specific production indicators. ENVIRONMENT must stay
+        # explicitly development because the policy deliberately fails closed.
         with patch.dict(os.environ, env_overrides):
             os.environ.pop("RENDER", None)
-            os.environ.pop("ENVIRONMENT", None)
             os.environ.pop("ENV", None)
             result = stubs_allowed()
         assert result is True
