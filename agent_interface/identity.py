@@ -25,6 +25,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
+from core.env_guard import is_production_for_security_guards
 from core.models import AgentIdentity, AgentScope, Principal
 
 
@@ -40,7 +41,28 @@ _DEFAULT_TTL_SECONDS = 3600 * 24  # 24 hours
 # Startup-time guard: in production, refuse-to-deploy is too aggressive (would
 # break the app on missing env). Instead, loudly log so the operator notices
 # in the deploy logs and rotates the key before the first customer arrives.
-if os.getenv("ENVIRONMENT") == "production" and (
+#
+# Board row 250: the condition below used to be
+# `os.getenv("ENVIRONMENT") == "production"`, which reads False when
+# ENVIRONMENT is unset — the exact state production ran in, so this never
+# logged a word while every issued Agent-Identity JWT (scope, budget_cap,
+# verticals — real operating authority) was forgeable. It now uses the
+# shared fail-CLOSED helper: unset/unrecognised counts as production.
+#
+# Kept as a LOG, not a raise, deliberately: this module sits on main.py's
+# import chain for the entire service (every route, health check, and piece
+# of operator tooling passes through it). Raising here trades "a forgeable
+# secret" for "the whole service refuses to boot" on ANY environment
+# ambiguity, including a transient misconfiguration — an availability outage
+# layered on top of the security gap, for a condition real production is not
+# expected to hit (JWT_SIGNING_SECRET is provisioned as a real Render secret
+# there). The failure this task found was that the log never fired, not that
+# logging was too soft a response — fixing the condition so it reliably
+# fires is the fix; escalating severity is a separate call this file does
+# not need to make today. See core/env_guard.py for the shared decision and
+# agent_interface/unsubscribe.py for why THAT guard reasons independently
+# to the same log-not-raise answer instead of inheriting this one.
+if is_production_for_security_guards() and (
     not os.getenv("JWT_SIGNING_SECRET") or _SIGNING_SECRET == _DEFAULT_SECRET
 ):
     logging.getLogger("smb_broker.identity").error(

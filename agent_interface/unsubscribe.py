@@ -43,6 +43,8 @@ from typing import Optional
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from core.env_guard import is_production_for_security_guards
+
 logger = logging.getLogger("smb_broker.unsubscribe")
 
 router = APIRouter(tags=["Compliance"])
@@ -64,7 +66,25 @@ _SECRET = os.getenv(
 # identity.py guards JWT_SIGNING_SECRET exactly this way and
 # billing/receipt_signer.py asserts on its key. This one had no guard at all,
 # which is the kind of gap that only shows up when someone compares siblings.
-if os.getenv("ENVIRONMENT") == "production" and _SECRET == _DEV_SECRET:
+#
+# Board row 250: `os.getenv("ENVIRONMENT") == "production"` is False when
+# ENVIRONMENT is unset - the exact state production ran in - so this never
+# logged, even though the comment above already knew what an unset secret
+# meant. Now uses the shared fail-CLOSED helper: unset/unrecognised counts
+# as production, same as identity.py and receipt_signer.py.
+#
+# Kept as a LOG, argued on its own terms rather than copied from identity.py:
+# a forged token here lets someone unsubscribe another recipient, or serve a
+# confirmation page that looks like ours - a compliance and reputational
+# harm, but it grants no operating authority and moves no money, unlike a
+# forged Agent-Identity JWT or a forged billing receipt. This module's own
+# design throughout is graceful-degradation-first (idempotent unsubscribe,
+# a way out even on a bad token, no hard 400s) - crashing the entire service
+# at import time over a compliance side-channel would contradict that intent
+# and take down message-sending and billing along with it. Fixing the
+# condition so the log reliably fires (it could not, before) is the fix;
+# raising is a different, larger decision this file does not make today.
+if is_production_for_security_guards() and _SECRET == _DEV_SECRET:
     logging.getLogger("smb_broker.unsubscribe").error(
         "SECURITY: no UNSUBSCRIBE_SECRET / KEY_VERIFY_SECRET / "
         "JWT_SIGNING_SECRET is set in production, so opt-out tokens are "

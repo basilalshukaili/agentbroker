@@ -9,6 +9,8 @@ import json
 import os
 from typing import Any
 
+from core.env_guard import is_production_for_security_guards
+
 _DEFAULT_SIGNING_KEY = "dev-signing-key-replace-in-production"
 _SIGNING_KEY = os.getenv("BILLING_SIGNING_KEY", _DEFAULT_SIGNING_KEY)
 
@@ -20,8 +22,15 @@ _SIGNING_KEY = os.getenv("BILLING_SIGNING_KEY", _DEFAULT_SIGNING_KEY)
 # Note: this assertion runs at import time so the process fails fast at startup
 # rather than silently accepting forged receipts. render.yaml already declares
 # BILLING_SIGNING_KEY as sync:false (added in the x402-payment-safety fix).
-_ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-if _ENVIRONMENT == "production" and _SIGNING_KEY == _DEFAULT_SIGNING_KEY:
+#
+# Board row 250: this used to be `os.getenv("ENVIRONMENT") == "production"`,
+# which is False when ENVIRONMENT is unset — the exact state production ran
+# in, so this never fired. is_production_for_security_guards() fails CLOSED
+# instead: unset/unrecognised now counts as production. This guard keeps its
+# RAISE — it has zero non-test callers today (do not wire it in), so raising
+# costs nothing until someone does, and when they do, failing fast beats
+# shipping forgeable receipts. See core/env_guard.py for the shared decision.
+if is_production_for_security_guards() and _SIGNING_KEY == _DEFAULT_SIGNING_KEY:
     raise RuntimeError(
         "BILLING_SIGNING_KEY is set to the default dev value in production. "
         "Set a random secret via the Render dashboard (Environment > BILLING_SIGNING_KEY). "
