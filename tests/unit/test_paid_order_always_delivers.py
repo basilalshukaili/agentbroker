@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -41,12 +43,19 @@ def test_a_failing_grant_is_retried_not_abandoned(monkeypatch):
         attempts["n"] += 1
         if attempts["n"] < 3:
             raise RuntimeError("supabase timeout")
-        return None
+        return {"ok": True, "balance_after": 5000}
 
     async def noop(*a, **k):
         return None
 
     monkeypatch.setenv("CREDITS_ENABLED", "true")
+    monkeypatch.setattr(pw, "_already_processed", AsyncMock(return_value=False))
+    monkeypatch.setattr(pw.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr("storage.supabase_client.insert_row_strict",
+                        AsyncMock(side_effect=lambda table, row: row))
+    issue_token = Mock(return_value=SimpleNamespace(
+        token="synthetic.test.token", expires_at=1900000000))
+    monkeypatch.setattr("agent_interface.identity.issue_subscription_token", issue_token)
     monkeypatch.setattr("billing.credits.grant", flaky, raising=False)
     monkeypatch.setattr("billing.packages.credits_for_product",
                         lambda *a, **k: 5000, raising=False)
@@ -55,6 +64,7 @@ def test_a_failing_grant_is_retried_not_abandoned(monkeypatch):
                         noop, raising=False)
     monkeypatch.setattr("billing.telegram_revenue_alerts.send_api_key_email",
                         noop, raising=False)
+    monkeypatch.setattr("billing.emails.send_welcome_email", noop)
 
     event = {
         "type": "order.paid",
@@ -69,7 +79,9 @@ def test_a_failing_grant_is_retried_not_abandoned(monkeypatch):
     }
     asyncio.run(pw.handle_polar_event(event))
 
-    assert attempts["n"] >= 2, (
+    issue_token.assert_called_once_with(
+        customer_id="cus_retry_1", plan="developer", customer_email="buyer@example.com")
+    assert attempts["n"] == 3, (
         f"the grant was tried {attempts['n']} time(s) - a transient failure "
         f"must be retried, not abandoned with the customer already keyed")
 
