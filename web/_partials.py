@@ -74,7 +74,7 @@ PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "privacy@hatchloop.dev")
 # never a party to anything.
 LEGAL_ENTITY = _os.environ.get(
     "LEGAL_ENTITY",
-    "Techmate (شركة رفيق التقنية), "
+    "Techmate (شركة الرفيق التقني), "
     "CR 1661879, Muscat, Sultanate of Oman",
 )
 
