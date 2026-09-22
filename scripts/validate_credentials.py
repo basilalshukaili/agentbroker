@@ -217,11 +217,16 @@ async def check_billing_provider() -> CheckResult:
             "Manual mode — no provider needed. Set WISE_PAYMENT_LINK or PAYPAL_PAYMENT_LINK before launch.",
         )
     if name == "polar":
-        api = os.getenv("POLAR_API_KEY", "")
+        # NAME MISMATCH, fixed 2026-09-22 (board row 206): this repo's .env
+        # carries the token as POLAR_ACCESS_TOKEN (the name portal.py and
+        # billing/providers.py both prefer), never POLAR_API_KEY. Checking
+        # POLAR_API_KEY alone told an operator credentials were missing when
+        # they were not.
+        api = os.getenv("POLAR_ACCESS_TOKEN") or os.getenv("POLAR_API_KEY", "")
         org = os.getenv("POLAR_ORG_ID", "")
         if api and org:
             return CheckResult("Billing (polar)", True, "Polar credentials present (run a real checkout to test fully).")
-        return CheckResult("Billing (polar)", False, "POLAR_API_KEY or POLAR_ORG_ID missing.")
+        return CheckResult("Billing (polar)", False, "POLAR_ACCESS_TOKEN (or POLAR_API_KEY) or POLAR_ORG_ID missing.")
     if name == "lemonsqueezy":
         api = os.getenv("LEMONSQUEEZY_API_KEY", "")
         store = os.getenv("LEMONSQUEEZY_STORE_ID", "")

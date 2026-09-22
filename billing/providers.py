@@ -193,7 +193,16 @@ class PolarProvider(BillingProvider):
     name = "polar"
 
     def __init__(self) -> None:
-        self._api_key = os.getenv("POLAR_API_KEY", "")
+        # NAME MISMATCH, fixed 2026-09-22 (board row 206): this deployment's
+        # .env carries the token under POLAR_ACCESS_TOKEN (the name
+        # agent_interface/portal.py has always read), never POLAR_API_KEY —
+        # so this class was silently running with an empty key, falling into
+        # _stub_session() on every /billing/checkout attempt, despite a real
+        # token being present under the other name. POLAR_ACCESS_TOKEN wins
+        # when set; POLAR_API_KEY is kept as a fallback alias for any
+        # environment that set the other name instead — same precedence
+        # portal.py already uses for _create_polar_checkout/_polar_invoices_url.
+        self._api_key = os.getenv("POLAR_ACCESS_TOKEN") or os.getenv("POLAR_API_KEY", "")
         self._org_id = os.getenv("POLAR_ORG_ID", "")
         # The Polar Product the checkout sells. Required by the current
         # (product-based) checkout API — freeform amounts are no longer accepted.
@@ -417,10 +426,24 @@ class ManualProvider(BillingProvider):
 
     async def create_checkout(self, *, amount_usd, description, agent_id,
                               success_url, cancel_url) -> CheckoutSession:
+        url = self._wise_link or self._paypal_link
+        if not url:
+            # FIX (board row 249, 2026-09-22): this provider used to fabricate
+            # a hardcoded placeholder ("https://wise.com/pay/your-link-here")
+            # here when neither link was configured, and — unlike every other
+            # provider in this file — never flagged the result as a stub. That
+            # meant main.py's `/billing/checkout` route (whose only safety net
+            # is `if not url or session.metadata.get("stub")`) could not tell
+            # this session apart from a real one, and presented a dead URL
+            # under a page claiming "Taking you to secure checkout (Polar)...".
+            #
+            # A provider that cannot produce a real payment URL must refuse,
+            # not fabricate one. Match the shape every other dead-rail
+            # provider in this file already uses (_stub_session /
+            # metadata["stub"] is True) rather than inventing a new one — this
+            # is what makes the route's existing guard catch it too.
+            return _stub_session("manual", amount_usd, success_url, agent_id)
         session_id = f"manual_{uuid.uuid4().hex[:12]}"
-        # Provide whatever link the founder configured
-        url = (self._wise_link or self._paypal_link
-               or "https://wise.com/pay/your-link-here")
         return CheckoutSession(
             session_id=session_id,
             payment_url=url,
@@ -442,7 +465,12 @@ class ManualProvider(BillingProvider):
         return None  # founder confirms manually
 
     def health_check(self) -> bool:
-        return True
+        # FIX (board row 249): a health check that always returns True is not
+        # a health check. This provider can only actually produce a checkout
+        # when a real payment link is configured — mirror every other
+        # provider's health_check() here (bool of the thing that would make
+        # create_checkout succeed for real).
+        return bool(self._wise_link or self._paypal_link)
 
 
 # ---------------------------------------------------------------------------
