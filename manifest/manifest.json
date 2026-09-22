@@ -41,10 +41,7 @@
               "zip_or_city": {
                 "type": "string"
               },
-              "radius_miles": {
-                "type": "number",
-                "minimum": 0
-              }
+              "radius_miles": {"type": "number", "minimum": 0, "description": "Accepted but NOT applied. The supply directory holds no coordinates, so no distance filter can be honoured; results are not restricted to this radius. Sending it is recorded and disclosed back as radius_miles_applied: false."}
             },
             "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
           },

@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Strict E.164: leading "+", first digit non-zero, total 8-16 digits.
 _E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
@@ -249,6 +249,17 @@ class OutcomeReceipt(BaseModel):
     next_actions: list[str] = Field(default_factory=list)
     retriable: bool = False
     trace_id: Optional[str] = None
+    # First-class receipt field, not an afterthought. core/untrusted.py's
+    # label() adds this key to name which result fields carry third-party
+    # text. Pydantic's default extra="ignore" means any key label() adds that
+    # is NOT declared here is SILENTLY STRIPPED the instant a handler's dict
+    # is re-validated against response_model=OutcomeReceipt — which is every
+    # /ops/* route on the REST surface (main.py). The notice would be
+    # computed, attached, and then dropped on the way out, so the response
+    # fences result.* but says nothing about it — verified via
+    # OutcomeReceipt.model_validate(label(...)).model_dump() losing the key
+    # without this field declared.
+    untrusted_content: Optional[dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -325,8 +336,51 @@ class AgentIdentity(BaseModel):
 # ---------------------------------------------------------------------------
 
 class LocationFilter(BaseModel):
-    zip_or_city: str
-    radius_miles: float = 10.0
+    # extra="forbid" so a misspelled filter is reported rather than dropped.
+    # Pydantic IGNORES unknown fields by default, so POST /ops/find_business -
+    # which binds this model directly, without passing through the MCP
+    # dispatch - would accept "radius_mile" or "zipcode" and silently search
+    # on something else. Forbidding turns that into a 422 naming the field.
+    model_config = ConfigDict(extra="forbid")
+
+    zip_or_city: str = Field(min_length=1)
+
+    # ACCEPTED, NOT APPLIED, AND THE RESPONSE SAYS SO.
+    #
+    # This carried `= 10.0`, and the default was the dishonest part: it
+    # asserted a 10-mile radius WAS being applied, by a matcher that only ever
+    # compared city/state/ZIP strings, over records that hold no coordinates.
+    #
+    # The first fix deleted the field and refused it by name. That traded one
+    # wrong behaviour for another: we advertised this exact shape, with this
+    # documented default, so every caller written against our own manifest
+    # began getting a JSON-RPC -32602 on MCP - a PROTOCOL error the calling
+    # model cannot read as a tool result and retry - and a bare 422 on
+    # /ops/find_business. Removing an inert filter is right; removing it with
+    # no deprecation window, on callers who did what we told them, is not.
+    #
+    # So: the same treatment availability_window already gets. Take it,
+    # validate it, ignore it, and disclose it in the receipt
+    # (radius_miles_applied: false) so no caller can believe their results are
+    # within N miles. The default is gone - None means "not sent", and only a
+    # caller who actually sent one is told anything.
+    # The disclosure has to live HERE, not only in manifest/mcp_tools.json and
+    # openapi.yaml. The live MCP `tools/list` schema is built from this model by
+    # agent_interface.mcp_server._build_tool_list(), so a description present only
+    # in the hand-authored manifest is invisible to every agent that actually
+    # connects: the static file said "accepted but not applied" while the schema a
+    # caller reads said nothing at all. Same class as the site publishing tool
+    # counts that disagreed with the server.
+    radius_miles: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Accepted but NOT applied. The supply directory holds no coordinates, "
+            "so no distance filter can be honoured; results are not restricted to "
+            "this radius. Sending it is recorded and disclosed back as "
+            "radius_miles_applied: false."
+        ),
+    )
 
 
 class PriceBand(BaseModel):
@@ -344,7 +398,11 @@ class FindBusinessRequest(BaseModel):
     capability: Optional[str] = None
     price_band: Optional[PriceBand] = None
     availability_window: Optional[AvailabilityWindow] = None
-    max_results: int = Field(default=5, le=20)
+    # ge=1, not just le=20. The upper bound was enforced and the lower one was
+    # not, so max_results=-1 validated, reached `results[:-1]` in the directory
+    # and SILENTLY DROPPED the last match - five businesses found, four
+    # returned, "Found 4 business(es)" and no indication anything was cut.
+    max_results: int = Field(default=5, ge=1, le=20)
 
     @model_validator(mode="before")
     @classmethod
