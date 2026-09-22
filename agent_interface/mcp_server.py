@@ -40,6 +40,11 @@ except Exception:  # noqa: BLE001 - pragma: no cover
 
 import config as _config
 from agent_interface.manifest_server import get_full_manifest, get_operation
+# THE one place that knows which tools need a key, and every count that
+# follows from it. Six surfaces used to work this out independently and all
+# six went stale on the day the rule changed - see core/tool_auth.py.
+from core import tool_auth
+from core.tool_auth import WRITE_TOOLS_REQUIRING_AUTH, requires_key
 
 
 # ---------------------------------------------------------------------------
@@ -94,18 +99,25 @@ def _total_tool_count() -> int:
     """Derived, not typed. I hardcoded "12 of the 23 tools" into the
     instructions string one commit after building a CI gate that fails the
     build for exactly that - the habit is stronger than the rule, which is
-    why the rule has to be a function rather than a reminder."""
-    try:
-        from agent_interface.manifest_server import get_full_manifest
-        return len(get_full_manifest().get("operations") or [])
-    except Exception:                           # noqa: BLE001
-        return 0
+    why the rule has to be a function rather than a reminder.
+
+    Deriving it here was still not enough: the instructions string next to it
+    then paired this correct total with a hand-typed "8 write tools" and the
+    two no longer summed. Both numbers now come from core/tool_auth.py.
+    """
+    return tool_auth.total_tools()
 
 
 def _keyless_count() -> int:
-    """Tools callable with no key, including premium daily-quota tools."""
-    from core.tool_auth import usable_without_key
-    return usable_without_key()
+    """Tools a stranger can call with NO key - always-free plus quota-free.
+
+    Kept as a name because the instructions string reads better with it, but
+    it is no longer a subtraction done here. It used to be `total - needs_key`
+    computed locally, which is how the handshake came to advertise "14 of the
+    23 tools need no key; the 8 write tools require a token": 14 + 8 = 22, and
+    the tool in neither bucket (get_conversation) read as free.
+    """
+    return tool_auth.usable_without_key()
 
 
 def _trim_schema_props(schema: dict) -> dict:
@@ -222,7 +234,11 @@ def _format_description_for_llm(op: dict) -> str:
         if cost_basis == "freemium_daily_quota":
             cost_tag = f" [free in quota, then ${cost_amount}/call]"
         elif cost_basis == "free":
-            from core.tool_auth import requires_key
+            # `requires_key`, NOT the write set. get_conversation costs nothing
+            # and is not a write, so the narrower test tagged it "[free, no
+            # key]" in tools/list while the handler refused every anonymous
+            # call - the one line of our advertised surface a connecting agent
+            # uses to plan a keyless session.
             if requires_key(op.get("name", "")):
                 cost_tag = " [free, requires key]"
             else:
@@ -673,14 +689,26 @@ async def _h_initialize(params: dict) -> dict:
         },
         "instructions": (
             f"SMB Transaction & Communication Broker. Use tools/list to see all {op_count} operations. "
-            # "MOST" WAS WRONG AND DISCOURAGING. 12 of the 21 tools need no
-            # key at all - 9 outright and 3 up to a daily quota - and this is
-            # the first sentence every connecting client reads. Telling an
-            # evaluator that most of the product is gated, when most of it is
-            # not, is a self-inflicted wound at the moment of first contact.
+            # "MOST" WAS WRONG AND DISCOURAGING. Most of the tools need no key
+            # at all, and this is the first sentence every connecting client
+            # reads. Telling an evaluator that most of the product is gated,
+            # when most of it is not, is a self-inflicted wound at the moment
+            # of first contact.
+            #
+            # BOTH NUMBERS AND THE SPLIT COME FROM core/tool_auth.py. The
+            # version before this one paired a derived total with a typed "8
+            # write tools" and the sentence stopped adding up the moment a
+            # ninth tool started needing a key: 14 + 8 = 22 of 23, and the
+            # missing one read as free to every client that connected.
             f"{_keyless_count()} of the {_total_tool_count()} tools need no "
-            "key at all; the remaining tools "
-            f"require an X-Agent-Identity token in the underlying HTTP request. "
+            f"key at all ({tool_auth.keyless()} always free, "
+            f"{tool_auth.quota_free()} free within a daily quota); the other "
+            f"{tool_auth.needs_key()} require an X-Agent-Identity token in the "
+            f"underlying HTTP request - the {len(_WRITE_TOOLS_REQUIRING_AUTH)} "
+            f"write tools, plus "
+            f"{', '.join(sorted(tool_auth.IDENTITY_REQUIRED_READ_TOOLS))}, "
+            f"which cost nothing and still need a key because what they return "
+            f"is readable only by the agent identity that created it. "
             "For state-changing operations (send_message, schedule_appointment), call preview_cost "
             "first to confirm the budget impact. "
             # The differentiator, stated at first contact — and only because it
@@ -1100,9 +1128,14 @@ _PREMIUM_DATA_TOOLS: frozenset[str] = frozenset({
 # Read-only tools (find_business, verify_business, get_status, get_outcome,
 # preview_cost, self_test) stay anonymous-accessible per the manifest's
 # readOnlyHint annotation.
-from core.tool_auth import (  # noqa: E402 -- keep the established private alias
-    WRITE_TOOLS_REQUIRING_AUTH as _WRITE_TOOLS_REQUIRING_AUTH,
-)
+#
+# DEFINED IN core/tool_auth.py and aliased here under its historical name,
+# which a dozen tests and three surfaces import from this module. It is the
+# WRITE half of "needs a key"; ask `requires_key()` instead when the question
+# is whether a stranger can call the tool, because get_conversation needs a
+# key without being a write and this set answered that question wrongly on
+# three published surfaces at once.
+_WRITE_TOOLS_REQUIRING_AUTH = WRITE_TOOLS_REQUIRING_AUTH
 
 
 def _inject_quota_block(receipt: dict, token: str) -> None:

@@ -249,6 +249,7 @@ def test_free_and_keyless_are_never_conflated():
     """
     import asyncio
     from agent_interface import mcp_server as ms
+    from core import tool_auth
 
     resp = asyncio.run(ms.handle_mcp_request(
         {"jsonrpc": "2.0", "method": "tools/list", "id": 1}, {}))
@@ -266,10 +267,25 @@ def test_free_and_keyless_are_never_conflated():
         if not is_free:
             continue
         checked += 1
-        from core.tool_auth import requires_key
-        needs_key = requires_key(t["name"])
+        # `requires_key`, NOT the write set. This test asked the same narrow
+        # question the cost tag it checks used to ask, so when get_conversation
+        # began refusing keyless callers the test AGREED with the wrong tag and
+        # tools/list went on advertising "[free, no key]" on a tool no stranger
+        # can call. A check that derives its expectation the same wrong way as
+        # the code verifies nothing.
+        needs_key = tool_auth.requires_key(t["name"])
         if needs_key:
-            assert "key" in desc, (
+            # "key" ALONE ALSO MATCHES INSIDE "no key" - so this assertion
+            # passed for a "[free, no key]" tag exactly as happily as for a
+            # "[free, requires key]" one, and could never fail no matter what
+            # the tag said. Fixing `needs_key` above (to ask tool_auth's
+            # question instead of the write-only one) looked like the whole
+            # fix and was proven insufficient by running it red-then-green:
+            # get_conversation still passed this branch with its old "[free,
+            # no key]" tag, silently, because the substring it checked for was
+            # present in the wrong phrase too. The phrase, not the substring,
+            # is the promise being checked.
+            assert "requires key" in desc and "no key" not in desc, (
                 f"{t['name']} says {desc[-80:]!r} but requires a key - an agent will "
                 f"call it and fail on auth")
         else:
