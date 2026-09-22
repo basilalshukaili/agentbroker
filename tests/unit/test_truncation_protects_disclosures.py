@@ -143,3 +143,59 @@ def test_protected_disclosures_have_a_truncation_safety_margin():
             f"first), or shorten text ahead of it. Do not fix this by "
             f"raising SAFETY_MARGIN_CHARS or by deleting the registry entry."
         )
+
+
+def test_no_tool_description_is_ever_truncated():
+    """Zero ellipses across the whole surface -- unconditionally, for every
+    tool, whether or not anyone registered a disclosure for it.
+
+    Context (2026-09-22): a caller running `tools/list` against the live
+    endpoint found 5 of 23 tools -- send_message, call_business,
+    check_compliance, screen_sanctions, map_trade_restriction -- with
+    descriptions silently cut mid-sentence and terminated with "...". Each
+    lost real content: send_message lost the sentence saying a rejected
+    marketing send gets a structured compliance_violation receipt;
+    screen_sanctions lost "Never fabricates a match or a clear" entirely.
+    None of the five had a PROTECTED_DISCLOSURES entry, so the tests above
+    -- which only guard a clause someone thought to register -- passed the
+    whole time. All five were then rewritten (manifest/manifest.json) with
+    the honesty-critical sentence moved early and restatements/examples
+    trimmed, so each now fits within its real per-tool ceiling.
+
+    This test does not depend on any registry. It fails the moment ANY
+    tool's raw description would be truncated by
+    `_format_description_for_llm`'s end-cut at `_MAX_DESC_CHARS`, before
+    that ellipsis ever reaches a live caller -- catching every future case,
+    not just the five found this way.
+    """
+    ELLIPSIS = "…"
+    failures = []
+    for name in sorted(OPS):
+        op = OPS[name]
+        raw = op.get("description", "")
+        published = _format_description_for_llm(op)
+        if ELLIPSIS not in published:
+            continue
+        # Recompute the exact same cut `_format_description_for_llm` makes
+        # (raw[:_MAX_DESC_CHARS].rsplit(" ", 1)[0]) so the failure message
+        # shows precisely what text a live caller loses, verbatim.
+        kept = raw[:_MAX_DESC_CHARS].rsplit(" ", 1)[0]
+        lost = raw[len(kept):]
+        failures.append(
+            f"  {name}: raw description is {len(raw)} chars (ceiling "
+            f"{_MAX_DESC_CHARS}) -- truncation silently drops: {lost!r}"
+        )
+    assert not failures, (
+        "The following tool description(s) are truncated with an ellipsis "
+        "in the exact string tools/list sends to a real caller. Whatever "
+        "text follows the cut -- a disclosure, a limit, an honesty clause "
+        "-- is gone from every request this server answers, whether or not "
+        "it was ever registered in PROTECTED_DISCLOSURES above:\n"
+        + "\n".join(failures)
+        + "\nFix by reordering the description so what you cannot afford to "
+        "lose sits before the cut (examples, platform lists, idempotency "
+        "notes and restatements belong at the very end, where truncation is "
+        "safe to eat them first), or by shortening genuinely redundant text "
+        "-- never by raising _MAX_DESC_CHARS and never by deleting the "
+        "honesty content itself."
+    )
