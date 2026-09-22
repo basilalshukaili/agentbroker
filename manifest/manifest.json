@@ -43,9 +43,10 @@
               },
               "radius_miles": {
                 "type": "number",
-                "default": 10
+                "minimum": 0
               }
-            }
+            },
+            "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
           },
           "capability": {
             "type": "string",
@@ -76,7 +77,16 @@
           "max_results": {
             "type": "integer",
             "default": 5,
-            "maximum": 20
+            "maximum": 20,
+            "minimum": 1
+          },
+          "city": {
+            "type": "string",
+            "description": "Alternative to location: a top-level city, normalised into location.zip_or_city. The receipt reports location_normalized_from."
+          },
+          "region": {
+            "type": "string",
+            "description": "Alternative to location: a top-level state/region, normalised into location.zip_or_city with city."
           }
         }
       },
@@ -210,7 +220,7 @@
             "status": "success",
             "businesses": [],
             "total_in_supply_network": 0,
-            "supply_coverage_note": "No verified businesses in this area for this capability. Consider expanding radius_miles."
+            "supply_coverage_note": "No verified businesses in this area for this capability. Try a broader location, an adjacent vertical, or import_booking_url."
           }
         },
         {
@@ -779,9 +789,9 @@
     },
     {
       "name": "schedule_appointment",
-      "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form.",
-      "when_to_use": "Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id.",
-      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed.",
+      "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation.",
+      "when_to_use": "Use to book, check availability, or cancel a Cal.com appointment once the SMB is verified and its booking link is bound to our connected Cal.com account. Requires a verified smb_id.",
+      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Do not pass action=reschedule — it is not implemented; cancel the existing appointment and book a new time instead. Do not expect this to book on the SMB's own Calendly/Doctolib/Booksy/Fresha/etc. account, or on a Cal.com account other than the one this deployment holds credentials for — those calls fail honestly with no charge.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
         "Voice channel to US recipients requires prior express consent for prerecorded calls (TCPA).",
@@ -801,7 +811,6 @@
             "type": "string",
             "enum": [
               "book",
-              "reschedule",
               "cancel",
               "check_availability"
             ]
@@ -845,7 +854,7 @@
           },
           "existing_appointment_id": {
             "type": "string",
-            "description": "Required for reschedule/cancel"
+            "description": "Required for cancel"
           },
           "notes": {
             "type": "string"
@@ -871,11 +880,14 @@
       "idempotency": "required — prevents double-booking on network retry",
       "failure_modes": [
         "bad_input",
+        "action_not_supported",
         "supply_unreachable",
         "upstream_failure",
         "compliance_violation",
         "recording_consent_missing",
-        "outcome_rejected"
+        "outcome_rejected",
+        "booking_destination_unmapped",
+        "async_channel_not_provisioned"
       ],
       "examples": [
         {
@@ -904,7 +916,7 @@
           }
         },
         {
-          "label": "Book plumber — voice AI fallback",
+          "label": "Book plumber with no Cal.com link — honest failure (no working non-Cal.com path yet)",
           "input": {
             "smb_id": "smb_044",
             "action": "book",
@@ -914,12 +926,14 @@
             }
           },
           "output": {
-            "status": "pending_async",
-            "channel_fallback_chain": [
-              "direct_api:none",
-              "voice_ai:vapi (dispatched)"
-            ],
-            "operation_id": "op_abc001"
+            "status": "failure",
+            "reason_code": "async_channel_not_provisioned",
+            "human_message": "smb_044 can only be booked through an async channel, which needs a background worker that is not deployed on this tier. Nothing was booked and nothing was charged.",
+            "cost": {
+              "amount": 0.0,
+              "currency": "USD",
+              "basis": "no_charge"
+            }
           }
         },
         {
@@ -962,12 +976,12 @@
           }
         },
         {
-          "user_says": "Reschedule my dental cleaning to next week",
+          "user_says": "What times does the dentist have open next week?",
           "agent_call": {
             "tool": "schedule_appointment",
             "arguments": {
               "smb_id": "smb_imp_xyz",
-              "action": "reschedule"
+              "action": "check_availability"
             }
           }
         }
@@ -1360,7 +1374,9 @@
               "executing",
               "success",
               "failure",
-              "partial"
+              "partial",
+              "not_found",
+              "forbidden"
             ]
           },
           "estimated_completion_time": {
@@ -1388,7 +1404,9 @@
       "idempotency": "read-only",
       "failure_modes": [
         "bad_input",
-        "transient"
+        "transient",
+        "not_your_operation",
+        "identity_required"
       ],
       "examples": [
         {
@@ -1436,7 +1454,9 @@
       "idempotency": "read-only",
       "failure_modes": [
         "bad_input",
-        "transient"
+        "transient",
+        "not_your_operation",
+        "identity_required"
       ],
       "examples": [
         {
@@ -3183,7 +3203,7 @@
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "No key required, unmetered."
+        "notes": "Free and unmetered. An agent identity IS required: a thread is readable only by the identity that opened it."
       },
       "slo": {
         "p50_ms": 300,
@@ -3211,6 +3231,18 @@
           "retriable": false,
           "meaning": "The thread belongs to a different agent identity.",
           "agent_action": "Use the identity that created the conversation."
+        },
+        {
+          "reason_code": "identity_required",
+          "retriable": false,
+          "meaning": "No agent identity was presented. A thread is readable only by the identity that opened it, so this tool needs one even though it is free.",
+          "agent_action": "Send your key as X-Agent-Identity - the same key you send with send_message. Mint one with mint_key."
+        },
+        {
+          "reason_code": "conversation_owner_unknown",
+          "retriable": false,
+          "meaning": "The thread has no recorded owner, so it cannot be attributed to any caller and is released to none. Threads opened before caller identity was bound, and threads opened by a caller that sent no key, are in this state.",
+          "agent_action": "Send X-Agent-Identity with send_message and read back the thread that call returns."
         }
       ],
       "examples": [
