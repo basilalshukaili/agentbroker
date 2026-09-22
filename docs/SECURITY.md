@@ -12,7 +12,10 @@ Every item is either **DONE** (already implemented in this repo) or **TODO** (mu
 - [x] **DONE** — Token claims include `scope.operations`, `scope.budget_cap_usd`, `scope.verticals`, expiry.
 - [x] **DONE** — Per-token revocation list (JTI-based).
 - [ ] **TODO** — Replace HS256 with RS256 / EdDSA using a managed KMS key (AWS KMS, GCP Cloud KMS).
-- [ ] **TODO** — Move `AGENT_IDENTITY_SIGNING_SECRET` from env to managed secret store.
+- [ ] **TODO** — Move `JWT_SIGNING_SECRET` from env to managed secret store.
+      (This line named `AGENT_IDENTITY_SIGNING_SECRET` until 2026-09-22; that
+      variable never signed anything and has been deleted. `JWT_SIGNING_SECRET`
+      is the key `agent_interface/identity.py` actually signs tokens with.)
 - [ ] **TODO** — Token TTL ≤ 1 hour in production (currently 24h dev default).
 - [ ] **TODO** — Refresh-token flow + sliding-window expiry.
 - [ ] **TODO** — Rate limit per agent_id at the edge (currently only at app level).

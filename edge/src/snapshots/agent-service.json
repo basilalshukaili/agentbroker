@@ -6,8 +6,9 @@
   "auth": {
     "scheme": "AgentIdentity",
     "header": "X-Agent-Identity",
-    "token_url": "/auth/token",
-    "token_format": "HS256 signed claims (stub) — use issue_token()"
+    "free_key_url": "/keys/request",
+    "free_key_method": "POST {\"email\": \"you@example.com\"}",
+    "token_format": "HS256 signed claims"
   },
   "manifest_url": "/manifest",
   "operations_url": "/manifest/ops",

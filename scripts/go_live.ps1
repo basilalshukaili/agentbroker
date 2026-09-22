@@ -95,11 +95,11 @@ if (-not $flyToken) {
 }
 
 # Generate fresh signing secrets if still using dev defaults
-$identitySecret = $env:AGENT_IDENTITY_SIGNING_SECRET
+$identitySecret = $env:JWT_SIGNING_SECRET
 if ($identitySecret -like "dev-*") {
     $identitySecret = -join ((48..57) + (97..122) | Get-Random -Count 64 | ForEach-Object { [char]$_ })
 }
-$billingSecret = $env:BILLING_RECEIPT_SIGNING_SECRET
+$billingSecret = $env:BILLING_SIGNING_KEY
 if ($billingSecret -like "dev-*") {
     $billingSecret = -join ((48..57) + (97..122) | Get-Random -Count 64 | ForEach-Object { [char]$_ })
 }
@@ -115,8 +115,12 @@ $secretsArgs = @(
     "PADDLE_API_KEY=$($env:PADDLE_API_KEY)",
     "POLAR_API_KEY=$($env:POLAR_API_KEY)",
     "BILLING_PROVIDER=paddle",
-    "AGENT_IDENTITY_SIGNING_SECRET=$identitySecret",
-    "BILLING_RECEIPT_SIGNING_SECRET=$billingSecret",
+    # Corrected 2026-09-22: this script used to generate a fresh random secret
+    # and set it as AGENT_IDENTITY_SIGNING_SECRET / BILLING_RECEIPT_SIGNING_SECRET,
+    # neither of which any code reads -- so an operator running it believed they
+    # had rotated the signing key while identity.py kept using the old one.
+    "JWT_SIGNING_SECRET=$identitySecret",
+    "BILLING_SIGNING_KEY=$billingSecret",
     "PUBLIC_BASE_URL=https://$($env:DOMAIN)",
     "COMPLIANCE_DEFAULT_JURISDICTION=international",
     "SUPPLY_SEED_MODE=empty",

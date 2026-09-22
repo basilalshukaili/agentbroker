@@ -45,8 +45,10 @@ services:
       #   Twilio sender — pick one:
       #     TWILIO_MESSAGING_SERVICE_SID (preferred, MG...) or TWILIO_FROM_NUMBER (E.164)
       #   Other:
-      #     CALCOM_API_KEY, VAPI_API_KEY,
-      #     RESEND_API_KEY, AGENT_IDENTITY_SIGNING_SECRET, BILLING_RECEIPT_SIGNING_SECRET
+      #     CALCOM_API_KEY, VAPI_API_KEY, RESEND_API_KEY,
+      #     JWT_SIGNING_SECRET, BILLING_SIGNING_KEY
+      # (This line used to name AGENT_IDENTITY_SIGNING_SECRET and
+      #  BILLING_RECEIPT_SIGNING_SECRET. Both are deleted -- see below.)
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_API_KEY_SID
@@ -63,9 +65,36 @@ services:
         sync: false
       - key: RESEND_API_KEY
         sync: false
-      - key: AGENT_IDENTITY_SIGNING_SECRET
+      # CORRECTED 2026-09-22 (board row 255). This block previously declared
+      # AGENT_IDENTITY_SIGNING_SECRET and BILLING_RECEIPT_SIGNING_SECRET.
+      # Neither name was ever used to sign anything: their only reader was
+      # config.py, which defined them solely to warn that they were unset.
+      # Both definitions are now DELETED from config.py, so the names are gone
+      # from the codebase entirely -- do not reintroduce them here.
+      # Audited by <hatchloop-root>/scripts/check_env_name_drift.py (note: that
+      # script lives one level ABOVE this repo, not in agentbroker/scripts/),
+      # which compares provisioned-vs-read in both directions.
+      # An operator following the old file would set two variables no code
+      # consumes, while the secrets the code ACTUALLY reads stayed at dev
+      # defaults that are literals in this PUBLIC repo -- forgeable tokens,
+      # with every surface reporting success.
+      #
+      # LIVE STATE, verified against the Render API 2026-09-22 (service
+      # srv-d7oqgn9o3t8c7386as0g "smb-broker"): JWT_SIGNING_SECRET IS set
+      # there, 64 chars, not the dev default -- so the identity.py guard is
+      # NOT firing on the live box and this was a stale declaration, not an
+      # open production hole. AGENT_IDENTITY_SIGNING_SECRET was never set
+      # there at all. KEY_VERIFY_SECRET and UNSUBSCRIBE_SECRET are NOT set
+      # live; both fall back to JWT_SIGNING_SECRET, so they are real today
+      # but share one key -- set them to break that coupling.
+      #
+      # The three below are the names agent_interface/identity.py and
+      # agent_interface/unsubscribe.py really read. Generate 32+ random chars each.
+      - key: JWT_SIGNING_SECRET
         sync: false
-      - key: BILLING_RECEIPT_SIGNING_SECRET
+      - key: UNSUBSCRIBE_SECRET
+        sync: false
+      - key: KEY_VERIFY_SECRET
         sync: false
       # LOW-1 fix: BILLING_SIGNING_KEY must be set as a Render secret.
       # receipt_signer.py asserts this is not the default in production.
@@ -75,5 +104,12 @@ services:
       # Supabase -- durable billing_events + smb_supply storage
       - key: SUPABASE_URL
         sync: false
+      # LEFT IN PLACE DELIBERATELY, BUT READ THIS FIRST (2026-09-22).
+      # Board row 206 decided no service-role key goes on an internet-facing box:
+      # the broker uses the ANON key through SECURITY DEFINER RPCs instead. That
+      # work targets the VPS container and sql/agentbroker/001_*.sql is NOT yet
+      # applied, so removing this key could break a live Render service today.
+      # Which copy survives is board row 171. Delete this entry as part of THAT
+      # decision, not as a drive-by.
       - key: SUPABASE_SERVICE_KEY
         sync: false

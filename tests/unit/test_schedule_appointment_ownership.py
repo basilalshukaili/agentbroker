@@ -98,6 +98,49 @@ class FakeSB:
             out.append(r)
         return out[:limit]
 
+    # FIX (2026-09-21, unavailable-vs-absent): storage/outcome_store.py's
+    # _supabase_fetch now reads through `select_rows_strict` (which raises
+    # SupabaseUnavailable instead of returning [] on a real failure) rather
+    # than the lenient `select_rows` this fake used to stand in for alone.
+    # This fake represents a REACHABLE store, so its strict variant behaves
+    # exactly like its lenient one -- it never raises.
+    async def select_rows_strict(self, table, filters=None, limit=1000, order=None, gte=None):
+        return await self.select_rows(table, filters=filters, limit=limit, order=order, gte=gte)
+
+    # FIX (board row 206, 2026-09-22): _supabase_fetch/_supabase_upsert/
+    # _supabase_fetch_by_appointment_id now call the three operations_*
+    # SECURITY DEFINER RPCs instead of the raw table surface above -- this
+    # service deploys with only the Supabase anon key, which has no grant on
+    # `operations` at all (see
+    # sql/agentbroker/001_operations_security_definer_rpc.sql). Translate
+    # each RPC call onto the SAME self.rows["operations"] list the
+    # table-level methods already maintain, so every test in this file that
+    # asserts against `fake_sb.rows["operations"]` keeps working unchanged.
+    async def rpc(self, fn, payload):
+        if fn == "operations_upsert":
+            row = {
+                "operation_id": payload["p_operation_id"],
+                "tool": payload["p_tool"],
+                "status": payload["p_status"],
+                "reason_code": payload["p_reason_code"],
+                "appointment_id": payload["p_appointment_id"],
+                "result_json": payload["p_result_json"],
+                "agent_id": payload["p_agent_id"],
+            }
+            return await self.upsert_row("operations", row, on_conflict="operation_id")
+        if fn == "operations_get_by_id":
+            rows = await self.select_rows(
+                "operations", filters={"operation_id": payload["p_operation_id"]}, limit=1)
+            return rows[0] if rows else None
+        if fn == "operations_get_by_appointment_id":
+            rows = await self.select_rows(
+                "operations",
+                filters={"appointment_id": payload["p_appointment_id"],
+                          "reason_code": "appointment_confirmed"},
+                limit=1)
+            return rows[0] if rows else None
+        raise AssertionError(f"unexpected rpc fn in test fake: {fn!r}")
+
 
 @pytest.fixture(autouse=True)
 def fake_sb(monkeypatch):
@@ -106,6 +149,8 @@ def fake_sb(monkeypatch):
     monkeypatch.setattr(real, "insert_row", sb.insert_row)
     monkeypatch.setattr(real, "upsert_row", sb.upsert_row)
     monkeypatch.setattr(real, "select_rows", sb.select_rows)
+    monkeypatch.setattr(real, "select_rows_strict", sb.select_rows_strict)
+    monkeypatch.setattr(real, "rpc", sb.rpc)
     return sb
 
 

@@ -210,11 +210,41 @@ class TestHandleInbound:
 
 
 class TestGetStatusAndOutcome:
-    def test_get_status_unknown_operation(self):
+    # FIX (2026-09-21, unavailable-vs-absent). These two tests used to pass
+    # for the wrong reason: this process has no SUPABASE_URL/key configured,
+    # so storage/outcome_store.py's Supabase fallback could not be reached --
+    # and, before this fix, an UNREACHABLE store and a REACHABLE store with no
+    # matching row were the same `None` to get_async(), so "not_found" came
+    # back either way. That was the exact production defect (measured
+    # 2026-09-21: get_status/get_outcome answered not_found for a real
+    # operation_id because the live container had no Supabase config at all).
+    # These tests are named for a genuinely unknown operation, so they now say
+    # so explicitly: mock a REACHABLE store that confirms no such row, the
+    # same control tests/unit/test_outcome_store_unavailable_vs_absent.py
+    # adds for this exact distinction (see that file for the unreachable-store
+    # direction, which these two tests never exercised).
+    def test_get_status_unknown_operation(self, monkeypatch):
+        import storage.supabase_client as sb
+
+        # Board row 206: _supabase_fetch now calls the operations_get_by_id
+        # RPC, not select_rows_strict directly (anon key, no table grant --
+        # see sql/agentbroker/001_operations_security_definer_rpc.sql). A
+        # reachable RPC that found nothing returns SQL NULL -> JSON null ->
+        # Python None here, same "genuine miss" contract as before.
+        async def _empty(fn, payload):
+            return None
+
+        monkeypatch.setattr(sb, "rpc", _empty)
         result = run(handle_get_status("op_UNKNOWN"))
         assert result["status"] == "not_found"
 
-    def test_get_outcome_unknown_returns_failure(self):
+    def test_get_outcome_unknown_returns_failure(self, monkeypatch):
+        import storage.supabase_client as sb
+
+        async def _empty(fn, payload):
+            return None
+
+        monkeypatch.setattr(sb, "rpc", _empty)
         receipt = run(handle_get_outcome("op_UNKNOWN"))
         assert receipt.status == OperationStatus.FAILURE
         assert receipt.reason_code == "not_found"

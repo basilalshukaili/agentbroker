@@ -2,7 +2,7 @@
   "name": "agent-broker-edge",
   "version": "0.1.0",
   "private": true,
-  "description": "Cloudflare Worker edge front-door for Agent Broker MCP service. Caches discovery endpoints at edge, proxies tool execution to Render origin with retry-on-cold-start.",
+  "description": "Cloudflare Worker compatibility endpoint for Agent Broker MCP. Caches discovery at the edge and proxies tool execution to the authoritative VPS.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

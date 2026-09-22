@@ -45,4 +45,5 @@ primary_region = "fra"  # Frankfurt — closest free region to Oman
 # Set secrets BEFORE deploy:
 #   flyctl secrets set TWILIO_ACCOUNT_SID="..." TWILIO_AUTH_TOKEN="..." \
 #                       CALCOM_API_KEY="..." VAPI_API_KEY="..." \
-#                       RESEND_API_KEY="..." AGENT_IDENTITY_SIGNING_SECRET="..."
+#                       RESEND_API_KEY="..." JWT_SIGNING_SECRET="..." \
+#                       BILLING_SIGNING_KEY="..."

@@ -55,6 +55,21 @@ def test_free_tools_are_advertised_as_free(ops):
             f"{cm.get('unit_price_usd')}")
 
 
+def test_identity_required_free_tools_do_not_claim_to_be_keyless(ops):
+    """Price and authentication are separate facts: zero cost does not make a
+    caller-owned read anonymous."""
+    from billing.pricing import _PRICING_CENTS
+    from core.tool_auth import TOOLS_REQUIRING_KEY
+
+    names = {name for name in TOOLS_REQUIRING_KEY
+             if _PRICING_CENTS.get(name) == 0}
+    assert names, "the identity-required free class unexpectedly became empty"
+    for name in names:
+        notes = ops[name]["cost_model"].get("notes", "").lower()
+        assert "identity" in notes and "required" in notes
+        assert "no key required" not in notes
+
+
 def test_paid_tools_match_the_price_table_exactly(ops):
     from billing.pricing import _PRICING_CENTS
     premium = {"verify_company_record", "screen_sanctions", "map_trade_restriction"}
@@ -144,6 +159,7 @@ def test_cost_lines_are_honest_per_class():
         "a free, keyless tool must say so - it is the first thing an agent "
         "evaluating us will try")
     assert "$" not in got["find_business"]
+    assert got["get_conversation"] == "[free, requires key]"
     # variable ops must not quote a flat price — tag says "variable" or "preview_cost"
     assert "from $" in got["send_message"] and (
         "variable" in got["send_message"] or "preview_cost" in got["send_message"]

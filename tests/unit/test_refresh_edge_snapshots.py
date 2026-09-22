@@ -19,26 +19,38 @@ def _write(path, doc) -> None:
     )
 
 
-def test_committed_snapshot_matches_the_exact_served_tool_builder():
+def test_the_local_builder_is_reproducible_and_offline():
+    """`--local-tools` really does rebuild tools/list from this checkout."""
     sys.path.insert(0, AB)
     try:
         from agent_interface.mcp_server import _build_tool_list
     finally:
         sys.path.pop(0)
 
-    expected = {
+    assert refresh.build_local_tools_snapshot() == {
         "jsonrpc": "2.0",
         "id": 1,
         "result": {"tools": _build_tool_list()},
     }
-    path = os.path.join(
-        AB, "edge", "src", "snapshots", "mcp-tools-list.json"
-    )
+
+
+def test_committed_snapshot_matches_this_release_exactly():
+    """One reviewed release must carry one exact tools/list contract.
+
+    The snapshot is a deployable artifact in this checkout, while the local
+    builder is the origin contract that will ship from the same commit. Roster
+    equality alone lets descriptions, auth labels and schemas drift even though
+    the Worker forwards calls to that origin. Production monitoring may compare
+    the deployed Worker with the deployed origin; this source gate answers the
+    separate release question and therefore requires exact equality.
+    """
+    path = os.path.join(AB, "edge", "src", "snapshots", "mcp-tools-list.json")
     with open(path, encoding="utf-8") as fh:
         committed = json.load(fh)
-
-    assert refresh.build_local_tools_snapshot() == expected
-    assert committed == expected
+    assert committed == refresh.build_local_tools_snapshot(), (
+        "the committed Worker snapshot differs from the origin contract in "
+        "this release; run `python scripts/refresh_edge_snapshots.py "
+        "--local-tools` before shipping both from the same commit")
 
 
 def test_local_check_never_calls_the_live_fetcher(monkeypatch, tmp_path):

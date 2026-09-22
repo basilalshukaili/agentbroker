@@ -81,7 +81,9 @@ env:
     secret: true
   - name: POLAR_API_KEY
     secret: true
-  - name: AGENT_IDENTITY_SIGNING_SECRET
+  # Renamed 2026-09-22: the old AGENT_IDENTITY_SIGNING_SECRET /
+  # BILLING_RECEIPT_SIGNING_SECRET names had no reader in the code.
+  - name: JWT_SIGNING_SECRET
     secret: true
-  - name: BILLING_RECEIPT_SIGNING_SECRET
+  - name: BILLING_SIGNING_KEY
     secret: true

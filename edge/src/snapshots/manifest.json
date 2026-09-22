@@ -30,8 +30,7 @@
               "personal_services",
               "home_services",
               "professional_services"
-            ],
-            "description": "Service vertical to search within"
+            ]
           },
           "location": {
             "type": "object",
@@ -44,9 +43,11 @@
               },
               "radius_miles": {
                 "type": "number",
-                "default": 10
+                "minimum": 0,
+                "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
               }
-            }
+            },
+            "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
           },
           "capability": {
             "type": "string",
@@ -77,7 +78,16 @@
           "max_results": {
             "type": "integer",
             "default": 5,
-            "maximum": 20
+            "maximum": 20,
+            "minimum": 1
+          },
+          "city": {
+            "type": "string",
+            "description": "Alternative to location: a top-level city, normalised into location.zip_or_city. The receipt reports location_normalized_from."
+          },
+          "region": {
+            "type": "string",
+            "description": "Alternative to location: a top-level state/region, normalised into location.zip_or_city with city."
           }
         }
       },
@@ -211,7 +221,7 @@
             "status": "success",
             "businesses": [],
             "total_in_supply_network": 0,
-            "supply_coverage_note": "No verified businesses in this area for this capability. Consider expanding radius_miles."
+            "supply_coverage_note": "No verified businesses in this area for this capability. Try a broader location, an adjacent vertical, or import_booking_url."
           }
         },
         {
@@ -387,7 +397,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice. Sends immediately; no scheduling. Five message types: transactional, reminder, follow_up, notification, marketing. Every send routes through a non-bypassable compliance gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions) that enforces opt-in consent for marketing/promotional content — marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. Channel is abstracted: specify intent and recipient; the service selects and falls back across channels.",
       "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
       "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
@@ -477,18 +487,13 @@
             ],
             "default": "auto"
           },
-          "send_at_iso": {
-            "type": "string",
-            "format": "date-time",
-            "description": "NOT SUPPORTED YET. We do not schedule messages. Supplying a time more than 2 minutes in the future is REFUSED (reason_code scheduling_not_supported) rather than sent immediately, which is what used to happen. Call send_message at the moment you want delivery, or omit this field."
-          },
           "on_behalf_of": {
             "type": "string",
             "description": "Who this message is FOR (your end-user's name/label). On WhatsApp this opens a tracked conversation and travels in-message as '#4821 for Sara (via HatchLoop)', so the business knows who it is talking to and their reply is matched back to this exact request instead of guessed. Strongly recommended for two-way channels."
           },
           "business_id": {
             "type": "string",
-            "description": "Optional stable id for the recipient business. Enables global demand shaping (we rate-limit total inbound across ALL agents so businesses stay responsive instead of blocking us)."
+            "description": "Stable id for the recipient business; used for global demand shaping."
           }
         }
       },
@@ -785,9 +790,9 @@
     },
     {
       "name": "schedule_appointment",
-      "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form.",
-      "when_to_use": "Use when an agent needs to book, reschedule, or cancel a specific appointment with a specific SMB. Requires a verified smb_id.",
-      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed.",
+      "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation.",
+      "when_to_use": "Use to book, check availability, or cancel a Cal.com appointment once the SMB is verified and its booking link is bound to our connected Cal.com account. Requires a verified smb_id.",
+      "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Do not pass action=reschedule — it is not implemented; cancel the existing appointment and book a new time instead. Do not expect this to book on the SMB's own Calendly/Doctolib/Booksy/Fresha/etc. account, or on a Cal.com account other than the one this deployment holds credentials for — those calls fail honestly with no charge.",
       "execution_profile": "async_by_default",
       "compliance_constraints": [
         "Voice channel to US recipients requires prior express consent for prerecorded calls (TCPA).",
@@ -807,7 +812,6 @@
             "type": "string",
             "enum": [
               "book",
-              "reschedule",
               "cancel",
               "check_availability"
             ]
@@ -851,7 +855,7 @@
           },
           "existing_appointment_id": {
             "type": "string",
-            "description": "Required for reschedule/cancel"
+            "description": "Required for cancel"
           },
           "notes": {
             "type": "string"
@@ -877,11 +881,14 @@
       "idempotency": "required — prevents double-booking on network retry",
       "failure_modes": [
         "bad_input",
+        "action_not_supported",
         "supply_unreachable",
         "upstream_failure",
         "compliance_violation",
         "recording_consent_missing",
-        "outcome_rejected"
+        "outcome_rejected",
+        "booking_destination_unmapped",
+        "async_channel_not_provisioned"
       ],
       "examples": [
         {
@@ -910,7 +917,7 @@
           }
         },
         {
-          "label": "Book plumber — voice AI fallback",
+          "label": "Book plumber with no Cal.com link — honest failure (no working non-Cal.com path yet)",
           "input": {
             "smb_id": "smb_044",
             "action": "book",
@@ -920,12 +927,14 @@
             }
           },
           "output": {
-            "status": "pending_async",
-            "channel_fallback_chain": [
-              "direct_api:none",
-              "voice_ai:vapi (dispatched)"
-            ],
-            "operation_id": "op_abc001"
+            "status": "failure",
+            "reason_code": "async_channel_not_provisioned",
+            "human_message": "smb_044 can only be booked through an async channel, which needs a background worker that is not deployed on this tier. Nothing was booked and nothing was charged.",
+            "cost": {
+              "amount": 0.0,
+              "currency": "USD",
+              "basis": "no_charge"
+            }
           }
         },
         {
@@ -968,12 +977,12 @@
           }
         },
         {
-          "user_says": "Reschedule my dental cleaning to next week",
+          "user_says": "What times does the dentist have open next week?",
           "agent_call": {
             "tool": "schedule_appointment",
             "arguments": {
               "smb_id": "smb_imp_xyz",
-              "action": "reschedule"
+              "action": "check_availability"
             }
           }
         }
@@ -1366,7 +1375,9 @@
               "executing",
               "success",
               "failure",
-              "partial"
+              "partial",
+              "not_found",
+              "forbidden"
             ]
           },
           "estimated_completion_time": {
@@ -1394,7 +1405,9 @@
       "idempotency": "read-only",
       "failure_modes": [
         "bad_input",
-        "transient"
+        "transient",
+        "not_your_operation",
+        "identity_required"
       ],
       "examples": [
         {
@@ -1442,7 +1455,9 @@
       "idempotency": "read-only",
       "failure_modes": [
         "bad_input",
-        "transient"
+        "transient",
+        "not_your_operation",
+        "identity_required"
       ],
       "examples": [
         {
@@ -1957,8 +1972,8 @@
     },
     {
       "name": "import_booking_url",
-      "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id.",
-      "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id can be passed straight to schedule_appointment.",
+      "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), but schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Idempotent — calling twice returns the same smb_id.",
+      "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id works immediately with send_message and capture_lead. It only completes a booking via schedule_appointment if the URL was a Cal.com link bound to this deployment's one connected account — every other platform gets an honest, uncharged refusal there, not a booking.",
       "when_not_to_use": "Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
       "execution_profile": "sync",
       "compliance_constraints": [],
@@ -1975,7 +1990,7 @@
           },
           "business_name": {
             "type": "string",
-            "description": "Optional override. If omitted, the business name is auto-extracted from the page's <title> or og:title."
+            "description": "If omitted, auto-extracted from the page's <title> or og:title."
           },
           "vertical": {
             "type": "string",
@@ -1988,19 +2003,18 @@
               "healthcare",
               "fitness"
             ],
-            "description": "Best-guess vertical. If omitted, inferred from the platform (e.g., Doctolib -> healthcare, OpenTable -> restaurants)."
+            "description": "If omitted, inferred from the booking platform."
           },
           "country_code": {
             "type": "string",
-            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Used for compliance routing on later send_message calls."
+            "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'FR'); routes compliance on later sends."
           },
           "contact_phone": {
             "type": "string",
-            "description": "Optional. If omitted, the platform integration handles outreach."
+            "description": "If omitted, the platform integration handles outreach."
           },
           "contact_email": {
-            "type": "string",
-            "description": "Optional."
+            "type": "string"
           },
           "capabilities": {
             "type": "array",
@@ -2028,7 +2042,7 @@
           },
           "smb_id": {
             "type": "string",
-            "description": "Stable identifier — pass to schedule_appointment, send_message, or capture_lead next."
+            "description": "Stable identifier — works with send_message and capture_lead immediately. schedule_appointment only books with it if this was a Cal.com URL bound to our one connected account."
           },
           "platform": {
             "type": "string",
@@ -2243,7 +2257,7 @@
     },
     {
       "name": "check_compliance",
-      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.",
+      "description": "Free, instant pre-flight for the compliance gate. Runs the SAME TCPA / GDPR / CASL / CAN-SPAM / 10DLC gate that send_message and call_business run — but in preview mode, so NO message is sent and NO state changes. Tells you whether a (recipient, channel, message_type, content) send would be permitted BEFORE you pay for it, and if not, names the exact rule and how to remediate. Use it to de-risk a paid send the same way check_booking_link de-risks a paid booking. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and the result - verifiable offline against the key at https://hatchloop.dev/agents.md.",
       "when_to_use": "Call this the moment before send_message or call_business when there is any chance the send is regulated — anything tagged marketing, any SMS to a US number (10DLC), any message to an EU/UK (GDPR) or Canadian (CASL) recipient, or any content you are unsure about. It is free and sub-100ms, so run it as a guard: if legal=true, proceed to send_message with confidence; if legal=false, fix the cited blocker instead of burning a paid, rejected send.",
       "when_not_to_use": "Do not treat a legal=true as a permanent license — the gate re-runs at send time, so a fresh opt-out between preview and send still blocks. Do not use it to check two-party voice recording consent (that is evaluated at call time in the voice adapter, not here). It is not a substitute for send_message; it never delivers anything.",
       "execution_profile": "sync",
@@ -2587,7 +2601,7 @@
     },
     {
       "name": "screen_sanctions",
-      "description": "Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and what it returned - verifiable OFFLINE against the public key published at https://hatchloop.dev/agents.md, so you can hand it to an auditor as evidence the check really ran.",
+      "description": "Free screening of a name or entity against official sanctions lists, each fetched from the authority that issues it: the OFAC SDN list from the US Treasury (SDN.CSV plus ALT.CSV for alternate spellings), the EU consolidated financial sanctions list from the European Commission, and the UK Sanctions List from the FCDO. THE UN CONSOLIDATED LIST IS NOT SCREENED -- it carries no licence permitting commercial redistribution, so we do not claim it. ALWAYS check lists_screened on the response: it names the lists that actually ran ON THAT CALL, and a list that failed to load appears in sources_unavailable instead. reason_code is 'partial_screening' whenever any source was unavailable, never 'clear'. Returns screening_status ('hit' | 'clean' | 'candidates' | 'not_screened' -- branch on THIS, not on matched, because matched:false is also false when nothing could be screened), matched: bool, a list of matches with score, program, and source URL, and which lists were screened. Never fabricates a match or a clear -- if no match is found, explicitly names which lists were checked. Attaches a compliance_receipt: an Ed25519-signed, hash-bound record of what was checked, when, against which sources, and the result - verifiable offline against the key at https://hatchloop.dev/agents.md.",
       "when_to_use": "Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.",
       "when_not_to_use": "Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.",
       "execution_profile": "sync",
@@ -3190,7 +3204,7 @@
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "No key required, unmetered."
+        "notes": "Free and unmetered. An agent identity IS required: a thread is readable only by the identity that opened it."
       },
       "slo": {
         "p50_ms": 300,
@@ -3218,6 +3232,18 @@
           "retriable": false,
           "meaning": "The thread belongs to a different agent identity.",
           "agent_action": "Use the identity that created the conversation."
+        },
+        {
+          "reason_code": "identity_required",
+          "retriable": false,
+          "meaning": "No agent identity was presented. A thread is readable only by the identity that opened it, so this tool needs one even though it is free.",
+          "agent_action": "Send your key as X-Agent-Identity - the same key you send with send_message. Mint one with mint_key."
+        },
+        {
+          "reason_code": "conversation_owner_unknown",
+          "retriable": false,
+          "meaning": "The thread has no recorded owner, so it cannot be attributed to any caller and is released to none. Threads opened before caller identity was bound, and threads opened by a caller that sent no key, are in this state.",
+          "agent_action": "Send X-Agent-Identity with send_message and read back the thread that call returns."
         }
       ],
       "examples": [

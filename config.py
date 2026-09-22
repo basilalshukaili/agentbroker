@@ -159,10 +159,15 @@ DEPLOY_TARGET = _env("DEPLOY_TARGET", "unknown")
 # API / Auth
 # ---------------------------------------------------------------------------
 
-AGENT_IDENTITY_SIGNING_SECRET = _env(
-    "AGENT_IDENTITY_SIGNING_SECRET",
-    "dev-secret-CHANGE-IN-PRODUCTION-minimum-32-chars",
-)
+# DELETED 2026-09-22: AGENT_IDENTITY_SIGNING_SECRET.
+# It was never a signing secret. agent_interface/identity.py signs with
+# os.getenv("JWT_SIGNING_SECRET"); this name had zero functional readers --
+# its ONLY consumer was the required_in_prod list below, i.e. it existed to
+# warn about its own absence. Live smb-broker (checked via the Render API,
+# 2026-09-22) has never had it set, so that warning fired on every production
+# boot about a secret nothing uses, next to four others in the same state --
+# which is how a real security line from identity.py would have been lost.
+# deploy/render.yaml no longer prompts for it (board row 255).
 TOKEN_TTL_SECONDS = _env_int("TOKEN_TTL_SECONDS", 86400)    # 24h
 REQUIRE_AUTH = _env_bool("REQUIRE_AUTH", default=ENVIRONMENT == "production")
 
@@ -231,10 +236,11 @@ AUDIT_LOG_RETENTION_DAYS = _env_int("AUDIT_LOG_RETENTION_DAYS", 365)
 # Billing
 # ---------------------------------------------------------------------------
 
-BILLING_RECEIPT_SIGNING_SECRET = _env(
-    "BILLING_RECEIPT_SIGNING_SECRET",
-    "billing-secret-CHANGE-IN-PRODUCTION",
-)
+# DELETED 2026-09-22: BILLING_RECEIPT_SIGNING_SECRET -- exact twin of
+# AGENT_IDENTITY_SIGNING_SECRET above, same evidence. Receipts are signed by
+# billing/receipt_signer.py with BILLING_SIGNING_KEY and by
+# core/compliance_receipt.py with COMPLIANCE_RECEIPT_SIGNING_KEY; this third
+# name had no reader but the required_in_prod list below.
 DEFAULT_BUDGET_CAP_USD = _env_float("DEFAULT_BUDGET_CAP_USD", 10.0)
 
 # ---------------------------------------------------------------------------
@@ -348,11 +354,9 @@ def validate_production_config() -> list[str]:
     """
     warnings: list[str] = []
     required_in_prod = [
-        ("AGENT_IDENTITY_SIGNING_SECRET", AGENT_IDENTITY_SIGNING_SECRET),
         ("DATABASE_URL", DATABASE_URL),
         ("REDIS_URL", REDIS_URL),
         ("SENDGRID_API_KEY", SENDGRID_API_KEY),
-        ("BILLING_RECEIPT_SIGNING_SECRET", BILLING_RECEIPT_SIGNING_SECRET),
     ]
     for name, val in required_in_prod:
         if not val or "CHANGE-IN-PRODUCTION" in val or val == "":

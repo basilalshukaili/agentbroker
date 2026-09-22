@@ -1,9 +1,9 @@
-// Embedded snapshots of every discovery payload, captured 2026-05-05 from
-// the origin (https://smb-broker.onrender.com). These ship inside the worker
+// Embedded snapshots of every discovery payload. These ship inside the worker
 // bundle so discovery requests are served entirely from edge code with zero
-// origin contact — the worker can outlive Render and still serve agents.
+// origin contact. Legacy origin URLs remain in URL_PATTERNS below so old
+// snapshots can never leak retired infrastructure addresses.
 //
-// Cron refreshes a "live" copy in KV every 2 min; the edge handler uses the
+// Cron refreshes a "live" copy in KV every 30 min; the edge handler uses the
 // live copy if present, else falls back to these snapshots.
 
 import manifestRaw from "./manifest.json";

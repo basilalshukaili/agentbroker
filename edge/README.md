@@ -1,9 +1,10 @@
 # Agent Broker — Edge Worker
 
-Cloudflare Worker that fronts the Render-hosted Python service. All discovery
+Cloudflare Worker that preserves the legacy workers.dev endpoint for clients
+installed before the branded-host migration. All discovery
 and MCP read methods are served from **embedded snapshots** baked into the worker
 bundle — no origin contact, always sub-70 ms, globally. Tool execution is proxied
-to origin with cold-start retry.
+to the authoritative VPS with transient-failure retry.
 
 ## Architecture
 
@@ -20,8 +21,8 @@ agent  →  agent-broker-edge.basil-agent.workers.dev  (Cloudflare Worker, 300+ 
             └── /api/metrics                 → KV cache (60 s) then origin
 
                           ↓  (state-changing only)
-                api.hatchloop.dev  (Render, Python FastAPI)
-                    cron */2  keeps Render warm → tools/call stays at ~185 ms
+                api.hatchloop.dev  (TechMate VPS, Python FastAPI)
+                    authoritative AgentBroker execution backend
 ```
 
 **Verified timings (2026-05-05):**
@@ -37,27 +38,27 @@ agent  →  agent-broker-edge.basil-agent.workers.dev  (Cloudflare Worker, 300+ 
 
 ## Why this exists
 
-Render free dyno sleeps after 15 min idle (~30 s cold start). The edge eliminates
-that problem without paying for an always-on dyno:
+The edge originally masked Render cold starts. Since the 2026-09-10 VPS cutover,
+its purpose is compatibility for direct workers.dev installs without allowing a
+second execution backend to drift from production:
 
 - All discovery payloads are baked into the worker bundle at deploy time and served
-  directly from the edge, anywhere on Earth, regardless of Render state.
+  directly from the edge, anywhere on Earth, regardless of origin state.
 - MCP read methods (`initialize`, `tools/list`, `ping`) are also edge-served — an
   agent connecting for the first time gets a 50 ms tool surface before any booking.
-- `tools/call` and all state-changing operations proxy to origin. A cron job pings
-  origin every 2 minutes so the dyno never sleeps; proxied calls land at ~185 ms.
-- If Render dies permanently, discovery and MCP negotiation still work indefinitely
-  from the embedded bundle — the worker outlives the origin.
+- `tools/call` and all state-changing operations proxy to the authoritative VPS.
+- Discovery and MCP negotiation still work from the embedded bundle during an
+  origin outage; state-changing calls fail rather than using a shadow service.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `wrangler.toml` | Worker name, KV binding, env vars, cron `*/2 * * * *` |
+| `wrangler.toml` | Worker name, KV binding, env vars, cron `*/5 * * * *` |
 | `src/index.ts` | Main router: `/edge/*` internal, `/mcp` → mcp-edge, `/health`, `/api/metrics`, discovery catch-all, cron handler |
 | `src/mcp-edge.ts` | MCP JSON-RPC dispatcher: edge-serves read methods, proxies `tools/call` to origin |
 | `src/discovery.ts` | 14 discovery handlers: KV-live overlay over embedded snapshots |
-| `src/proxy.ts` | Smart proxy with cold-start retry (502/503/504 · 2 attempts · 1500 ms delay · 45 s timeout) |
+| `src/proxy.ts` | Smart proxy with transient-failure retry (502/503/504 · 2 attempts · 1500 ms delay · 45 s timeout) |
 | `src/snapshots/index.ts` | Imports all snapshot files, rewrites origin URLs to edge URL, memoizes per base URL |
 | `src/snapshots/*.json` | Embedded JSON snapshots of every discovery payload |
 | `src/snapshots/*.txt`, `*.yaml` | Embedded text/YAML snapshots (llms.txt, llms-full.txt, openapi.yaml) |
@@ -112,7 +113,7 @@ curl -s -X POST "$URL/mcp" \
 | Worker name | `agent-broker-edge` |
 | Worker URL | `https://agent-broker-edge.basil-agent.workers.dev` |
 | KV namespace | `agent-broker-cache` (id `f45691e20cdd4937ae88ccb64159d928`) |
-| Cron | `*/2 * * * *` — pings origin `/health` + refreshes 10 KV discovery paths |
+| Cron | `*/5 * * * *` — probes origin `/health`; refreshes 10 KV discovery paths every 30 minutes |
 | Bundle size | ~313 KiB (750 LOC TypeScript + 240 KB embedded snapshots) |
 
 ## Free-tier capacity
@@ -137,9 +138,10 @@ that, Workers Paid at $5/mo covers 10M req/mo.
 
 ## Phase 2 trigger conditions
 
-- `total_agents_requested > 5,000/month` sustained → port hot tool handlers to
-  Workers + D1; decommission Render.
-- Render free tier policy change that breaks service → migrate everything to Workers.
+- `total_agents_requested > 5,000/month` sustained → evaluate porting hot tool
+  handlers to Workers + D1 from the authoritative VPS service.
+- Sustained edge demand or a verified latency problem → reassess whether the
+  compatibility Worker should become a supported front door or be retired.
 
 ## Security
 

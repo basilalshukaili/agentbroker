@@ -1,6 +1,6 @@
 // Discovery endpoints — served 100% from the worker bundle (with optional
 // KV-overlay for fresher copies refreshed by cron). No origin contact, ever.
-// Sub-50ms response time anywhere on Earth, even if Render is dead.
+// Sub-50ms response time anywhere on Earth, even during an origin outage.
 
 import { getSnapshots, manifestOps, manifestVersion, type Snapshots } from "./snapshots/index";
 

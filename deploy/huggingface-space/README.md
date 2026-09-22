@@ -42,8 +42,8 @@ If you forked from GitHub, set the secrets in **Settings → Repository secrets*
 - `RESEND_API_KEY`
 - `PADDLE_API_KEY`
 - `POLAR_API_KEY`
-- `AGENT_IDENTITY_SIGNING_SECRET`
-- `BILLING_RECEIPT_SIGNING_SECRET`
+- `JWT_SIGNING_SECRET`
+- `BILLING_SIGNING_KEY`
 
 And the public env vars in **Settings → Repository variables**:
 

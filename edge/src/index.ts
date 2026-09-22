@@ -1,16 +1,16 @@
 // Agent Broker — Cloudflare Worker edge front-door.
 //
-// Mission: AI agents that discover this MCP server should NEVER hit a 30s
-// Render cold-start. Discovery payloads are served 100% from the worker bundle
-// (snapshotted from origin, URL-rewritten to point at the edge). Tool execution
-// is proxied to the origin with retry-on-cold-start. Cron keeps origin warm
-// and overlays fresher copies in KV.
+// Mission: preserve the legacy workers.dev endpoint for installed clients while
+// keeping one authoritative execution backend. Discovery payloads are served
+// from the worker bundle (snapshotted from origin and URL-rewritten). Tool
+// execution is proxied to api.hatchloop.dev on the TechMate VPS. Cron refreshes
+// public discovery data and overlays fresher copies in KV.
 //
 // Architecture decision rationale:
 //   • Read-only discovery endpoints → embedded snapshots → sub-50ms always
 //   • State-changing endpoints (mcp tools/call, /ops/*) → proxy to origin
-//   • If origin dies, discovery still works indefinitely from the embedded
-//     bundle — the worker can outlive Render.
+//   • If origin dies, discovery still works from the embedded bundle, but tool
+//     execution fails honestly instead of falling through to a shadow backend.
 
 import { Hono } from "hono";
 import { proxyToOrigin } from "./proxy";
@@ -45,9 +45,9 @@ const BRANDED_BASE_URL = "https://hatchloop.dev";
  *
  * THE FALLBACK USED TO BE THE REQUEST'S OWN HOST, and that is how a generic
  * hostname got into our public identity. Requests reach this Worker at
- * agent-broker-edge.basil-agent.workers.dev - hatchloop.dev proxies here via a
- * Vercel rewrite - so with PUBLIC_BASE_URL unset (it was), every discovery
- * document advertised the workers.dev address as us.
+ * agent-broker-edge.basil-agent.workers.dev. hatchloop.dev no longer proxies
+ * here after the VPS cutover, but with PUBLIC_BASE_URL unset every discovery
+ * document would still advertise the workers.dev address as us.
  *
  * Falling back to the BRANDED host instead means a missing binding can never
  * leak an internal hostname again. The worker's own address is plumbing; it is
@@ -306,7 +306,7 @@ app.all("*", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Cron handler: refresh KV live overlay + keep origin warm
+// Cron handler: probe origin + refresh KV live overlay
 // ---------------------------------------------------------------------------
 
 const REFRESH_TARGETS: ReadonlyArray<{ path: string; isJson: boolean }> = [
@@ -329,7 +329,7 @@ async function scheduledHandler(event: ScheduledController, env: Env, ctx: Execu
 
   const tasks: Promise<unknown>[] = [];
 
-  // Always keep the Render dyno warm (no KV writes, free).
+  // Probe the authoritative VPS origin on every cron run (no KV writes).
   tasks.push(
     fetch(env.ORIGIN_URL + "/health", { headers: { "x-edge-probe": "cron-warmup" } }).catch(() => null),
   );
