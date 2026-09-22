@@ -18,7 +18,7 @@ import asyncio
 import os
 import sys
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -53,9 +53,9 @@ def test_a_failing_grant_is_retried_not_abandoned(monkeypatch):
     monkeypatch.setattr(pw.asyncio, "sleep", AsyncMock())
     monkeypatch.setattr("storage.supabase_client.insert_row_strict",
                         AsyncMock(side_effect=lambda table, row: row))
-    monkeypatch.setattr("agent_interface.identity.issue_subscription_token",
-                        lambda **kwargs: SimpleNamespace(
-                            token="synthetic.test.token", expires_at=1900000000))
+    issue_token = Mock(return_value=SimpleNamespace(
+        token="synthetic.test.token", expires_at=1900000000))
+    monkeypatch.setattr("agent_interface.identity.issue_subscription_token", issue_token)
     monkeypatch.setattr("billing.credits.grant", flaky, raising=False)
     monkeypatch.setattr("billing.packages.credits_for_product",
                         lambda *a, **k: 5000, raising=False)
@@ -79,6 +79,8 @@ def test_a_failing_grant_is_retried_not_abandoned(monkeypatch):
     }
     asyncio.run(pw.handle_polar_event(event))
 
+    issue_token.assert_called_once_with(
+        customer_id="cus_retry_1", plan="developer", customer_email="buyer@example.com")
     assert attempts["n"] == 3, (
         f"the grant was tried {attempts['n']} time(s) - a transient failure "
         f"must be retried, not abandoned with the customer already keyed")

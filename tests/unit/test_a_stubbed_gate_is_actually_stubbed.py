@@ -669,6 +669,9 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "function body (polar_webhook.py:370) -- not main.py's eager import.",
     ("tests/unit/test_polar_webhook.py", "agent_interface.identity.issue_subscription_token"):
         "targets billing.polar_webhook.handle_polar_event (deferred import, see above).",
+    ("tests/unit/test_paid_order_always_delivers.py", "agent_interface.identity.issue_subscription_token"):
+        "targets handle_polar_event's deferred import, not main.py's eager binding; "
+        "assert_called_once_with proves that the patched mint handled the test order.",
     ("tests/unit/test_typed_errors.py", "agent_interface.identity.validate_token"):
         "targets agent_interface.mcp_server's tool-dispatch auth check, which "
         "re-imports validate_token INSIDE the function body at each of its call sites "
