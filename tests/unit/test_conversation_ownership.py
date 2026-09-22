@@ -299,3 +299,26 @@ def test_every_tool_we_advertise_as_key_requiring_actually_refuses_without_one()
         assert out.get("reason_code") == "identity_required", (
             "%s is advertised as needing a key and answered a keyless call "
             "with %r" % (tool, out.get("reason_code")))
+
+
+def test_mcp_server_does_not_keep_its_own_copy_of_the_write_set():
+    """The write-tool set has to be ONE object, not two equal-looking ones.
+
+    get_conversation costs nothing and is not a write, so a set built to
+    answer "is this a write" was the wrong question for "does a stranger get
+    refused" - and agent_interface/mcp_server.py's tools/list cost tag was
+    answered from exactly that wrong, locally-defined set. Comparing VALUES
+    (== instead of is) would go green again the moment someone reintroduces a
+    second, textually identical frozenset literal in mcp_server.py - a
+    plausible refactor accident, not a hypothetical, since that is exactly
+    how this file drifted from core/tool_auth.py the first time. Asserting
+    object identity means mcp_server.py has to import the set rather than
+    restate it, so it cannot silently fork from core/tool_auth.py again.
+    """
+    from agent_interface import mcp_server as ms
+    from core import tool_auth
+
+    assert ms._WRITE_TOOLS_REQUIRING_AUTH is tool_auth.WRITE_TOOLS_REQUIRING_AUTH, (
+        "mcp_server.py holds its own copy of the write-tool set again instead "
+        "of importing core.tool_auth's - the exact shape of the "
+        "get_conversation defect, one refactor away from recurring")
