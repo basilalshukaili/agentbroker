@@ -66,6 +66,12 @@ def build_cost_model(op_name: str) -> dict:
         }
 
     if cents == 0:
+        # Free pricing does not remove the conversation owner's identity
+        # requirement. Preserve the same boundary enforced by its handler.
+        if op_name == "get_conversation":
+            return {"basis": "free", "unit_price_usd": 0.0,
+                    "notes": "Free and unmetered. An agent identity IS required: "
+                             "a thread is readable only by the identity that opened it."}
         return {"basis": "free", "unit_price_usd": 0.0,
                 "notes": "No key required, unmetered."}
 
