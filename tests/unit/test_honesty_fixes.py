@@ -317,16 +317,64 @@ class TestProdGuard:
             assert stubs_allowed() is False
 
     def test_stubs_allowed_in_dev_with_flag(self):
-        """Outside production, ALLOW_STUB_CHANNELS=1 should still work for local tests."""
+        """In a DECLARED development env, ALLOW_STUB_CHANNELS=1 still works.
+
+        This used to pop ENVIRONMENT and assert stubs were allowed, i.e. it
+        asserted the fail-OPEN behaviour that 2026-09-22 removed. Local dev
+        must now say it is local dev -- which .env.example has always done
+        (ENVIRONMENT=development). The declaration is set here explicitly
+        rather than inherited from the ambient CI env, so this test proves
+        the positive path wherever it runs.
+        """
         from channels.stub_policy import stubs_allowed
-        env_overrides = {"ALLOW_STUB_CHANNELS": "1"}
-        # Remove production indicators
+        env_overrides = {"ALLOW_STUB_CHANNELS": "1", "ENVIRONMENT": "development"}
         with patch.dict(os.environ, env_overrides):
+            os.environ.pop("RENDER", None)
+            result = stubs_allowed()
+        assert result is True
+
+    def test_stubs_disabled_when_environment_unset(self):
+        """FAIL CLOSED: an unset ENVIRONMENT is treated as production.
+
+        The scenario this closes: an operator sets ALLOW_STUB_CHANNELS=1 to
+        debug locally, and that same shell/container later faces real traffic
+        with ENVIRONMENT never set. Under the old rule that host fabricated
+        delivery receipts for real customer messages.
+        """
+        from channels.stub_policy import stubs_allowed
+        with patch.dict(os.environ, {"ALLOW_STUB_CHANNELS": "1"}):
             os.environ.pop("RENDER", None)
             os.environ.pop("ENVIRONMENT", None)
             os.environ.pop("ENV", None)
-            result = stubs_allowed()
-        assert result is True
+            assert stubs_allowed() is False
+
+    @pytest.mark.parametrize("value", ["", "  ", "staging", "testing", "dev",
+                                       "Development ", "produciton"])
+    def test_stubs_disabled_for_unrecognised_environment(self, value):
+        """Anything that is not exactly "development" is production.
+
+        Includes "Development " (case/whitespace -- must still be ACCEPTED as
+        development, see the separate case below), typos ("produciton") and
+        near-misses ("dev"), which must NOT open the gate. A guard that only
+        catches the spellings someone anticipated is the bug being fixed.
+        """
+        from channels.stub_policy import stubs_allowed
+        expected_allowed = value.strip().lower() == "development"
+        with patch.dict(os.environ, {"ALLOW_STUB_CHANNELS": "1",
+                                     "ENVIRONMENT": value}):
+            os.environ.pop("RENDER", None)
+            assert stubs_allowed() is expected_allowed, (
+                f"ENVIRONMENT={value!r} gave the wrong stub verdict"
+            )
+
+    def test_legacy_ENV_var_cannot_reopen_the_gate(self):
+        """The dropped `ENV` fallback must not act as a second escape hatch."""
+        from channels.stub_policy import stubs_allowed
+        with patch.dict(os.environ, {"ALLOW_STUB_CHANNELS": "1",
+                                     "ENV": "development"}):
+            os.environ.pop("RENDER", None)
+            os.environ.pop("ENVIRONMENT", None)
+            assert stubs_allowed() is False
 
     def test_stubs_off_by_default_without_flag(self):
         """Without ALLOW_STUB_CHANNELS, stubs are off in any environment."""
