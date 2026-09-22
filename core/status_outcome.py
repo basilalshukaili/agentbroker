@@ -11,7 +11,7 @@ import time
 
 from core.models import OutcomeReceipt, OperationStatus, CostRecord
 from core.ownership import read_denial
-from storage.outcome_store import get_outcome_store
+from storage.outcome_store import get_outcome_store, OutcomeStoreUnavailable
 from billing.pricing import receipt_usd as _receipt_usd
 
 
@@ -67,7 +67,31 @@ async def handle_get_status(
     trace_id: str | None = None,
 ) -> dict:
     store = get_outcome_store()
-    record = await store.get_async(operation_id)
+    try:
+        record = await store.get_async(operation_id)
+    except OutcomeStoreUnavailable:
+        # THE FIX (2026-09-21). get_async() used to swallow a store it could
+        # not even reach into the same None a genuine miss returns, and the
+        # branch below reported both as "not_found" -- a false statement of
+        # fact about an operation that may well exist. This is NOT that
+        # branch: it fires only when the store itself could not be queried
+        # (see storage/outcome_store.py's OutcomeStoreUnavailable), and it
+        # says so plainly instead of guessing "not_found".
+        out = {
+            "operation_id": operation_id,
+            "status": "unavailable",
+            "reason_code": "upstream_failure",
+            "error": (
+                f"The operation store could not be reached, so the status "
+                f"of {operation_id} could not be checked. This is NOT "
+                f"evidence that the operation does not exist. Retry."
+            ),
+            "retriable": True,
+        }
+        if trace_id:
+            out["trace_id"] = trace_id
+        return out
+
     if not record:
         out = {
             "operation_id": operation_id,
@@ -121,7 +145,27 @@ async def handle_get_outcome(
 ) -> OutcomeReceipt:
     t0 = time.monotonic()
     store = get_outcome_store()
-    record = await store.get_async(operation_id)
+    try:
+        record = await store.get_async(operation_id)
+    except OutcomeStoreUnavailable:
+        # Same fix as handle_get_status above: a store we could not reach is
+        # not the same fact as "no such operation", and must not be reported
+        # through the same reason_code ("not_found") a genuine miss uses.
+        return OutcomeReceipt(
+            operation_id=operation_id,
+            status=OperationStatus.FAILURE,
+            reason_code="upstream_failure",
+            human_message=(
+                f"The operation store could not be reached, so the outcome "
+                f"of {operation_id} could not be retrieved. This is NOT "
+                f"evidence that the operation does not exist or failed. "
+                f"Retry."
+            ),
+            cost=CostRecord(amount=_receipt_usd("get_status"), currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=True,
+            trace_id=trace_id,
+        )
 
     if not record:
         return OutcomeReceipt(

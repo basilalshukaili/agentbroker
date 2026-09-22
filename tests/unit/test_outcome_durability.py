@@ -115,7 +115,11 @@ def _clear_store():
 def _fake_remote_upsert(remote_db: dict, delay: float = 0.02):
     """A fake `storage.supabase_client.upsert_row` with a REAL suspension
     point -- realistic enough that asyncio.run()'s shutdown will cancel it
-    if nothing awaits it, which is exactly the failure mode being proven."""
+    if nothing awaits it, which is exactly the failure mode being proven.
+
+    Kept for signature-compatibility with older callers; the live code path
+    (board row 206) no longer calls upsert_row for `operations` -- see
+    _fake_rpc below, which is what actually stands in for it now."""
     async def _upsert(table, row, on_conflict="id"):
         await asyncio.sleep(delay)
         remote_db[row["operation_id"]] = dict(row)
@@ -124,11 +128,54 @@ def _fake_remote_upsert(remote_db: dict, delay: float = 0.02):
 
 
 def _fake_remote_select(remote_db: dict):
+    """Stands in for `select_rows_strict`. Kept for signature-compatibility;
+    the live code path (board row 206) no longer calls it for `operations`
+    -- see _fake_rpc below."""
     async def _select(table, filters=None, limit=1000, order=None, gte=None):
         op_id = (filters or {}).get("operation_id")
         row = remote_db.get(op_id)
         return [row] if row else []
     return _select
+
+
+def _fake_rpc(remote_db: dict, delay: float = 0.02):
+    """Stands in for `storage.supabase_client.rpc` for the three
+    `operations_*` SECURITY DEFINER functions (board row 206,
+    sql/agentbroker/001_operations_security_definer_rpc.sql) --
+    storage/outcome_store.py's _supabase_fetch / _supabase_upsert /
+    _supabase_fetch_by_appointment_id call these instead of
+    select_rows_strict/upsert_row directly now that this service deploys
+    with only the Supabase anon key. Keeps the SAME `remote_db` dict shape
+    _fake_remote_upsert/_fake_remote_select used, and the SAME real
+    suspension point on the write (`delay`) -- this is what
+    test_confirmed_booking_is_durably_persisted_before_the_call_returns
+    actually depends on to prove the write is awaited, not fired and
+    forgotten."""
+    async def _rpc(fn, payload):
+        if fn == "operations_upsert":
+            await asyncio.sleep(delay)
+            row = {
+                "operation_id": payload["p_operation_id"],
+                "tool": payload["p_tool"],
+                "status": payload["p_status"],
+                "reason_code": payload["p_reason_code"],
+                "appointment_id": payload["p_appointment_id"],
+                "result_json": payload["p_result_json"],
+                "agent_id": payload["p_agent_id"],
+            }
+            remote_db[row["operation_id"]] = row
+            return dict(row)
+        if fn == "operations_get_by_id":
+            row = remote_db.get(payload["p_operation_id"])
+            return dict(row) if row else None
+        if fn == "operations_get_by_appointment_id":
+            for row in remote_db.values():
+                if (row.get("appointment_id") == payload.get("p_appointment_id")
+                        and row.get("reason_code") == "appointment_confirmed"):
+                    return dict(row)
+            return None
+        raise AssertionError(f"unexpected rpc fn in test fake: {fn!r}")
+    return _rpc
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +186,7 @@ def _fake_remote_select(remote_db: dict):
 def test_confirmed_booking_is_durably_persisted_before_the_call_returns(_wired, monkeypatch):
     remote_db: dict = {}
     monkeypatch.setattr(sb, "upsert_row", _fake_remote_upsert(remote_db))
+    monkeypatch.setattr(sb, "rpc", _fake_rpc(remote_db))
 
     _wired(_Adapter({"uid": "bk_durable_1", "status": "accepted"}))
     r = _run(SA.handle_schedule_appointment(_req(), agent_id="agent_durability"))
@@ -163,7 +211,9 @@ def test_a_fresh_process_can_read_the_confirmed_booking_back(_wired, monkeypatch
     the raw JSON string the durable row stores it as)."""
     remote_db: dict = {}
     monkeypatch.setattr(sb, "upsert_row", _fake_remote_upsert(remote_db))
-    monkeypatch.setattr(sb, "select_rows", _fake_remote_select(remote_db))
+    monkeypatch.setattr(sb, "rpc", _fake_rpc(remote_db))
+    monkeypatch.setattr(sb, "select_rows_strict", _fake_remote_select(remote_db))
+    monkeypatch.setattr(sb, "rpc", _fake_rpc(remote_db))
 
     _wired(_Adapter({"uid": "bk_durable_2", "status": "accepted"}))
     r = _run(SA.handle_schedule_appointment(_req(), agent_id="agent_durability"))
@@ -192,7 +242,9 @@ def test_get_outcome_resolves_a_confirmed_booking_from_a_fresh_process(_wired, m
 
     remote_db: dict = {}
     monkeypatch.setattr(sb, "upsert_row", _fake_remote_upsert(remote_db))
-    monkeypatch.setattr(sb, "select_rows", _fake_remote_select(remote_db))
+    monkeypatch.setattr(sb, "rpc", _fake_rpc(remote_db))
+    monkeypatch.setattr(sb, "select_rows_strict", _fake_remote_select(remote_db))
+    monkeypatch.setattr(sb, "rpc", _fake_rpc(remote_db))
 
     _wired(_Adapter({"uid": "bk_durable_3", "status": "accepted"}))
     r = _run(SA.handle_schedule_appointment(_req(), agent_id="agent_durability"))
@@ -217,6 +269,7 @@ def test_unknown_outcome_is_also_durably_persisted(_wired, monkeypatch):
 
     remote_db: dict = {}
     monkeypatch.setattr(sb, "upsert_row", _fake_remote_upsert(remote_db))
+    monkeypatch.setattr(sb, "rpc", _fake_rpc(remote_db))
 
     _wired(_RaisingAdapter(None))
     r = _run(SA.handle_schedule_appointment(_req(), agent_id="agent_durability"))

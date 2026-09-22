@@ -93,9 +93,29 @@ class TestOperationPersistenceRoundtrip:
         assert receipt.reason_code != "not_found", \
             f"get_outcome returned not_found for persisted op {op_id}"
 
-    def test_unknown_op_still_returns_not_found(self):
+    def test_unknown_op_still_returns_not_found(self, monkeypatch):
+        # FIX (2026-09-21, unavailable-vs-absent): this test used to pass for
+        # the wrong reason -- this process has no SUPABASE_URL/key
+        # configured, so the Supabase fallback could not be reached, and
+        # before that fix an UNREACHABLE store and a REACHABLE store with no
+        # matching row both came back as the same not_found. That collapse
+        # was the exact production defect (measured 2026-09-21). This test is
+        # named for a genuinely unknown operation, so it now mocks a
+        # REACHABLE store that confirms no such row, same as
+        # tests/unit/test_outcome_store_unavailable_vs_absent.py's control.
+        import storage.supabase_client as sb
         from core.status_outcome import handle_get_status, handle_get_outcome
         from core.models import OperationStatus
+
+        # Board row 206: _supabase_fetch now calls the operations_get_by_id
+        # RPC, not select_rows_strict directly (anon key, no table grant --
+        # see sql/agentbroker/001_operations_security_definer_rpc.sql). A
+        # reachable RPC finding nothing returns None, same as before.
+        async def _empty(fn, payload):
+            return None
+
+        monkeypatch.setattr(sb, "rpc", _empty)
+
         result = run(handle_get_status("op_DOES_NOT_EXIST_XYZ"))
         assert result["status"] == "not_found"
         outcome = run(handle_get_outcome("op_DOES_NOT_EXIST_XYZ"))
