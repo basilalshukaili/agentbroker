@@ -12,7 +12,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, NamedTuple, Optional
 
 logger = logging.getLogger("smb_broker.key_request_logic")
 
@@ -114,26 +114,85 @@ def verify_token(token: str) -> Optional[str]:
 # Resend email helpers
 # ---------------------------------------------------------------------------
 
-async def send_verification_email(email: str, verify_url: str) -> bool:
+class VerificationSendResult(NamedTuple):
+    """What actually happened when we tried to send the verification email.
+
+    `sent` is the same bool this function has always returned — every
+    existing caller that only looks at truthiness keeps working unchanged
+    (it's a NamedTuple, so `sent, _, _ = await send_verification_email(...)`
+    and `if (await send_verification_email(...))[0]:` both work, and so does
+    plain tuple unpacking of a 3-tuple in a test mock).
+
+    `reason_code` and `provider_detail` are new: a short, stable, machine-
+    checkable string and a human sentence, safe to put in a PUBLIC API
+    response (no header, no key, no raw provider payload — see
+    `_describe_resend_rejection` below for what is filtered out).
+
+    Before this, every failure mode collapsed into a bare `False` and the
+    router had exactly one message for all of them: "we could not send an
+    email so no key was issued." That is honest about the OUTCOME but not
+    about the CAUSE — "no RESEND_API_KEY was ever configured" and "the key
+    is configured and the provider rejected this specific send" are
+    different problems needing different operator action, and a caller (or
+    an operator watching aggregate 503s) could not tell them apart from the
+    response alone. This is the "exception swallowed into a generic
+    'could not send'" pattern named directly by the review that asked for
+    this fix.
+    """
+    sent: bool
+    reason_code: str
+    provider_detail: str
+
+
+def _describe_resend_rejection(resp: Any) -> tuple[str, str]:
+    """Turn a non-2xx Resend response into a (reason_code, detail) pair that
+    is safe to return from a public endpoint: Resend's `name` field (the
+    same field health_external._check_resend already inspects for
+    'restricted_api_key') is a short machine-readable error category, never
+    a credential or the full response body. Falls back to the bare HTTP
+    status when the body isn't the JSON shape we expect."""
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    name = body.get("name") if isinstance(body, dict) else None
+    if name:
+        return f"provider_rejected:{name}", f"our email provider rejected the request ({name})"
+    return (
+        f"provider_rejected:http_{resp.status_code}",
+        f"our email provider rejected the request (HTTP {resp.status_code})",
+    )
+
+
+async def send_verification_email(email: str, verify_url: str) -> VerificationSendResult:
     """Send the verification link via Resend.
 
     Never RAISES — the caller must not 500 just because a mail provider is
     unhappy — but it DOES tell the truth about what happened, by returning
-    whether the email was actually accepted for delivery. Every path that
-    does not end in a 2xx from Resend returns False:
+    whether the email was actually accepted for delivery, plus WHY when it
+    was not. Every path that does not end in a 2xx from Resend reports
+    sent=False with a distinct reason_code:
 
-      * RESEND_API_KEY unset (the production default today)
-      * Resend rejects the send (bad key, suspended account, invalid payload)
-      * the request to Resend itself fails (network, timeout, DNS, ...)
+      * RESEND_API_KEY unset                    -> "not_configured"
+      * Resend rejects the send (bad key,          "provider_rejected:<name>"
+        suspended account, unverified domain,       or "provider_rejected:
+        invalid payload, ...)                       http_<status>"
+      * the request to Resend itself fails        -> "network_error:<type>"
+        (network, timeout, DNS, ...)
 
     This used to return None unconditionally, so `request_free_key` could not
     tell "sent" from "silently skipped" and told every caller "verification_sent"
     either way — a 200 that looks like success when nothing left this process.
+    It was then changed to a bare bool, which fixed the false-success problem
+    but still could not distinguish "nobody ever configured email" from "email
+    is configured and something specific about THIS send failed" — both read
+    as the identical generic 503. See VerificationSendResult for why that
+    distinction matters.
     """
     resend_key = os.getenv("RESEND_API_KEY", "")
     if not resend_key:
         logger.warning("RESEND_API_KEY not set — skipping verification email to %s", email)
-        return False
+        return VerificationSendResult(False, "not_configured", "no email provider API key is configured")
     try:
         import httpx
         payload = {
@@ -161,11 +220,14 @@ async def send_verification_email(email: str, verify_url: str) -> bool:
                 "resend_send_failed email=%s status=%s body=%s",
                 email, resp.status_code, resp.text[:200],
             )
-            return False
-        return True
+            reason_code, detail = _describe_resend_rejection(resp)
+            return VerificationSendResult(False, reason_code, detail)
+        return VerificationSendResult(True, "sent", "sent")
     except Exception as exc:  # noqa: BLE001
         logger.warning("resend_exception email=%s err=%s", email, exc)
-        return False
+        return VerificationSendResult(
+            False, f"network_error:{type(exc).__name__}", "could not reach our email provider (network error)"
+        )
 
 
 async def send_key_email(email: str, token_value: str, expires_iso: str) -> None:

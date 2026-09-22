@@ -128,10 +128,14 @@ async def request_free_key(body: KeyRequestBody):
 
     THIS USED TO ALWAYS RETURN 200 `{"status": "verification_sent"}`, because
     `send_verification_email` was fire-and-forget and its only failure output
-    was a log line. On production, RESEND_API_KEY is unset today, so every
-    real signup got a success response and no email - a caller had no way to
-    tell "check your inbox" from "nothing happened." A clean refusal here is
-    better than a false success.
+    was a log line. On 2026-09-21, production had RESEND_API_KEY unset, so
+    every real signup got a success response and no email - a caller had no
+    way to tell "check your inbox" from "nothing happened." A clean refusal
+    here is better than a false success. That was a snapshot of production
+    at one point in time, not a fact about this code - check
+    `/healthz/external`'s `resend` entry (or just try the endpoint) for
+    today's actual state rather than trusting this comment; the 503 below
+    now carries a `reason_code` precisely so nobody has to.
     """
     email = body.email.strip().lower()
     if not email or "@" not in email or len(email) > 320:
@@ -149,27 +153,40 @@ async def request_free_key(body: KeyRequestBody):
 
     # Store pending (best-effort) + send email
     await store_pending(email, token, expires_at)
-    sent = await send_verification_email(email, verify_url)
+    sent, reason_code, provider_detail = await send_verification_email(email, verify_url)
 
     if not sent:
         # Honest refusal: no email left this process, so no caller should be
         # told to go check an inbox. NOT gated on any env var beyond the ones
-        # send_verification_email already checked - this must be correct with
-        # today's production configuration (RESEND_API_KEY unset), not some
-        # future one.
-        logger.warning("onboarding_unavailable email_domain=%s reason=verification_email_not_sent",
-                        email.split("@")[-1])
+        # send_verification_email already checked - this must be correct
+        # with TODAY's production configuration, whatever that is, not some
+        # assumed one.
+        #
+        # reason_code/provider_detail come straight from
+        # send_verification_email and are already scrubbed of secrets (see
+        # VerificationSendResult) - this is what turns "email-verified
+        # signup is not available" from a diagnosis-proof dead end into
+        # something an operator can act on without reading server logs:
+        # "not_configured" means go set an API key; "provider_rejected:*"
+        # means the key works but the provider is refusing THIS send (wrong
+        # from-domain, suspended account, rate limit, ...); "network_error:*"
+        # means the outbound call itself never completed.
+        logger.warning(
+            "onboarding_unavailable email_domain=%s reason_code=%s",
+            email.split("@")[-1], reason_code,
+        )
         return JSONResponse(
             status_code=503,
             content={
                 "error": "onboarding_unavailable",
+                "reason_code": reason_code,
                 "detail": (
                     "We could not send a verification email, so no key was issued and "
-                    "nothing was sent to your inbox. Email-verified signup is not available "
-                    "on this deployment right now. " + _free_tier_sentence() + ", so you may "
-                    "not need a key at all. If you do, contact hello@hatchloop.dev for manual "
-                    "provisioning, or pay per call with x402 (USDC on Base, no signup) - see "
-                    f"{_public_base()}/docs."
+                    f"nothing was sent to your inbox ({provider_detail}). Email-verified "
+                    "signup is not available on this deployment right now. " + _free_tier_sentence() +
+                    ", so you may not need a key at all. If you do, contact hello@hatchloop.dev "
+                    "for manual provisioning, or pay per call with x402 (USDC on Base, no signup) "
+                    f"- see {_public_base()}/docs."
                 ),
             },
         )

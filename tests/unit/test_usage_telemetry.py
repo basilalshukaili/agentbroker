@@ -261,7 +261,7 @@ class TestKeyRequestEndpoints:
         # path broke on a mock that was never actually installed.
         with patch("agent_interface.key_requests.store_pending", new=AsyncMock()), \
              patch("agent_interface.key_requests.send_verification_email",
-                   new=AsyncMock(return_value=True)):
+                   new=AsyncMock(return_value=(True, "sent", "sent"))):
             client = self._get_client()
             resp = client.post("/keys/request", json={"email": "test@example.com"})
             assert resp.status_code == 200
@@ -275,12 +275,13 @@ class TestKeyRequestEndpoints:
         for the full reproduction."""
         with patch("agent_interface.key_requests.store_pending", new=AsyncMock()), \
              patch("agent_interface.key_requests.send_verification_email",
-                   new=AsyncMock(return_value=False)):
+                   new=AsyncMock(return_value=(False, "not_configured", "no email provider API key is configured"))):
             client = self._get_client()
             resp = client.post("/keys/request", json={"email": "test@example.com"})
             assert resp.status_code == 503
             data = resp.json()
             assert data["error"] == "onboarding_unavailable"
+            assert data["reason_code"] == "not_configured"
 
     def test_verify_with_valid_token_returns_200_html(self):
         # Patch the names as *imported into key_requests*, not where they are
