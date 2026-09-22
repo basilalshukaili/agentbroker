@@ -107,7 +107,7 @@
       },
       {
         "name": "send_message",
-        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. [from $0.02/call, variable] [async→get_outcome]",
+        "description": "Send a message on behalf of an agent's user or an SMB via WhatsApp or email — both live. SMS and voice are advertised but NOT wired on this deployment: they always fail honestly (channel_not_configured), uncharged. Sent immediately, no scheduling. Every send passes a non-bypassable gate (TCPA, GDPR, CASL, PDPL, 26 jurisdictions): marketing without recorded consent gets a structured compliance_violation receipt. [from $0.02/call, variable] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -738,7 +738,7 @@
       },
       {
         "name": "call_business",
-        "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf; give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. [$0.2/per_call] [async→get_outcome]",
+        "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf. NOT WIRED on this deployment (Vapi unconfigured): every call fails honestly with voice_not_provisioned before dialling, uncharged. Give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers, but the compliance gate still enforces recording consent per jurisdiction. [$0.2/per_call] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [

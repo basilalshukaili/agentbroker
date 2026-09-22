@@ -385,7 +385,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
+      "description": "Send a message on behalf of an agent's user or an SMB via WhatsApp or email — both live. SMS and voice are advertised but NOT wired on this deployment: they always fail honestly (channel_not_configured), uncharged. Sent immediately, no scheduling. Every send passes a non-bypassable gate (TCPA, GDPR, CASL, PDPL, 26 jurisdictions): marketing without recorded consent gets a structured compliance_violation receipt.",
       "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
       "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
@@ -2150,7 +2150,7 @@
     },
     {
       "name": "call_business",
-      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf; give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction.",
+      "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf. NOT WIRED on this deployment (Vapi unconfigured): every call fails honestly with voice_not_provisioned before dialling, uncharged. Give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers, but the compliance gate still enforces recording consent per jurisdiction.",
       "when_to_use": "Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).",
       "when_not_to_use": "Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.",
       "execution_profile": "async_by_default",
