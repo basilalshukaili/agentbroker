@@ -170,3 +170,87 @@ class TestBillingCheckoutRouteNeverServesThePlaceholder:
         assert "your-link-here" not in r.text
         assert "Polar" not in r.text
         assert "manual payment link" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Structural proof: the displayed name and the redirect target must come
+# from the SAME CheckoutSession object, so they cannot drift apart again.
+# ---------------------------------------------------------------------------
+
+class TestDisplayedNameAndRedirectTargetShareOneSource:
+    """The 2026-09-21 incident was exactly two facts disagreeing: the page's
+    copy said "(Polar)" while the embedded redirect target was a dead
+    wise.com URL. Nothing stopped that divergence because the label was a
+    hardcoded literal, independent of whatever session.payment_url the
+    checkout call actually produced.
+
+    This test does not just check one provider's label (the tests above
+    already do that). It proves the *coupling*: label and destination are
+    both read off the one CheckoutSession returned by the one
+    provider.create_checkout() call, by using values ("provider" and
+    "payment_url") a per-run random token that cannot be coincidentally
+    hardcoded anywhere in main.py. If the route ever regressed to reading
+    the label from a separate source (a hardcoded string, a second lookup,
+    the BILLING_PROVIDER env var re-read independently of the session),
+    this would fail even though the redirect itself still worked.
+    """
+
+    @staticmethod
+    def _client():
+        from fastapi.testclient import TestClient
+        import main
+        return TestClient(main.app, raise_server_exceptions=False)
+
+    def test_label_and_redirect_url_trace_back_to_the_same_session_object(self, monkeypatch):
+        import uuid
+        import billing.providers as providers_mod
+        from billing.providers import BillingProvider, CheckoutSession
+
+        # A random-per-run token in BOTH the provider name and the payment
+        # URL. Nothing in main.py can name this value in advance, so a match
+        # is only possible if the route actually reads both off this one
+        # session object rather than off any independently-sourced value.
+        token = f"probe{uuid.uuid4().hex[:12]}"
+        fake_url = f"https://pay.example.test/{token}/checkout"
+
+        class _ProbeProvider(BillingProvider):
+            name = token  # deliberately not in main.py's known-label map
+
+            async def create_checkout(self, *, amount_usd, description, agent_id,
+                                      success_url, cancel_url) -> CheckoutSession:
+                return CheckoutSession(
+                    session_id=f"probe_{token}",
+                    payment_url=fake_url,
+                    amount_usd=amount_usd,
+                    provider=token,
+                    metadata={},
+                )
+
+            async def get_status(self, session_id):
+                return None
+
+            def health_check(self) -> bool:
+                return True
+
+        monkeypatch.setattr(
+            providers_mod, "get_billing_provider",
+            lambda: _ProbeProvider(),
+        )
+        client = self._client()
+
+        r = client.get("/billing/checkout", follow_redirects=False)
+        assert r.status_code == 200
+        # The redirect target embedded in the page is this session's own url...
+        assert fake_url in r.text, (
+            "the redirect destination in the rendered page does not match "
+            "the payment_url this provider's CheckoutSession returned"
+        )
+        # ...and the displayed name is this SAME session's own provider field,
+        # not a separately configured or hardcoded value that happens to
+        # equal it.
+        assert f"({token})" in r.text, (
+            "the displayed provider label does not match session.provider — "
+            "name and destination are being read from different sources, "
+            "which is exactly the row-249 defect shape (page said 'Polar', "
+            "URL went to wise.com)"
+        )

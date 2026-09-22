@@ -1582,13 +1582,23 @@ async def billing_checkout():
         if not url or session.metadata.get("stub"):
             return RedirectResponse(url="/pricing", status_code=303)
         safe = _html.escape(url, quote=True)
+        # FIX (board row 249): this used to hardcode "(Polar)" regardless of
+        # which BILLING_PROVIDER is actually active, so a manual/paddle/
+        # coinbase/lemonsqueezy checkout would falsely claim to be Polar.
+        # Name the provider that is really about to be used.
+        _provider_labels = {
+            "polar": "Polar", "paddle": "Paddle", "coinbase": "Coinbase",
+            "lemonsqueezy": "Lemon Squeezy", "manual": "manual payment link",
+        }
+        provider_label = _provider_labels.get(session.provider, session.provider or "secure")
+        safe_label = _html.escape(provider_label, quote=True)
         return HTMLResponse(
             f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta http-equiv='refresh' content='0;url={safe}'>"
             f"<title>Redirecting to secure checkout…</title>"
             f"<script>window.location.replace({__import__('json').dumps(url)});</script>"
             f"</head><body style='font-family:system-ui,sans-serif;max-width:560px;margin:64px auto;padding:0 16px'>"
-            f"<p>Taking you to secure checkout (Polar)…</p>"
+            f"<p>Taking you to secure checkout ({safe_label})…</p>"
             f"<p>If you are not redirected, <a href='{safe}'>click here to pay</a>.</p>"
             f"</body></html>"
         )
