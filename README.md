@@ -67,11 +67,11 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 14 | `lookup_us_contracts` | Search US federal contract awards by company name via USASpending.gov  -  awardee, agency, amount, NAICS, period | **free** |
 | 15 | `send_message` | Send WhatsApp, SMS, email, or voice with compliance pre-check enforced | key |
 | 16 | `capture_lead` | Structured intake of a prospect into the SMB's AgentBroker lead store (not the business's own CRM), deduplicated | key |
-| 17 | `schedule_appointment` | Book, reschedule, or cancel via the direct booking API (Cal.com); SMBs reachable only through async channels fail honestly until a background worker is deployed | key |
+| 17 | `schedule_appointment` | Book, check availability, or cancel via Cal.com - only when the SMB is bound to our ONE connected Cal.com account; reschedule is not implemented, and non-Cal.com SMBs fail honestly (no booking) until a per-business booking path is built | key |
 | 18 | `send_transactional_confirmation` | TCPA-exempt OTPs, booking confirmations, receipts | key |
 | 19 | `handle_inbound` | Classify inbound messages: booking / cancel / opt-out / question / complaint | key |
 | 20 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
-| 21 | `import_booking_url` | Turn any Cal.com, Calendly, Doctolib, Booksy, OpenTable, Square, Acuity, or Fresha URL into a bookable SMB record | key |
+| 21 | `import_booking_url` | Turn a URL from any of 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into an SMB record usable with send_message / capture_lead immediately - schedule_appointment only completes for Cal.com bound to our one connected account, the other 11 fail it honestly | key |
 | 22 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
 | 23 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email required, no human in the loop | **free** |
 

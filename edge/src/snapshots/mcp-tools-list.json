@@ -33,7 +33,7 @@
                 "radius_miles": {
                   "type": "number",
                   "minimum": 0,
-                  "description": "Accepted but NOT APPLIED - it does not narrow results. We match city/state/ZIP as text and hold no coordinates for any business, so no distance can be computed. The response carries radius_miles_applied: false when you send one. Narrow zip_or_city instead."
+                  "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
                 }
               },
               "description": "Where to search. Matched against the business's city, state and ZIP as text -…"
@@ -277,7 +277,7 @@
       },
       {
         "name": "schedule_appointment",
-        "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form. [from $0.15/call, variable] [async→get_outcome]",
+        "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [from $0.15/call, variable] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -292,7 +292,6 @@
               "type": "string",
               "enum": [
                 "book",
-                "reschedule",
                 "cancel",
                 "check_availability"
               ]
@@ -336,7 +335,7 @@
             },
             "existing_appointment_id": {
               "type": "string",
-              "description": "Required for reschedule/cancel"
+              "description": "Required for cancel"
             },
             "notes": {
               "type": "string"
@@ -683,7 +682,7 @@
       },
       {
         "name": "import_booking_url",
-        "description": "Turn ANY public booking URL (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into a callable smb_id you can immediately use with schedule_appointment, send_message, or capture_lead. Idempotent — calling twice returns the same smb_id. [free, requires key]",
+        "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity), but schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Idempotent — calling twice returns the same smb_id. [free, requires key]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -963,7 +962,7 @@
       },
       {
         "name": "get_conversation",
-        "description": "Read a two-way conversation thread you started: its state, every message exchanged, and how many replies the business has sent. [free, no key]",
+        "description": "Read a two-way conversation thread you started: its state, every message exchanged, and how many replies the business has sent. [free, requires key]",
         "inputSchema": {
           "type": "object",
           "properties": {
