@@ -32,9 +32,10 @@
                 },
                 "radius_miles": {
                   "type": "number",
-                  "default": 10
+                  "minimum": 0
                 }
-              }
+              },
+              "description": "Where to search. Matched against the business's city, state and ZIP as text -…"
             },
             "capability": {
               "type": "string",
@@ -65,7 +66,8 @@
             "max_results": {
               "type": "integer",
               "default": 5,
-              "maximum": 20
+              "maximum": 20,
+              "minimum": 1
             }
           }
         },
@@ -266,7 +268,7 @@
       },
       {
         "name": "schedule_appointment",
-        "description": "Availability lookup, hold, confirm, reschedule, or cancel appointments with an SMB. Routes through the SMB's native booking system if available, falls back to voice AI or web form. [from $0.15/call, variable] [async→get_outcome]",
+        "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [from $0.15/call, variable] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -281,7 +283,6 @@
               "type": "string",
               "enum": [
                 "book",
-                "reschedule",
                 "cancel",
                 "check_availability"
               ]
@@ -325,7 +326,7 @@
             },
             "existing_appointment_id": {
               "type": "string",
-              "description": "Required for reschedule/cancel"
+              "description": "Required for cancel"
             },
             "notes": {
               "type": "string"

@@ -669,6 +669,9 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "function body (polar_webhook.py:370) -- not main.py's eager import.",
     ("tests/unit/test_polar_webhook.py", "agent_interface.identity.issue_subscription_token"):
         "targets billing.polar_webhook.handle_polar_event (deferred import, see above).",
+    ("tests/unit/test_paid_order_always_delivers.py", "agent_interface.identity.issue_subscription_token"):
+        "targets handle_polar_event's deferred import, not main.py's eager binding; "
+        "assert_called_once_with proves that the patched mint handled the test order.",
     ("tests/unit/test_typed_errors.py", "agent_interface.identity.validate_token"):
         "targets agent_interface.mcp_server's tool-dispatch auth check, which "
         "re-imports validate_token INSIDE the function body at each of its call sites "
@@ -692,19 +695,64 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "compliance.pre_check's eager import of the same name.",
     ("tests/unit/test_outcome_durability.py", "compliance.consent_store.get_consent_store"):
         "targets core.schedule_appointment's deferred consent-store import (see above).",
-    # test_outcome_durability.py patches storage.supabase_client.select_rows /
-    # upsert_row via its own `import storage.supabase_client as sb` module
-    # reference, exercising storage/outcome_store.py's _supabase_fetch /
-    # _supabase_upsert (both do their OWN deferred `from storage.supabase_client
-    # import ...` INSIDE the function body) and core.status_outcome's
-    # handle_get_outcome -> get_async() path -- not billing.credits.get_balance,
-    # the only eager consumer of select_rows, which this file never calls or
-    # references. Same reasoning already accepted for
-    # test_schedule_appointment_ownership.py and test_idempotency_dispatch.py.
-    ("tests/unit/test_outcome_durability.py", "storage.supabase_client.select_rows"):
-        "targets storage.outcome_store's _supabase_fetch (deferred import), exercised "
-        "through OutcomeStore.get_async / core.status_outcome.handle_get_outcome; no "
-        "reference to get_balance or billing.credits anywhere in this file.",
+    # test_outcome_durability.py patches storage.supabase_client.upsert_row via
+    # its own `import storage.supabase_client as sb` module reference,
+    # exercising storage/outcome_store.py's _supabase_upsert (deferred import
+    # INSIDE the function body). It used to also patch `select_rows` here for
+    # the fresh-process readback tests, which needed an entry below because
+    # billing.credits.py imports select_rows eagerly; the 2026-09-21
+    # unavailable-vs-absent fix moved outcome_store.py's _supabase_fetch onto
+    # `select_rows_strict` (never imported eagerly anywhere, so patching it is
+    # not a fragile collision and needs no entry), and this file's readback
+    # tests were updated to patch that instead -- see
+    # tests/unit/test_outcome_store_unavailable_vs_absent.py for the new tests
+    # this fix added, which patch select_rows_strict the same way.
+    # Added for board row 206 (2026-09-22): storage/outcome_store.py's
+    # _supabase_fetch / _supabase_upsert / _supabase_fetch_by_appointment_id
+    # now call `rpc()` -- routed through the operations_* SECURITY DEFINER
+    # RPCs (sql/agentbroker/001_operations_security_definer_rpc.sql) instead
+    # of the raw `operations` table, because this service deploys with only
+    # the Supabase anon key (no service-role key on a public box). Every one
+    # of outcome_store.py's three call sites does
+    # `from storage.supabase_client import rpc` INSIDE the function body --
+    # a deferred import, exactly like select_rows's existing entries above.
+    # billing/credits.py is the only EAGER consumer of this name
+    # (`from storage.supabase_client import rpc, select_rows` at
+    # credits.py:35, used only by the credits billing rail's
+    # credit_reserve/credit_commit/credit_release/credit_grant calls, gated
+    # behind a funded credit_accounts row via run_metered_tool). None of the
+    # five files below authenticate a funded credit account or otherwise
+    # drive that rail -- traced 2026-09-22 while shipping the honesty fix
+    # this board row required.
+    ("tests/unit/test_outcome_store_unavailable_vs_absent.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store._supabase_fetch's deferred rpc import; this "
+        "file never references billing.credits or run_metered_tool.",
+    ("tests/unit/test_outcome_durability.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store._supabase_fetch/_supabase_upsert's deferred rpc "
+        "import, driven via core.schedule_appointment.handle_schedule_appointment; no "
+        "agent token in this file is funded with credits, and CREDITS_ENABLED is not "
+        "set in the test environment, so run_metered_tool's credits branch never runs.",
+    ("tests/unit/test_core_operations.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store._supabase_fetch's deferred rpc import via "
+        "core.status_outcome.handle_get_status/handle_get_outcome directly; no "
+        "reference to billing.credits or run_metered_tool in this file.",
+    ("tests/unit/test_fixes_2026_08_23.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store._supabase_fetch's deferred rpc import via "
+        "core.status_outcome.handle_get_status/handle_get_outcome directly; no "
+        "reference to billing.credits or run_metered_tool in this file.",
+    ("tests/unit/test_schedule_appointment_ownership.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store's three deferred rpc imports via the real REST "
+        "routes / MCP dispatcher / Celery task body this file drives; the FakeSB.rpc "
+        "method it installs only ever serves the operations_* functions those three "
+        "call, and no test in this file authenticates a funded credit account.",
+    ("tests/unit/test_operations_rpc_boundary.py", "storage.supabase_client.rpc"):
+        "the boundary test for board row 206 item 1 itself: drives "
+        "storage.outcome_store.OutcomeStore directly (set_complete_durable/"
+        "get_async), never billing.credits or run_metered_tool. Its own "
+        "_forbid_raw_table_access fixture additionally patches select_rows/"
+        "select_rows_strict/upsert_row/insert_row to raise if called at all, which "
+        "would itself surface a real regression into billing.credits' eager import "
+        "the moment that path was exercised -- it is not.",
 }
 
 
