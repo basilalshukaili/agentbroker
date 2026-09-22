@@ -34,49 +34,23 @@ def test_the_local_builder_is_reproducible_and_offline():
     }
 
 
-def test_committed_snapshot_serves_the_same_tools_as_this_checkout():
-    """The committed snapshot tracks the DEPLOYED ORIGIN, not this checkout.
+def test_committed_snapshot_matches_this_release_exactly():
+    """One reviewed release must carry one exact tools/list contract.
 
-    This test used to assert full equality with ``_build_tool_list()``, and
-    that assertion is how the 2026-09-20 incident was manufactured: a commit
-    regenerated the snapshot from local source that was AHEAD of the deployed
-    origin, and the monitor then read the resulting file difference out as a
-    production fault.
-
-    The edge worker answers discovery for the origin but forwards `tools/call`
-    TO the origin. A snapshot built from undeployed code therefore advertises
-    parameters the origin would reject and hides parameters it accepts - it is
-    strictly more dangerous than one that lags the checkout. So the snapshot's
-    source of truth is the origin, and equality with local code is NOT an
-    invariant; it holds only while the origin is deployed from HEAD.
-
-    What IS an invariant is the tool ROSTER. Adding or removing a tool in this
-    checkout without deploying the origin and refreshing would have the
-    canonical host advertising a tool nothing can execute, or hiding one that
-    exists. Parameter- and description-level differences are the expected,
-    benign consequence of undeployed work and are reported - as repo drift,
-    never as an outage - by:
-
-        python scripts/refresh_edge_snapshots.py --local-tools --check
+    The snapshot is a deployable artifact in this checkout, while the local
+    builder is the origin contract that will ship from the same commit. Roster
+    equality alone lets descriptions, auth labels and schemas drift even though
+    the Worker forwards calls to that origin. Production monitoring may compare
+    the deployed Worker with the deployed origin; this source gate answers the
+    separate release question and therefore requires exact equality.
     """
-    sys.path.insert(0, AB)
-    try:
-        from agent_interface.mcp_server import _build_tool_list
-    finally:
-        sys.path.pop(0)
-
     path = os.path.join(AB, "edge", "src", "snapshots", "mcp-tools-list.json")
     with open(path, encoding="utf-8") as fh:
         committed = json.load(fh)
-
-    local_names = sorted(t["name"] for t in _build_tool_list())
-    committed_names = sorted(
-        t["name"] for t in committed["result"]["tools"])
-    assert committed_names == local_names, (
-        "the committed edge snapshot and this checkout disagree about WHICH "
-        "tools exist. Deploy the origin, then run "
-        "`python scripts/refresh_edge_snapshots.py` to recapture it from the "
-        "origin - never from local source.")
+    assert committed == refresh.build_local_tools_snapshot(), (
+        "the committed Worker snapshot differs from the origin contract in "
+        "this release; run `python scripts/refresh_edge_snapshots.py "
+        "--local-tools` before shipping both from the same commit")
 
 
 def test_local_check_never_calls_the_live_fetcher(monkeypatch, tmp_path):
