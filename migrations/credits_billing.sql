@@ -2,6 +2,9 @@
 -- AgentBroker credits billing schema (slice 2, 2026-08-24)
 -- Apply via Supabase Management API or the SQL editor in the Supabase dashboard.
 -- Safe to re-run: uses IF NOT EXISTS + ON CONFLICT DO NOTHING throughout.
+-- Existing installations must reapply this file after review to replace the
+-- credit_grant function and revoke inherited PUBLIC execution rights from
+-- all four billing RPCs.
 -- 1 credit = 1 US cent. Balance never goes negative (CHECK constraint enforced).
 
 BEGIN;
@@ -299,30 +302,37 @@ CREATE OR REPLACE FUNCTION credit_grant(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = ''
 AS $$
 DECLARE
     v_balance       BIGINT;
     v_entry_type    TEXT;
     v_rows          INTEGER;
+    v_prior         RECORD;
 BEGIN
+    IF p_account IS NULL OR btrim(p_account) = '' OR p_amount IS NULL OR p_amount <= 0 THEN
+        RAISE EXCEPTION 'credit_grant requires an account and positive amount'
+            USING ERRCODE = '22023';
+    END IF;
+
     v_entry_type := CASE WHEN p_source IN ('topup', 'polar') THEN 'topup' ELSE 'grant' END;
 
     -- Upsert account: create if missing, add credits if existing
-    INSERT INTO credit_accounts (
+    INSERT INTO public.credit_accounts (
         account_id, plan, balance_credits, lifetime_granted, updated_at
     )
     VALUES (p_account, 'free', p_amount, p_amount, NOW())
     ON CONFLICT (account_id) DO UPDATE
-    SET balance_credits  = credit_accounts.balance_credits  + p_amount,
-        lifetime_granted = credit_accounts.lifetime_granted + p_amount,
+    SET balance_credits  = public.credit_accounts.balance_credits  + p_amount,
+        lifetime_granted = public.credit_accounts.lifetime_granted + p_amount,
         updated_at       = NOW();
 
     SELECT balance_credits INTO v_balance
-    FROM credit_accounts WHERE account_id = p_account;
+    FROM public.credit_accounts WHERE account_id = p_account;
 
     -- Insert ledger entry (idempotent by idempotency_key when provided)
     IF p_idempotency_key IS NOT NULL THEN
-        INSERT INTO credit_ledger (
+        INSERT INTO public.credit_ledger (
             account_id, entry_type, amount_credits, source, order_id,
             idempotency_key, balance_after
         )
@@ -335,16 +345,37 @@ BEGIN
         GET DIAGNOSTICS v_rows = ROW_COUNT;
 
         IF v_rows = 0 THEN
+            -- A key proves only that some grant won. Bind the replay to that
+            -- original entitlement before reporting success. A conflicting
+            -- replay raises, rolling back the upsert in this transaction.
+            SELECT account_id, entry_type, amount_credits, source, order_id
+            INTO v_prior
+            FROM public.credit_ledger
+            WHERE idempotency_key = p_idempotency_key
+            FOR UPDATE;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'credit_grant idempotency ledger row missing'
+                    USING ERRCODE = '23505';
+            END IF;
+            IF v_prior.account_id IS DISTINCT FROM p_account
+               OR v_prior.entry_type IS DISTINCT FROM v_entry_type
+               OR v_prior.amount_credits IS DISTINCT FROM p_amount
+               OR v_prior.source IS DISTINCT FROM p_source
+               OR v_prior.order_id IS DISTINCT FROM p_order_id THEN
+                RAISE EXCEPTION 'credit_grant idempotency key conflicts with original grant'
+                    USING ERRCODE = '23505';
+            END IF;
+
             -- Idempotent duplicate: roll back the balance increment above.
             -- We already incremented in the upsert, so reverse it.
-            UPDATE credit_accounts
+            UPDATE public.credit_accounts
             SET balance_credits  = balance_credits  - p_amount,
                 lifetime_granted = lifetime_granted - p_amount,
                 updated_at       = NOW()
             WHERE account_id = p_account;
 
             SELECT balance_credits INTO v_balance
-            FROM credit_accounts WHERE account_id = p_account;
+            FROM public.credit_accounts WHERE account_id = p_account;
 
             RETURN jsonb_build_object(
                 'ok',          true,
@@ -353,8 +384,8 @@ BEGIN
             );
         END IF;
     ELSE
-        -- No idempotency key: always insert (e.g. manual adjustments)
-        INSERT INTO credit_ledger (
+        -- No idempotency key: always insert a positive grant.
+        INSERT INTO public.credit_ledger (
             account_id, entry_type, amount_credits, source, order_id, balance_after
         )
         VALUES (p_account, v_entry_type, p_amount, p_source, p_order_id, v_balance);
@@ -363,5 +394,24 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'balance_after', v_balance);
 END;
 $$;
+
+-- SECURITY DEFINER bypasses RLS. Only the backend service principal may move
+-- credits; a public/anon RPC caller must not choose an arbitrary account/hold.
+REVOKE EXECUTE ON FUNCTION public.credit_reserve(TEXT, BIGINT, TEXT, TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_reserve(TEXT, BIGINT, TEXT, TEXT, TEXT)
+    TO service_role;
+REVOKE EXECUTE ON FUNCTION public.credit_commit(TEXT, BIGINT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_commit(TEXT, BIGINT)
+    TO service_role;
+REVOKE EXECUTE ON FUNCTION public.credit_release(TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_release(TEXT, TEXT)
+    TO service_role;
+REVOKE EXECUTE ON FUNCTION public.credit_grant(TEXT, BIGINT, TEXT, TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_grant(TEXT, BIGINT, TEXT, TEXT, TEXT)
+    TO service_role;
 
 COMMIT;
