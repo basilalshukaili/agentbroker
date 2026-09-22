@@ -18,7 +18,12 @@ from urllib.parse import urlparse
 
 
 MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "credits_billing.sql"
-SIGNATURE = "public.credit_grant(text,bigint,text,text,text)"
+SIGNATURES = (
+    "public.credit_reserve(text,bigint,text,text,text)",
+    "public.credit_commit(text,bigint)",
+    "public.credit_release(text,text)",
+    "public.credit_grant(text,bigint,text,text,text)",
+)
 
 
 def _dsn() -> str:
@@ -137,20 +142,37 @@ def main() -> None:
     """)
     _run(dsn, file=MIGRATION)
     # Seed an inherited PUBLIC privilege, then prove rerun removes it.
-    _run(dsn, f"GRANT EXECUTE ON FUNCTION {SIGNATURE} TO PUBLIC")
+    for signature in SIGNATURES:
+        _run(dsn, f"GRANT EXECUTE ON FUNCTION {signature} TO PUBLIC")
     _run(dsn, file=MIGRATION)
-    for role, expected in (("anon", "f"), ("authenticated", "f"), ("service_role", "t")):
-        actual = _run(dsn, f"SELECT has_function_privilege('{role}', '{SIGNATURE}', 'EXECUTE')")
-        assert actual == expected, (role, actual)
-    _run(dsn, "SET ROLE anon; SELECT public.credit_grant('tm_denied', 100)", error="42501")
-    _run(dsn, "SET ROLE authenticated; SELECT public.credit_grant('tm_denied', 100)", error="42501")
+    for signature in SIGNATURES:
+        for role, expected in (("anon", "f"), ("authenticated", "f"), ("service_role", "t")):
+            actual = _run(dsn, f"SELECT has_function_privilege('{role}', '{signature}', 'EXECUTE')")
+            assert actual == expected, (signature, role, actual)
+    denied_calls = (
+        "public.credit_grant('tm_denied', 100)",
+        "public.credit_reserve('tm_denied', 1, 'tm_denied_hold')",
+        "public.credit_commit('tm_denied_hold', 1)",
+        "public.credit_release('tm_denied_hold')",
+    )
+    for role in ("anon", "authenticated"):
+        for call in denied_calls:
+            _run(dsn, f"SET ROLE {role}; SELECT {call}", error="42501")
     service_key = f"tm_credit_service_{uuid.uuid4().hex[:12]}"
     service_output = _run(
         dsn,
         "SET ROLE service_role; "
-        f"SELECT public.credit_grant('{service_key}', 1, 'grant', '{service_key}', NULL)",
+        f"SELECT public.credit_grant('{service_key}', 10, 'grant', '{service_key}', NULL)",
     )
     assert json.loads(service_output.splitlines()[-1])["ok"] is True
+    for call in (
+        f"public.credit_reserve('{service_key}', 2, '{service_key}_commit')",
+        f"public.credit_commit('{service_key}_commit', 2)",
+        f"public.credit_reserve('{service_key}', 3, '{service_key}_release')",
+        f"public.credit_release('{service_key}_release')",
+    ):
+        output = _run(dsn, f"SET ROLE service_role; SELECT {call}")
+        assert json.loads(output.splitlines()[-1])["ok"] is True, call
 
     suffix = uuid.uuid4().hex[:12]
     key = f"tm_credit_{suffix}"
@@ -174,7 +196,7 @@ def main() -> None:
 
     _concurrent_pair(dsn, uuid.uuid4().hex[:12], same_entitlement=True)
     _concurrent_pair(dsn, uuid.uuid4().hex[:12], same_entitlement=False)
-    print("credit_grant SQL acceptance PASS: exact replay, mismatches, positive amount, roles, concurrent retries")
+    print("billing SQL acceptance PASS: grant replay/amount, four RPC role boundaries, concurrent retries")
 
 
 if __name__ == "__main__":

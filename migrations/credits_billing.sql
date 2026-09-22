@@ -3,7 +3,8 @@
 -- Apply via Supabase Management API or the SQL editor in the Supabase dashboard.
 -- Safe to re-run: uses IF NOT EXISTS + ON CONFLICT DO NOTHING throughout.
 -- Existing installations must reapply this file after review to replace the
--- credit_grant function and revoke inherited PUBLIC execution rights.
+-- credit_grant function and revoke inherited PUBLIC execution rights from
+-- all four billing RPCs.
 -- 1 credit = 1 US cent. Balance never goes negative (CHECK constraint enforced).
 
 BEGIN;
@@ -394,8 +395,20 @@ BEGIN
 END;
 $$;
 
--- SECURITY DEFINER bypasses RLS. Only the backend service principal may mint
--- credits; a public/anon RPC caller must not choose an arbitrary account.
+-- SECURITY DEFINER bypasses RLS. Only the backend service principal may move
+-- credits; a public/anon RPC caller must not choose an arbitrary account/hold.
+REVOKE EXECUTE ON FUNCTION public.credit_reserve(TEXT, BIGINT, TEXT, TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_reserve(TEXT, BIGINT, TEXT, TEXT, TEXT)
+    TO service_role;
+REVOKE EXECUTE ON FUNCTION public.credit_commit(TEXT, BIGINT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_commit(TEXT, BIGINT)
+    TO service_role;
+REVOKE EXECUTE ON FUNCTION public.credit_release(TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.credit_release(TEXT, TEXT)
+    TO service_role;
 REVOKE EXECUTE ON FUNCTION public.credit_grant(TEXT, BIGINT, TEXT, TEXT, TEXT)
     FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.credit_grant(TEXT, BIGINT, TEXT, TEXT, TEXT)
