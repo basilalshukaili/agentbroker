@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Refresh the edge worker's embedded discovery snapshots.
 
-WHY. hatchloop.dev/mcp/agent-broker routes Vercel -> Cloudflare edge worker ->
-Render origin, and the worker answers `initialize`, `tools/list`, `/manifest`
-and every `.well-known/*` route from snapshots compiled INTO its bundle. Only
-`tools/call` reaches the origin. So any origin change to a schema, a price, a
-tool count or the service identity is invisible on the canonical host until the
-snapshots are regenerated and the worker redeployed — the canonical host keeps
-serving the old answer while the origin is correct, and nothing reports it.
+WHY. Some clients still call the legacy workers.dev endpoint directly. The
+worker answers `initialize`, `tools/list`, `/manifest` and every
+`.well-known/*` route from snapshots compiled INTO its bundle; only
+`tools/call` reaches the authoritative VPS origin. So any origin change to a
+schema, a price, a tool count or the service identity is invisible on that
+compatibility endpoint until the snapshots are regenerated and the worker is
+redeployed.
 
 That has bitten us repeatedly (stale serverInfo, 17-vs-19 tool counts, the
 manifest advertising prices we do not charge). This script makes the refresh a

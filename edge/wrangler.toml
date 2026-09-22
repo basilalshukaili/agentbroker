@@ -10,9 +10,11 @@ account_id = "4996b77206796d62ffa870cdd6e5c4f5"
 
 # Public-facing settings (non-secret) live in vars
 [vars]
-# ORIGIN_URL is an INTERNAL proxy target - never published. The worker fetches
-# from it; callers never see it.
-ORIGIN_URL = "https://smb-broker.onrender.com"
+# ORIGIN_URL is an INTERNAL proxy target - never published. The authoritative
+# service moved from Render to the TechMate VPS on 2026-09-10. Keeping this on
+# Render left the public workers.dev endpoint able to execute against an
+# unstamped shadow deployment while the branded endpoint used the VPS.
+ORIGIN_URL = "https://api.hatchloop.dev"
 EDGE_VERSION = "0.1.0"
 SERVICE_NAME = "agent-broker"
 
@@ -20,9 +22,9 @@ SERVICE_NAME = "agent-broker"
 #
 # Without this, publicBaseUrlOf() in src/index.ts falls back to the host the
 # REQUEST arrived on - and requests reach this worker at
-# agent-broker-edge.basil-agent.workers.dev, because hatchloop.dev proxies here
-# via a Vercel rewrite. So every descriptor we served stamped that generic
-# workers.dev hostname in as our public identity, including openapi.yaml.
+# agent-broker-edge.basil-agent.workers.dev. hatchloop.dev no longer proxies
+# here after its 2026-09-10 move to the VPS, but existing direct Worker installs
+# still need every descriptor to point at the branded public endpoint.
 #
 # Founder, 2026-08-30: "I do not want generic urls like these, use hatchloop.dev
 # always." This is the one setting that makes that true everywhere at once.
@@ -54,8 +56,8 @@ id = "f45691e20cdd4937ae88ccb64159d928"
 enabled = true
 head_sampling_rate = 1
 
-# Cron fires every 5 min so the Render free-tier dyno (15-min idle timeout)
-# stays warm. The handler keeps KV refreshes — which DO count against the
+# Cron fires every 5 min as an origin health probe. The handler keeps KV
+# refreshes — which DO count against the
 # 1k writes/day free-tier cap — gated to every 30th minute so the daily
 # write budget stays around 12 paths × 48 refreshes = 576 writes/day.
 [triggers]
