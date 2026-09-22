@@ -79,14 +79,6 @@
             "default": 5,
             "maximum": 20,
             "minimum": 1
-          },
-          "city": {
-            "type": "string",
-            "description": "Alternative to location: a top-level city, normalised into location.zip_or_city. The receipt reports location_normalized_from."
-          },
-          "region": {
-            "type": "string",
-            "description": "Alternative to location: a top-level state/region, normalised into location.zip_or_city with city."
           }
         }
       },

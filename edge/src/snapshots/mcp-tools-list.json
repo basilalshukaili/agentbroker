@@ -68,14 +68,6 @@
               "default": 5,
               "maximum": 20,
               "minimum": 1
-            },
-            "city": {
-              "type": "string",
-              "description": "Alternative to location: a top-level city, normalised into…"
-            },
-            "region": {
-              "type": "string",
-              "description": "Alternative to location: a top-level state/region, normalised into…"
             }
           }
         },
