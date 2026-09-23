@@ -96,10 +96,15 @@ class TestVerifyMachineSignature(unittest.TestCase):
 
     def test_future_timestamp_rejected(self):
         agent_id = "agent-test-003"
-        ts = int(time.time()) + 61   # 61s in the future
+        now = int(time.time())
+        ts = now + 61   # 61s in the future
         nonce = "future-nonce"
         sig = _make_sig(agent_id, ts, nonce, self.SECRET)
-        ok, reason = self.verify(agent_id, ts, nonce, sig)
+        # Pin the verifier's clock: crossing an integer-second boundary here
+        # otherwise turns +61 into +60, which is valid under the 60s window.
+        with patch("agent_interface.key_request_logic.time") as clock:
+            clock.time.return_value = now
+            ok, reason = self.verify(agent_id, ts, nonce, sig)
         self.assertFalse(ok)
         self.assertEqual(reason, "invalid_request")
 
