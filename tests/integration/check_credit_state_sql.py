@@ -67,6 +67,48 @@ def _compete(dsn: str, suffix: str, first_call: str, second_call: str,
             first.communicate(timeout=3)
 
 
+def _contend_reserve(dsn: str, first_suffix: str, second_suffix: str,
+                     hold: str, expected_second: str) -> None:
+    first_account = f"tm_terminal_{first_suffix}"
+    second_account = f"tm_terminal_{second_suffix}"
+    first_sql = (
+        "BEGIN; SET ROLE service_role; "
+        f"SELECT public.credit_reserve('{first_account}', 10, '{hold}')->>'ok'; "
+        "SELECT pg_sleep(2); COMMIT;"
+    )
+    first = subprocess.Popen(
+        _command(dsn, first_sql), stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        # The first hold is uncommitted during pg_sleep. The second call must
+        # wait at either the account lock or the unique hold key, then inspect
+        # the winning row instead of treating a duplicate key as permission.
+        _wait_for_uncommitted_grant(dsn)
+        second = _run(
+            dsn,
+            "SET ROLE service_role; "
+            f"SELECT public.credit_reserve('{second_account}', 10, '{hold}')->>'"
+            f"{('idempotent' if expected_second == 'true' else 'reason_code')}';",
+        )
+        out, err = first.communicate(timeout=8)
+        assert first.returncode == 0, (out, err)
+        assert "true" in out.splitlines(), out
+        assert second.splitlines()[-1] == expected_second, second
+        assert _account(dsn, first_suffix) == (90, 0)
+        if second_suffix != first_suffix:
+            assert _account(dsn, second_suffix) == (100, 0)
+        assert _run(
+            dsn,
+            "SELECT account_id FROM public.credit_ledger "
+            f"WHERE hold_id='{hold}' AND entry_type='hold'",
+        ) == first_account
+    finally:
+        if first.poll() is None:
+            first.kill()
+            first.communicate(timeout=3)
+
+
 def main() -> None:
     dsn = _dsn()
     _run(dsn, """
@@ -96,7 +138,9 @@ def main() -> None:
         "public.credit_commit('tm_terminal_race_release_hold', 10)",
         "hold_released", (100, 0),
     )
-    print("billing state SQL acceptance PASS: numeric/replay binding, both terminal races")
+    _contend_reserve(dsn, "hold_a", "hold_b", "tm_terminal_cross_hold", "hold_conflict")
+    _contend_reserve(dsn, "hold_same", "hold_same", "tm_terminal_same_hold", "true")
+    print("billing state SQL acceptance PASS: numeric/replay binding, terminal and hold races")
 
 
 if __name__ == "__main__":

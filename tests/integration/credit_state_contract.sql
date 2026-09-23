@@ -5,7 +5,8 @@ DELETE FROM public.credit_accounts WHERE account_id LIKE 'tm_terminal_%';
 INSERT INTO public.credit_accounts(account_id, balance_credits, lifetime_granted)
 SELECT 'tm_terminal_' || suffix, 100, 100
 FROM (VALUES ('numeric'), ('release'), ('retry'), ('other'),
-             ('race_commit'), ('race_release'), ('legacy')) AS accounts(suffix);
+             ('race_commit'), ('race_release'), ('legacy'),
+             ('hold_a'), ('hold_b'), ('hold_same')) AS accounts(suffix);
 INSERT INTO public.credit_ledger(account_id, entry_type, amount_credits,
                                  hold_id, balance_after)
 VALUES ('tm_terminal_legacy', 'hold', -10, 'tm_terminal_legacy_hold', 90),
