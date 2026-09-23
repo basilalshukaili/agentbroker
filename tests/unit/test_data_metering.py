@@ -16,7 +16,6 @@ external dependencies.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -134,23 +133,31 @@ class TestWithinQuota:
 
     @pytest.mark.asyncio
     async def test_within_anon_quota_allowed(self):
-        """Anonymous caller within anon quota: allowed."""
+        """Anonymous caller within anon quota: allowed.
+
+        2026-09-23: _consume_anon_data no longer does its own SELECT then
+        INSERT-or-PATCH over raw REST -- it calls the anon_data_quota_consume
+        SECURITY DEFINER RPC in one round trip (see
+        sql/agentbroker/002_anon_data_quota_security_definer_rpc.sql and the
+        docstring above _consume_anon_data in billing/data_quota.py). rpc()
+        is imported locally inside _consume_anon_data, so patching it at its
+        source in storage.supabase_client is still correct here.
+        """
         with patch.dict(os.environ, {
             "ANON_DATA_QUOTA_PER_DAY": "20",
             "SUPABASE_URL": "https://example.supabase.co",
             "SUPABASE_SERVICE_KEY": "test-key",
         }):
-            # First call: Supabase returns empty (no row yet)
-            # select_rows / insert_row are imported locally inside _consume_anon_data,
-            # so we patch them at their source in storage.supabase_client.
-            with patch("storage.supabase_client.select_rows", new_callable=AsyncMock, return_value=[]):
-                with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=None):
-                    from billing.data_quota import consume_data_quota
-                    result = await consume_data_quota(
-                        "map_trade_restriction", token="", ip="1.2.3.4"
-                    )
-                    assert result["allowed"] is True
-                    assert result["remaining"] == 19
+            with patch(
+                "storage.supabase_client.rpc", new_callable=AsyncMock,
+                return_value={"allowed": True, "remaining": 19, "count": 1},
+            ):
+                from billing.data_quota import consume_data_quota
+                result = await consume_data_quota(
+                    "map_trade_restriction", token="", ip="1.2.3.4"
+                )
+                assert result["allowed"] is True
+                assert result["remaining"] == 19
 
     @pytest.mark.asyncio
     async def test_within_anon_fail_open_when_no_supabase(self):
@@ -229,10 +236,13 @@ class TestExceedQuota:
 
     @pytest.mark.asyncio
     async def test_exceed_anon_quota_honest_failure(self):
-        """Anonymous caller beyond anon quota: honest failure, cost=0."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        """Anonymous caller beyond anon quota: honest failure, cost=0.
+
+        2026-09-23: the RPC itself decides allowed/remaining server-side
+        (see test_within_anon_quota_allowed above for why); this mocks its
+        response rather than a raw-table row.
+        """
         ip = "10.0.0.1"
-        bucket = hashlib.sha256(f"{ip}:{today}".encode()).hexdigest()
         limit = 5
 
         with patch.dict(os.environ, {
@@ -240,9 +250,10 @@ class TestExceedQuota:
             "SUPABASE_URL": "https://example.supabase.co",
             "SUPABASE_SERVICE_KEY": "test-key",
         }):
-            mock_rows = [{"bucket_key": bucket, "count": limit, "quota_date": today}]
-            # select_rows is imported locally; patch at source.
-            with patch("storage.supabase_client.select_rows", new_callable=AsyncMock, return_value=mock_rows):
+            with patch(
+                "storage.supabase_client.rpc", new_callable=AsyncMock,
+                return_value={"allowed": False, "remaining": 0, "count": limit},
+            ):
                 from billing.data_quota import consume_data_quota
                 result = await consume_data_quota(
                     "map_trade_restriction", token="", ip=ip

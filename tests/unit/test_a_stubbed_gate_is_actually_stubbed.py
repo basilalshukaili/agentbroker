@@ -632,9 +632,17 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
     ("tests/unit/test_conversation_threading.py", "storage.supabase_client.select_rows"):
         "targets core.conversations / core.demand_shaping (both deferred imports); no "
         "reference to get_balance or billing.credits anywhere in this file.",
-    ("tests/unit/test_data_metering.py", "storage.supabase_client.select_rows"):
-        "targets billing.data_quota (deferred import); no reference to get_balance or "
-        "billing.credits anywhere in this file.",
+    # 2026-09-23: billing/data_quota.py's anon-quota path moved from raw
+    # select_rows/insert_row REST calls to the anon_data_quota_consume
+    # SECURITY DEFINER RPC (sql/agentbroker/002_anon_data_quota_security_
+    # definer_rpc.sql, board row 206 follow-up) -- rpc() is imported INSIDE
+    # _consume_anon_data's function body, a deferred import, distinct from
+    # billing.credits.py:35's eager `from storage.supabase_client import
+    # rpc, select_rows`. This file never references billing.credits or
+    # run_metered_tool.
+    ("tests/unit/test_data_metering.py", "storage.supabase_client.rpc"):
+        "targets billing.data_quota._consume_anon_data (deferred rpc import); no "
+        "reference to billing.credits or run_metered_tool anywhere in this file.",
     ("tests/unit/test_demand_queue.py", "storage.supabase_client.select_rows"):
         "targets core.demand_queue (deferred import); no reference to get_balance or "
         "billing.credits anywhere in this file.",
@@ -649,9 +657,19 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "in this file (it DOES call billing.credits._maybe_low_balance_nudge, which "
         "has its own separate deferred re-import of select_rows at credits.py:222, "
         "distinct from the frozen module-level one get_balance uses at credits.py:269).",
-    ("tests/unit/test_quota_hang.py", "storage.supabase_client.select_rows"):
-        "targets billing.data_quota (deferred import); no reference to get_balance or "
-        "billing.credits anywhere in this file.",
+    # 2026-09-23: same move as test_data_metering.py above -- see that entry.
+    ("tests/unit/test_quota_hang.py", "storage.supabase_client.rpc"):
+        "targets billing.data_quota._consume_anon_data (deferred rpc import); no "
+        "reference to billing.credits or run_metered_tool anywhere in this file.",
+    # 2026-09-23: the dedicated unit-test file for the anon_data_quota RPC fix
+    # itself (docs/reviews/2026-09-23-agentbroker-anon-quota-root-cause.md).
+    # Every patch call in this file targets billing.data_quota._consume_anon_data's
+    # deferred rpc import directly; the file never authenticates a funded credit
+    # account, calls billing.credits.run_metered_tool, or otherwise drives
+    # billing.credits' eager `rpc` binding.
+    ("tests/unit/test_anon_data_quota_rpc.py", "storage.supabase_client.rpc"):
+        "targets billing.data_quota._consume_anon_data's deferred rpc import; this "
+        "file never references billing.credits or run_metered_tool.",
     ("tests/unit/test_schedule_appointment_ownership.py", "storage.supabase_client.select_rows"):
         "patches storage.supabase_client's insert_row/upsert_row/select_rows together "
         "via its own `import storage.supabase_client as real` module reference, "

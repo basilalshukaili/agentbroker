@@ -29,6 +29,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -162,14 +163,155 @@ def get_free_key_data_remaining(key_id: str) -> int:
 # ---------------------------------------------------------------------------
 # Anonymous IP-based Supabase counter
 # ---------------------------------------------------------------------------
+#
+# ROUTED THROUGH THE anon_data_quota_consume RPC, NOT RAW REST CALLS
+# (2026-09-23, closing the dormant bug in
+# docs/reviews/2026-09-23-agentbroker-anon-quota-root-cause.md, commit
+# bb62169). The old version here did a SELECT, then an INSERT-or-PATCH, as
+# three separate PostgREST calls using whichever key
+# SUPABASE_SERVICE_KEY-or-SUPABASE_ANON_KEY resolved to. On the VPS -- the
+# box that has actually served hatchloop.dev/api.hatchloop.dev since the
+# 2026-09-22 cutover -- that resolves to the anon key, because
+# SUPABASE_SERVICE_KEY is deliberately never shipped there (board row 206
+# item 1; see ops/vps/deploy_agentbroker_vps.py's NEVER_SHIP_TO_CONTAINER,
+# unchanged by this fix and must stay that way). Two things then happened,
+# neither of which raised or logged above debug:
+#
+#   1. The anon key's SELECT on `anon_data_quota` returned HTTP 200 with an
+#      empty array -- RLS silently filtering the row, not an error -- so
+#      every call looked like "no prior entry", forever.
+#   2. The anon key's INSERT was rejected by RLS (also not a Python
+#      exception -- insert_row() swallows it and returns None), and that
+#      None was never checked, so the call was treated as a successful
+#      first write regardless.
+#
+# Net effect: an unverifiable counter that was silently, permanently
+# permissive -- exactly the shape the module docstring's "NEVER run the
+# tool for free beyond quota" invariant forbids, and it would have
+# reproduced the instant DATA_METERING_ENABLED were ever set true on this
+# box, with nothing in any log explaining why.
+#
+# THE FIX. `anon_data_quota_consume` (sql/agentbroker/002_anon_data_quota_
+# security_definer_rpc.sql, NOT YET APPLIED -- see that file and
+# sql/agentbroker/README.md) is a narrow SECURITY DEFINER function that does
+# the whole upsert + day-rollover-reset + limit-check + increment
+# atomically, server-side, under a row lock, in ONE call. The anon role has
+# EXECUTE on the function and NO grant on the table at all (the direct-table
+# door this bug exploited is closed). There is no longer a separate "did
+# the write land" question for THIS function to answer wrong: `rpc()`
+# itself raises on anything other than a 2xx response with a decodable
+# body (storage/supabase_client.py's own contract, already used this way by
+# storage/outcome_store.py for the identical board-row-206 problem on
+# `operations`), so an unreachable, unauthorized, or not-yet-migrated
+# function is a Python exception here, not a quietly-accepted empty
+# success. `_verify_response_shape` below is the second, cheaper half of
+# "verify its own write": even a 2xx response is checked for the exact
+# shape the function is defined to return before its `allowed` field is
+# trusted -- belt-and-suspenders against a future schema drift silently
+# being read as `allowed=True`.
+
+
+class _AnonQuotaRpcFailure(RuntimeError):
+    """Raised internally when the RPC call did not produce a trustworthy
+    verdict -- either it raised (network/permission/deployment failure) or
+    it returned a 2xx body missing the shape this function contracts to
+    return. Carries `kind` so the caller can log misconfiguration and
+    outage distinguishably instead of collapsing both into one debug line
+    (the exact ask: today both look identical and both log at debug)."""
+
+    def __init__(self, kind: str, detail: str) -> None:
+        super().__init__(detail)
+        self.kind = kind  # "misconfigured" | "unconfigured" | "outage" | "bad_response_shape"
+
+
+def _classify_rpc_exception(exc: Exception) -> tuple[str, str]:
+    """Turn whatever storage.supabase_client.rpc() raised into a (kind,
+    human_detail) pair.
+
+    rpc() raises a plain RuntimeError with a message it builds itself (see
+    its own docstring/source) -- there is no structured status code
+    attached today, so this reads the message it already contracts to
+    produce rather than inventing a second parallel channel. Buckets:
+
+      * "unconfigured"  -- SUPABASE_URL / a key were never set for this
+        process. Common and expected in local dev / most unit tests (this
+        repo's tests deliberately run unconfigured); not escalated to
+        misconfigured severity.
+      * "misconfigured"  -- the request reached Supabase and was refused
+        for a reason a human must fix: permission denied (401/403), the
+        function does not exist yet (404 / PGRST202 -- exactly what this
+        RPC returns TODAY, before sql/agentbroker/002_*.sql is applied), or
+        a client-shaped error (400/422, e.g. a parameter mismatch). This is
+        never a "try again later" condition.
+      * "outage"  -- a transport failure (DNS, connection refused, TLS,
+        timeout) or a 5xx from Supabase itself. Expected to self-resolve;
+        this is the ONE case the module docstring's fail-open design is
+        actually for.
+      * "bad_response_shape"  -- rpc() returned normally (2xx, valid JSON)
+        but the body was not proven at all (see _verify_response_shape) --
+        never reached from here, kept only so both call sites share one
+        exception type.
+    """
+    msg = str(exc)
+    if "not configured" in msg:
+        return "unconfigured", msg
+    if "transport error" in msg:
+        return "outage", msg
+    m = re.search(r"HTTP (\d{3})", msg)
+    if m:
+        status = int(m.group(1))
+        if status in (400, 401, 403, 404, 422):
+            return "misconfigured", msg
+        return "outage", msg
+    if "JSON decode error" in msg:
+        # A 2xx whose body is not JSON -- e.g. a proxy/WAF interstitial in
+        # front of Supabase. Ambiguous by nature; treated as an outage
+        # (transport-adjacent) rather than misconfigured, since it is not a
+        # credential/grant problem this workspace can fix in SQL.
+        return "outage", msg
+    return "outage", msg  # unrecognised shape: never invent "misconfigured" without evidence
+
+
+def _verify_response_shape(payload) -> dict:
+    """The second half of "verify its own write": even a 2xx, valid-JSON
+    response from anon_data_quota_consume is checked against the exact
+    shape the function contracts to return before `allowed` is trusted.
+    Raises _AnonQuotaRpcFailure(kind="bad_response_shape") otherwise --
+    never returns a best-guess default, which is how the original bug's
+    sibling ("assume success because nothing raised") would reappear one
+    layer up.
+    """
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("allowed"), bool)
+        or not isinstance(payload.get("remaining"), int)
+        or not isinstance(payload.get("count"), int)
+    ):
+        raise _AnonQuotaRpcFailure(
+            "bad_response_shape",
+            f"anon_data_quota_consume returned an unexpected shape: {payload!r} "
+            f"(expected a dict with allowed: bool, remaining: int, count: int)",
+        )
+    return payload
+
 
 async def _consume_anon_data(ip: str) -> tuple[bool, int]:
     """Consume one data op from the anon IP daily quota (Supabase-backed).
 
     Returns (allowed, remaining_after).
-    Fail-open: allows the call if IP is empty, Supabase is unreachable, or
-    any error occurs. The anon quota is best-effort; minor over-counting at
-    the edges (race conditions) is acceptable.
+    Fail-open: allows the call if IP is empty, Supabase is unconfigured, or
+    the RPC call fails for any reason (misconfiguration or outage alike --
+    this function never blocks a caller because OUR infrastructure is
+    broken; that is a deliberate availability choice, unchanged by this
+    fix, and is exactly what scripts/check_anon_quota_credential.py exists
+    to catch BEFORE DATA_METERING_ENABLED is ever flipped on, rather than
+    relying on this fail-open path to announce it at runtime). What
+    changed: every failure now logs LOUDLY (warning/error, never debug)
+    with a `kind` that distinguishes "this credential cannot see the table
+    at all" from a genuine transient outage -- see
+    _classify_rpc_exception's docstring. The anon quota is still
+    best-effort; minor over-counting at the edges (race conditions between
+    two processes) is acceptable and unchanged.
     """
     limit = _get_anon_limit()
 
@@ -182,76 +324,72 @@ async def _consume_anon_data(ip: str) -> tuple[bool, int]:
     raw = f"{ip}:{today}".encode()
     bucket = hashlib.sha256(raw).hexdigest()
 
+    sb_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    svc_key = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
+    if not sb_url or not svc_key:
+        return True, limit  # no Supabase config -- generous fallback, silent (expected in dev/tests)
+
     try:
-        sb_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-        svc_key = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
-        if not sb_url or not svc_key:
-            return True, limit  # no Supabase config -- generous fallback
+        from storage.supabase_client import rpc
 
-        from storage.supabase_client import select_rows, insert_row
-        import httpx
-
-        # Hard 2-second timeout on every Supabase call -- a hang is NOT an
-        # exception and would bypass the except Exception fail-open below.
-        # asyncio.TimeoutError IS a subclass of Exception, so the outer
-        # except block catches it and returns fail-open.
-        rows = await asyncio.wait_for(
-            select_rows("anon_data_quota", filters={"bucket_key": bucket}, limit=1),
+        # Hard 2-second timeout, same budget as before. A hang raises
+        # asyncio.TimeoutError, which the except below classifies as an
+        # "outage" (its message contains neither "not configured" nor
+        # "HTTP ###" nor "JSON decode error", so it falls through to the
+        # final outage bucket -- see _classify_rpc_exception).
+        payload = await asyncio.wait_for(
+            rpc("anon_data_quota_consume", {
+                "p_bucket_key": bucket,
+                "p_quota_date": today,
+                "p_limit": limit,
+            }),
             timeout=2.0,
         )
-        if not rows:
-            # First call today for this IP bucket.
-            await asyncio.wait_for(
-                insert_row("anon_data_quota", {
-                    "bucket_key": bucket,
-                    "count": 1,
-                    "quota_date": today,
-                }),
-                timeout=2.0,
+        result = _verify_response_shape(payload)
+        if result["allowed"]:
+            return True, result["remaining"]
+        return False, 0
+
+    except _AnonQuotaRpcFailure as exc:
+        # Our own shape check tripped -- always a real defect, never noise.
+        log.error(
+            "anon_data_quota_unavailable kind=%s bucket=%.8s... err=%s -- "
+            "failing OPEN (allow) per the module's fail-open design; this is "
+            "NOT expected to happen and needs investigation, not a retry",
+            exc.kind, bucket, exc,
+        )
+        return True, limit
+
+    except Exception as exc:  # noqa: BLE001 -- includes asyncio.TimeoutError
+        kind, detail = _classify_rpc_exception(exc)
+        if kind in ("misconfigured",):
+            # Loud and at error level on purpose: if this ever fires while
+            # DATA_METERING_ENABLED=true, anonymous callers are getting
+            # unlimited free calls again, silently, right now -- this is
+            # the exact defect this fix exists to make impossible to miss.
+            log.error(
+                "anon_data_quota_unavailable kind=misconfigured bucket=%.8s... "
+                "detail=%s -- this credential cannot use anon_data_quota_consume "
+                "(permission denied, or sql/agentbroker/002_anon_data_quota_"
+                "security_definer_rpc.sql has not been applied yet). Failing "
+                "OPEN (allow) per the module's fail-open design, but this is a "
+                "configuration defect, not an outage -- run "
+                "scripts/check_anon_quota_credential.py before enabling "
+                "metering on this box.",
+                bucket, detail,
             )
-            return True, limit - 1
-
-        row = rows[0]
-        count = int(row.get("count", 0))
-        stored_date = row.get("quota_date", "")
-
-        if stored_date != today:
-            # New UTC day -- reset the counter for this bucket.
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.patch(
-                    f"{sb_url}/rest/v1/anon_data_quota",
-                    headers={
-                        "apikey": svc_key,
-                        "Authorization": f"Bearer {svc_key}",
-                        "Content-Type": "application/json",
-                        "Prefer": "return=minimal",
-                    },
-                    params={"bucket_key": f"eq.{bucket}"},
-                    json={"count": 1, "quota_date": today},
-                )
-            return True, limit - 1
-
-        if count >= limit:
-            return False, 0
-
-        # Increment.
-        new_count = count + 1
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.patch(
-                f"{sb_url}/rest/v1/anon_data_quota",
-                headers={
-                    "apikey": svc_key,
-                    "Authorization": f"Bearer {svc_key}",
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal",
-                },
-                params={"bucket_key": f"eq.{bucket}"},
-                json={"count": new_count},
+        elif kind == "outage":
+            log.warning(
+                "anon_data_quota_unavailable kind=outage bucket=%.8s... detail=%s "
+                "-- failing OPEN (allow); treated as a transient Supabase "
+                "availability issue, expected to self-resolve",
+                bucket, detail,
             )
-        return True, limit - new_count
-
-    except Exception as exc:  # noqa: BLE001
-        log.debug("anon_data_quota fallback ip=%.8s err=%s", ip, exc)
+        else:  # "unconfigured" -- expected in dev/tests; quiet by design
+            log.debug(
+                "anon_data_quota_unavailable kind=%s bucket=%.8s... detail=%s",
+                kind, bucket, detail,
+            )
         return True, limit  # fail-open
 
 

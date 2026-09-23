@@ -16,13 +16,20 @@ FIX:
 
 These tests verify both layers return allowed within 3 seconds when Supabase
 hangs. All Supabase and network calls are monkeypatched; no external deps.
+
+UPDATED 2026-09-23: _consume_anon_data now makes ONE call
+(storage.supabase_client.rpc, routed through the anon_data_quota_consume
+SECURITY DEFINER RPC -- see sql/agentbroker/002_anon_data_quota_security_
+definer_rpc.sql and billing/data_quota.py's module docstring) instead of a
+separate select_rows then insert_row/PATCH sequence. The timeout guard and
+its 2.0s budget are unchanged; only the mocked call site moved.
 """
 from __future__ import annotations
 
 import asyncio
 import os
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -43,20 +50,20 @@ async def _hang_forever(*_args, **_kwargs):
 class TestConsumeAnonDataHang:
     """
     _consume_anon_data must return (allowed=True) within ~2.5s even when
-    select_rows hangs indefinitely. The asyncio.wait_for(2.0) guard fires,
-    TimeoutError is caught by the outer except-Exception block, and the
-    function returns fail-open.
+    the anon_data_quota_consume RPC call hangs indefinitely. The
+    asyncio.wait_for(2.0) guard fires, TimeoutError is caught by the outer
+    except-Exception block, and the function returns fail-open.
     """
 
     @pytest.mark.asyncio
-    async def test_hang_on_select_returns_fast_and_fail_open(self):
-        """select_rows hangs -> gate returns (True, limit) in < 3s."""
+    async def test_hang_on_rpc_returns_fast_and_fail_open(self):
+        """rpc() hangs -> gate returns (True, limit) in < 3s."""
         with patch.dict(os.environ, {
             "SUPABASE_URL": "https://fake.supabase.co",
             "SUPABASE_SERVICE_KEY": "fake-key",
             "ANON_DATA_QUOTA_PER_DAY": "20",
         }):
-            with patch("storage.supabase_client.select_rows", side_effect=_hang_forever):
+            with patch("storage.supabase_client.rpc", side_effect=_hang_forever):
                 from billing.data_quota import _consume_anon_data
 
                 start = time.monotonic()
@@ -69,23 +76,29 @@ class TestConsumeAnonDataHang:
         )
 
     @pytest.mark.asyncio
-    async def test_hang_on_insert_returns_fast_and_fail_open(self):
-        """insert_row hangs (after select_rows returns empty) -> fast fail-open."""
+    async def test_hang_on_rpc_second_call_returns_fast_and_fail_open(self):
+        """A second bucket hitting the same hang -> still fast fail-open.
+
+        Kept as a second case (distinct IP/bucket) rather than removed
+        outright: it is what used to be "insert hangs after select returns
+        empty" back when this was two separate REST calls. Now there is only
+        one call site to hang on, so this is a repeat of the same guard on a
+        different bucket -- cheap insurance that the guard is not somehow
+        keyed to the first call only (e.g. a one-shot timeout wrapper bug).
+        """
         with patch.dict(os.environ, {
             "SUPABASE_URL": "https://fake.supabase.co",
             "SUPABASE_SERVICE_KEY": "fake-key",
             "ANON_DATA_QUOTA_PER_DAY": "20",
         }):
-            # select_rows returns empty (first call for this IP), then insert hangs
-            with patch("storage.supabase_client.select_rows", new_callable=AsyncMock, return_value=[]):
-                with patch("storage.supabase_client.insert_row", side_effect=_hang_forever):
-                    from billing.data_quota import _consume_anon_data
+            with patch("storage.supabase_client.rpc", side_effect=_hang_forever):
+                from billing.data_quota import _consume_anon_data
 
-                    start = time.monotonic()
-                    allowed, remaining = await _consume_anon_data("10.0.0.2")
-                    elapsed = time.monotonic() - start
+                start = time.monotonic()
+                allowed, remaining = await _consume_anon_data("10.0.0.2")
+                elapsed = time.monotonic() - start
 
-        assert allowed is True, "Expected fail-open (allowed=True) on insert hang"
+        assert allowed is True, "Expected fail-open (allowed=True) on hang"
         assert elapsed < 3.0, (
             f"Gate must return in <3s but took {elapsed:.2f}s -- hang not blocked"
         )
@@ -103,14 +116,14 @@ class TestConsumeDataQuotaHang:
     """
 
     @pytest.mark.asyncio
-    async def test_full_quota_fn_hang_on_select(self):
+    async def test_full_quota_fn_hang_on_rpc(self):
         """Full consume_data_quota with hanging Supabase -> returns within 3s."""
         with patch.dict(os.environ, {
             "SUPABASE_URL": "https://fake.supabase.co",
             "SUPABASE_SERVICE_KEY": "fake-key",
             "ANON_DATA_QUOTA_PER_DAY": "20",
         }):
-            with patch("storage.supabase_client.select_rows", side_effect=_hang_forever):
+            with patch("storage.supabase_client.rpc", side_effect=_hang_forever):
                 from billing.data_quota import consume_data_quota
 
                 start = time.monotonic()
