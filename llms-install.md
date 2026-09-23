@@ -33,7 +33,7 @@ claude mcp add --transport http agent-broker https://hatchloop.dev/mcp/agent-bro
   --header "X-Agent-Identity: YOUR_KEY_HERE"
 ```
 
-Run `claude mcp list` to confirm - `agent-broker` should show as `✔ Connected`.
+Run `claude mcp list` to confirm - `agent-broker` should show as "Connected".
 
 ### Claude Desktop
 
