@@ -25,6 +25,17 @@ by the production LOG_LEVEL=INFO). Fixed the same way: `_pending_tasks`
 holds a strong reference until the done-callback releases it, and every
 outcome is counted in `_stats`, exposed via `get_durable_meter_health()` for
 agent_interface/self_test.py's `_check_metering_pipeline`.
+
+AUDIT-2026-09-28 (cont'd, tm_requirements row 1181): the diagnostic half of
+the fix above is what surfaced the REAL, second cause the GC bug had been
+masking: `billing_events` has RLS enabled with zero policies, and this
+container runs with only SUPABASE_ANON_KEY, which holds an INSERT grant but
+does not bypass RLS — every insert was attempted and rejected, 0.3 seconds
+apart from usage_events' identical failure (one shared cause, not two).
+Fixed by routing through the SECURITY DEFINER RPC function
+`billing_events_insert` (sql/agentbroker/003_usage_billing_security_definer_
+rpc.sql) instead of a direct table insert — see `DurableMeter._persist()`'s
+docstring.
 """
 from __future__ import annotations
 
@@ -150,22 +161,40 @@ class DurableMeter(UsageMeter):
 
     @staticmethod
     async def _persist(rec: UsageRecord) -> None:
-        """Write one UsageRecord to Supabase billing_events. Never raises."""
+        """Write one UsageRecord to Supabase billing_events. Never raises.
+
+        RLS-CREDENTIAL FIX (tm_requirements row 1181, 2026-09-28): this used
+        to call storage/supabase_client.py's insert_row() directly against
+        the `billing_events` table. That table has RLS ENABLED with ZERO
+        POLICIES (confirmed live), and this container runs with ONLY
+        SUPABASE_ANON_KEY -- `anon` holds a table-level INSERT grant but does
+        not bypass RLS, so every insert was attempted and rejected, 0.3
+        seconds apart from usage_events' identical failure -- one shared
+        cause (the RLS lockdown), not two coincidental bugs. The fix mirrors
+        usage_logger.py's: a narrow, parameter-scoped, SECURITY DEFINER RPC
+        (`billing_events_insert`, sql/agentbroker/003_usage_billing_
+        security_definer_rpc.sql) that anon may EXECUTE but that owns its
+        own INSERT internally as a BYPASSRLS-owned function -- never a
+        permissive anon INSERT policy, which the public anon key would let
+        anyone use to forge a billing row. The RPC fixes `status` server-side
+        and bounds `amount_usd`, so a forged direct call cannot claim an
+        implausible dollar amount; see that file's header for the full
+        threat-model note (this table is a best-effort mirror of what
+        billing/credits.py's credit_reserve/credit_commit already charged,
+        not the ledger itself, so a forged row cannot move real money).
+        """
         try:
-            from storage.supabase_client import insert_row
-            row = {
-                "record_id":    rec.record_id,
-                "agent_id":     rec.agent_id,
-                "tool":         rec.operation,
-                "operation_id": rec.operation_id,
-                "amount_usd":   float(rec.amount_usd),
-                "basis":        rec.basis,
-                "channel_used": rec.channel_used,
-                "status":       "recorded",
-                "success":      rec.success,
-                "ts":           rec.recorded_at.isoformat(),
-            }
-            result = await insert_row("billing_events", row)
+            from storage.supabase_client import rpc
+            result = await rpc("billing_events_insert", {
+                "p_record_id":    rec.record_id,
+                "p_agent_id":     rec.agent_id,
+                "p_tool":         rec.operation,
+                "p_operation_id": rec.operation_id,
+                "p_amount_usd":   float(rec.amount_usd),
+                "p_basis":        rec.basis,
+                "p_channel_used": rec.channel_used,
+                "p_success":      rec.success,
+            })
             if result:
                 logger.debug(
                     "billing_event_persisted record_id=%s op=%s amount=%.6f",
@@ -173,9 +202,11 @@ class DurableMeter(UsageMeter):
                 )
                 _record_success()
             else:
-                # insert_row already logged the WARNING with status/body;
-                # this is the counter half so a health check sees it too.
-                _record_failure("insert_row_returned_none")
+                # rpc() itself raises on any failure (see storage/
+                # supabase_client.py) -- see usage_logger.py's identical
+                # guard comment for why this branch is still handled rather
+                # than assumed unreachable.
+                _record_failure("rpc_returned_none")
         except Exception as exc:  # noqa: BLE001
             logger.error("billing_event_persist_failed record_id=%s err=%s", rec.record_id, exc,
                         exc_info=exc)

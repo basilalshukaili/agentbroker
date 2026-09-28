@@ -25,6 +25,16 @@ never left to accumulate), and every failure path — an exception inside
 at all — is logged at ERROR and recorded in `_stats`, which
 `get_usage_logger_health()` exposes for a health check to read. See
 agent_interface/self_test.py's `_check_metering_pipeline`.
+
+AUDIT-2026-09-28 (cont'd, tm_requirements row 1181): the diagnostic half of
+the fix above (ERROR-level logging) is what surfaced the REAL, second cause
+the GC bug had been masking: `usage_events` has RLS enabled with zero
+policies, and this container runs with only SUPABASE_ANON_KEY, which holds
+an INSERT grant but does not bypass RLS. Every insert was attempted and
+rejected. Fixed by routing through the SECURITY DEFINER RPC function
+`usage_events_insert` (sql/agentbroker/003_usage_billing_security_definer_
+rpc.sql) instead of a direct table insert — see log_usage_event()'s
+docstring.
 """
 from __future__ import annotations
 
@@ -193,14 +203,30 @@ async def log_usage_event(
     principal_type: Optional[str] = None,
 ) -> None:
     """
-    Fire-and-forget insert into `usage_events`. Never raises.
+    Fire-and-forget RPC insert into `usage_events`. Never raises.
     Designed to be called with asyncio.create_task() so it never delays the response.
+
+    RLS-CREDENTIAL FIX (tm_requirements row 1181, 2026-09-28): this used to
+    call storage/supabase_client.py's insert_row() directly against the
+    `usage_events` table. That table has had RLS ENABLED with ZERO POLICIES
+    since migrations/enable_rls.sql, and this container runs with ONLY
+    SUPABASE_ANON_KEY (SUPABASE_SERVICE_KEY is deliberately never shipped
+    here — see ops/vps/deploy_agentbroker_vps.py's NEVER_SHIP_TO_CONTAINER).
+    `anon` holds a table-level INSERT grant but does not bypass RLS, so every
+    insert was attempted and rejected — a grant without a policy is not
+    permission. The fix is not a permissive anon policy on the table (the
+    anon key is public; that would let anyone forge metering rows) — it is
+    the narrow, parameter-scoped, SECURITY DEFINER RPC function
+    `usage_events_insert` (sql/agentbroker/003_usage_billing_security_
+    definer_rpc.sql), which `anon` may EXECUTE but which owns its own INSERT
+    internally as a BYPASSRLS-owned function — the same architecture already
+    proven in production for `operations` (001) and `anon_data_quota` (002).
 
     Every exit path updates `_stats` (see get_usage_logger_health()) so a
     caller that never inspects the return value still leaves a trail: a
-    silent `insert_row` failure (it returns None rather than raising — see
-    storage/supabase_client.py) used to be indistinguishable from success
-    here. It no longer is.
+    silent RPC failure (storage/supabase_client.py's rpc() raises, caught by
+    the try/except below) used to be indistinguishable from success here. It
+    no longer is.
     """
     try:
         args_hash = _hash8(str(sorted((arguments or {}).items()))) if arguments else None
@@ -210,24 +236,24 @@ async def log_usage_event(
                                              principal_type=principal_type)
         clean_key_id = (key_id[:64] if key_id and key_id != "anonymous" else None)
 
-        row = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "tool": tool_name or method,
-            "args_hash": args_hash,
-            "ip_hash": ip_hash,
-            "user_agent": ua,
-            "key_id": clean_key_id,
-            "session_kind": session_kind,
-            "method": method,
-        }
-
-        from storage.supabase_client import insert_row
-        result = await insert_row("usage_events", row)
+        from storage.supabase_client import rpc
+        result = await rpc("usage_events_insert", {
+            "p_tool": tool_name or method,
+            "p_args_hash": args_hash,
+            "p_ip_hash": ip_hash,
+            "p_user_agent": ua,
+            "p_key_id": clean_key_id,
+            "p_session_kind": session_kind,
+            "p_method": method,
+        })
         if result is None:
-            # insert_row already logged a WARNING with the HTTP status/body;
-            # this is the counter half so a health check sees it too, not
-            # only whoever happens to be grepping logs at that moment.
-            _record_failure("insert_row_returned_none")
+            # rpc() itself raises on any failure (see storage/
+            # supabase_client.py) -- this branch guards a function that
+            # somehow returned SQL NULL rather than a row, which
+            # usage_events_insert's `returning * into v_row` makes
+            # impossible in practice, but a None here must never be read as
+            # success.
+            _record_failure("rpc_returned_none")
         else:
             _record_success()
     except Exception as exc:  # noqa: BLE001

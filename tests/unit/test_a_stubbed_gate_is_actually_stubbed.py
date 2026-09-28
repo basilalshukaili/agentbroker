@@ -785,6 +785,24 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "select_rows_strict/upsert_row/insert_row to raise if called at all, which "
         "would itself surface a real regression into billing.credits' eager import "
         "the moment that path was exercised -- it is not.",
+    # Added for tm_requirements row 1181 (usage_events/billing_events RLS
+    # credential fix, 2026-09-28): billing/usage_logger.py's log_usage_event()
+    # and billing/durable_meter.py's DurableMeter._persist() both now do
+    # `from storage.supabase_client import rpc` INSIDE the function body
+    # (deferred, function-local import -- usage_logger.py's call site and
+    # durable_meter.py's _persist()), not billing.credits.py's eager,
+    # module-level `from storage.supabase_client import rpc, select_rows`
+    # (credits.py:35). Traced 2026-09-28: no test in this file drives
+    # billing.credits or run_metered_tool's credits branch -- every
+    # fire_log_usage/DurableMeter.record() call here goes straight to the two
+    # deferred-import consumers this patch actually reaches.
+    ("tests/unit/test_metering_pipeline_health.py", "storage.supabase_client.rpc"):
+        "targets billing.usage_logger.log_usage_event and "
+        "billing.durable_meter.DurableMeter._persist, both of which do "
+        "`from storage.supabase_client import rpc` INSIDE the function body -- "
+        "not billing.credits.py's eager, module-level import of the same name "
+        "(credits.py:35). This file never references billing.credits or "
+        "run_metered_tool.",
 }
 
 

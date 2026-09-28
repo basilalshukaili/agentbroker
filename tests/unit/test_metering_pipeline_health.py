@@ -38,8 +38,19 @@ FIX:
      health snapshots, so a health check -- not a downstream row count days
      later -- catches a dead metering rail.
 
-All tests mock storage.supabase_client.insert_row; no real Supabase or
-network calls.
+All tests mock storage.supabase_client.rpc (or insert_row, where noted); no
+real Supabase or network calls.
+
+UPDATE 2026-09-28 (tm_requirements row 1181, second cause): the fix above
+made the SECOND, real cause of the original silence findable — usage_events
+and billing_events both have RLS enabled with zero policies, and this
+container runs with only SUPABASE_ANON_KEY (anon holds an INSERT grant but
+does not bypass RLS, so every insert was attempted and rejected). Both
+billing/usage_logger.py and billing/durable_meter.py now call a SECURITY
+DEFINER RPC function (usage_events_insert / billing_events_insert, see
+sql/agentbroker/003_usage_billing_security_definer_rpc.sql) instead of a
+direct table insert, so the tests below that exercise the write itself now
+mock storage.supabase_client.rpc rather than insert_row.
 """
 from __future__ import annotations
 
@@ -95,11 +106,11 @@ class TestUsageLoggerHoldsATaskReference:
 
         release = asyncio.Event()
 
-        async def slow_insert(table, row):
+        async def slow_rpc(fn, payload):
             await release.wait()
             return {"id": "fake"}
 
-        with patch("storage.supabase_client.insert_row", slow_insert):
+        with patch("storage.supabase_client.rpc", slow_rpc):
             ul.fire_log_usage("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
             # The write has not completed yet -- it must be held HERE, not
             # merely handed to the loop and forgotten about.
@@ -120,24 +131,45 @@ class TestUsageLoggerFailureIsLoud:
         _reset_usage_logger_stats()
 
     @pytest.mark.asyncio
-    async def test_insert_row_returning_none_is_counted_as_a_failure(self):
-        """insert_row() returning None (its documented failure contract --
-        see storage/supabase_client.py's own docstring) used to be silently
-        indistinguishable from success. It must now increment the failed
-        counter and record why."""
+    async def test_rpc_returning_none_is_counted_as_a_failure(self):
+        """rpc() returning None (defensive branch -- see log_usage_event's
+        own docstring: usage_events_insert's `returning * into v_row` makes
+        this practically impossible, but a None here must never be read as
+        success) must increment the failed counter and record why."""
         import billing.usage_logger as ul
 
-        async def failing_insert(table, row):
-            return None  # exactly what insert_row returns on an HTTP failure
+        async def null_rpc(fn, payload):
+            return None
 
-        with patch("storage.supabase_client.insert_row", failing_insert):
+        with patch("storage.supabase_client.rpc", null_rpc):
             ul.fire_log_usage("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
             await _drain_pending(ul._pending_tasks)
 
         health = ul.get_usage_logger_health()
         assert health["failed"] == 1
         assert health["succeeded"] == 0
-        assert health["last_failure_reason"] == "insert_row_returned_none"
+        assert health["last_failure_reason"] == "rpc_returned_none"
+
+    @pytest.mark.asyncio
+    async def test_rpc_raising_is_counted_as_a_failure(self):
+        """The REAL failure shape in production (tm_requirements row 1181):
+        storage/supabase_client.py's rpc() RAISES (never returns None) when
+        PostgREST rejects the call -- e.g. RLS denying an anon caller with no
+        matching policy. This must be counted exactly like any other
+        exception, not silently swallowed."""
+        import billing.usage_logger as ul
+
+        async def denied_rpc(fn, payload):
+            raise RuntimeError(f"rpc({fn!r}) failed: HTTP 401 body=permission denied")
+
+        with patch("storage.supabase_client.rpc", denied_rpc):
+            ul.fire_log_usage("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
+            await _drain_pending(ul._pending_tasks)
+
+        health = ul.get_usage_logger_health()
+        assert health["failed"] == 1
+        assert health["succeeded"] == 0
+        assert health["last_failure_reason"] == "exception:RuntimeError"
 
     @pytest.mark.asyncio
     async def test_unhandled_exception_in_the_task_is_counted_and_logged(self):
@@ -160,6 +192,47 @@ class TestUsageLoggerFailureIsLoud:
         assert health["last_failure_reason"].startswith("unhandled_exception:RuntimeError")
 
 
+class TestUsageLoggerUsesTheSecurityDefinerRpc:
+    """tm_requirements row 1181: usage_events has RLS enabled with zero
+    policies, and this container runs with only SUPABASE_ANON_KEY, which
+    holds a table-level INSERT grant but does not bypass RLS -- a direct
+    insert_row("usage_events", ...) is attempted and rejected every time.
+    The fix is routing through the SECURITY DEFINER RPC function
+    `usage_events_insert` (sql/agentbroker/003_usage_billing_security_
+    definer_rpc.sql), which `anon` may EXECUTE. This must never regress back
+    to a direct table write -- proven here by making insert_row itself raise
+    if it is ever called, not merely by observing that rpc() was called."""
+
+    def setup_method(self):
+        _reset_usage_logger_stats()
+
+    @pytest.mark.asyncio
+    async def test_log_usage_event_never_calls_insert_row(self):
+        import billing.usage_logger as ul
+
+        async def forbidden_insert_row(table, row):
+            raise AssertionError(
+                f"log_usage_event must never call insert_row directly (table={table!r}) "
+                "-- anon has no table grant on usage_events (row 1181); it must go "
+                "through the usage_events_insert RPC instead."
+            )
+
+        async def fake_rpc(fn, payload):
+            assert fn == "usage_events_insert"
+            assert payload["p_session_kind"] in (
+                "crawler", "anon_agent", "verified_agent_key", "verified_human_key",
+            )
+            return {"id": 1}
+
+        with patch("storage.supabase_client.insert_row", forbidden_insert_row), \
+             patch("storage.supabase_client.rpc", fake_rpc):
+            await ul.log_usage_event("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
+
+        health = ul.get_usage_logger_health()
+        assert health["succeeded"] == 1
+        assert health["failed"] == 0
+
+
 # ---------------------------------------------------------------------------
 # durable_meter.py -- the separate billing rail, same defect shape
 # ---------------------------------------------------------------------------
@@ -174,11 +247,11 @@ class TestDurableMeterHoldsATaskReference:
 
         release = asyncio.Event()
 
-        async def slow_insert(table, row):
+        async def slow_rpc(fn, payload):
             await release.wait()
             return {"id": "fake"}
 
-        with patch("storage.supabase_client.insert_row", slow_insert):
+        with patch("storage.supabase_client.rpc", slow_rpc):
             meter = dm.DurableMeter()
             meter.record(agent_id="anonymous", operation="check_compliance",
                         operation_id="diag-op-1", amount_usd=0.0, basis="free")
@@ -199,13 +272,13 @@ class TestDurableMeterFailureIsLoud:
         _reset_durable_meter_stats()
 
     @pytest.mark.asyncio
-    async def test_insert_row_returning_none_is_counted(self):
+    async def test_rpc_returning_none_is_counted(self):
         import billing.durable_meter as dm
 
-        async def failing_insert(table, row):
+        async def null_rpc(fn, payload):
             return None
 
-        with patch("storage.supabase_client.insert_row", failing_insert):
+        with patch("storage.supabase_client.rpc", null_rpc):
             meter = dm.DurableMeter()
             meter.record(agent_id="anonymous", operation="check_compliance",
                         operation_id="diag-op-2", amount_usd=0.0, basis="free")
@@ -214,7 +287,66 @@ class TestDurableMeterFailureIsLoud:
         health = dm.get_durable_meter_health()
         assert health["failed"] == 1
         assert health["succeeded"] == 0
-        assert health["last_failure_reason"] == "insert_row_returned_none"
+        assert health["last_failure_reason"] == "rpc_returned_none"
+
+    @pytest.mark.asyncio
+    async def test_rpc_raising_is_counted(self):
+        """The REAL failure shape in production (tm_requirements row 1181):
+        rpc() RAISES when PostgREST rejects the call. Must be counted, not
+        swallowed."""
+        import billing.durable_meter as dm
+
+        async def denied_rpc(fn, payload):
+            raise RuntimeError(f"rpc({fn!r}) failed: HTTP 401 body=permission denied")
+
+        with patch("storage.supabase_client.rpc", denied_rpc):
+            meter = dm.DurableMeter()
+            meter.record(agent_id="anonymous", operation="check_compliance",
+                        operation_id="diag-op-3", amount_usd=0.0, basis="free")
+            await _drain_pending(dm._pending_tasks)
+
+        health = dm.get_durable_meter_health()
+        assert health["failed"] == 1
+        assert health["succeeded"] == 0
+        assert health["last_failure_reason"] == "exception:RuntimeError"
+
+
+class TestDurableMeterUsesTheSecurityDefinerRpc:
+    """Same row-1181 fix, billing rail: DurableMeter._persist() must go
+    through the `billing_events_insert` RPC, never a direct
+    insert_row("billing_events", ...) -- anon has no table grant on
+    billing_events either. Proven by making insert_row itself raise if it is
+    ever called."""
+
+    def setup_method(self):
+        _reset_durable_meter_stats()
+
+    @pytest.mark.asyncio
+    async def test_persist_never_calls_insert_row(self):
+        import billing.durable_meter as dm
+
+        async def forbidden_insert_row(table, row):
+            raise AssertionError(
+                f"DurableMeter._persist must never call insert_row directly "
+                f"(table={table!r}) -- anon has no table grant on billing_events "
+                "(row 1181); it must go through the billing_events_insert RPC instead."
+            )
+
+        async def fake_rpc(fn, payload):
+            assert fn == "billing_events_insert"
+            assert 0 <= payload["p_amount_usd"] <= 5.00
+            return {"id": 1}
+
+        with patch("storage.supabase_client.insert_row", forbidden_insert_row), \
+             patch("storage.supabase_client.rpc", fake_rpc):
+            meter = dm.DurableMeter()
+            meter.record(agent_id="anonymous", operation="check_compliance",
+                        operation_id="diag-op-4", amount_usd=0.0, basis="free")
+            await _drain_pending(dm._pending_tasks)
+
+        health = dm.get_durable_meter_health()
+        assert health["succeeded"] == 1
+        assert health["failed"] == 0
 
 
 # ---------------------------------------------------------------------------
