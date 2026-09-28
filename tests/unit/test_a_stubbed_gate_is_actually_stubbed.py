@@ -774,9 +774,12 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "reference to billing.credits or run_metered_tool in this file.",
     ("tests/unit/test_schedule_appointment_ownership.py", "storage.supabase_client.rpc"):
         "targets storage.outcome_store's three deferred rpc imports via the real REST "
-        "routes / MCP dispatcher / Celery task body this file drives; the FakeSB.rpc "
-        "method it installs only ever serves the operations_* functions those three "
-        "call, and no test in this file authenticates a funded credit account.",
+        "routes / MCP dispatcher / Celery task body this file drives, plus (2026-09-28) "
+        "core.escalate_to_human.handle_escalate_to_human's deferred escalations_insert "
+        "call, driven via TestSiblingProducersOwnership's REST route test; the FakeSB.rpc "
+        "method it installs only ever serves the operations_*/escalations_insert "
+        "functions those consumers call, and no test in this file authenticates a "
+        "funded credit account.",
     ("tests/unit/test_operations_rpc_boundary.py", "storage.supabase_client.rpc"):
         "the boundary test for board row 206 item 1 itself: drives "
         "storage.outcome_store.OutcomeStore directly (set_complete_durable/"
@@ -803,6 +806,33 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "not billing.credits.py's eager, module-level import of the same name "
         "(credits.py:35). This file never references billing.credits or "
         "run_metered_tool.",
+    # Added for the sanctions-RLS follow-up audit (2026-09-28): leads/
+    # escalations RLS credential fix. core/capture_lead.py's
+    # handle_capture_lead and core/escalate_to_human.py's
+    # handle_escalate_to_human both now do `from storage.supabase_client
+    # import rpc` INSIDE the function body (deferred, function-local import),
+    # not billing.credits.py's eager, module-level import of the same name
+    # (credits.py:35). Traced 2026-09-28: none of the four files below
+    # authenticate a funded credit account or otherwise drive
+    # billing.credits/run_metered_tool's credits branch -- every call in them
+    # goes straight to capture_lead/escalate_to_human's own deferred import.
+    ("tests/unit/test_capture_lead_durable_write.py", "storage.supabase_client.rpc"):
+        "targets core.capture_lead.handle_capture_lead's deferred rpc import "
+        "(leads_insert_or_get); this file never references billing.credits or "
+        "run_metered_tool.",
+    ("tests/unit/test_honesty_fixes.py", "storage.supabase_client.rpc"):
+        "targets core.escalate_to_human.handle_escalate_to_human's deferred rpc "
+        "import (escalations_insert) via TestEscalateToHuman; this file never "
+        "references billing.credits or run_metered_tool.",
+    ("tests/unit/test_no_third_party_text_registry_no_leak.py", "storage.supabase_client.rpc"):
+        "targets core.capture_lead.handle_capture_lead's (leads_insert_or_get) "
+        "and core.escalate_to_human.handle_escalate_to_human's (escalations_insert) "
+        "deferred rpc imports; this file never references billing.credits or "
+        "run_metered_tool.",
+    ("tests/unit/test_x402_payment_safety.py", "storage.supabase_client.rpc"):
+        "targets core.capture_lead.handle_capture_lead's deferred rpc import "
+        "(leads_insert_or_get) via TestPartialNotChargeable; this file never "
+        "references billing.credits or run_metered_tool.",
 }
 
 

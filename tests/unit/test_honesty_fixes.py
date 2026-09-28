@@ -234,7 +234,16 @@ class TestAsyncRunnerNoVoiceStub:
 # ---------------------------------------------------------------------------
 
 class TestEscalateToHuman:
-    """FIX 1: escalate_to_human behavior depends entirely on Supabase insert result."""
+    """FIX 1: escalate_to_human behavior depends entirely on Supabase insert result.
+
+    RE-PLATFORMED 2026-09-28 onto the escalations_insert SECURITY DEFINER RPC
+    (sql/agentbroker/005_leads_escalations_security_definer_rpc.sql):
+    `escalations` carries RLS with no anon table grant at all, so the old
+    direct `insert_row` call always failed once RLS was tightened. The
+    handler now calls `storage.supabase_client.rpc("escalations_insert", ...)`
+    -- patch THAT, not insert_row, or these tests silently stop exercising
+    the real call site.
+    """
 
     def _req(self):
         return EscalateToHumanRequest(
@@ -248,10 +257,10 @@ class TestEscalateToHuman:
         )
 
     def test_returns_honest_failure_when_supabase_insert_fails(self):
-        """If Supabase insert returns None (unreachable), must return failure at cost 0.00."""
+        """If the RPC returns None (unreachable), must return failure at cost 0.00."""
         from core.escalate_to_human import handle_escalate_to_human
 
-        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=None):
+        with patch("storage.supabase_client.rpc", new_callable=AsyncMock, return_value=None):
             receipt = run(handle_escalate_to_human(self._req()))
 
         assert receipt.status == OperationStatus.FAILURE, (
@@ -266,11 +275,11 @@ class TestEscalateToHuman:
         assert "300" not in (receipt.human_message or "")
 
     def test_returns_success_only_on_real_insert(self):
-        """When Supabase insert succeeds, must return SUCCESS with the real row id."""
+        """When the RPC succeeds, must return SUCCESS with the real row id."""
         from core.escalate_to_human import handle_escalate_to_human
 
         fake_row = {"id": "real-uuid-1234", "status": "open"}
-        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=fake_row):
+        with patch("storage.supabase_client.rpc", new_callable=AsyncMock, return_value=fake_row):
             receipt = run(handle_escalate_to_human(self._req()))
 
         assert receipt.status == OperationStatus.SUCCESS
@@ -283,10 +292,10 @@ class TestEscalateToHuman:
         assert "300" not in receipt.human_message
 
     def test_no_charge_on_failure(self):
-        """Cost must be exactly 0.00 when insert fails."""
+        """Cost must be exactly 0.00 when the RPC fails."""
         from core.escalate_to_human import handle_escalate_to_human
 
-        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=None):
+        with patch("storage.supabase_client.rpc", new_callable=AsyncMock, return_value=None):
             receipt = run(handle_escalate_to_human(self._req()))
 
         assert receipt.cost.amount == 0.0

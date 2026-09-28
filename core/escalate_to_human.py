@@ -38,18 +38,25 @@ async def handle_escalate_to_human(
         "trace_id": trace_id,
     }
 
-    # Durable write to Supabase `escalations` table.
+    # Durable write to Supabase `escalations` via the escalations_insert
+    # SECURITY DEFINER RPC (sql/agentbroker/005_leads_escalations_security_
+    # definer_rpc.sql). `escalations` carries RLS with no anon table grant at
+    # all -- a direct insert_row call from this anon-only container is
+    # rejected by RLS, which is what made escalate_to_human completely
+    # non-operational before this RPC existed.
     # ticket_id is set ONLY from the real inserted row id, never fabricated.
-    from storage.supabase_client import insert_row
-    row = {
-        "operation_id": operation_id,
-        "reason": request.reason.value,
-        "context": context_payload,
-        "status": "open",
-        "source": agent_id or "anonymous",
-        "project_id": "hatchloop",
-    }
-    inserted = await insert_row("escalations", row)
+    from storage.supabase_client import rpc
+    try:
+        inserted = await rpc("escalations_insert", {
+            "p_operation_id": operation_id,
+            "p_reason": request.reason.value,
+            "p_context": context_payload,
+            "p_status": "open",
+            "p_source": agent_id or "anonymous",
+            "p_project_id": "hatchloop",
+        })
+    except Exception:                        # noqa: BLE001 -- rpc() raises on any failure
+        inserted = None
 
     if inserted is None:
         # Supabase unreachable or table error -- honest failure, no charge.

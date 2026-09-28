@@ -11,14 +11,21 @@ CRM it had never contacted. These tests pin the replacement:
     success;
   * a retry resolves to the SAME lead instead of erroring or duplicating.
 
-PATCH SITE. The handler does `from storage.supabase_client import insert_row`
-INSIDE the function body, so the name is looked up on the module at call time
-and patching `storage.supabase_client.insert_row` is what the caller actually
-reads. That is the opposite of the dead-stub trap in
-test_a_stubbed_gate_is_actually_stubbed.py, where the consumer had bound the
-symbol at import time and the definition-site patch was never seen — the
-difference is the import being inside the function, so it is checked below
-rather than assumed.
+RE-PLATFORMED 2026-09-28 onto the leads_insert_or_get SECURITY DEFINER RPC
+(sql/agentbroker/005_leads_escalations_security_definer_rpc.sql). `leads`
+carries RLS with no anon table grant at all, so the two separate REST calls
+this handler used to make (insert_row, then a select_rows_strict read-back on
+conflict) always failed once RLS was tightened — the RPC does both atomically
+server-side and is now the only door. The test double below fakes the RPC's
+contract (insert-or-read-back keyed on dedup_key), not the raw table calls.
+
+PATCH SITE. The handler does `from storage.supabase_client import rpc` INSIDE
+the function body, so the name is looked up on the module at call time and
+patching `storage.supabase_client.rpc` is what the caller actually reads. That
+is the opposite of the dead-stub trap in test_a_stubbed_gate_is_actually_stubbed.py,
+where the consumer had bound the symbol at import time and the definition-site
+patch was never seen — the difference is the import being inside the
+function, so it is checked below rather than assumed.
 """
 from __future__ import annotations
 
@@ -65,44 +72,47 @@ def _req(name="Jane Doe", phone="+14045551234", email=None, **kw):
     )
 
 
-class _FakeLeads:
-    """A leads table with the live UNIQUE(dedup_key) constraint.
-
-    insert_row's real contract is what matters here: it returns None on ANY
-    failure, including a unique violation, so the handler cannot tell a retry
-    from an outage without reading back.
+class _FakeLeadsRpc:
+    """Fakes the leads_insert_or_get RPC's contract: INSERT ... ON CONFLICT
+    (dedup_key) DO NOTHING, read back on conflict. Returns
+    {"row": <dict-or-null>, "deduplicated": bool} exactly as the real
+    SECURITY DEFINER function does (see the migration's `returns jsonb`).
     """
 
     def __init__(self):
         self.rows: dict[str, dict] = {}
-        self.inserts: list[dict] = []
-        self.selects: list[dict] = []
+        self.calls: list[dict] = []
         self._n = 0
 
-    async def insert_row(self, table, row):
-        assert table == "leads"
-        self.inserts.append(row)
-        if row["dedup_key"] in self.rows:
-            return None                       # unique violation, silently
+    async def rpc(self, fn, payload):
+        assert fn == "leads_insert_or_get"
+        self.calls.append(payload)
+        key = payload["p_dedup_key"]
+        existing = self.rows.get(key)
+        if existing is not None:
+            return {"row": existing, "deduplicated": True}
         self._n += 1
-        stored = dict(row, id=f"11111111-0000-4000-8000-{self._n:012d}",
-                      created_at="2026-09-01T00:00:00+00:00")
-        self.rows[row["dedup_key"]] = stored
-        return stored
-
-    async def select_rows_strict(self, table, **kw):
-        assert table == "leads"
-        self.selects.append(kw)
-        key = kw["filters"]["dedup_key"]
-        row = self.rows.get(key)
-        return [row] if row else []
+        stored = {
+            "id": f"11111111-0000-4000-8000-{self._n:012d}",
+            "dedup_key": key,
+            "smb_id": payload["p_smb_id"],
+            "prospect_name": payload["p_prospect_name"],
+            "prospect_phone": payload["p_prospect_phone"],
+            "prospect_email": payload["p_prospect_email"],
+            "source": payload["p_source"],
+            "notes": payload["p_notes"],
+            "agent_id": payload["p_agent_id"],
+            "channel_used": payload["p_channel_used"],
+            "created_at": "2026-09-01T00:00:00+00:00",
+        }
+        self.rows[key] = stored
+        return {"row": stored, "deduplicated": False}
 
 
 @pytest.fixture
 def leads(monkeypatch):
-    fake = _FakeLeads()
-    monkeypatch.setattr(sb, "insert_row", fake.insert_row)
-    monkeypatch.setattr(sb, "select_rows_strict", fake.select_rows_strict)
+    fake = _FakeLeadsRpc()
+    monkeypatch.setattr(sb, "rpc", fake.rpc)
     return fake
 
 
@@ -128,7 +138,7 @@ def test_demo_smb_short_circuits_before_any_write(leads):
     assert r.status == OperationStatus.FAILURE
     assert r.reason_code == "demo_smb_no_live_booking"
     assert r.cost.amount == 0.0
-    assert leads.inserts == [], "a demo capture must not put a row in the funnel"
+    assert leads.calls == [], "a demo capture must not put a row in the funnel"
 
 
 def test_unknown_smb_never_writes(leads):
@@ -138,7 +148,7 @@ def test_unknown_smb_never_writes(leads):
     assert r.status == OperationStatus.FAILURE
     assert r.reason_code == "supply_unreachable"
     assert r.cost.amount == 0.0
-    assert leads.inserts == []
+    assert leads.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -168,15 +178,15 @@ def test_written_row_carries_the_caller_supplied_fields(leads):
             _req(email="jane@example.com", service_interest="haircut",
                  notes="asked for evenings", consent_record_id="consent_42"),
             agent_id="agent_7"))
-    row = leads.inserts[0]
-    assert row["smb_id"] == "smb_001"
-    assert row["prospect_name"] == "Jane Doe"
-    assert row["prospect_phone"] == "+14045551234"
-    assert row["prospect_email"] == "jane@example.com"
-    assert row["agent_id"] == "agent_7"
+    call = leads.calls[0]
+    assert call["p_smb_id"] == "smb_001"
+    assert call["p_prospect_name"] == "Jane Doe"
+    assert call["p_prospect_phone"] == "+14045551234"
+    assert call["p_prospect_email"] == "jane@example.com"
+    assert call["p_agent_id"] == "agent_7"
     # No columns exist for these two; losing them silently would throw away the
     # agent's proof of consent.
-    assert "haircut" in row["notes"] and "consent_42" in row["notes"]
+    assert "haircut" in call["p_notes"] and "consent_42" in call["p_notes"]
 
 
 def test_channel_used_names_what_actually_happened(leads):
@@ -239,8 +249,13 @@ def test_same_prospect_at_a_different_smb_is_a_different_lead(leads):
 # Honest failure: no id, no charge
 # ---------------------------------------------------------------------------
 
-def test_write_failure_is_a_failure_with_no_lead_id(monkeypatch, leads):
-    monkeypatch.setattr(sb, "insert_row", lambda t, r: _none())
+def test_write_failure_is_a_failure_with_no_lead_id(monkeypatch):
+    """rpc() reachable but returning nothing usable (e.g. a defensive empty
+    response) must never be read as a success."""
+    async def _none(fn, payload):
+        return None
+
+    monkeypatch.setattr(sb, "rpc", _none)
     with real_smb():
         r = run(handle_capture_lead(_req()))
     assert r.status == OperationStatus.FAILURE
@@ -251,15 +266,16 @@ def test_write_failure_is_a_failure_with_no_lead_id(monkeypatch, leads):
     assert _receipt_is_error(r.model_dump(mode="json")) is True
 
 
-def test_unreachable_store_is_not_reported_as_a_new_lead(monkeypatch, leads):
-    """select_rows_strict RAISES when it could not run. "I could not check" must
-    not collapse into "there is no such lead" — and must not become a success
-    either. Both ways out are a FAILURE that charges nothing."""
-    async def _down(table, **kw):
-        raise sb.SupabaseUnavailable("leads unreachable")
+def test_unreachable_store_is_not_reported_as_a_new_lead(monkeypatch):
+    """rpc() RAISES when it could not run at all (see storage.supabase_client.rpc's
+    own contract — it never returns a lenient empty value on a transport/HTTP
+    failure). "I could not check" must not collapse into "there is no such
+    lead" — and must not become a success either. Both ways out are a FAILURE
+    that charges nothing."""
+    async def _down(fn, payload):
+        raise RuntimeError("rpc('leads_insert_or_get') transport error")
 
-    monkeypatch.setattr(sb, "insert_row", lambda t, r: _none())
-    monkeypatch.setattr(sb, "select_rows_strict", _down)
+    monkeypatch.setattr(sb, "rpc", _down)
     with real_smb():
         r = run(handle_capture_lead(_req()))
     assert r.status == OperationStatus.FAILURE
@@ -267,21 +283,18 @@ def test_unreachable_store_is_not_reported_as_a_new_lead(monkeypatch, leads):
     assert r.result is None
 
 
-def test_insert_returning_no_id_falls_back_instead_of_inventing_one(monkeypatch, leads):
-    """A 200 with a body carrying no id is not a row we can point at.
+def test_insert_returning_no_id_falls_back_instead_of_inventing_one(monkeypatch):
+    """A row with no id is not a row we can point at.
 
     A null id is the sharper case: `str(None)` is "None", a truthy string that
     would have been handed back as a lead locator."""
-    async def _idless(table, row):
-        return {"dedup_key": row["dedup_key"], "id": None}
+    async def _idless(fn, payload):
+        return {"row": {"dedup_key": payload["p_dedup_key"], "id": None},
+                "deduplicated": False}
 
-    monkeypatch.setattr(sb, "insert_row", _idless)
+    monkeypatch.setattr(sb, "rpc", _idless)
     with real_smb():
         r = run(handle_capture_lead(_req()))
     assert r.status == OperationStatus.FAILURE
     assert r.cost.amount == 0.0
     assert r.result is None
-
-
-async def _none():
-    return None

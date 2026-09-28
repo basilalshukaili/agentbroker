@@ -139,6 +139,25 @@ class FakeSB:
                           "reason_code": "appointment_confirmed"},
                 limit=1)
             return rows[0] if rows else None
+        # Added for the sanctions-RLS follow-up audit (2026-09-28):
+        # core/escalate_to_human.py now calls escalations_insert instead of
+        # insert_row("escalations", ...) directly (RLS on `escalations` has
+        # no anon table grant at all -- see
+        # sql/agentbroker/005_leads_escalations_security_definer_rpc.sql).
+        # TestSiblingProducersOwnership drives escalate_to_human through this
+        # same fake, so it needs a response, not just operations_*.
+        if fn == "escalations_insert":
+            row = {
+                "id": str(uuid.uuid4()),
+                "operation_id": payload["p_operation_id"],
+                "reason": payload["p_reason"],
+                "context": payload["p_context"],
+                "status": payload["p_status"],
+                "source": payload["p_source"],
+                "project_id": payload["p_project_id"],
+            }
+            self.rows.setdefault("escalations", []).append(row)
+            return row
         raise AssertionError(f"unexpected rpc fn in test fake: {fn!r}")
 
 

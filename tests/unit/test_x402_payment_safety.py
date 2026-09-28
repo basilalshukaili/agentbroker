@@ -81,17 +81,19 @@ class TestPartialNotChargeable:
         # persisted nothing. capture_lead now writes a real row (2026-09-01),
         # so the outcome this class exists to pin is the write FAILING: the
         # agent must not be charged for a lead that was never stored.
+        #
+        # RE-PLATFORMED 2026-09-28 onto the leads_insert_or_get SECURITY
+        # DEFINER RPC (sql/agentbroker/005_leads_escalations_security_
+        # definer_rpc.sql): the handler now makes ONE rpc() call, not a
+        # separate insert_row + select_rows_strict pair, so "unreachable" is
+        # simply that call raising -- patch storage.supabase_client.rpc.
         import storage.supabase_client as sb
         from supply.smb_directory import get_directory
 
-        async def _no_write(table, row):
-            return None
+        async def _cannot_write(fn, payload):
+            raise RuntimeError("leads_insert_or_get unreachable")
 
-        async def _cannot_read(table, **kw):
-            raise sb.SupabaseUnavailable("leads unreachable")
-
-        monkeypatch.setattr(sb, "insert_row", _no_write)
-        monkeypatch.setattr(sb, "select_rows_strict", _cannot_read)
+        monkeypatch.setattr(sb, "rpc", _cannot_write)
 
         smb = get_directory().get("smb_001")
         orig_demo, orig_name = smb.is_demo, smb.name

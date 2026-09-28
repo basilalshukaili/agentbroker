@@ -288,7 +288,13 @@ class TestCostTruth:
             f"handle_inbound cost should be $0.03 (manifest), got ${receipt.cost.amount}"
 
     def test_escalate_to_human_cost_matches_manifest(self):
-        """escalate_to_human must bill $0.20 (manifest) on a successful Supabase insert."""
+        """escalate_to_human must bill $0.20 (manifest) on a successful durable write.
+
+        RE-PLATFORMED 2026-09-28 onto the escalations_insert SECURITY DEFINER
+        RPC (sql/agentbroker/005_leads_escalations_security_definer_rpc.sql):
+        patch storage.supabase_client.rpc, not insert_row -- that is the real
+        call site now that `escalations` carries RLS with no anon table grant.
+        """
         from unittest.mock import AsyncMock, patch
         from core.escalate_to_human import handle_escalate_to_human
         from core.models import (
@@ -303,10 +309,10 @@ class TestCostTruth:
                 recommended_next_step="human_review",
             ),
         )
-        # FIX 1: cost is only $0.20 when the Supabase insert succeeds.
+        # FIX 1: cost is only $0.20 when the durable write succeeds.
         # Mock to simulate a successful durable write.
         fake_row = {"id": "test-escalation-uuid", "status": "open"}
-        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=fake_row):
+        with patch("storage.supabase_client.rpc", new_callable=AsyncMock, return_value=fake_row):
             receipt = run(handle_escalate_to_human(req))
         assert receipt.cost.amount == 0.20, \
             f"escalate_to_human cost should be $0.20 (manifest) on success, got ${receipt.cost.amount}"

@@ -49,17 +49,16 @@ class TestCaptureLeadNoLeak:
     def test_supabase_unavailable_message_does_not_leak(self, monkeypatch):
         import core.capture_lead as CL
         from core.models import CaptureLeadRequest, ProspectData
-        from storage.supabase_client import SupabaseUnavailable
 
-        async def _insert_row(table, row):
-            return None  # insert_row's real contract: never raises, None on failure
+        # RE-PLATFORMED 2026-09-28 onto the leads_insert_or_get SECURITY
+        # DEFINER RPC (sql/agentbroker/005_leads_escalations_security_
+        # definer_rpc.sql): one rpc() call replaces the old insert_row +
+        # select_rows_strict pair -- patch that, raising with the hostile
+        # text embedded exactly as the old fake's exception message did.
+        async def _rpc(fn, payload):
+            raise RuntimeError(f"upstream said: {_HOSTILE}")
 
-        async def _select_rows_strict(table, filters=None, limit=1):
-            raise SupabaseUnavailable(f"upstream said: {_HOSTILE}")
-
-        monkeypatch.setattr("storage.supabase_client.insert_row", _insert_row)
-        monkeypatch.setattr("storage.supabase_client.select_rows_strict",
-                             _select_rows_strict)
+        monkeypatch.setattr("storage.supabase_client.rpc", _rpc)
         # core/capture_lead.py imports get_directory EAGERLY at module load
         # (`from supply.smb_directory import get_directory`), so the
         # consumer's own binding must be patched - patching the definition
@@ -122,9 +121,14 @@ class TestEscalateToHumanNoLeak:
             EscalateToHumanRequest, EscalationContext, EscalationReason,
         )
 
-        async def _insert_row(table, row):
+        # RE-PLATFORMED 2026-09-28 onto the escalations_insert SECURITY
+        # DEFINER RPC (sql/agentbroker/005_leads_escalations_security_
+        # definer_rpc.sql) -- patch storage.supabase_client.rpc, the real
+        # call site now that `escalations` carries RLS with no anon table
+        # grant.
+        async def _rpc(fn, payload):
             return {"id": "esc_123"}
-        monkeypatch.setattr("storage.supabase_client.insert_row", _insert_row)
+        monkeypatch.setattr("storage.supabase_client.rpc", _rpc)
 
         req = EscalateToHumanRequest(
             smb_id="smb_test",

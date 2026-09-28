@@ -92,69 +92,43 @@ async def handle_capture_lead(
     notes = " | ".join(note_parts) or None
 
     channel_used = "internal:supabase_leads"
-    row = {
-        "dedup_key": dedup_key,
-        "smb_id": request.smb_id,
-        "prospect_name": request.prospect.name,
-        "prospect_phone": request.prospect.phone,
-        "prospect_email": request.prospect.email,
-        "source": request.source,
-        "notes": notes,
-        "agent_id": agent_id,
-        "channel_used": channel_used,
-    }
 
-    # Durable write to Supabase `leads`. lead_id is set ONLY from a real row id,
-    # never fabricated.
-    from storage.supabase_client import (
-        insert_row, select_rows_strict, SupabaseUnavailable,
-    )
-    inserted = await insert_row("leads", row)
-
-    if inserted is not None:
-        # `or ""`, not get("id", ""): an explicit null id would str() to the
-        # string "None" — a truthy value that looks exactly like a locator.
-        lead_id = str(inserted.get("id") or "")
-        if lead_id:
-            return _captured(
-                operation_id, request, lead_id, dedup_key, channel_used,
-                inserted.get("created_at"), deduplicated=False, t0=t0,
-                trace_id=trace_id,
-            )
-        # A 200 with no id is not a write we can point at. Fall through to the
-        # read-back rather than return an empty lead_id as if it were a locator.
-
-    # IDEMPOTENCY: insert-then-read-back, NOT upsert.
+    # Durable write to Supabase `leads` via the leads_insert_or_get SECURITY
+    # DEFINER RPC (sql/agentbroker/005_leads_escalations_security_definer_rpc.sql).
+    # `leads` carries RLS with no anon table grant at all (this data is
+    # customer PII, unlike sanctions_names) -- a direct insert_row/
+    # select_rows_strict call from this anon-only container is rejected by
+    # RLS and always returns empty, which is what made capture_lead
+    # completely non-operational before this RPC existed. The RPC does the
+    # insert-or-read-back atomically server-side (INSERT ... ON CONFLICT
+    # (dedup_key) DO NOTHING, then a read-back on conflict), replacing the
+    # two separate REST calls this handler used to make.
     #
-    # `insert_row` returns None for every failure alike — a unique-violation on
-    # dedup_key (the legitimate retry) looks exactly like Supabase being down.
-    # So we disambiguate by reading the row back by dedup_key.
-    #
-    # Why not `upsert_row(..., on_conflict="dedup_key")`: that helper accepts an
-    # on_conflict argument and never sends it — it sets the merge-duplicates
-    # Prefer header but puts no `on_conflict` parameter on the URL, so PostgREST
-    # targets the PRIMARY KEY. Our conflict is on dedup_key, so the upsert would
-    # 409 exactly like the plain insert. Fixing that helper is a storage-layer
-    # change with other callers; this handler does not need it.
-    #
-    # select_rows_STRICT, not select_rows: the lenient reader returns [] on a
-    # network error, which would turn "I could not check" into "there is no such
-    # lead" and produce a FAILURE for a lead we had in fact just stored. The
-    # except below is live code precisely because the strict variant raises.
+    # lead_id is set ONLY from the real row the RPC returns, never fabricated.
+    from storage.supabase_client import rpc
     try:
-        existing = await select_rows_strict(
-            "leads", filters={"dedup_key": dedup_key}, limit=1)
-    except SupabaseUnavailable:
-        existing = None                     # unknown — NOT the same as "none"
+        resp = await rpc("leads_insert_or_get", {
+            "p_dedup_key": dedup_key,
+            "p_smb_id": request.smb_id,
+            "p_prospect_name": request.prospect.name,
+            "p_prospect_phone": request.prospect.phone,
+            "p_prospect_email": request.prospect.email,
+            "p_source": request.source,
+            "p_notes": notes,
+            "p_agent_id": agent_id,
+            "p_channel_used": channel_used,
+        })
+    except Exception:                        # noqa: BLE001 -- rpc() raises on any failure
+        resp = None
 
-    if existing:
-        prior = existing[0]
-        lead_id = str(prior.get("id") or "")
+    if resp:
+        row = resp.get("row") or {}
+        lead_id = str(row.get("id") or "")
         if lead_id:
             return _captured(
                 operation_id, request, lead_id, dedup_key, channel_used,
-                prior.get("created_at"), deduplicated=True, t0=t0,
-                trace_id=trace_id,
+                row.get("created_at"), deduplicated=bool(resp.get("deduplicated")),
+                t0=t0, trace_id=trace_id,
             )
 
     # Nothing was written and we could not find a prior row — honest failure,
