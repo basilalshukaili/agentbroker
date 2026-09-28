@@ -71,12 +71,77 @@ def pre_check(
             message=f"Message content contains restricted category ({classification.category.value}) and cannot be sent.",
         )
 
-    # 2. Opt-out check
+    # 2. Opt-out check.
+    #
+    # FAST PATH: the in-memory set, populated by mark_opted_out/revoke_consent
+    # (synchronous, run before this call ever returns) and by a durable hit
+    # this same process already confirmed below. Catches a STOP processed
+    # earlier in THIS process's lifetime with no network round trip.
     if consent_store.is_opted_out(recipient_id, channel):
         _audit_violation(
             "recipient_opted_out",
             recipient_id, channel, jurisdiction, agent_id, trace_id,
             reason="Recipient has opted out of this channel",
+            preview=preview,
+        )
+        raise ComplianceViolationError(
+            rule="recipient_opted_out",
+            recipient_id=recipient_id,
+            channel=channel,
+            jurisdiction=jurisdiction,
+            message=f"Recipient {recipient_id} has opted out of {channel} communications. Honor opt-out per regulatory requirement.",
+        )
+
+    # DURABLE, AUTHORITATIVE CHECK -- and FAIL CLOSED.
+    #
+    # The in-memory set above is not the whole picture: it is hydrated at
+    # boot from consent_optouts via a bulk read that RLS silently empties for
+    # the anon key this container holds (200 OK, empty array -- not an error,
+    # so it never raised and never will). That is the exact bug
+    # tests/compliance_tests/test_optout_enforcement.py exists to prevent,
+    # reintroduced through RLS instead of the original bug it was written
+    # for. An in-memory miss here does NOT mean "not opted out" -- it means
+    # "not yet confirmed either way for this process" -- so every send checks
+    # the durable record directly, the same way core/screen_sanctions.py's
+    # "AN EMPTY INDEX IS NOT A CLEAN SCREEN" guard refuses to read an
+    # unproven emptiness as a clean result.
+    #
+    # check_durable_optout raises OptoutCheckUnavailable for anything short of
+    # a confirmed true/false answer (unreachable database, bad response,
+    # wrong shape) -- and that must refuse the send, never let it through as
+    # if the recipient were clear. The one case it does NOT raise for is
+    # Supabase being unconfigured entirely (local dev, the test suite): see
+    # its own docstring for why that is not the same failure.
+    from compliance.optout_gate import check_durable_optout, OptoutCheckUnavailable
+    try:
+        durably_opted_out = check_durable_optout(recipient_id)
+    except OptoutCheckUnavailable as exc:
+        _audit_violation(
+            "optout_check_unavailable",
+            recipient_id, channel, jurisdiction, agent_id, trace_id,
+            reason=f"durable opt-out check could not run: {exc}",
+            preview=preview,
+        )
+        raise ComplianceViolationError(
+            rule="optout_check_unavailable",
+            recipient_id=recipient_id,
+            channel=channel,
+            jurisdiction=jurisdiction,
+            message=("The durable opt-out record could not be checked, so "
+                     "this send is refused rather than allowed -- an empty "
+                     "or unreachable result is never read as 'nobody opted "
+                     "out'. Retry; if it persists this is a fault on our "
+                     "side, not a rule about your message."),
+        )
+    if durably_opted_out:
+        # Cache it so a retry in this same process takes the fast path above
+        # instead of re-querying, and so mark_opted_out's own semantics
+        # (widen to every channel for this contact) apply from here on.
+        consent_store.mark_opted_out(recipient_id, channel)
+        _audit_violation(
+            "recipient_opted_out",
+            recipient_id, channel, jurisdiction, agent_id, trace_id,
+            reason="Recipient has opted out of this channel (durable record)",
             preview=preview,
         )
         raise ComplianceViolationError(

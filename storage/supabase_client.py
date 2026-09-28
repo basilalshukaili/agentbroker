@@ -82,6 +82,55 @@ async def rpc(fn: str, payload: dict[str, Any]) -> Any:
         ) from exc
 
 
+def rpc_sync(fn: str, payload: dict[str, Any]) -> Any:
+    """
+    Synchronous twin of rpc(), for callers that are not themselves async.
+
+    compliance/pre_check.py is the one caller today (compliance.pre_check.pre_check
+    is a synchronous gate invoked from many call sites, some of them plain
+    functions, not just async channel adapters -- making it async would mean
+    threading `await` through every one of those call sites for one narrow
+    check). Same contract as rpc(): RAISES on any failure -- missing config,
+    transport error, non-200, or a body that will not parse as JSON -- because
+    the caller here is compliance/optout_gate.py's durable opt-out check, and
+    "I could not check" must never be swallowed into "there was nothing to
+    find". See rpc()'s own docstring for why fail-open is wrong on this class
+    of call.
+    """
+    url, key = _get_config()
+    if not url or not key:
+        raise RuntimeError(
+            f"rpc_sync({fn!r}) aborted: SUPABASE_URL or service key not configured. "
+            "Cannot proceed on a fail-closed path without Supabase."
+        )
+    import httpx
+    endpoint = f"{url}/rest/v1/rpc/{fn}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(endpoint, headers=headers, json=payload)
+    except Exception as exc:
+        raise RuntimeError(
+            f"rpc_sync({fn!r}) transport error: {exc}"
+        ) from exc
+
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(
+            f"rpc_sync({fn!r}) failed: HTTP {resp.status_code} body={resp.text[:400]}"
+        )
+    try:
+        return resp.json()
+    except Exception as exc:
+        raise RuntimeError(
+            f"rpc_sync({fn!r}) JSON decode error: {exc} body={resp.text[:200]}"
+        ) from exc
+
+
 async def insert_row(table: str, row: dict[str, Any]) -> Optional[dict]:
     """
     Insert a single row into `table`. Returns the inserted row on success,

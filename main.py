@@ -71,6 +71,23 @@ async def lifespan(app: FastAPI):
     # Hydrate durable opt-outs (STOP requests) into the compliance enforcement
     # set so a recorded opt-out survives a process restart. Without this the
     # "non-bypassable" gate would leak to opted-out recipients after any redeploy.
+    #
+    # NO LONGER THE ONLY LINE OF DEFENSE (2026-09-28). This bulk read goes
+    # through the anon key, which RLS blocks entirely for consent_optouts (no
+    # SELECT policy, by design -- see sql/agentbroker/006_consent_optouts_membership_rpc.sql).
+    # That means it gets HTTP 200 with an EMPTY ARRAY every time, forever --
+    # not a transient blip, a structural property of this credential against
+    # this table -- so "hydrated 0 durable opt-outs" below will now be the
+    # permanent, expected log line, and must NOT be read as proof nobody has
+    # opted out. compliance/pre_check.py no longer relies on this hydration
+    # for enforcement: it calls compliance/optout_gate.py's
+    # check_durable_optout() per send, which asks the durable record directly
+    # through a SECURITY DEFINER RPC that bypasses RLS, and fails the send
+    # CLOSED if that call cannot be completed. This block is kept only as a
+    # same-process fast-path warm start (a hit here skips a network round
+    # trip on the very next send to the same contact); it is harmless to
+    # leave running and to keep hardening, but it can never again be the
+    # thing standing between an opted-out contact and a send.
     import logging
     _log = logging.getLogger("smb_broker")
     try:
