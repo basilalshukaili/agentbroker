@@ -188,6 +188,61 @@ async def _check_idempotency_store() -> TestCheck:
         return TestCheck("idempotency_store", False, round((time.time() - start) * 1000, 2), str(e))
 
 
+async def _check_metering_pipeline() -> TestCheck:
+    """Both billing rails (billing/usage_logger.py's usage_events and
+    billing/durable_meter.py's billing_events) fire-and-forget a background
+    write on every call, and neither one is awaited by its caller — so a
+    write that silently stops happening breaks nothing that shows up in a
+    response, only a downstream row count days later (AUDIT-2026-09-28: this
+    is exactly how a real outage went unnoticed for a week).
+
+    This check does NOT make a network call (self_test's own contract is to
+    hit no real external API) — it reads the in-process health snapshot each
+    rail now keeps (get_usage_logger_health / get_durable_meter_health) and
+    fails if either rail has ever recorded a failed write, or has a
+    scheduled write that never resolved. A clean process that has logged
+    nothing yet (both counters at zero) is healthy by default: this check
+    catches a rail that HAS tried and failed, or lost a task, not the
+    absence of traffic.
+    """
+    start = time.time()
+    try:
+        from billing.usage_logger import get_usage_logger_health
+        from billing.durable_meter import get_durable_meter_health
+
+        usage_health = get_usage_logger_health()
+        billing_health = get_durable_meter_health()
+
+        problems = []
+        if usage_health["failed"] > 0:
+            problems.append(
+                f"usage_events: {usage_health['failed']} failed write(s), "
+                f"last={usage_health['last_failure_reason']}@{usage_health['last_failure_ts']}"
+            )
+        if billing_health["failed"] > 0:
+            problems.append(
+                f"billing_events: {billing_health['failed']} failed write(s), "
+                f"last={billing_health['last_failure_reason']}@{billing_health['last_failure_ts']}"
+            )
+        # A pending count that has been building up (rather than draining
+        # back toward zero between requests) is the "task never resolved"
+        # shape this whole audit exists to catch. A hard-coded threshold
+        # here (rather than 0) tolerates ordinary in-flight writes from
+        # concurrent requests without needing a time-windowed rate.
+        if usage_health["pending"] > 50:
+            problems.append(f"usage_events: {usage_health['pending']} writes stuck pending")
+        if billing_health["pending"] > 50:
+            problems.append(f"billing_events: {billing_health['pending']} writes stuck pending")
+
+        ok = not problems
+        return TestCheck(
+            "metering_pipeline", ok, round((time.time() - start) * 1000, 2),
+            "" if ok else "; ".join(problems),
+        )
+    except Exception as e:
+        return TestCheck("metering_pipeline", False, round((time.time() - start) * 1000, 2), str(e))
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -199,6 +254,7 @@ _CHECKS: list[Callable[[], Awaitable[TestCheck]]] = [
     _check_compliance_gate,
     _check_manifest_loads,
     _check_idempotency_store,
+    _check_metering_pipeline,
 ]
 
 

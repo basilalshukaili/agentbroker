@@ -11,6 +11,20 @@ Design goals:
     'verified_human_key' — tools/call with a minted key (paid or free-verified)
 - Fire-and-forget: NEVER block or raise — a logging failure must never break
   a tool call. Same fail-open pattern as durable_meter.py.
+
+AUDIT-2026-09-28: fire_log_usage scheduled its background write with
+`asyncio.ensure_future(...)` and kept no reference to the returned Task.
+CPython's own docs warn that a task nothing else references "may get
+garbage collected at any time, even before it's done" (the event loop only
+holds a weak reference), and the one place a failure WAS logged used
+`logger.debug`, which the production container's LOG_LEVEL=INFO drops
+entirely. Both are fixed here: `_pending_tasks` keeps a strong reference to
+every scheduled write until it finishes (removed via `add_done_callback`,
+never left to accumulate), and every failure path — an exception inside
+`log_usage_event`, `insert_row` returning None, or the task never completing
+at all — is logged at ERROR and recorded in `_stats`, which
+`get_usage_logger_health()` exposes for a health check to read. See
+agent_interface/self_test.py's `_check_metering_pipeline`.
 """
 from __future__ import annotations
 
@@ -22,6 +36,64 @@ from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger("smb_broker.usage_logger")
+
+# ---------------------------------------------------------------------------
+# Metering health — so a silently-failing background write can be OBSERVED.
+# ---------------------------------------------------------------------------
+# Strong references to every in-flight fire-and-forget task. Without this,
+# nothing but the event loop's own (weak) bookkeeping keeps a scheduled task
+# alive; discarded on completion via the done-callback below, so this never
+# grows unbounded.
+_pending_tasks: set[asyncio.Task] = set()
+
+_stats: dict = {
+    "scheduled": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "last_success_ts": None,
+    "last_failure_ts": None,
+    "last_failure_reason": None,
+}
+
+
+def get_usage_logger_health() -> dict:
+    """A snapshot a health check (self_test, /health) can read to tell a
+    silently-dead metering pipeline from a healthy one, instead of only
+    finding out from a downstream row count days later."""
+    return {**_stats, "pending": len(_pending_tasks)}
+
+
+def _record_success() -> None:
+    _stats["succeeded"] += 1
+    _stats["last_success_ts"] = datetime.now(timezone.utc).isoformat()
+
+
+def _record_failure(reason: str) -> None:
+    logger.error("usage_log_failed reason=%s", reason)
+    _stats["failed"] += 1
+    _stats["last_failure_ts"] = datetime.now(timezone.utc).isoformat()
+    _stats["last_failure_reason"] = reason
+
+
+def _on_log_task_done(task: "asyncio.Task") -> None:
+    """Done-callback for a scheduled log_usage_event task: releases the
+    strong reference and makes an otherwise-invisible failure loud.
+
+    log_usage_event() itself never raises (its own try/except guarantees
+    that — see below), so task.exception() is expected to be None on every
+    normal run. This callback exists for the cases that guarantee can't
+    cover: the task being cancelled out from under us, or any other escape
+    that would otherwise surface only as asyncio's own easy-to-miss
+    "exception was never retrieved" warning.
+    """
+    _pending_tasks.discard(task)
+    if task.cancelled():
+        _record_failure("task_cancelled")
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("usage_log_task_failed err=%s", exc, exc_info=exc)
+        _record_failure(f"unhandled_exception:{type(exc).__name__}")
 
 # ---------------------------------------------------------------------------
 # Known crawler / registry bot User-Agent substrings (case-insensitive).
@@ -123,6 +195,12 @@ async def log_usage_event(
     """
     Fire-and-forget insert into `usage_events`. Never raises.
     Designed to be called with asyncio.create_task() so it never delays the response.
+
+    Every exit path updates `_stats` (see get_usage_logger_health()) so a
+    caller that never inspects the return value still leaves a trail: a
+    silent `insert_row` failure (it returns None rather than raising — see
+    storage/supabase_client.py) used to be indistinguishable from success
+    here. It no longer is.
     """
     try:
         args_hash = _hash8(str(sorted((arguments or {}).items()))) if arguments else None
@@ -144,9 +222,18 @@ async def log_usage_event(
         }
 
         from storage.supabase_client import insert_row
-        await insert_row("usage_events", row)
+        result = await insert_row("usage_events", row)
+        if result is None:
+            # insert_row already logged a WARNING with the HTTP status/body;
+            # this is the counter half so a health check sees it too, not
+            # only whoever happens to be grepping logs at that moment.
+            _record_failure("insert_row_returned_none")
+        else:
+            _record_success()
     except Exception as exc:  # noqa: BLE001
-        logger.debug("usage_log_failed method=%s tool=%s err=%s", method, tool_name, exc)
+        logger.error("usage_log_failed method=%s tool=%s err=%s", method, tool_name, exc,
+                     exc_info=exc)
+        _record_failure(f"exception:{type(exc).__name__}")
 
 
 def fire_log_usage(
@@ -162,13 +249,26 @@ def fire_log_usage(
     Schedule a fire-and-forget usage log. Safe to call from sync or async context.
     The task is scheduled on the running event loop and never awaited.
     If no loop is running (tests), silently skips.
+
+    AUDIT-2026-09-28: this used to schedule the write with
+    `asyncio.ensure_future(...)` and drop the returned Task immediately —
+    the event loop's own bookkeeping only holds a WEAK reference to it (see
+    module docstring), so nothing here kept it alive. The task is now held
+    in `_pending_tasks` until its done-callback (`_on_log_task_done`) fires,
+    and every scheduling attempt is counted in `_stats` whether or not it
+    ultimately completes.
     """
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.ensure_future(
+            task = loop.create_task(
                 log_usage_event(method, tool_name, arguments, ip, user_agent,
                                 key_id, principal_type=principal_type)
             )
-    except Exception:  # noqa: BLE001
-        pass
+            _stats["scheduled"] += 1
+            _pending_tasks.add(task)
+            task.add_done_callback(_on_log_task_done)
+        else:
+            _record_failure("no_running_event_loop")
+    except Exception as exc:  # noqa: BLE001
+        _record_failure(f"schedule_exception:{type(exc).__name__}")
