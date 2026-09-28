@@ -196,6 +196,21 @@ class ValidationResult:
 
 _revoked_jtis: set[str] = set()
 
+# Durable, single-token revocation (e.g. an operator killing one leaked
+# capability token). AUDIT-2026-09-28: this used to be in-memory only --
+# revoke_token() added the jti here and reported success, but nothing wrote
+# it anywhere durable, so the jti was valid again after the next restart or
+# container redeploy. _hydrate_jti_revocations() below loads
+# durably-revoked jtis the same way _hydrate_revocations() (further down)
+# loads durably-revoked customer ids -- same "latch only on complete
+# success, retry on failure, in-memory always works" shape -- because this
+# is the identical durability problem keyed on a different column. See
+# migrations/revoked_jtis_table.sql for the table this hydrates from.
+_jti_revocation_hydrated = False
+_jti_revocation_next_try = 0.0
+_JTI_REVOCATION_RETRY_S = 60.0
+_REVOKED_JTIS_TABLE = "revoked_jtis"
+
 # Durable, customer-level revocation (e.g. a Polar refund). Distinct from
 # `_revoked_jtis` above (single-token revoke_token()): a customer can hold
 # tokens whose jti we never recorded (they were minted by a webhook, not the
@@ -205,6 +220,96 @@ _revoked_customer_ids: set[str] = set()
 _revocation_hydrated = False
 _revocation_next_try = 0.0
 _REVOCATION_RETRY_S = 60.0
+
+
+def _hydrate_jti_revocations() -> None:
+    """One-time (then backoff-retried), best-effort load of durably-revoked
+    jtis from Supabase, so a single-token revoke_token() call survives a
+    process restart -- the read half of AUDIT-2026-09-28. No-ops safely when
+    Supabase isn't configured (local/dev/tests), exactly like
+    _hydrate_revocations() below.
+
+    Latches ONLY on a complete, successful read. A failed or truncated read
+    returns without setting the latch, so the backoff below retries it --
+    the previous customer-revocation bug (latching "done" on a partial page,
+    or on a failed read) is the one shape this function must never repeat
+    for jtis either. Because the latch never clears anything it already
+    knows, and revoke_token()/revoke_jti() add to `_revoked_jtis`
+    synchronously before ever touching the network, a jti this process has
+    already learned is revoked (by calling revoke_token() itself, or by an
+    earlier successful hydration) can never be un-learned by a later outage
+    here -- only new information is ever added.
+    """
+    global _jti_revocation_hydrated, _jti_revocation_next_try
+    if _jti_revocation_hydrated:
+        return
+
+    now = time.time()
+    if now < _jti_revocation_next_try:
+        return
+    _jti_revocation_next_try = now + _JTI_REVOCATION_RETRY_S
+
+    log = logging.getLogger("smb_broker.identity")
+    try:
+        from storage.supabase_client import select_rows_sync_strict
+        # ORDERED, PAGED, latch-on-complete-success only -- see the identical
+        # reasoning above _hydrate_revocations(); duplicated here rather than
+        # shared because the two loops read different tables into different
+        # sets and unifying them would trade this comment for an
+        # indirection that has to be re-read anyway.
+        rows = []
+        _page = 1000
+        for _p in range(50):                    # 50k revocations, then complain
+            _chunk = select_rows_sync_strict(
+                _REVOKED_JTIS_TABLE, order="revoked_at.desc",
+                limit=_page, offset=_p * _page)
+            rows.extend(_chunk)
+            if len(_chunk) < _page:
+                break
+        else:
+            log.error(
+                "JTI_REVOCATION_HYDRATION_INCOMPLETE after %d rows - raise "
+                "the page ceiling; hydration is NOT latched so it will retry",
+                len(rows))
+            for row in rows:
+                if row.get("jti"):
+                    _revoked_jtis.add(str(row["jti"]))
+            return
+    except Exception as exc:  # noqa: BLE001
+        # DELIBERATELY FAIL OPEN ON HYDRATION, and say so -- matches
+        # _hydrate_revocations(). A Supabase blip must not turn into a
+        # service-wide outage for every other valid token; what it must
+        # never do is claim to have loaded a revocation list it did not.
+        log.warning(
+            "jti_revocation_hydrate_failed err=%s -- a jti revoked on "
+            "another process may not be honoured here until this succeeds; "
+            "retrying in %ss",
+            exc, _JTI_REVOCATION_RETRY_S)
+        return
+
+    for row in rows:
+        jti = row.get("jti")
+        if jti:
+            _revoked_jtis.add(str(jti))
+    _jti_revocation_hydrated = True
+    log.info("jti_revocation_hydrated count=%d", len(_revoked_jtis))
+
+
+def is_jti_revoked(jti: str) -> bool:
+    """True if `jti` has been revoked -- this process (revoke_token()/
+    revoke_jti() called here), or durably before this process started
+    (revoked on a peer, loaded via _hydrate_jti_revocations()).
+
+    Checks the in-memory set FIRST, before hydrating: a jti this process
+    already knows is revoked must never depend on a hydration call
+    succeeding to keep testing as revoked. Mirrors is_customer_revoked().
+    """
+    if not jti:
+        return False
+    if jti in _revoked_jtis:
+        return True
+    _hydrate_jti_revocations()
+    return jti in _revoked_jtis
 
 
 def _hydrate_revocations() -> None:
@@ -350,9 +455,11 @@ def validate_token(token: str) -> ValidationResult:
     except ValueError as e:
         return ValidationResult(valid=False, error=str(e))
 
-    # Check revocation
+    # Check revocation (durable: is_jti_revoked() hydrates from Supabase on
+    # top of the in-memory set, so a jti revoked on another process, or
+    # before this process's last restart, is still honoured here).
     jti = claims.get("jti", "")
-    if jti in _revoked_jtis:
+    if is_jti_revoked(jti):
         return ValidationResult(valid=False, error="Token has been revoked.")
 
     # Check durable customer-level revocation (e.g. the order behind this
@@ -471,17 +578,74 @@ def agent_id_from_token(raw_token: Optional[str]) -> str:
     return ANONYMOUS
 
 
-def revoke_token(token: str) -> bool:
-    """Add token's JTI to revocation set. Returns True if revocation succeeded."""
+async def revoke_jti(jti: str, reason: str = "manual") -> bool:
+    """Revoke a specific jti directly, for callers that already hold the
+    jti value rather than a raw token (e.g. portal.py's key/regenerate,
+    which stores `key_jti` as its own column and never re-derives it from
+    the old raw token). Shares the exact durability contract as
+    revoke_token(), which parses a token down to its jti and calls this.
+
+    Takes effect immediately in this process (in-memory set, checked by
+    every validate_token() call via is_jti_revoked()) and is durably
+    persisted so the revocation also survives a restart. Mirrors
+    revoke_customer()'s write pattern: the in-memory effect always applies
+    even if the durable write fails -- never raises.
+
+    Returns True only when the durable write also lands. A caller that gets
+    False must treat the revocation as NOT yet safe against a restart --
+    same honesty contract as revoke_customer()'s return value.
+    """
+    log = logging.getLogger("smb_broker.identity")
+    if not jti:
+        return False
+    _revoked_jtis.add(jti)
+    # Never log a jti next to the token it came from -- this line never has
+    # the token in scope, only the jti, which is safe to log (an opaque
+    # identifier used for matching, not a bearer credential).
+    log.info("jti_revoked jti=%s reason=%s", jti, reason)
+    try:
+        from storage.supabase_client import insert_row_strict
+        from datetime import datetime, timezone
+        await insert_row_strict(_REVOKED_JTIS_TABLE, {
+            "jti": jti,
+            "reason": reason,
+            "revoked_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.error(
+            "jti_revocation_persist_failed jti=%s err=%s -- the revocation "
+            "is IN-MEMORY ONLY and will not survive a restart",
+            jti, exc,
+        )
+        return False
+
+
+async def revoke_token(token: str, reason: str = "manual") -> bool:
+    """Revoke a token's jti: immediately in-memory (this process -- always
+    happens for a well-formed token, unconditionally) and durably in
+    Supabase (survives a restart; may fail if the store is unreachable).
+
+    Returns True only if BOTH held -- i.e. only when the caller can trust
+    this revocation to survive a redeploy without needing to re-check. A
+    malformed/unparseable token, or one with no jti claim, returns False
+    without touching any state. This is a change from the old contract
+    ("True if I parsed a jti and added it to a set"): that reported success
+    on a write that could vanish at the next restart, which is exactly the
+    defect this function exists to close (AUDIT-2026-09-28). A caller that
+    needs to know "is this token rejected right now, in this process"
+    rather than "will this survive a restart" can rely on the in-memory
+    effect always having applied when this returns for a parseable token --
+    only the return value's truthiness for the DURABLE guarantee changed.
+    """
     try:
         claims = _verify(token)
-        jti = claims.get("jti", "")
-        if jti:
-            _revoked_jtis.add(jti)
-            return True
     except ValueError:
-        pass
-    return False
+        return False
+    jti = claims.get("jti", "")
+    if not jti:
+        return False
+    return await revoke_jti(jti, reason=reason)
 
 
 def check_operation_allowed(identity: AgentIdentity, operation: str) -> bool:

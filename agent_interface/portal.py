@@ -577,7 +577,16 @@ async def portal_key_regenerate(hl_portal: Optional[str] = Cookie(None)) -> JSON
     if old_jti:
         try:
             from agent_interface import identity as _id
-            _id._revoked_jtis.add(old_jti)
+            # revoke_jti() takes effect in-memory immediately regardless of
+            # what it returns; the return value only says whether that also
+            # landed durably (survives a restart). Previously this reached
+            # into _id._revoked_jtis directly, which had no durable half at
+            # all -- see AUDIT-2026-09-28 in identity.py.
+            durable = await _id.revoke_jti(old_jti, reason="key_regenerate")
+            if not durable:
+                logger.warning(
+                    "key_regen: old jti revoked in-memory only (durable "
+                    "write failed) jti=%s", old_jti)
         except Exception as exc:  # noqa: BLE001
             logger.warning("key_regen: old jti revoke failed jti=%s err=%s", old_jti, exc)
     issued = await _issue_key_for_account(account)
