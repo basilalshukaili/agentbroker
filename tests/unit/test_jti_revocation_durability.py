@@ -6,6 +6,18 @@ process restart or container redeploy, while the caller had been told the
 revocation "succeeded". This mirrors test_revocation_hydration_is_complete.py
 and test_identity_revocation.py's patching style for the customer-level
 path, applied to the jti-level one.
+
+AUDIT-2026-09-29: _hydrate_jti_revocations() used to read the revoked_jtis
+TABLE directly via storage.supabase_client.select_rows_sync_strict(). In
+production (anon key only) that call gets HTTP 401 -- permission denied --
+on every attempt, which the old except-branch could only log as an
+endlessly-retried WARNING, so hydration never latched and 0505c23's
+durability fix was inert. It now reads through the revoked_jtis_list
+SECURITY DEFINER RPC (sql/agentbroker/007_revocation_read_rpc.sql) via
+storage.supabase_client.rpc_sync(); every fake here patches `rpc_sync`
+instead of `select_rows_sync_strict`, and TestJtiHydrationPermissionDenied
+below locks in the new REVOCATION_READ_DENIED behaviour for when the RPC
+boundary itself is refused.
 """
 from __future__ import annotations
 
@@ -111,8 +123,8 @@ class TestJtiRevocationSurvivesAcrossProcesses:
 
         import storage.supabase_client as sb
         monkeypatch.setattr(
-            sb, "select_rows_sync_strict",
-            lambda table, **kw: [{"jti": jti, "reason": "manual"}],
+            sb, "rpc_sync",
+            lambda fn, payload: [{"jti": jti, "revoked_at": "2026-09-29T00:00:00Z"}],
         )
         # The first (config-less) attempt above already consumed this
         # process's retry backoff window; force a fresh attempt now that
@@ -140,7 +152,7 @@ class TestJtiRevocationSurvivesAcrossProcesses:
         I._jti_revocation_next_try = 0.0
         import storage.supabase_client as sb
         monkeypatch.setattr(
-            sb, "select_rows_sync_strict",
+            sb, "rpc_sync",
             lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("still down")),
         )
         result = I.validate_token(token_resp.token)
@@ -161,12 +173,14 @@ def _jti_rows(n: int, start: int = 0) -> list:
 def _fake_pager(total: int, monkeypatch):
     calls = []
 
-    def _sel(table, order=None, limit=1000, offset=0, **kw):
+    def _rpc(fn, payload):
+        limit = payload["p_limit"]
+        offset = payload["p_offset"]
         calls.append((limit, offset))
         return _jti_rows(max(0, min(limit, total - offset)), offset)
 
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "select_rows_sync_strict", _sel)
+    monkeypatch.setattr(sb, "rpc_sync", _rpc)
     return calls
 
 
@@ -190,6 +204,111 @@ class TestJtiHydrationDiscipline:
             raise RuntimeError("supabase down")
 
         import storage.supabase_client as sb
-        monkeypatch.setattr(sb, "select_rows_sync_strict", _boom)
+        monkeypatch.setattr(sb, "rpc_sync", _boom)
         I._hydrate_jti_revocations()
         assert I._jti_revocation_hydrated is False
+
+    def test_an_empty_successful_read_latches_with_zero(self, monkeypatch):
+        """A genuinely empty result (nothing revoked yet) is a SUCCESSFUL
+        read and must latch -- this is not the bug; the bug this migration
+        fixes is an empty result that comes from a PERMISSION failure being
+        indistinguishable from this one. See TestJtiHydrationPermissionDenied
+        for the case that must NOT latch."""
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [])
+        I._hydrate_jti_revocations()
+        assert I._jti_revocation_hydrated is True
+        assert len(I._revoked_jtis) == 0
+
+    def test_hydration_calls_the_rpc_by_name_with_paging_params(self, monkeypatch):
+        """Locks in the RPC boundary itself: the exact function name
+        sql/agentbroker/007_revocation_read_rpc.sql defines, called with the
+        p_limit/p_offset parameter names that function's signature uses."""
+        seen = {}
+
+        def _rpc(fn, payload):
+            seen["fn"] = fn
+            seen["payload"] = payload
+            return [{"jti": "jti_seen", "revoked_at": "2026-09-29T00:00:00Z"}]
+
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", _rpc)
+        I._hydrate_jti_revocations()
+
+        assert seen["fn"] == "revoked_jtis_list"
+        assert seen["payload"] == {"p_limit": 1000, "p_offset": 0}
+        assert I.is_jti_revoked("jti_seen") is True
+
+
+class TestJtiHydrationPermissionDenied:
+    """AUDIT-2026-09-29: a 401/403/missing-function RPC failure is not a
+    transient outage -- it will not self-heal on the backoff retry, it means
+    a human must apply 007 or fix a grant. It must log the stable
+    REVOCATION_READ_DENIED marker distinctly from the ordinary
+    jti_revocation_hydrate_failed WARNING, and it must NEVER latch (an
+    unreadable answer must never be read as 'zero jtis are revoked')."""
+
+    def test_a_permission_denied_error_does_not_latch_and_logs_the_marker(
+        self, monkeypatch, caplog,
+    ):
+        import storage.supabase_client as sb
+
+        def _denied(fn, payload):
+            raise RuntimeError(
+                f"rpc_sync({fn!r}) failed: HTTP 401 "
+                f'body={{"code":"42501","message":"permission denied"}}')
+
+        monkeypatch.setattr(sb, "rpc_sync", _denied)
+        with caplog.at_level("ERROR", logger="smb_broker.identity"):
+            I._hydrate_jti_revocations()
+
+        assert I._jti_revocation_hydrated is False, (
+            "a permission-denied RPC call must never be read as 'zero jtis "
+            "are revoked'")
+        assert any(
+            "REVOCATION_READ_DENIED" in r.getMessage() for r in caplog.records
+        ), "a 401 RPC failure must log the stable REVOCATION_READ_DENIED marker"
+
+    def test_a_missing_function_error_does_not_latch_and_logs_the_marker(
+        self, monkeypatch, caplog,
+    ):
+        """404 == PGRST202: the function itself does not exist yet (007 not
+        applied). Same bucket as a permission denial -- a human must act,
+        the backoff retry alone will not fix it."""
+        import storage.supabase_client as sb
+
+        def _missing(fn, payload):
+            raise RuntimeError(f"rpc_sync({fn!r}) failed: HTTP 404 body={{}}")
+
+        monkeypatch.setattr(sb, "rpc_sync", _missing)
+        with caplog.at_level("ERROR", logger="smb_broker.identity"):
+            I._hydrate_jti_revocations()
+
+        assert I._jti_revocation_hydrated is False
+        assert any(
+            "REVOCATION_READ_DENIED" in r.getMessage() for r in caplog.records
+        )
+
+    def test_a_transient_outage_logs_the_ordinary_warning_not_the_marker(
+        self, monkeypatch, caplog,
+    ):
+        """A transport failure/5xx is not a permission question -- it must
+        keep the pre-existing WARNING behaviour and must NOT claim
+        REVOCATION_READ_DENIED, which would wrongly send an operator to fix
+        a grant that was never the problem."""
+        import storage.supabase_client as sb
+
+        def _outage(fn, payload):
+            raise RuntimeError(f"rpc_sync({fn!r}) transport error: connection refused")
+
+        monkeypatch.setattr(sb, "rpc_sync", _outage)
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            I._hydrate_jti_revocations()
+
+        assert I._jti_revocation_hydrated is False
+        assert not any(
+            "REVOCATION_READ_DENIED" in r.getMessage() for r in caplog.records
+        )
+        assert any(
+            "jti_revocation_hydrate_failed" in r.getMessage() for r in caplog.records
+        )

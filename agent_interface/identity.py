@@ -20,6 +20,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -221,13 +222,70 @@ _revocation_hydrated = False
 _revocation_next_try = 0.0
 _REVOCATION_RETRY_S = 60.0
 
+# AUDIT-2026-09-29: both hydration loops below used to read their table
+# directly via storage.supabase_client.select_rows_sync_strict(). In
+# production this container holds ONLY SUPABASE_ANON_KEY (never the service
+# key -- see sql/agentbroker/007_revocation_read_rpc.sql's header), and:
+#   * revoked_jtis has RLS with a service_role-only policy, so the raw read
+#     got HTTP 401 (permission denied) on every attempt -- an honest error,
+#     but one the old except-branch could only log as an endlessly-retried
+#     WARNING, so _hydrate_jti_revocations() never latched and
+#     revoke_jti()'s durability fix (0505c23) was inert.
+#   * polar_order_events has RLS with zero policies and anon still holds the
+#     table SELECT grant, so the raw read got HTTP 200 with an EMPTY ARRAY --
+#     not an error -- so _hydrate_revocations() LATCHED complete with zero
+#     revocations loaded, forever, even with real revoked rows in the table.
+# Both now read through a SECURITY DEFINER RPC (007) that anon can call and
+# that reproduces the exact same paged, ordered, filtered SELECT. Paging,
+# the latch-only-on-complete-success rule, and the in-memory sets are
+# unchanged; only the transport is new, plus the REVOCATION_READ_DENIED
+# marker below for when the RPC boundary itself is the thing that is broken.
+_REVOKED_JTIS_RPC = "revoked_jtis_list"
+_REVOKED_CUSTOMERS_RPC = "polar_order_events_revoked_customer_ids"
+
+
+def _is_permission_or_missing_rpc_error(exc: Exception) -> bool:
+    """True when `exc` (raised by storage.supabase_client.rpc_sync) means the
+    RPC call was refused for a reason a human must fix -- no grant, no such
+    function, or a client-shaped rejection -- rather than a transient outage
+    or "Supabase isn't configured at all" (expected in local dev and this
+    repo's tests, which run with no SUPABASE_URL). Mirrors billing/
+    data_quota.py's _classify_rpc_exception bucketing (misconfigured vs
+    outage vs unconfigured), narrowed to the one distinction the two
+    hydration loops below need: log a denial LOUDLY and distinctly, never
+    folded into the same WARNING line an ordinary Supabase blip already
+    produces -- a denial here does not self-heal on the backoff retry the
+    way an outage does; it needs a human to apply
+    sql/agentbroker/007_revocation_read_rpc.sql or fix a grant.
+
+    rpc_sync() raises a plain RuntimeError built from its own message
+    (storage/supabase_client.py's own contract) -- there is no structured
+    status code attached, so this reads the message rpc_sync already
+    contracts to produce rather than inventing a second parallel channel.
+    """
+    msg = str(exc)
+    if "not configured" in msg:
+        return False
+    match = re.search(r"HTTP (\d{3})", msg)
+    if match:
+        # 401/403: PostgREST's shape for "no grant to call this function".
+        # An RLS-only block on a table PostgREST can still see returns 200
+        # with rows filtered out, never these codes -- see 007's own header
+        # for revoked_jtis' measured 401. 404: PGRST202, the function does
+        # not exist yet -- i.e. 007 has not been applied. Anything else
+        # (400/422 malformed call, 5xx) is not a permission question.
+        return int(match.group(1)) in (401, 403, 404)
+    return False
+
 
 def _hydrate_jti_revocations() -> None:
     """One-time (then backoff-retried), best-effort load of durably-revoked
     jtis from Supabase, so a single-token revoke_token() call survives a
-    process restart -- the read half of AUDIT-2026-09-28. No-ops safely when
-    Supabase isn't configured (local/dev/tests), exactly like
-    _hydrate_revocations() below.
+    process restart -- the read half of AUDIT-2026-09-28. Reads via the
+    revoked_jtis_list SECURITY DEFINER RPC (AUDIT-2026-09-29; see the
+    constants above for why a raw table read cannot work with only the anon
+    key). No-ops safely when Supabase isn't configured (local/dev/tests),
+    exactly like _hydrate_revocations() below.
 
     Latches ONLY on a complete, successful read. A failed or truncated read
     returns without setting the latch, so the backoff below retries it --
@@ -251,18 +309,22 @@ def _hydrate_jti_revocations() -> None:
 
     log = logging.getLogger("smb_broker.identity")
     try:
-        from storage.supabase_client import select_rows_sync_strict
+        from storage.supabase_client import rpc_sync
         # ORDERED, PAGED, latch-on-complete-success only -- see the identical
         # reasoning above _hydrate_revocations(); duplicated here rather than
-        # shared because the two loops read different tables into different
+        # shared because the two loops read different RPCs into different
         # sets and unifying them would trade this comment for an
         # indirection that has to be re-read anyway.
         rows = []
         _page = 1000
         for _p in range(50):                    # 50k revocations, then complain
-            _chunk = select_rows_sync_strict(
-                _REVOKED_JTIS_TABLE, order="revoked_at.desc",
-                limit=_page, offset=_p * _page)
+            _chunk = rpc_sync(
+                _REVOKED_JTIS_RPC, {"p_limit": _page, "p_offset": _p * _page})
+            if not isinstance(_chunk, list):
+                raise RuntimeError(
+                    f"{_REVOKED_JTIS_RPC} returned {type(_chunk).__name__}, "
+                    f"not a list -- refusing to trust a shape it does not "
+                    f"contract to return")
             rows.extend(_chunk)
             if len(_chunk) < _page:
                 break
@@ -276,15 +338,29 @@ def _hydrate_jti_revocations() -> None:
                     _revoked_jtis.add(str(row["jti"]))
             return
     except Exception as exc:  # noqa: BLE001
-        # DELIBERATELY FAIL OPEN ON HYDRATION, and say so -- matches
-        # _hydrate_revocations(). A Supabase blip must not turn into a
-        # service-wide outage for every other valid token; what it must
-        # never do is claim to have loaded a revocation list it did not.
-        log.warning(
-            "jti_revocation_hydrate_failed err=%s -- a jti revoked on "
-            "another process may not be honoured here until this succeeds; "
-            "retrying in %ss",
-            exc, _JTI_REVOCATION_RETRY_S)
+        if _is_permission_or_missing_rpc_error(exc):
+            # LOUD AND DISTINCT: this does not self-heal on the backoff retry
+            # below the way an outage does -- it means the anon key cannot
+            # call revoked_jtis_list at all (007 not applied, or a grant
+            # regressed). Every jti revoked on another process, or before
+            # this process's last restart, is silently un-honoured here
+            # until a human fixes this.
+            log.error(
+                "REVOCATION_READ_DENIED rpc=%s err=%s -- jti revocation is "
+                "INERT in this process until this is fixed (apply "
+                "sql/agentbroker/007_revocation_read_rpc.sql or check its "
+                "grants); never read this as 'no jtis are revoked'",
+                _REVOKED_JTIS_RPC, exc)
+        else:
+            # DELIBERATELY FAIL OPEN ON HYDRATION, and say so -- matches
+            # _hydrate_revocations(). A Supabase blip must not turn into a
+            # service-wide outage for every other valid token; what it must
+            # never do is claim to have loaded a revocation list it did not.
+            log.warning(
+                "jti_revocation_hydrate_failed err=%s -- a jti revoked on "
+                "another process may not be honoured here until this succeeds; "
+                "retrying in %ss",
+                exc, _JTI_REVOCATION_RETRY_S)
         return
 
     for row in rows:
@@ -316,9 +392,11 @@ def _hydrate_revocations() -> None:
     """One-time, best-effort load of durably-revoked customer ids from
     Supabase so a revocation survives a process restart (e.g. a Render
     redeploy between the refund event and the next validate_token call).
-    No-ops safely when Supabase isn't configured (local/dev/tests) -- same
-    "durable is a bonus, in-memory always works" pattern as durable_meter.py
-    and supply/smb_directory.py."""
+    Reads via the polar_order_events_revoked_customer_ids SECURITY DEFINER
+    RPC (AUDIT-2026-09-29; see the constants above for why a raw table read
+    cannot work with only the anon key). No-ops safely when Supabase isn't
+    configured (local/dev/tests) -- same "durable is a bonus, in-memory
+    always works" pattern as durable_meter.py and supply/smb_directory.py."""
     global _revocation_hydrated, _revocation_next_try
     if _revocation_hydrated:
         return
@@ -338,16 +416,15 @@ def _hydrate_revocations() -> None:
 
     log = logging.getLogger("smb_broker.identity")
     try:
-        from storage.supabase_client import select_rows_sync_strict
-        # ORDERED AND BOUNDED. A bare limit with no ORDER BY returns an
-        # ARBITRARY PostgREST slice - supabase_client's own docstring warns
-        # about it - so past the default 1000 revocations we would hydrate a
-        # random subset and some refunded customers would silently keep
-        # access. Newest first, and the count is checked below.
-        # PAGED, because the previous single read could not be complete.
+        from storage.supabase_client import rpc_sync
+        # ORDERED AND BOUNDED, PAGED -- see revoked_jtis_list's identical
+        # reasoning above _hydrate_jti_revocations(). The RPC itself fixes
+        # the filter (status = 'revoked') and the ordering (ts desc,
+        # customer_id asc) server-side; see
+        # sql/agentbroker/007_revocation_read_rpc.sql.
         #
-        # It asked for 5000 rows, logged an error if it got 5000, and then
-        # latched hydration as DONE anyway - so past that boundary the extra
+        # It used to ask for 5000 rows, log an error if it got 5000, and then
+        # latch hydration as DONE anyway - so past that boundary the extra
         # revocations were never loaded and never retried, and those refunded
         # customers kept paid access for the life of the process. That is the
         # same bug as the one this function's own comment describes, one level
@@ -355,9 +432,13 @@ def _hydrate_revocations() -> None:
         rows = []
         _page = 1000
         for _p in range(50):                    # 50k revocations, then complain
-            _chunk = select_rows_sync_strict(
-                "polar_order_events", filters={"status": "revoked"},
-                order="ts.desc", limit=_page, offset=_p * _page)
+            _chunk = rpc_sync(
+                _REVOKED_CUSTOMERS_RPC, {"p_limit": _page, "p_offset": _p * _page})
+            if not isinstance(_chunk, list):
+                raise RuntimeError(
+                    f"{_REVOKED_CUSTOMERS_RPC} returned "
+                    f"{type(_chunk).__name__}, not a list -- refusing to "
+                    f"trust a shape it does not contract to return")
             rows.extend(_chunk)
             if len(_chunk) < _page:
                 break
@@ -374,15 +455,28 @@ def _hydrate_revocations() -> None:
                     _revoked_customer_ids.add(str(row["customer_id"]))
             return
     except Exception as exc:  # noqa: BLE001
-        # DELIBERATELY FAIL OPEN, and say so. Denying every paying customer
-        # during a database blip is a worse outcome than briefly honouring a
-        # refunded token, and the retry above bounds how long "briefly" is.
-        # What must not happen is the previous behaviour: failing open FOR
-        # EVER while reporting success.
-        log.warning(
-            "revocation_hydrate_failed err=%s -- refunded customers may still "
-            "validate until this succeeds; retrying in %ss",
-            exc, _REVOCATION_RETRY_S)
+        if _is_permission_or_missing_rpc_error(exc):
+            # LOUD AND DISTINCT: this does not self-heal on the backoff retry
+            # below the way an outage does -- it means the anon key cannot
+            # call polar_order_events_revoked_customer_ids at all (007 not
+            # applied, or a grant regressed). A refunded/revoked customer's
+            # token is silently un-revoked here until a human fixes this.
+            log.error(
+                "REVOCATION_READ_DENIED rpc=%s err=%s -- customer-level "
+                "revocation is INERT in this process until this is fixed "
+                "(apply sql/agentbroker/007_revocation_read_rpc.sql or check "
+                "its grants); never read this as 'no customers are revoked'",
+                _REVOKED_CUSTOMERS_RPC, exc)
+        else:
+            # DELIBERATELY FAIL OPEN, and say so. Denying every paying customer
+            # during a database blip is a worse outcome than briefly honouring a
+            # refunded token, and the retry above bounds how long "briefly" is.
+            # What must not happen is the previous behaviour: failing open FOR
+            # EVER while reporting success.
+            log.warning(
+                "revocation_hydrate_failed err=%s -- refunded customers may still "
+                "validate until this succeeds; retrying in %ss",
+                exc, _REVOCATION_RETRY_S)
         return
 
     for row in rows:
