@@ -374,3 +374,30 @@ class TestJtiHydrationRejectsMalformedRows:
             "jti_revocation_hydrate_failed" in r.getMessage()
             for r in caplog.records
         )
+
+
+class TestJtiHydrationRequiresTheKey:
+    """Adversarial review of 79a7573: a page of dicts that LACK "jti" (e.g. the
+    RPC's output column renamed) passed the dict check and latched hydration
+    as a complete read of zero revocations - the exact silent-empty failure
+    007 exists to fix. A row must carry the key; a null value is still a
+    legitimate row."""
+
+    def test_rows_missing_the_key_do_not_latch_and_warn(self, monkeypatch, caplog):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [{"foo": "x"}])
+
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            I._hydrate_jti_revocations()
+
+        assert I._jti_revocation_hydrated is False
+        assert any("jti_revocation_hydrate_failed" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_a_null_jti_value_still_latches(self, monkeypatch):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [{"jti": None}])
+
+        I._hydrate_jti_revocations()
+
+        assert I._jti_revocation_hydrated is True

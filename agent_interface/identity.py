@@ -321,11 +321,11 @@ def _hydrate_jti_revocations() -> None:
             _chunk = rpc_sync(
                 _REVOKED_JTIS_RPC, {"p_limit": _page, "p_offset": _p * _page})
             if not isinstance(_chunk, list) or not all(
-                isinstance(_row, dict) for _row in _chunk
+                isinstance(_row, dict) and "jti" in _row for _row in _chunk
             ):
                 raise RuntimeError(
                     f"{_REVOKED_JTIS_RPC} returned a page that is not a "
-                    f"list of dicts -- refusing to trust a shape it does "
+                    f"list of dicts carrying jti -- refusing to trust a shape it does "
                     f"not contract to return")
             rows.extend(_chunk)
             if len(_chunk) < _page:
@@ -441,11 +441,11 @@ def _hydrate_revocations() -> None:
             _chunk = rpc_sync(
                 _REVOKED_CUSTOMERS_RPC, {"p_limit": _page, "p_offset": _p * _page})
             if not isinstance(_chunk, list) or not all(
-                isinstance(_row, dict) for _row in _chunk
+                isinstance(_row, dict) and "customer_id" in _row for _row in _chunk
             ):
                 raise RuntimeError(
                     f"{_REVOKED_CUSTOMERS_RPC} returned a page that is "
-                    f"not a list of dicts -- refusing to trust a shape "
+                    f"not a list of dicts carrying customer_id -- refusing to trust a shape "
                     f"it does not contract to return")
             rows.extend(_chunk)
             if len(_chunk) < _page:

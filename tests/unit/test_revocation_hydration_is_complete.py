@@ -297,3 +297,28 @@ class TestRevocationHydrationRejectsMalformedRows:
             "revocation_hydrate_failed" in r.getMessage()
             for r in caplog.records
         )
+
+
+class TestRevocationHydrationRequiresTheKey:
+    """Adversarial review of 79a7573: a page of dicts that LACK "customer_id"
+    latched hydration as a complete read of zero revocations. A row must carry
+    the key; a null value is still a legitimate row."""
+
+    def test_rows_missing_the_key_do_not_latch_and_warn(self, monkeypatch, caplog):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [{"foo": "x"}])
+
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            I._hydrate_revocations()
+
+        assert I._revocation_hydrated is False
+        assert any("revocation_hydrate_failed" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_a_null_customer_id_value_still_latches(self, monkeypatch):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [{"customer_id": None}])
+
+        I._hydrate_revocations()
+
+        assert I._revocation_hydrated is True
