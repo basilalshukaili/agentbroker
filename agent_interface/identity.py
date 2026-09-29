@@ -320,11 +320,13 @@ def _hydrate_jti_revocations() -> None:
         for _p in range(50):                    # 50k revocations, then complain
             _chunk = rpc_sync(
                 _REVOKED_JTIS_RPC, {"p_limit": _page, "p_offset": _p * _page})
-            if not isinstance(_chunk, list):
+            if not isinstance(_chunk, list) or not all(
+                isinstance(_row, dict) for _row in _chunk
+            ):
                 raise RuntimeError(
-                    f"{_REVOKED_JTIS_RPC} returned {type(_chunk).__name__}, "
-                    f"not a list -- refusing to trust a shape it does not "
-                    f"contract to return")
+                    f"{_REVOKED_JTIS_RPC} returned a page that is not a "
+                    f"list of dicts -- refusing to trust a shape it does "
+                    f"not contract to return")
             rows.extend(_chunk)
             if len(_chunk) < _page:
                 break
@@ -337,6 +339,17 @@ def _hydrate_jti_revocations() -> None:
                 if row.get("jti"):
                     _revoked_jtis.add(str(row["jti"]))
             return
+
+        # Everything below reads `rows` -- keep it INSIDE the try so a
+        # malformed row (rejected above) or any other surprise here takes
+        # the except branch below (log + no latch) instead of raising
+        # past is_jti_revoked() into validate_token() on the live auth path.
+        for row in rows:
+            jti = row.get("jti")
+            if jti:
+                _revoked_jtis.add(str(jti))
+        _jti_revocation_hydrated = True
+        log.info("jti_revocation_hydrated count=%d", len(_revoked_jtis))
     except Exception as exc:  # noqa: BLE001
         if _is_permission_or_missing_rpc_error(exc):
             # LOUD AND DISTINCT: this does not self-heal on the backoff retry
@@ -362,13 +375,6 @@ def _hydrate_jti_revocations() -> None:
                 "retrying in %ss",
                 exc, _JTI_REVOCATION_RETRY_S)
         return
-
-    for row in rows:
-        jti = row.get("jti")
-        if jti:
-            _revoked_jtis.add(str(jti))
-    _jti_revocation_hydrated = True
-    log.info("jti_revocation_hydrated count=%d", len(_revoked_jtis))
 
 
 def is_jti_revoked(jti: str) -> bool:
@@ -434,11 +440,13 @@ def _hydrate_revocations() -> None:
         for _p in range(50):                    # 50k revocations, then complain
             _chunk = rpc_sync(
                 _REVOKED_CUSTOMERS_RPC, {"p_limit": _page, "p_offset": _p * _page})
-            if not isinstance(_chunk, list):
+            if not isinstance(_chunk, list) or not all(
+                isinstance(_row, dict) for _row in _chunk
+            ):
                 raise RuntimeError(
-                    f"{_REVOKED_CUSTOMERS_RPC} returned "
-                    f"{type(_chunk).__name__}, not a list -- refusing to "
-                    f"trust a shape it does not contract to return")
+                    f"{_REVOKED_CUSTOMERS_RPC} returned a page that is "
+                    f"not a list of dicts -- refusing to trust a shape "
+                    f"it does not contract to return")
             rows.extend(_chunk)
             if len(_chunk) < _page:
                 break
@@ -454,6 +462,17 @@ def _hydrate_revocations() -> None:
                 if row.get("customer_id"):
                     _revoked_customer_ids.add(str(row["customer_id"]))
             return
+
+        # Everything below reads `rows` -- keep it INSIDE the try so a
+        # malformed row (rejected above) or any other surprise here takes
+        # the except branch below (log + no latch) instead of raising past
+        # is_customer_revoked() into validate_token() on the live auth path.
+        for row in rows:
+            cid = row.get("customer_id")
+            if cid:
+                _revoked_customer_ids.add(str(cid))
+        _revocation_hydrated = True
+        log.info("revocation_hydrated count=%d", len(_revoked_customer_ids))
     except Exception as exc:  # noqa: BLE001
         if _is_permission_or_missing_rpc_error(exc):
             # LOUD AND DISTINCT: this does not self-heal on the backoff retry
@@ -478,13 +497,6 @@ def _hydrate_revocations() -> None:
                 "validate until this succeeds; retrying in %ss",
                 exc, _REVOCATION_RETRY_S)
         return
-
-    for row in rows:
-        cid = row.get("customer_id")
-        if cid:
-            _revoked_customer_ids.add(str(cid))
-    _revocation_hydrated = True
-    log.info("revocation_hydrated count=%d", len(_revoked_customer_ids))
 
 
 async def revoke_customer(

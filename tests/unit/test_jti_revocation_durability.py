@@ -44,6 +44,17 @@ def _clean():
     I._jti_revocation_next_try = 0.0
 
 
+@pytest.fixture(autouse=True)
+def _no_real_supabase_calls(monkeypatch):
+    """Every test here patches storage.supabase_client.rpc_sync directly and
+    must never fall through to a real network call -- clear the three env
+    vars supabase_client.py reads so it can never resolve a real URL/key,
+    hermetic even if a patch is missed or ordered wrong."""
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+
+
 def _issue():
     return I.issue_token(I.TokenRequest(agent_id="agent_x", principal_id="cust_x"))
 
@@ -311,4 +322,55 @@ class TestJtiHydrationPermissionDenied:
         )
         assert any(
             "jti_revocation_hydrate_failed" in r.getMessage() for r in caplog.records
+        )
+
+
+class TestJtiHydrationRejectsMalformedRows:
+    """Adversarial-review finding, 9e7b800: the isinstance(_chunk, list)
+    check validates only the PAGE, never its ROWS, and the finalizing
+    `row.get("jti")` loop that turns `rows` into `_revoked_jtis` sits
+    OUTSIDE the try/except. A page shaped like ["cus_x"] or [None] is a
+    list, so it sails through the check and gets extended into `rows`; the
+    unguarded loop then calls `.get()` on a str/None and raises
+    AttributeError straight out of is_jti_revoked() into validate_token() --
+    a 500 on the live auth path, not the documented fail-open WARNING.
+    Reproduced here as a direct call to _hydrate_jti_revocations() (isolates
+    this function's bug) and as validate_token() (proves the live auth path
+    itself does not raise)."""
+
+    def test_a_string_array_page_does_not_raise_and_does_not_latch(
+        self, monkeypatch, caplog,
+    ):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: ["cus_x"])
+
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            I._hydrate_jti_revocations()  # must not raise AttributeError
+
+        assert I._jti_revocation_hydrated is False, (
+            "a page of non-dict rows must never latch hydration as complete")
+        assert any(
+            "jti_revocation_hydrate_failed" in r.getMessage()
+            for r in caplog.records
+        ), "a malformed page must log the ordinary hydrate-failed WARNING"
+        # End-to-end: a lookup during the same bad page must not raise either.
+        assert I.is_jti_revoked("some-jti") is False
+
+    def test_a_none_page_does_not_raise_and_does_not_latch(
+        self, monkeypatch, caplog,
+    ):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [None])
+
+        token_resp = _issue()
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            result = I.validate_token(token_resp.token)  # must not raise
+
+        assert result.valid is True, (
+            "a malformed hydration page must not raise, and must not turn "
+            "a valid token invalid")
+        assert I._jti_revocation_hydrated is False
+        assert any(
+            "jti_revocation_hydrate_failed" in r.getMessage()
+            for r in caplog.records
         )

@@ -42,6 +42,17 @@ def _clean():
     I._revocation_next_try = 0.0
 
 
+@pytest.fixture(autouse=True)
+def _no_real_supabase_calls(monkeypatch):
+    """Every test here patches storage.supabase_client.rpc_sync directly and
+    must never fall through to a real network call -- clear the three env
+    vars supabase_client.py reads so it can never resolve a real URL/key,
+    hermetic even if a patch is missed or ordered wrong."""
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+
+
 def _rows(n: int, start: int = 0) -> list:
     return [{"customer_id": f"cus_{i}", "status": "revoked"}
             for i in range(start, start + n)]
@@ -236,4 +247,53 @@ class TestRevocationPermissionDenied:
         )
         assert any(
             "revocation_hydrate_failed" in r.getMessage() for r in caplog.records
+        )
+
+
+class TestRevocationHydrationRejectsMalformedRows:
+    """Adversarial-review finding, 9e7b800: the isinstance(_chunk, list)
+    check validates only the PAGE, never its ROWS, and the finalizing
+    `row.get("customer_id")` loop that turns `rows` into
+    `_revoked_customer_ids` sits OUTSIDE the try/except. A page shaped like
+    ["cus_x"] or [None] is a list, so it sails through the check and gets
+    extended into `rows`; the unguarded loop then calls `.get()` on a
+    str/None and raises AttributeError straight out of is_customer_revoked()
+    into validate_token() -- a 500 on the live auth path, not the documented
+    fail-open WARNING. Reproduced here as a direct call to
+    _hydrate_revocations()/is_customer_revoked() (isolates this function's
+    bug, same shape as TestJtiHydrationRejectsMalformedRows in
+    test_jti_revocation_durability.py)."""
+
+    def test_a_string_array_page_does_not_raise_and_does_not_latch(
+        self, monkeypatch, caplog,
+    ):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: ["cus_x"])
+
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            I._hydrate_revocations()  # must not raise AttributeError
+
+        assert I._revocation_hydrated is False, (
+            "a page of non-dict rows must never latch hydration as complete")
+        assert any(
+            "revocation_hydrate_failed" in r.getMessage()
+            for r in caplog.records
+        ), "a malformed page must log the ordinary hydrate-failed WARNING"
+
+    def test_a_none_page_does_not_raise_and_does_not_latch(
+        self, monkeypatch, caplog,
+    ):
+        import storage.supabase_client as sb
+        monkeypatch.setattr(sb, "rpc_sync", lambda fn, payload: [None])
+
+        with caplog.at_level("WARNING", logger="smb_broker.identity"):
+            result = I.is_customer_revoked("cus_x")  # must not raise
+
+        assert result is False, (
+            "a malformed hydration page must not raise, and must not "
+            "report a customer as revoked")
+        assert I._revocation_hydrated is False
+        assert any(
+            "revocation_hydrate_failed" in r.getMessage()
+            for r in caplog.records
         )
