@@ -19,8 +19,10 @@ and that is exactly how the drift happened:
   * 22 tools are priced in total.
   * 12 of them cost ZERO credits.
   * One of those twelve, `import_booking_url`, is a WRITE tool and needs a key.
-    So "free with no key" is 11, not 12 - free and keyless are different claims
-    and the README makes the keyless one.
+  * Another, `find_business`, needs no key only for a caller's first
+    TRIAL_CALLS_PER_CALLER calls (2026-09-30) - it is free, but not "no key,
+    unmetered". So "free with no key, unmetered" is 10, not 11 - free, keyless
+    and unlimited are different claims and the README makes the last one.
   * The 3 premium data tools are NOT in either figure: they are metered-free
     up to a daily limit, which is a third category and must never be folded
     into "free".
@@ -53,7 +55,7 @@ def counts():
     # day get_conversation started refusing keyless callers - a parity test
     # that derives its expectation the same wrong way as the copy it checks
     # will confirm any error the copy makes.
-    from core.tool_auth import TOOLS_REQUIRING_KEY
+    from core.tool_auth import TOOLS_REQUIRING_KEY, TRIAL_TOOLS
     from core import tool_auth
     from billing import pricing
 
@@ -62,8 +64,11 @@ def counts():
     return {
         "total": len(priced),
         "zero_cost": len(zero_cost),
-        "free_and_keyless": len(zero_cost - set(TOOLS_REQUIRING_KEY)),
+        # Unlimited and keyless: a trial tool is neither, so it is not counted.
+        "free_and_keyless": len(zero_cost - set(TOOLS_REQUIRING_KEY)
+                                - set(TRIAL_TOOLS)),
         "derived_keyless": tool_auth.keyless(),
+        "trial": len(zero_cost & set(TRIAL_TOOLS)),
     }
 
 
@@ -71,7 +76,7 @@ def test_the_free_keyless_count_is_nine_or_this_test_is_stale(counts):
     """A canary on the fixture itself. If this fails the product changed, and
     the README needs updating - which is the point - but it also means every
     other assertion here was comparing against a moved target."""
-    assert counts["free_and_keyless"] == 11, (
+    assert counts["free_and_keyless"] == 10, (
         f"free-and-keyless tool count moved to {counts['free_and_keyless']}; "
         f"update README.md and this docstring together")
     # AND THE TWO WAYS OF COUNTING IT MUST AGREE. One walks the price table,

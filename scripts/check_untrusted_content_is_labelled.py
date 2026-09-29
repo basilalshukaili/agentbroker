@@ -336,6 +336,23 @@ def _probe(label_fn) -> tuple[list[str], int]:
     findings: list[str] = []
     inspected = 0
 
+    # THE FIND_BUSINESS FREE-TRIAL GATE (billing/anon_trial.py) counts keyless
+    # calls in Supabase and FAILS CLOSED without it. This probe is about
+    # fencing third-party text, not about the trial, and it makes more keyless
+    # find_business calls than a trial allows - so, like tests/conftest.py, it
+    # gives the gate a counter that admits everything and remembers nothing.
+    # Without this the probe would be handed "get a key" refusals and report
+    # every round-trip value as lost.
+    import billing.anon_trial as _anon_trial
+    _original_trial_rpc = _anon_trial._rpc
+
+    async def _admit_everything(fn, payload):
+        if fn == "anon_trial_reserve":
+            return {"allowed": True, "reason": "ok", "caller_count": 1, "global_count": 1}
+        return {"released": True}
+
+    _anon_trial._rpc = _admit_everything
+
     original_label = U.label
     U.label = label_fn  # the mutation hook - see check 5
     try:
@@ -485,6 +502,7 @@ def _probe(label_fn) -> tuple[list[str], int]:
             inspected += 1
     finally:
         U.label = original_label
+        _anon_trial._rpc = _original_trial_rpc
 
     return findings, inspected
 

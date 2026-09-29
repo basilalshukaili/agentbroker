@@ -212,7 +212,7 @@ def render_home() -> str:
     Same idempotency contract. No surprises.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>{n_keyless} tools &mdash; always free</h3><p><code class="inline">find_business</code>, <code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered.</p></div>
+    <div class="card"><h3>{n_keyless} tools &mdash; always free</h3><p><code class="inline">verify_business</code>, <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>, <code class="inline">preview_cost</code>, <code class="inline">get_status</code>, <code class="inline">get_outcome</code>, <code class="inline">self_test</code>, <code class="inline">check_quota</code>, <code class="inline">mint_key</code>, <code class="inline">lookup_us_contracts</code>. No key, unmetered. Plus <code class="inline">find_business</code>: no key for your first {n_trial_calls} calls, then a free key (still free).</p></div>
     <div class="card"><h3>{n_quota} tools &mdash; free within a daily quota</h3><p><code class="inline">verify_company_record</code> (GLEIF LEI + SEC EDGAR), <code class="inline">screen_sanctions</code> (OFAC SDN + EU Consolidated + UK Sanctions List), <code class="inline">map_trade_restriction</code>. 500/day with a free key, 100/day anonymous, then $0.02/call.</p></div>
     <div class="card"><h3>{n_needs_key} tools &mdash; need a free key</h3><p><code class="inline">send_message</code>, <code class="inline">capture_lead</code>, <code class="inline">schedule_appointment</code>, <code class="inline">send_transactional_confirmation</code>, <code class="inline">handle_inbound</code>, <code class="inline">escalate_to_human</code>, <code class="inline">import_booking_url</code>, <code class="inline">call_business</code>. 100 write ops/day free, then credits or x402. <code class="inline">get_conversation</code> is in this group and costs nothing &mdash; the key is what proves the thread is yours.</p></div>
   </div>
@@ -233,7 +233,7 @@ def render_home() -> str:
   </div>
   <div class="grid grid-4" style="margin-top:18px;">
     <div class="card metric"><div class="num">7</div><div class="label">Discovery protocols</div></div>
-    <div class="card metric"><div class="num">{n_no_key}</div><div class="label">Tools usable with no key at all</div></div>
+    <div class="card metric"><div class="num">{n_no_key}</div><div class="label">Tools usable with no key (one for a {n_trial_calls}-call trial)</div></div>
     <div class="card metric"><div class="num">$0</div><div class="label">Free tier &middot; reads always free</div></div>
     <div class="card metric"><div class="num">100/day</div><div class="label">Free write ops with a key</div></div>
   </div>
@@ -300,7 +300,7 @@ def render_pricing() -> str:
 <section class="section">
   <h2>What's free</h2>
   <p class="lead">{n_keyless} utility tools are free, no key, unmetered, forever:
-  <code class="inline">find_business</code>, <code class="inline">verify_business</code>,
+  <code class="inline">verify_business</code>,
   <code class="inline">check_booking_link</code>, <code class="inline">check_compliance</code>,
   <code class="inline">preview_cost</code>, <code class="inline">get_status</code>,
   <code class="inline">get_outcome</code>, <code class="inline">self_test</code>,
@@ -310,6 +310,9 @@ def render_pricing() -> str:
   as well, and it still takes a key: a message thread is readable only by the
   agent identity that opened it, so a call with no key is refused rather than
   answered.</p>
+  <p class="lead"><code class="inline">find_business</code> is free too. It needs no
+  key for your first {n_trial_calls} calls, counted per caller, so you can try it
+  before signing up; after that it needs a free key, and stays free with one.</p>
   <p class="lead">{n_quota} premium data tools are free up to a daily quota &mdash;
   <code class="inline">verify_company_record</code>, <code class="inline">screen_sanctions</code>,
   <code class="inline">map_trade_restriction</code>: 500/day with a free key, 100/day
@@ -357,7 +360,7 @@ def render_pricing() -> str:
     unpaid attempt with a priced offer first &mdash; no key, no account.
   </p>
   <div class="grid grid-3">
-    <div class="card"><h3>Free tier</h3><p>No card required. {n_no_key} tools need no key at all; write tools get 100 free ops/day with a key.</p></div>
+    <div class="card"><h3>Free tier</h3><p>No card required. {n_no_key} tools work without a key (<code class="inline">find_business</code> for your first {n_trial_calls} calls); write tools get 100 free ops/day with a key.</p></div>
     <div class="card"><h3>Card (Polar)</h3><p><a href="/billing/checkout">Buy credits</a> &mdash; instant, emailed API key.</p></div>
     <div class="card"><h3>x402 (USDC on Base)</h3><p>Pay per call, no signup. See <a href="/docs">the API docs</a> for the payment flow.</p></div>
   </div>

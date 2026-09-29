@@ -34,10 +34,20 @@ may read a row; mcp_server gates the writes). This module answers "what do we
 tell the world", and every surface - tools/list, /.well-known/*, the website,
 the registry manifests - reads it rather than deciding for itself.
 
-THE THREE AUTH CLASSES, which partition the tool list exactly:
+THE FOUR AUTH CLASSES, which partition the tool list exactly:
 
-  keyless      Costs no credits, needs no key. A stranger can call it now.
+  keyless      Costs no credits, needs no key. A stranger can call it now, as
+               often as they like.
   quota_free   Priced, but free to an anonymous caller up to a daily quota.
+  trial        Costs no credits and needs no key for a stranger's first
+               TRIAL_CALLS_PER_CALLER calls; after that it needs a (free) key.
+               Keyed callers are never counted. This is find_business, from
+               2026-09-30: a zero-friction way to try the product that stops
+               short of unmetered anonymous use. Enforcement is
+               billing/anon_trial.py; this module only says what we tell the
+               world, so that the tool-list tag, /.well-known/mcp.json, the
+               initialize instructions and the registry catalogues all say the
+               same thing from one place.
   needs_key    Refused outright without an X-Agent-Identity key - either
                because it writes/spends, or because what it returns belongs to
                one caller.
@@ -91,6 +101,25 @@ IDENTITY_REQUIRED_READ_TOOLS = frozenset({"get_conversation"})
 # The union is the only thing most callers want: "can a stranger call this?"
 TOOLS_REQUIRING_KEY = WRITE_TOOLS_REQUIRING_AUTH | IDENTITY_REQUIRED_READ_TOOLS
 
+# Tools a stranger may call with NO key, but only for a limited number of
+# calls. They cost no credits either way; the limit exists so that "free, no
+# signup" is a trial rather than an open tap. A caller who presents a valid key
+# is never counted and never limited - keyed behaviour is unchanged.
+#
+# Enforced by billing/anon_trial.py (durable per-caller counter plus a global
+# daily ceiling that fails closed). A tool belongs here only if that gate is
+# wired into every door that reaches it (MCP tools/call on /mcp and /mcp/<door>,
+# and POST /ops/<tool>) - tests/unit/test_find_business_free_trial.py asserts it.
+TRIAL_TOOLS = frozenset({"find_business"})
+
+# How many calls a keyless caller gets. ONE definition, read by the enforcement
+# in billing/anon_trial.py and by every sentence that promises it. It is a
+# constant rather than an environment variable on purpose: the number is
+# published in tool descriptions, registry catalogues and the README, and an
+# operator-tunable value would let the running service drift from every one of
+# those copies without any of them noticing.
+TRIAL_CALLS_PER_CALLER = 10
+
 
 def requires_key(tool_name: str) -> bool:
     """True when a call with no X-Agent-Identity key is refused outright.
@@ -125,13 +154,19 @@ def _basis(op: dict) -> str:
 
 
 def auth_class(tool_name: str) -> str:
-    """"keyless" | "quota_free" | "needs_key" for one tool.
+    """"keyless" | "trial" | "quota_free" | "needs_key" for one tool.
 
     The order matters: a tool that needs a key is never advertised as free to
     a stranger, whatever its price. That is the mistake this module removes.
+    A trial tool is checked before the price basis for the mirror-image reason:
+    find_business costs no credits, so its basis reads "free", and reading only
+    the basis would file it under "keyless" - which is exactly the claim that is
+    no longer true once the 11th anonymous call is refused.
     """
     if requires_key(tool_name):
         return "needs_key"
+    if tool_name in TRIAL_TOOLS:
+        return "trial"
     op = next((o for o in _ops() if o.get("name") == tool_name), None)
     if op is not None and _basis(op) == "freemium_daily_quota":
         return "quota_free"
@@ -149,7 +184,7 @@ def costs_nothing() -> int:
 
 
 def keyless() -> int:
-    """Callable right now, by a stranger, with no key and no credits."""
+    """Callable right now, by a stranger, with no key, no credits and NO LIMIT."""
     return sum(1 for o in _ops() if auth_class(o.get("name", "")) == "keyless"
                and _basis(o) == "free")
 
@@ -185,9 +220,18 @@ def write_tools() -> int:
     return len(WRITE_TOOLS_REQUIRING_AUTH)
 
 
+def trial_free() -> int:
+    """Tools a stranger can call with no key for their first few calls only."""
+    return sum(1 for o in _ops() if auth_class(o.get("name", "")) == "trial")
+
+
 def usable_without_key() -> int:
-    """What a stranger can call before signing up for anything."""
-    return keyless() + quota_free()
+    """What a stranger can call before signing up for anything.
+
+    Trial tools are included: the stranger really can call them with no key -
+    it is the sentence around this number that has to say "for your first N".
+    """
+    return keyless() + quota_free() + trial_free()
 
 
 def partition_is_sound() -> Optional[str]:
@@ -202,15 +246,24 @@ def partition_is_sound() -> Optional[str]:
     total = total_tools()
     if total <= 0:
         return "the manifest read as zero operations - nothing is being counted"
-    parts = keyless() + quota_free() + needs_key()
+    parts = keyless() + quota_free() + trial_free() + needs_key()
     if parts != total:
         return (f"the partition does not add up: keyless {keyless()} + quota "
-                f"{quota_free()} + needs-key {needs_key()} = {parts}, but there "
-                f"are {total} tools. Every tool must fall in exactly one class.")
+                f"{quota_free()} + trial {trial_free()} + needs-key "
+                f"{needs_key()} = {parts}, but there are {total} tools. Every "
+                f"tool must fall in exactly one class.")
     unknown = sorted(TOOLS_REQUIRING_KEY - {o.get("name") for o in _ops()})
     if unknown:
         return (f"{unknown} require a key but are not in the manifest - a rule "
                 f"about a tool that does not exist protects nothing")
+    missing_trial = sorted(TRIAL_TOOLS - {o.get("name") for o in _ops()})
+    if missing_trial:
+        return (f"{missing_trial} are trial tools but are not in the manifest - "
+                f"a limit on a tool that does not exist protects nothing")
+    overlap = sorted(TRIAL_TOOLS & TOOLS_REQUIRING_KEY)
+    if overlap:
+        return (f"{overlap} are both trial tools and key-required tools - a tool "
+                f"cannot be free for a stranger's first calls and refused to them")
     return None
 
 
@@ -220,7 +273,8 @@ def free_tier_sentence() -> str:
     One phrasing, one source. Three surfaces previously said it three ways.
     """
     return (f"{usable_without_key()} of the {total_tools()} tools work with no key "
-            f"({keyless()} always free, {quota_free()} free within a daily quota)")
+            f"({keyless()} always free, {quota_free()} free within a daily quota, "
+            f"{trial_free()} free for your first {TRIAL_CALLS_PER_CALLER} calls)")
 
 
 def auth_note() -> str:
@@ -231,7 +285,8 @@ def auth_note() -> str:
     registry/servers.yaml tokens and CI fails if a generated file drifts.
     """
     return (f"{usable_without_key()} of the {total_tools()} tools require no auth "
-            f"({keyless()} always-free + {quota_free()} free within a daily quota)")
+            f"({keyless()} always-free + {quota_free()} free within a daily quota + "
+            f"{trial_free()} free for a {TRIAL_CALLS_PER_CALLER}-call trial)")
 
 
 # Tokens the page templates and the registry source use instead of digits.
@@ -245,6 +300,9 @@ TOKENS = {
     "{n_tools}": total_tools,
     "{n_keyless}": keyless,
     "{n_quota}": quota_free,
+    "{n_trial}": trial_free,
+    "{n_trial_calls}": lambda: TRIAL_CALLS_PER_CALLER,
+    "{n_trial_tools}": lambda: ", ".join(sorted(TRIAL_TOOLS)),
     "{n_no_key}": usable_without_key,
     "{n_needs_key}": needs_key,
     "{n_write_tools}": write_tools,

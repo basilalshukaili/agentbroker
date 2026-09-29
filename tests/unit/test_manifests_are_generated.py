@@ -265,7 +265,12 @@ def test_no_typed_tool_counts_on_public_pages():
 
 
 def test_every_tool_falls_in_exactly_one_bucket():
-    """keyless + quota + needs-key must equal the total.
+    """keyless + quota + trial + needs-key must equal the total.
+
+    `trial` (find_business: a few keyless calls, then a key) is its own bucket.
+    Filing it under `keyless` would publish "unlimited, no key" for a tool whose
+    11th anonymous call is refused; filing it under `needs_key` would tell a
+    stranger they cannot try it.
 
     The first version of needs_key() subtracted the daily-quota tools, which are
     not in the auth set, and would have published 5 where the truth is 8.
@@ -274,7 +279,8 @@ def test_every_tool_falls_in_exactly_one_bucket():
     sys.path.insert(0, AB)
     from web import facts
     assert facts.total_tools() > 0
-    assert facts.keyless() + facts.quota_free() + facts.needs_key() == facts.total_tools()
+    assert (facts.keyless() + facts.quota_free() + facts.trial_free()
+            + facts.needs_key()) == facts.total_tools()
 
 
 def test_pages_render_no_unsubstituted_token():

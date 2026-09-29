@@ -143,7 +143,7 @@
       "cost_model": {
         "basis": "free",
         "unit_price_usd": 0.0,
-        "notes": "No key required, unmetered."
+        "notes": "No key needed for a caller's first 10 calls (counted per caller; only successful calls count). After that a free key is needed. Calls made with a key stay free and are never counted."
       },
       "slo": {
         "p50_ms": 200,

@@ -72,10 +72,12 @@ def _payments_block() -> dict:
         # comes from core/tool_auth.py, which answers "does a stranger get
         # refused" rather than "is it a write".
         try:
-            from core.tool_auth import TOOLS_REQUIRING_KEY
+            from core.tool_auth import TOOLS_REQUIRING_KEY, TRIAL_TOOLS
             needs_key = set(TOOLS_REQUIRING_KEY)
+            trial_set = set(TRIAL_TOOLS)
         except Exception:                       # noqa: BLE001
             needs_key = set()
+            trial_set = set()
         zero = {n for n, c in _PRICING_CENTS.items() if c == 0}
         # Priced tools that are still callable keyless up to a daily quota.
         try:
@@ -83,7 +85,13 @@ def _payments_block() -> dict:
             quota_free = sorted(set(PREMIUM_DATA_TOOLS) - needs_key)
         except Exception:                       # noqa: BLE001
             quota_free = []
-        free = sorted(zero - needs_key)
+        # A trial tool costs no credits and needs no key ... for a caller's
+        # first few calls. Listing it in free_tools, whose comment below says
+        # "callable with NO key and NO credits", would tell an autonomous
+        # client it may plan a keyless session around a tool that stops
+        # answering it on call 11. It gets its own field instead.
+        trial = sorted((zero - needs_key) & trial_set)
+        free = sorted(zero - needs_key - trial_set)
         free_with_key = sorted(zero & needs_key)
         paid = sorted(n for n, c in _PRICING_CENTS.items() if c > 0)
     except Exception:  # noqa: BLE001
@@ -119,8 +127,24 @@ def _payments_block() -> dict:
     rails = ["credits"] + (["x402"] if x402_live else [])
     return {
         "status": "active",
-        # Callable with NO key and NO credits.
+        # Callable with NO key and NO credits, without limit.
         "free_tools": free,
+        # Callable with NO key and NO credits for a caller's first
+        # `trial.keyless_calls_per_caller` calls, then a free key is needed
+        # (keyed calls stay free). Counted durably per caller, bounded by a
+        # service-wide daily ceiling; see billing/anon_trial.py.
+        "trial_tools": trial,
+        "trial": {
+            "tools": trial,
+            "keyless_calls_per_caller": _trial_calls(),
+            "after_that": "a free key (calls with a key are free and are not counted)",
+            "get_a_key": {
+                "method": "POST",
+                "url": f"{BASE_URL}/keys/request",
+                "body": {"email": "you@example.com"},
+            },
+            "header": "X-Agent-Identity",
+        },
         # Cost no credits, but need a free key. Kept separate because an agent
         # planning a keyless session must not treat these as available.
         "free_with_key_tools": free_with_key,
@@ -133,10 +157,17 @@ def _payments_block() -> dict:
         # count seven different ways.
         "quota_free_tools": quota_free,
         "note": (
-            f"THREE NUMBERS, because 'free' means three things here. "
-            f"{len(free)} tools are callable with NO key and NO credits. "
+            f"FOUR NUMBERS, because 'free' means four things here. "
+            f"{len(free)} tools are callable with NO key and NO credits, "
+            f"without limit. "
             f"{len(quota_free)} more are callable with no key up to a daily "
-            f"quota, then cost credits. That is {len(free) + len(quota_free)} "
+            f"quota, then cost credits. "
+            f"{len(trial)} more ({', '.join(trial)}) "
+            f"{'is' if len(trial) == 1 else 'are'} callable with no key "
+            f"for a caller's first {_trial_calls()} calls, then "
+            f"{'needs' if len(trial) == 1 else 'need'} a free key and "
+            f"{'stays' if len(trial) == 1 else 'stay'} free with one. That is "
+            f"{len(free) + len(quota_free) + len(trial)} "
             f"usable without signing up. The remaining {len(paid) - len(quota_free) + len(free_with_key)} "
             f"need a free key, and {len(paid)} spend credits once past any "
             f"quota. Call preview_cost (free) for the exact price of any "
@@ -149,8 +180,21 @@ def _payments_block() -> dict:
     }
 
 
-def describe_cost(cost: dict) -> str:
+def _trial_calls() -> int:
+    """The keyless-call allowance, from the one place that defines it."""
+    try:
+        from core.tool_auth import TRIAL_CALLS_PER_CALLER
+        return TRIAL_CALLS_PER_CALLER
+    except Exception:                           # noqa: BLE001
+        return 10
+
+
+def describe_cost(cost: dict, name: str = "") -> str:
     """One honest cost sentence for any cost_model class.
+
+    `name` is optional and only matters for a trial tool: its cost basis reads
+    "free" (it spends no credits), and "free (no key required)" is not the whole
+    truth for a tool whose keyless allowance runs out.
 
     These descriptors read `amount_usd`, a key the generated cost models do not
     have — so after the manifest was regenerated they said NOTHING about price.
@@ -162,6 +206,15 @@ def describe_cost(cost: dict) -> str:
         return ""
     basis = cost.get("basis")
     amount = cost.get("unit_price_usd", cost.get("amount_usd"))
+    if name:
+        try:
+            from core.tool_auth import TRIAL_TOOLS
+            if name in TRIAL_TOOLS and (basis == "free" or amount in (0, 0.0)):
+                return (f"Cost: free. No key needed for your first "
+                        f"{_trial_calls()} calls; after that a free key is "
+                        f"needed, and calls with a key stay free.")
+        except Exception:                       # noqa: BLE001
+            pass
     if basis == "free" or amount in (0, 0.0):
         return "Cost: free (no key required)."
     if basis == "freemium_daily_quota":
@@ -375,8 +428,10 @@ def get_agent_card() -> dict:
         "name": "Agent Broker",
         "description": (
             "AI agents find, verify, message, and book appointments with small "
-            "businesses worldwide. Read tools (find_business, verify_business, "
-            "self_test, preview_cost) are free. Write tools require an "
+            "businesses worldwide. Read tools (verify_business, self_test, "
+            "preview_cost) are free with no key; find_business is free with no "
+            "key for your first " + str(_trial_calls()) + " calls, then free "
+            "with a key. Write tools require an "
             "X-Agent-Identity token. Built-in TCPA/GDPR/CASL compliance gate. "
             "Connect via the MCP endpoint below (streamable-http)."
         ),
@@ -529,7 +584,7 @@ def get_llms_txt() -> str:
         lines.append(f"- **When to use**: {op['when_to_use']}")
         if op.get("when_not_to_use"):
             lines.append(f"- **When NOT to use**: {op['when_not_to_use']}")
-        lines.append(f"- **{describe_cost(op.get('cost_model', {})) or 'Cost: varies'}**")
+        lines.append(f"- **{describe_cost(op.get('cost_model', {}), op.get('name', '')) or 'Cost: varies'}**")
         lines.append(f"- **Execution**: {op.get('execution_profile', 'sync')}")
         slo = op.get("slo", {})
         if slo:
@@ -673,7 +728,7 @@ def _llm_optimized_description(op: dict) -> str:
         parts.append(f"Use when: {op['when_to_use']}")
     if op.get("when_not_to_use"):
         parts.append(f"Do NOT use when: {op['when_not_to_use']}")
-    cost_line = describe_cost(op.get("cost_model", {}))
+    cost_line = describe_cost(op.get("cost_model", {}), op.get("name", ""))
     if cost_line:
         parts.append(cost_line)
     profile = op.get("execution_profile")

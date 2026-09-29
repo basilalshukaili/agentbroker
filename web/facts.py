@@ -33,6 +33,7 @@ total_tools = tool_auth.total_tools           # every tool in tools/list
 costs_nothing = tool_auth.costs_nothing       # spends no credits (NOT keyless)
 keyless = tool_auth.keyless                   # no key, no credits, no signup
 quota_free = tool_auth.quota_free             # free to an anonymous caller up to a daily quota
+trial_free = tool_auth.trial_free             # free to an anonymous caller for their first N calls only
 usable_without_key = tool_auth.usable_without_key
 needs_key = tool_auth.needs_key               # refused outright without a key
 free_tier_sentence = tool_auth.free_tier_sentence

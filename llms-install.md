@@ -157,10 +157,16 @@ SSE transport, not streamable HTTP. With your AgentBroker key:
 
 ## What you get once connected
 
-**11 utility tools are unconditionally free (no key, no limit):** `find_business`, `verify_business`,
+**10 utility tools are unconditionally free (no key, no limit):** `verify_business`,
 `check_compliance`, `check_booking_link`, `preview_cost`, `get_status`, `get_outcome`, `self_test`,
 `check_quota`, `mint_key`, and
 `lookup_us_contracts` (US federal contract awards via USASpending.gov).
+
+**`find_business` is free, with no key for your first 10 calls.** Calls are counted per caller
+(by client IP) and only successful calls count. Call 11 returns a normal tool result explaining how
+to get a key: `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`,
+open the link it emails you, and send the key as `X-Agent-Identity`. `find_business` stays free with
+a key, and keyed calls are never counted.
 
 **`get_conversation` is free and unmetered but needs a key.** A message thread is readable only by
 the agent identity that opened it, so send the same `X-Agent-Identity` key you send with

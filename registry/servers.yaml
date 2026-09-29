@@ -58,7 +58,7 @@ servers:
     # <= 100 characters: the registry schema rejects longer, and it is CC0 the
     # moment it is published.
     # THE COUNTS ARE TOKENS, NOT DIGITS. gen_manifests.py substitutes
-    # {n_tools}/{n_no_key}/{n_keyless}/{n_quota} from core/tool_auth.py before
+    # {n_tools}/{n_no_key}/{n_keyless}/{n_quota}/{n_trial} from core/tool_auth.py before
     # writing any manifest. Typed here, they were "15 of the 23 (12 + 3)" in
     # three published catalogues on the day the identity rule made it 14 (11 +
     # 3) - and a catalogue is read by agents deciding whether to install us.
@@ -90,11 +90,13 @@ servers:
       businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification,
       TCPA/GDPR/CASL compliance, live sanctions screening, cross-border
       trade-restriction mapping. {n_no_key} of the {n_tools} tools are usable
-      with no key ({n_keyless} always-free + {n_quota} free within a daily quota).
+      with no key ({n_keyless} always-free + {n_quota} free within a daily quota
+      + {n_trial} free for your first {n_trial_calls} calls: {n_trial_tools}).
     license: MIT
     auth_note: >
       {n_no_key} of the {n_tools} tools require no auth ({n_keyless} always-free
-      + {n_quota} free within a daily quota). Write ops require an
+      + {n_quota} free within a daily quota + {n_trial} free for your first
+      {n_trial_calls} calls: {n_trial_tools}, then a free key). Write ops require an
       X-Agent-Identity bearer token: a free
       email-verified key gives 100 ops/day, or buy credits at
       https://hatchloop.dev/pricing

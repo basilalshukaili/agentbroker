@@ -833,6 +833,15 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "targets core.capture_lead.handle_capture_lead's deferred rpc import "
         "(leads_insert_or_get) via TestPartialNotChargeable; this file never "
         "references billing.credits or run_metered_tool.",
+    # Added for the find_business free trial (2026-09-30).
+    ("tests/unit/test_find_business_free_trial.py", "core.find_business.handle_find_business"):
+        "the calls it makes go through agent_interface.mcp_server._dispatch_operation "
+        "(`from core.find_business import handle_find_business` INSIDE the `if name == "
+        "\"find_business\"` branch) and main.py's /ops/find_business route (same "
+        "function-local import) -- both re-read the live attribute on every call. The "
+        "only eager importer is check_gates.py, a CLI script this file never runs. "
+        "The test also asserts the stub took effect (the `runs` counter reaches N, and "
+        "a raising stub surfaces as an error), so a dead stub cannot pass.",
 }
 
 

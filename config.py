@@ -273,6 +273,23 @@ FREE_DATA_QUOTA_PER_DAY = _env_int("FREE_DATA_QUOTA_PER_DAY", 500)
 ANON_DATA_QUOTA_PER_DAY = _env_int("ANON_DATA_QUOTA_PER_DAY", 100)
 
 # ---------------------------------------------------------------------------
+# find_business free trial (billing/anon_trial.py)
+# ---------------------------------------------------------------------------
+# A caller with no key gets core.tool_auth.TRIAL_CALLS_PER_CALLER successful
+# find_business calls, counted per caller in Supabase. That per-caller number
+# is deliberately NOT here: it is published in tool descriptions, registry
+# catalogues and the README, so it has one definition (core/tool_auth.py) and no
+# environment override that could let the running service disagree with them.
+#
+# THIS number is different: it is an operational safety valve, never promised
+# to anyone. It caps how many anonymous find_business calls the whole service
+# will serve in one UTC day, so a caller who rotates IP addresses to collect
+# fresh allowances cannot turn a free trial into unbounded upstream cost. It has
+# a non-empty default, so scripts/check_deploy_env.py does not treat it as a
+# variable the container must be given.
+FIND_BUSINESS_TRIAL_GLOBAL_DAILY = _env_int("FIND_BUSINESS_TRIAL_GLOBAL_DAILY", 1000)
+
+# ---------------------------------------------------------------------------
 # x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)
 # ---------------------------------------------------------------------------
 # The standard x402 scheme: an agent sends a signed EIP-3009 authorization

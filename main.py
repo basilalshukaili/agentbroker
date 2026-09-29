@@ -584,13 +584,40 @@ async def health_external():
 # MCP server — JSON-RPC 2.0 endpoint
 # ---------------------------------------------------------------------------
 
+# Imported here, next to its only user, rather than in the block at the top:
+# `Response` has to be a module-level name for FastAPI to resolve the
+# `response: Response` parameter on POST /ops/find_business.
+from fastapi import Response  # noqa: E402
+
+
+def _headers_with_peer(request: Request) -> dict:
+    """The request headers, plus the socket's peer address stamped by US.
+
+    billing/anon_trial.py counts a keyless caller by client IP, and the only
+    honest way to read that IP through a reverse proxy is to know whether the
+    thing that connected to us IS our proxy: X-Forwarded-For from Caddy is a
+    fact, the same header from a direct connection is a claim. Only the socket
+    can say which, so the peer address is read here, where the socket is, and
+    handed down under a name (`x-hl-peer-addr`) that any value the CLIENT sent
+    is removed from first - a caller cannot pre-fill the field that decides
+    whether its own forwarding header is believed.
+    """
+    from billing.anon_trial import PEER_HEADER
+    headers = dict(request.headers)
+    for k in [k for k in headers if k.lower() == PEER_HEADER]:
+        headers.pop(k, None)
+    client = request.client
+    headers[PEER_HEADER] = client.host if client and client.host else ""
+    return headers
+
+
 @app.post("/mcp", tags=["MCP"])
 async def mcp_endpoint(request: Request):
     """Model Context Protocol JSON-RPC 2.0 endpoint."""
     payload = await request.json()
     # Pass headers down so the per-tool auth gate inside `tools/call` can
     # read x-agent-identity and enforce the same scope rules /ops/* enforces.
-    response = await handle_mcp_request(payload, headers=dict(request.headers))
+    response = await handle_mcp_request(payload, headers=_headers_with_peer(request))
     return response
 
 
@@ -631,7 +658,7 @@ async def mcp_profile_endpoint(profile: str, request: Request):
             },
         )
     response = await handle_mcp_request(
-        payload, headers=dict(request.headers), profile=profile)
+        payload, headers=_headers_with_peer(request), profile=profile)
     return response
 
 
@@ -1170,11 +1197,34 @@ def _labelled(tool: str, receipt):
 @app.post("/ops/find_business", response_model=OutcomeReceipt, tags=["Operations"])
 async def find_business(
     req: FindBusinessRequest,
+    request: Request,
+    response: Response,
     x_agent_identity: Optional[str] = Header(None),
 ):
     _get_identity(x_agent_identity, "find_business")
+    # THE SAME FREE-TRIAL GATE AS MCP tools/call. find_business is reachable two
+    # ways - /mcp and this route - and a limit on one door only is a suggestion:
+    # the caller who is refused on /mcp simply posts here. billing/anon_trial.py
+    # is the one implementation; this is the second place it is wired, and
+    # tests/unit/test_find_business_free_trial.py fails if either goes missing.
+    from billing import anon_trial as _anon_trial
+    admission = await _anon_trial.admit("find_business", _headers_with_peer(request))
+    if admission.denied:
+        status_code, detail, extra = _anon_trial.denial_http(
+            "find_business", admission.reason)
+        raise HTTPException(status_code=status_code, detail=detail, headers=extra)
     from core.find_business import handle_find_business
-    return _labelled("find_business", await handle_find_business(req))
+    try:
+        receipt = await handle_find_business(req)
+    except BaseException:
+        try:
+            await asyncio.shield(_anon_trial.settle_failure(admission))
+        except BaseException:  # noqa: BLE001 - never mask the original error
+            pass
+        raise
+    if admission.ticket is not None:
+        response.headers["X-Free-Trial-Calls-Remaining"] = str(admission.ticket.remaining)
+    return _labelled("find_business", receipt)
 
 
 @app.post("/ops/verify_business", response_model=OutcomeReceipt, tags=["Operations"])

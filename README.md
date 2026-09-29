@@ -36,12 +36,12 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
 | SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
-| Billing | **Live**  -  11 utility tools free (no key, unmetered; `get_conversation` and `import_booking_url` are free too and need a free key). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day), request via `POST /keys/request`; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
+| Billing | **Live**  -  10 utility tools free (no key, unmetered; `find_business` is free too: no key for your first 10 calls, then a free key; `get_conversation` and `import_booking_url` are free too and need a free key). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day), request via `POST /keys/request`; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
 | Free-key email delivery | **Blocked**  -  no email provider is configured on the deployed server today, so `POST /keys/request` answers honestly with `503 {"error": "onboarding_unavailable"}` instead of a false `verification_sent` (`GET /healthz/external` reports `resend: not_configured`). Until an operator configures it, get a key by emailing hello@hatchloop.dev. |
 | x402 payment rail | **Offered, opt-in.** Enabled on the service since the founder lifted the crypto restriction on 2026-08-29. A caller attaches a payment in `params._meta["x402/payment"]` and the call is served without a key (USDC on Base, proven once on mainnet, tx 0x38a0d9ec). Callers who do not attach one fall through to credits and the free quota, so nothing is gated behind it. `/.well-known/x402` is still a 404 - discovery is via `/.well-known/mcp.json`, which lists the rail. |
 | Production SMB onboarding | **Planned**  -  real businesses not yet enrolled |
 
-> The MCP server is live and callable right now. Bookings hit demo data. 11 utility tools are free (no key, unmetered). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day) via `POST /keys/request` - **email delivery for that flow is not configured on production today**, so requests currently get an honest `503 onboarding_unavailable` instead of a key; email hello@hatchloop.dev for manual provisioning until it is. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+> The MCP server is live and callable right now. Bookings hit demo data. 10 utility tools are free (no key, unmetered), and `find_business` gives every caller 10 free calls with no key (then it needs a free key, and stays free with one). Premium data tools (verify_company_record, screen_sanctions, map_trade_restriction) are free up to a daily limit; beyond that, $0.02/call via credits. Write tools require a free email-verified key (100 ops/day) via `POST /keys/request` - **email delivery for that flow is not configured on production today**, so requests currently get an honest `503 onboarding_unavailable` instead of a key; email hello@hatchloop.dev for manual provisioning until it is. Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
 
 ---
 
@@ -51,7 +51,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 
 | # | Tool | What it does | Auth |
 |---|---|---|---|
-| 1 | `find_business` | Search SMBs by vertical, location, and capability | **free** |
+| 1 | `find_business` | Search SMBs by vertical, location, and capability | **free for your first 10 calls without a key**, then a free key |
 | 2 | `verify_business` | Confirm an SMB is real, operating, and capable of the requested service | **free** |
 | 3 | `get_status` | Poll the current state of an async operation | **free** |
 | 4 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) | **free** |
@@ -179,7 +179,7 @@ your model's decision.
 }
 ```
 
-**14 tools require no key.** 11 are always free (find_business, verify_business, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test, check_quota, mint_key, lookup_us_contracts) and 3 more are free within a daily quota (verify_company_record, screen_sanctions, map_trade_restriction). `get_conversation` costs nothing either, and is the one free tool that still needs a key: a thread is readable only by the agent identity that opened it, so a keyless call is refused.
+**14 tools work with no key.** 10 are always free (verify_business, check_booking_link, check_compliance, get_status, get_outcome, preview_cost, self_test, check_quota, mint_key, lookup_us_contracts), 3 more are free within a daily quota (verify_company_record, screen_sanctions, map_trade_restriction), and 1 more, `find_business`, is free for your first 10 calls without a key (counted per caller, on MCP and on `POST /ops/find_business`). Call 11 returns a normal tool result that says how to get a key; `find_business` stays free with one, and keyed calls are never counted. `get_conversation` costs nothing either, and is the one free tool that still needs a key: a thread is readable only by the agent identity that opened it, so a keyless call is refused.
 
 **Write tools** require an `X-Agent-Identity` bearer token:
 - Free email-verified key (100 ops/day): `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`, then open the link it emails you.

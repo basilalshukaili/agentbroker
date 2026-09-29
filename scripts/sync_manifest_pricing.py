@@ -49,8 +49,25 @@ KEYED_FREE = {
 }
 
 
+def _trial_note() -> str:
+    """The cost note for a trial tool, from the one place the allowance lives.
+
+    find_business costs no credits, so its basis stays "free" - but "No key
+    required, unmetered." stopped being true on 2026-09-30, when a keyless
+    caller's allowance became finite (core/tool_auth.py TRIAL_CALLS_PER_CALLER,
+    enforced by billing/anon_trial.py).
+    """
+    from core.tool_auth import TRIAL_CALLS_PER_CALLER
+    return (
+        f"No key needed for a caller's first {TRIAL_CALLS_PER_CALLER} calls "
+        f"(counted per caller; only successful calls count). After that a free "
+        f"key is needed. Calls made with a key stay free and are never counted."
+    )
+
+
 def build_cost_model(op_name: str) -> dict:
     from billing.pricing import _PRICING_CENTS, _MAX_PRICING_CENTS
+    from core.tool_auth import TRIAL_TOOLS
 
     cents = _PRICING_CENTS.get(op_name)
     if cents is None:
@@ -77,6 +94,8 @@ def build_cost_model(op_name: str) -> dict:
         }
 
     if cents == 0:
+        if op_name in TRIAL_TOOLS:
+            return {"basis": "free", "unit_price_usd": 0.0, "notes": _trial_note()}
         return {"basis": "free", "unit_price_usd": 0.0,
                 "notes": KEYED_FREE.get(op_name, "No key required, unmetered.")}
 

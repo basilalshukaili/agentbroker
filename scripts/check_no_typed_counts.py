@@ -85,13 +85,15 @@ def main() -> int:
     try:
         from web import facts
         total = facts.total_tools()
-        parts = facts.keyless() + facts.quota_free() + facts.needs_key()
+        parts = (facts.keyless() + facts.quota_free() + facts.trial_free()
+                 + facts.needs_key())
         if total <= 0:
             problems.append("web.facts derives zero tools - it is reading nothing")
         if parts != total:
             problems.append(
                 f"the partition does not add up: keyless {facts.keyless()} + quota "
-                f"{facts.quota_free()} + needs-key {facts.needs_key()} = {parts}, "
+                f"{facts.quota_free()} + trial {facts.trial_free()} + needs-key "
+                f"{facts.needs_key()} = {parts}, "
                 f"but there are {total} tools. Every tool must fall in exactly one.")
         if facts.substitute("{n_tools}") != str(total):
             problems.append("substitute() does not replace {n_tools}")
@@ -106,7 +108,7 @@ def main() -> int:
                 print(f"  {rel}:{n}  {hit!r}")
                 print(f"      {line}")
             print("\nUse a token instead: {n_tools}, {n_keyless}, {n_quota}, "
-                  "{n_needs_key}, {n_no_key}.")
+                  "{n_trial}, {n_trial_calls}, {n_needs_key}, {n_no_key}.")
             print("Inside an f-string body, double the braces: {{n_tools}}.")
         for p in problems:
             print(f"  {p}")
@@ -115,7 +117,8 @@ def main() -> int:
     print(f"check_no_typed_counts: OK -- {len(scanned)} surface(s) scanned "
           f"({', '.join(scanned)}), no typed tool counts; derivation partitions "
           f"all {facts.total_tools()} tools ({facts.keyless()} keyless + "
-          f"{facts.quota_free()} quota + {facts.needs_key()} keyed)")
+          f"{facts.quota_free()} quota + {facts.trial_free()} trial + "
+          f"{facts.needs_key()} keyed)")
     return 0
 
 

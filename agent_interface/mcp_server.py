@@ -241,6 +241,17 @@ def _format_description_for_llm(op: dict) -> str:
             # uses to plan a keyless session.
             if requires_key(op.get("name", "")):
                 cost_tag = " [free, requires key]"
+            elif op.get("name", "") in tool_auth.TRIAL_TOOLS:
+                # A THIRD ANSWER, because the first two are both false for it.
+                # "[free, no key]" promises an unlimited keyless call and the
+                # 11th one is refused; "[free, requires key]" would send a
+                # stranger away from the tool we most want them to try. The
+                # number is read from core/tool_auth.py, the same place the
+                # gate in billing/anon_trial.py reads it, so the tag cannot
+                # promise a count the server does not enforce.
+                cost_tag = (f" [free, no key for your first "
+                            f"{tool_auth.TRIAL_CALLS_PER_CALLER} calls; then a "
+                            f"free key - keyed calls stay free]")
             else:
                 cost_tag = " [free, no key]"
         elif cost_amount is not None and not has_variable:
@@ -702,7 +713,11 @@ async def _h_initialize(params: dict) -> dict:
             # missing one read as free to every client that connected.
             f"{_keyless_count()} of the {_total_tool_count()} tools need no "
             f"key at all ({tool_auth.keyless()} always free, "
-            f"{tool_auth.quota_free()} free within a daily quota); the other "
+            f"{tool_auth.quota_free()} free within a daily quota, "
+            f"{tool_auth.trial_free()} free for your first "
+            f"{tool_auth.TRIAL_CALLS_PER_CALLER} calls - "
+            f"{', '.join(sorted(tool_auth.TRIAL_TOOLS))} - after which it "
+            f"needs a free key, and stays free with one); the other "
             f"{tool_auth.needs_key()} require an X-Agent-Identity token in the "
             f"underlying HTTP request - the {len(_WRITE_TOOLS_REQUIRING_AUTH)} "
             f"write tools, plus "
@@ -1096,7 +1111,38 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
         # Within quota -- fall through to free dispatch below.
     # -----------------------------------------------------------------------
 
-    receipt = await _dispatch_and_label(name, arguments, headers or {})
+    # -----------------------------------------------------------------------
+    # FREE-TRIAL GATE (find_business; see billing/anon_trial.py)
+    # -----------------------------------------------------------------------
+    # A caller with NO valid key gets TRIAL_CALLS_PER_CALLER successful calls
+    # to a trial tool, counted durably per caller, bounded by a service-wide
+    # daily ceiling, and FAIL-CLOSED: if the counter cannot be reached the tool
+    # is not run. A caller with a valid key passes straight through, uncounted -
+    # keyed behaviour is unchanged. Every other tool returns "not_applicable"
+    # without touching the store.
+    #
+    # The slot is reserved BEFORE the tool runs (the only way to hold the limit
+    # under concurrency) and given back if the tool raises or returns a failure,
+    # so only a call that succeeded is ever charged against the trial.
+    from billing import anon_trial as _anon_trial
+    _trial = await _anon_trial.admit(name, headers or {})
+    if _trial.denied:
+        return _trial.denial
+
+    try:
+        receipt = await _dispatch_and_label(name, arguments, headers or {})
+    except BaseException:
+        # Bad arguments (ParamError / ValidationError / KeyError) and genuine
+        # faults both land here. Neither is a "successful call".
+        try:
+            await asyncio.shield(_anon_trial.settle_failure(_trial))
+        except BaseException:  # noqa: BLE001 - never mask the original error
+            pass
+        raise
+    if isinstance(receipt, dict) and receipt.get("status") == "failure":
+        await _anon_trial.settle_failure(_trial)
+    else:
+        _anon_trial.annotate_success(receipt, _trial)
 
     # FIX 5 (2026-08-23): Inject quota block into every gated tool response so
     # callers can see how many free-tier ops remain without a separate API call.
@@ -1125,9 +1171,10 @@ _PREMIUM_DATA_TOOLS: frozenset[str] = frozenset({
 # Tools that mutate state or charge upstream credits. The MCP dispatcher must
 # gate these the same way /ops/* gates them — otherwise a developer-tier
 # customer can bypass scope-checks by tunneling write calls through /mcp.
-# Read-only tools (find_business, verify_business, get_status, get_outcome,
-# preview_cost, self_test) stay anonymous-accessible per the manifest's
-# readOnlyHint annotation.
+# Read-only tools (verify_business, get_status, get_outcome, preview_cost,
+# self_test) stay anonymous-accessible per the manifest's readOnlyHint
+# annotation. find_business is anonymous-accessible for a limited trial only -
+# see the free-trial gate in _h_tools_call_impl and billing/anon_trial.py.
 #
 # DEFINED IN core/tool_auth.py and aliased here under its historical name,
 # which a dozen tests and three surfaces import from this module. It is the
@@ -1275,7 +1322,9 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
             f"a key - USDC on Base. This is the only option that needs no "
             f"human. "
             f"Options 1 and 2 email you an X-Agent-Identity token; send it as a header on every call. "
-            f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
+            f"Read-only tools (verify_business, preview_cost, get_status) stay free with no key; "
+            f"find_business is free with no key for your first {tool_auth.TRIAL_CALLS_PER_CALLER} calls "
+            f"and free with a key after that."
             if checkout else
             f" Get a free API key at {free_key_url} ({_free_limit_msg} ops/day, email verification required). "
             f"Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing."

@@ -12,11 +12,15 @@ minimum. Credits do not expire.
 
 ## What is free
 
-**12 utility tools — free and unmetered; 11 of them need no key.**
+**12 utility tools — free and unmetered; 10 of them need no key at all.**
 
-`find_business`, `verify_business`, `check_booking_link`, `check_compliance`,
+`verify_business`, `check_booking_link`, `check_compliance`,
 `preview_cost`, `get_status`, `get_outcome`, `self_test`, `get_conversation`,
-`check_quota`, `mint_key`, `lookup_us_contracts`
+`check_quota`, `mint_key`, `lookup_us_contracts`, and `find_business`.
+
+`get_conversation` needs a key (a thread is readable only by the agent that
+opened it). `find_business` needs no key for your first 10 calls (counted per
+caller); after that it needs a free key, and stays free with one.
 
 An agent can discover businesses, pre-check a booking link, preview what an
 action would cost, check its quota, and read the outcome of its own operations
