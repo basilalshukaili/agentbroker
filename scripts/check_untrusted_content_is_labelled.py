@@ -336,6 +336,12 @@ def _probe(label_fn) -> tuple[list[str], int]:
     findings: list[str] = []
     inspected = 0
 
+    # find_business is OpenStreetMap-backed; the probe must never reach the
+    # public servers, so it runs against the offline fake the tests use.
+    from tests import osm_fakes
+    from supply import osm_client
+    previous_osm_client = osm_client.set_client(osm_fakes.make_client()[0])
+
     original_label = U.label
     U.label = label_fn  # the mutation hook - see check 5
     try:
@@ -485,6 +491,7 @@ def _probe(label_fn) -> tuple[list[str], int]:
             inspected += 1
     finally:
         U.label = original_label
+        osm_client.set_client(previous_osm_client)
 
     return findings, inspected
 

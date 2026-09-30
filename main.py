@@ -314,7 +314,17 @@ async def _rate_limit_middleware(request: Request, call_next):
             content={"detail": "rate_limited", "retry_after_seconds": 1},
             headers={"Retry-After": "1"},
         )
-    return await call_next(request)
+    # Publish the caller we just identified so handlers that must limit per
+    # caller (find_business protects the public OpenStreetMap servers this
+    # way) can read it without being handed the HTTP request. The key is the
+    # same one this limiter uses; the context var is reset when the request
+    # ends so it can never leak into another request.
+    from core.caller_context import CALLER_KEY
+    _ck_token = CALLER_KEY.set(client_ip)
+    try:
+        return await call_next(request)
+    finally:
+        CALLER_KEY.reset(_ck_token)
 
 
 # ---------------------------------------------------------------------------
@@ -849,7 +859,11 @@ async def demo():
             "status": imp.status.value,
         },
         "step_2_find_business": {
-            "matches": len(found.result.get("businesses", [])) if isinstance(found.result, dict) else 0,
+            # Only the supply-network rows: this demo is about the row we just
+            # imported. find_business also returns OpenStreetMap rows now, and
+            # counting those would report someone else's map as our import.
+            "matches": sum(1 for b in found.result.get("businesses", [])
+                          if b.get("source") == "supply_network") if isinstance(found.result, dict) else 0,
             "total_in_directory": found.result.get("total_in_supply_network") if isinstance(found.result, dict) else None,
         },
         "next": (

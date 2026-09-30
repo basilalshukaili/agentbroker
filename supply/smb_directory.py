@@ -302,11 +302,17 @@ class SMBDirectory:
         capability: str | None = None,
         max_usd: float | None = None,
         max_results: int = 5,
+        include_demo: bool = True,
     ) -> list[SMBEntry]:
+        # include_demo=False drops sample rows BEFORE the max_results cut, so
+        # sample rows with more channels cannot crowd real ones out of the
+        # answer. find_business passes False; the default stays True for the
+        # other callers that rely on the sandbox rows.
         results = [
             smb for smb in _DIRECTORY.values()
             if smb.active
             and smb.vertical == vertical
+            and (include_demo or not smb.is_demo)
             and self._location_matches(smb, zip_or_city)
         ]
         if capability:
@@ -319,6 +325,10 @@ class SMBDirectory:
 
     def size(self) -> int:
         return len([s for s in _DIRECTORY.values() if s.active])
+
+    def size_real(self) -> int:
+        """Active rows that are not sample data."""
+        return len([s for s in _DIRECTORY.values() if s.active and not s.is_demo])
 
     def upsert(self, entry: SMBEntry) -> None:
         _DIRECTORY[entry.smb_id] = entry

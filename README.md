@@ -35,7 +35,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | 23 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
 | REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
-| SMB supply network | **Demo**  -  20+ seed SMBs; demo bookings return `demo_smb_no_live_booking` |
+| SMB supply network + search | **Live for search, small for booking**  -  `find_business` searches OpenStreetMap (real, community-mapped, unverified by us) and returns nothing invented; the bookable network is the businesses added through `import_booking_url`. Sample rows (`demo_smb_no_live_booking`) are no longer returned by search |
 | Billing | **Live**  -  11 utility tools free (no key, unmetered; `get_conversation` and `import_booking_url` are free too and need a free key). Premium data tools (company verification, sanctions, trade screening): free up to a daily limit (500/day with a free key, 100/day anonymous), then $0.02/call via credits. Write tools: free email-verified key (100 ops/day), request via `POST /keys/request`; credit packages from $9/1,000 credits at hatchloop.dev/pricing;. |
 | Free-key email delivery | **Blocked**  -  no email provider is configured on the deployed server today, so `POST /keys/request` answers honestly with `503 {"error": "onboarding_unavailable"}` instead of a false `verification_sent` (`GET /healthz/external` reports `resend: not_configured`). Until an operator configures it, get a key by emailing hello@hatchloop.dev. |
 | x402 payment rail | **Offered, opt-in.** Enabled on the service since the founder lifted the crypto restriction on 2026-08-29. A caller attaches a payment in `params._meta["x402/payment"]` and the call is served without a key (USDC on Base, proven once on mainnet, tx 0x38a0d9ec). Callers who do not attach one fall through to credits and the free quota, so nothing is gated behind it. `/.well-known/x402` is still a 404 - discovery is via `/.well-known/mcp.json`, which lists the rail. |
@@ -51,7 +51,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 
 | # | Tool | What it does | Auth |
 |---|---|---|---|
-| 1 | `find_business` | Search SMBs by vertical, location, and capability | **free** |
+| 1 | `find_business` | Find real businesses near a place by vertical or capability (OpenStreetMap, (c) OpenStreetMap contributors, ODbL; plus the supply network) | **free** |
 | 2 | `verify_business` | Confirm an SMB is real, operating, and capable of the requested service | **free** |
 | 3 | `get_status` | Poll the current state of an async operation | **free** |
 | 4 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) | **free** |

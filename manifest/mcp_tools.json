@@ -1,7 +1,7 @@
 [
   {
     "name": "find_business",
-    "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
+    "description": "Find real businesses near a place, nearest first. Data is OpenStreetMap (ODbL, (c) OpenStreetMap contributors; attribution in every result): name, address parts, phone, website, hours when mapped, lat/lon. Coverage varies by region; listings are community-mapped, NOT verified by us, and source=openstreetmap rows cannot be booked. Plus matching supply-network rows. If OSM is unreachable: retriable 'temporarily unavailable', never invented rows.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -29,14 +29,14 @@
             "radius_miles": {
               "type": "number",
               "minimum": 0,
-              "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
+              "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."
             }
           },
-          "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
+          "description": "City, town or ZIP, optionally with country, e.g. 'Nizwa, Oman'. Geocoded by OSM."
         },
         "capability": {
           "type": "string",
-          "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"
+          "description": "Kind of business, e.g. 'haircut', 'plumber', 'dentist'. Mapped to OSM tags."
         },
         "price_band": {
           "type": "object",
@@ -44,7 +44,8 @@
             "max_usd": {
               "type": "number"
             }
-          }
+          },
+          "description": "Supply-network rows only; OpenStreetMap has no prices."
         },
         "availability_window": {
           "type": "object",

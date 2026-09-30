@@ -43,15 +43,20 @@ class TestFindBusiness:
         assert receipt.result["businesses"] == []
         assert "supply_coverage_note" in receipt.result
 
-    def test_find_plumber_boston(self):
+    def test_find_plumber_atlanta(self):
+        # Was "plumbing" near Boston, satisfied by a [DEMO] seed row. find_business
+        # no longer returns sample rows: the plumber below comes from the offline
+        # OpenStreetMap fake (tests/osm_fakes.py), tagged craft=plumber.
         req = FindBusinessRequest(
             vertical=Vertical.HOME_SERVICES,
-            location=LocationFilter(zip_or_city="02139"),
+            location=LocationFilter(zip_or_city="Atlanta"),
             capability="plumbing",
         )
         receipt = run(handle_find_business(req))
         assert receipt.status == OperationStatus.SUCCESS
-        assert any("plumbing" in b["capabilities"] for b in receipt.result["businesses"])
+        found = receipt.result["businesses"]
+        assert found and all(b["source"] == "openstreetmap" for b in found)
+        assert any(b["category"] == "craft=plumber" for b in found)
 
     def test_cost_matches_the_price_table(self):
         """find_business is FREE in billing/pricing.py. This test used to assert

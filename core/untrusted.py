@@ -125,10 +125,29 @@ UNTRUSTED_PATHS: dict[str, tuple[str, ...]] = {
     # The shared supply directory. Names and capability tags are written by
     # whichever agent called import_booking_url, or scraped from a remote
     # booking page's <title>.
+    #
+    # Since find_business became OpenStreetMap-backed (2026-09-30) most
+    # rows are text typed into a public map by strangers: name, address
+    # parts, phone, website, opening_hours and the geocoder's display name
+    # for the resolved place. Every one is fenced. Numbers we compute
+    # (distance_m, lat/lon, OSM ids), the urls we build from an integer id
+    # and `category` (kept only when it is a plain lowercase enum-shaped
+    # token, see supply/osm_places._token) are ours or cannot carry a sentence.
     "find_business": (
         "result.businesses[].name",
         "result.businesses[].address",
         "result.businesses[].capabilities[]",
+        "result.businesses[].phone",
+        "result.businesses[].website",
+        "result.businesses[].opening_hours",
+        "result.businesses[].address_parts.housenumber",
+        "result.businesses[].address_parts.street",
+        "result.businesses[].address_parts.suburb",
+        "result.businesses[].address_parts.city",
+        "result.businesses[].address_parts.state",
+        "result.businesses[].address_parts.postcode",
+        "result.businesses[].address_parts.country",
+        "result.search.geocoded_place.display_name",
     ),
     "verify_business": (
         "result.capabilities_confirmed[]",

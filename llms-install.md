@@ -157,7 +157,7 @@ SSE transport, not streamable HTTP. With your AgentBroker key:
 
 ## What you get once connected
 
-**11 utility tools are unconditionally free (no key, no limit):** `find_business`, `verify_business`,
+**11 utility tools are unconditionally free (no key, no daily quota):** `find_business` (fresh OpenStreetMap lookups are paced per caller to protect the free public servers; repeats are cached), `verify_business`,
 `check_compliance`, `check_booking_link`, `preview_cost`, `get_status`, `get_outcome`, `self_test`,
 `check_quota`, `mint_key`, and
 `lookup_us_contracts` (US federal contract awards via USASpending.gov).

@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 # Strict E.164: leading "+", first digit non-zero, total 8-16 digits.
 _E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
@@ -345,40 +346,35 @@ class LocationFilter(BaseModel):
 
     zip_or_city: str = Field(min_length=1)
 
-    # ACCEPTED, NOT APPLIED, AND THE RESPONSE SAYS SO.
+    # radius_miles IS NOW APPLIED - to the OpenStreetMap half of the search.
     #
-    # This carried `= 10.0`, and the default was the dishonest part: it
-    # asserted a 10-mile radius WAS being applied, by a matcher that only ever
-    # compared city/state/ZIP strings, over records that hold no coordinates.
+    # History: this field used to be accepted and ignored, because the supply
+    # directory held no coordinates and only compared city/state/ZIP strings.
+    # Nothing in it was a distance. It carried `= 10.0` as a default, which
+    # asserted a 10-mile radius that was never applied; the default was removed
+    # and the field kept (and disclosed) so callers built against our manifest
+    # did not start getting -32602 errors.
     #
-    # The first fix deleted the field and refused it by name. That traded one
-    # wrong behaviour for another: we advertised this exact shape, with this
-    # documented default, so every caller written against our own manifest
-    # began getting a JSON-RPC -32602 on MCP - a PROTOCOL error the calling
-    # model cannot read as a tool result and retry - and a bare 422 on
-    # /ops/find_business. Removing an inert filter is right; removing it with
-    # no deprecation window, on callers who did what we told them, is not.
-    #
-    # So: the same treatment availability_window already gets. Take it,
-    # validate it, ignore it, and disclose it in the receipt
-    # (radius_miles_applied: false) so no caller can believe their results are
-    # within N miles. The default is gone - None means "not sent", and only a
-    # caller who actually sent one is told anything.
-    # The disclosure has to live HERE, not only in manifest/mcp_tools.json and
-    # openapi.yaml. The live MCP `tools/list` schema is built from this model by
-    # agent_interface.mcp_server._build_tool_list(), so a description present only
-    # in the hand-authored manifest is invisible to every agent that actually
-    # connects: the static file said "accepted but not applied" while the schema a
-    # caller reads said nothing at all. Same class as the site publishing tool
-    # counts that disagreed with the server.
+    # find_business now geocodes the place with OpenStreetMap Nominatim and
+    # searches Overpass around that point, so a radius means something. It is
+    # capped at 25 miles (public-server etiquette) and, when absent, the
+    # search uses 5 km. What was actually used comes back in
+    # result.search.radius_m and result.search.radius_miles_applied. Rows from
+    # our own supply network are still matched by city/state/ZIP text and are
+    # not distance-filtered; the description says so.
+    # Keep this description and manifest/manifest.json in step: tools/list is
+    # built from the manifest (agent_interface.mcp_server._build_tool_list),
+    # while this model is what the REST route and its OpenAPI schema use.
     radius_miles: Optional[float] = Field(
         default=None,
         ge=0,
         description=(
-            "Accepted but NOT applied. The supply directory holds no coordinates, "
-            "so no distance filter can be honoured; results are not restricted to "
-            "this radius. Sending it is recorded and disclosed back as "
-            "radius_miles_applied: false."
+            "Search radius in miles around the geocoded place, applied to the "
+            "OpenStreetMap results (default 3.1 miles / 5 km when omitted; "
+            "maximum 25 miles - larger values are capped and the cap is "
+            "disclosed in result.search). Rows from the AgentBroker supply "
+            "network are matched by city/state/ZIP text and are not "
+            "distance-filtered."
         ),
     )
 
@@ -403,6 +399,14 @@ class FindBusinessRequest(BaseModel):
     # and SILENTLY DROPPED the last match - five businesses found, four
     # returned, "Found 4 business(es)" and no indication anything was cut.
     max_results: int = Field(default=5, ge=1, le=20)
+    # The vertical word the caller actually sent ("restaurant", "salon",
+    # "pharmacy"), before _alias_natural_terms folds it into one of three macro
+    # buckets. find_business needs it to pick OpenStreetMap tags: for terms
+    # like "restaurant" the alias supplies NO capability hint, so without this
+    # the category would be lost. Internal: hidden from the JSON schema, never
+    # serialised, filled by the validator below (a caller-sent value is
+    # overwritten).
+    vertical_term: SkipJsonSchema[Optional[str]] = Field(default=None, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -416,6 +420,7 @@ class FindBusinessRequest(BaseModel):
         if isinstance(raw, str):
             macro, cap_hint = alias_vertical(raw)
             data["vertical"] = macro
+            data["vertical_term"] = raw.strip()[:60] or None
             if cap_hint and not data.get("capability"):
                 data["capability"] = cap_hint
         return data

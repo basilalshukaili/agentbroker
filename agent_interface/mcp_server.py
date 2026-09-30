@@ -2102,7 +2102,8 @@ async def _h_resources_read(params: dict) -> dict:
                     "3. (optional) `send_transactional_confirmation(...)` to email the receipt\n\n"
                     "## When the user describes a business by category + city\n"
                     "1. `find_business(vertical, location, capability, max_results=5)`\n"
-                    "2. If `result.businesses` is non-empty, pick one and `schedule_appointment(smb_id=...)`\n"
+                    "2. Rows with `source: supply_network` can be booked: `schedule_appointment(smb_id=...)`. "
+                    "Rows with `source: openstreetmap` are real map listings but NOT bookable here - give the user their phone or website\n"
                     "3. If empty AND the user can supply a URL, fall through to `import_booking_url`\n\n"
                     "## When sending an outbound message\n"
                     "`send_message` supports five `message_type` values: transactional, "
@@ -2155,7 +2156,8 @@ async def _h_prompts_list(params: dict) -> dict:
                 "description": (
                     "Use when the user describes a business by category + location but does not provide a URL. "
                     "1) call find_business(vertical, location, capability). "
-                    "2) if results exist, call schedule_appointment with the chosen smb_id. "
+                    "2) if a result has source=supply_network, call schedule_appointment with its smb_id "
+                    "(source=openstreetmap rows cannot be booked - give the user their phone or website instead). "
                     "3) if NO results, call import_booking_url with any URL the user CAN provide, then schedule_appointment. "
                     "Total: 2-3 tool calls."
                 ),
@@ -2215,8 +2217,9 @@ async def _h_prompts_get(params: dict) -> dict:
     elif name == "find_then_book":
         text = (
             "Step 1: call find_business(vertical, location, capability). "
-            "Step 2: if result.businesses is non-empty, pick one and call "
-            "schedule_appointment(smb_id, action='book', preferred_time=...). "
+            "Step 2: if a result has source=supply_network, call "
+            "schedule_appointment(smb_id, action='book', preferred_time=...) with it "
+            "(source=openstreetmap rows are contact-only: give the user their phone or website). "
             "Step 3: if result.businesses is empty AND the user provided a URL, "
             "call import_booking_url first, then schedule_appointment with the "
             "newly-imported smb_id."

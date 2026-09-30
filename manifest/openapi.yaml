@@ -156,7 +156,12 @@ components:
               type: string
             radius_miles:
               type: number
-              default: 10
+              minimum: 0
+              maximum: 25
+              description: >-
+                Radius in miles around the geocoded place (default 3.1, capped at 25).
+                Applies to OpenStreetMap results only; supply-network rows are matched
+                by city/state/ZIP text.
         capability:
           type: string
         price_band:
@@ -401,7 +406,7 @@ paths:
 
   /ops/find_business:
     post:
-      summary: Find verified SMBs matching criteria
+      summary: Find real businesses near a place (OpenStreetMap plus the supply network)
       operationId: findBusiness
       requestBody:
         required: true

@@ -160,6 +160,30 @@ class TestFailureModesReproducible:
         # Not supply_unreachable but out_of_supply_network — both declared
         assert receipt.reason_code in ("no_results", "supply_unreachable", "out_of_supply_network")
 
+    def test_osm_temporarily_unavailable_is_triggerable(self):
+        """The failure mode find_business declares for an OpenStreetMap outage
+        must be reachable, retriable, and carry no rows."""
+        import httpx
+        from core.find_business import handle_find_business
+        from core.models import FindBusinessRequest, LocationFilter, Vertical
+        from supply import osm_client
+        from tests import osm_fakes
+
+        def down(request):
+            return httpx.Response(503, text="overloaded")
+
+        client, _clock, _log = osm_fakes.make_client(overpass_override=down)
+        previous = osm_client.set_client(client)
+        try:
+            receipt = run(handle_find_business(FindBusinessRequest(
+                vertical=Vertical.HOME_SERVICES,
+                location=LocationFilter(zip_or_city="Atlanta"))))
+        finally:
+            osm_client.set_client(previous)
+        assert receipt.reason_code == "osm_temporarily_unavailable"
+        assert receipt.retriable is True
+        assert receipt.result["businesses"] == []
+
     def test_bad_input_is_triggerable(self):
         from pydantic import ValidationError
         from core.models import FindBusinessRequest, LocationFilter

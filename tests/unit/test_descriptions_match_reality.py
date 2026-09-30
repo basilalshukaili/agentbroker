@@ -79,14 +79,23 @@ def test_nothing_promises_guaranteed_delivery():
             f"{name} promises guaranteed delivery")
 
 
-def test_find_business_admits_the_network_is_small_and_partly_sample_data():
-    """The directory is 36 rows and mostly [DEMO] seeds. Describing it as
-    "only curated, verified, transactable businesses" is the overclaim; the
-    is_demo flag beside it was always honest."""
+def test_find_business_says_where_its_data_comes_from_and_where_it_stops():
+    """find_business used to search a directory of 36 mostly [DEMO] rows, and
+    the honest description said so. It now searches OpenStreetMap, and the
+    description has to make the NEW promise no larger than the code: real but
+    community-mapped and unverified, region-dependent, not bookable, credited
+    to its source, and honest when the source is down. The old overclaim
+    ("only curated, verified, transactable businesses") stays banned.
+    """
     d = desc("find_business")
     assert "curated, verified, transactable" not in d
-    assert "[DEMO]" in d and "is_demo" in d, (
-        "find_business must tell the caller how to spot sample data")
+    assert "OpenStreetMap" in d and "ODbL" in d, "the data source and its licence must be named"
+    assert "NOT verified by us" in d, "OpenStreetMap listings are not verified by us"
+    assert "cannot be booked" in d, "an OSM row is not a bookable supply-network row"
+    assert "Coverage varies" in d, "OpenStreetMap coverage is uneven; say so"
+    assert "temporarily unavailable" in d and "never invented" in d, (
+        "an upstream outage must be described as an outage, not as an empty list")
+    assert "[DEMO]" not in d, "sample rows are no longer returned; do not describe them"
 
 
 @pytest.mark.parametrize("op", sorted(OPS))
@@ -105,16 +114,19 @@ def test_no_tool_advertises_a_superlative_it_has_not_measured(op):
 # The message a caller reads, not just the description it may not read
 # --------------------------------------------------------------------------
 
-def test_sample_results_are_named_as_sample_in_the_human_message():
+def test_find_business_never_calls_its_results_verified_and_never_returns_sample_rows():
     """`find_business` returned "[DEMO] Cuts & Co." under the sentence "Found
-    1 verified businesses." An agent reads the sentence."""
+    1 verified businesses." An agent reads the sentence. The sentence must
+    not call OpenStreetMap listings verified, and the sample rows must stay
+    filtered out of the answer at the source."""
     src = open(os.path.join(ROOT, "core", "find_business.py"),
                encoding="utf-8").read()
     assert "verified businesses." not in src, (
-        "find_business still calls its results 'verified businesses' - it "
-        "cannot, while the directory is mostly sample data")
-    assert "is_demo" in src, (
-        "the human_message does not distinguish sample data from real results")
+        "find_business still calls its results 'verified businesses'")
+    assert "include_demo=False" in src and "is_demo" in src, (
+        "find_business no longer filters sample rows out of its answer")
+    assert "unverified by us" in src, (
+        "the human_message must say OpenStreetMap listings are unverified")
 
 
 # ---------------------------------------------------------------------------

@@ -186,11 +186,13 @@ def get_ai_plugin_manifest() -> dict:
         "name_for_human": "Agent Broker",
         "name_for_model": "agent_broker",
         "description_for_human": (
-            # NOT "millions of small businesses". The supply network holds 25
-            # rows, mostly sample data, and find_business says so in its own
-            # description - so this file was the loudest claim we made and the
-            # least true. It is also the file directories scrape and republish,
-            # which is how an overclaim outlives the page it was written on.
+            # NOT "millions of small businesses". Our own supply network is
+            # small; find_business now also searches OpenStreetMap (real,
+            # community-mapped, unverified by us) and says so in its own
+            # description. This file is the loudest claim we made and was once
+            # the least true. It is also the file directories scrape and
+            # republish, which is how an overclaim outlives the page it was
+            # written on.
             #
             # What IS true and is worth leading with: the screening and
             # verification tools hit real primary sources on every call.

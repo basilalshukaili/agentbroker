@@ -12,9 +12,9 @@
   "operations": [
     {
       "name": "find_business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
-      "when_to_use": "Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.",
-      "when_not_to_use": "Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.",
+      "description": "Find real businesses near a place, nearest first. Data is OpenStreetMap (ODbL, (c) OpenStreetMap contributors; attribution in every result): name, address parts, phone, website, hours when mapped, lat/lon. Coverage varies by region; listings are community-mapped, NOT verified by us, and source=openstreetmap rows cannot be booked. Plus matching supply-network rows. If OSM is unreachable: retriable 'temporarily unavailable', never invented rows.",
+      "when_to_use": "Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.",
+      "when_not_to_use": "Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -41,13 +41,13 @@
               "zip_or_city": {
                 "type": "string"
               },
-              "radius_miles": {"type": "number", "minimum": 0, "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."}
+              "radius_miles": {"type": "number", "minimum": 0, "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."}
             },
-            "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
+            "description": "City, town or ZIP, optionally with country, e.g. 'Nizwa, Oman'. Geocoded by OSM."
           },
           "capability": {
             "type": "string",
-            "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"
+            "description": "Kind of business, e.g. 'haircut', 'plumber', 'dentist'. Mapped to OSM tags."
           },
           "price_band": {
             "type": "object",
@@ -55,7 +55,8 @@
               "max_usd": {
                 "type": "number"
               }
-            }
+            },
+            "description": "Supply-network rows only; OpenStreetMap has no prices."
           },
           "availability_window": {
             "type": "object",
@@ -128,13 +129,54 @@
                 },
                 "rank_score": {
                   "type": "number"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": ["openstreetmap", "supply_network"]
+                },
+                "category": {
+                  "type": "string",
+                  "description": "OpenStreetMap tag that matched, e.g. shop=hairdresser (OSM rows only)"
+                },
+                "address_parts": {
+                  "type": "object",
+                  "description": "housenumber, street, suburb, city, state, postcode, country - only those the map holds"
+                },
+                "phone": {"type": "string"},
+                "website": {"type": "string"},
+                "opening_hours": {"type": "string", "description": "OpenStreetMap opening_hours syntax, as mapped"},
+                "latitude": {"type": "number"},
+                "longitude": {"type": "number"},
+                "distance_m": {"type": "integer", "description": "Metres from the geocoded search point"},
+                "osm": {
+                  "type": "object",
+                  "properties": {"type": {"type": "string"}, "id": {"type": "integer"}, "url": {"type": "string"}}
                 }
               }
             }
           },
           "total_in_supply_network": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Real (non-sample) supply-network rows overall"
           },
+          "attribution": {
+            "type": "string",
+            "description": "Always present. (c) OpenStreetMap contributors - required by the ODbL"
+          },
+          "attribution_url": {"type": "string"},
+          "license": {"type": "string"},
+          "search": {
+            "type": "object",
+            "description": "What was actually searched: status (ok, location_not_found, unavailable, rate_limited), geocoded_place, radius_m, category_match {basis, osm_tags}, candidates_considered, cached",
+            "properties": {
+              "provider": {"type": "string"},
+              "status": {"type": "string", "enum": ["ok", "location_not_found", "unavailable", "rate_limited"]},
+              "reason": {"type": "string"},
+              "retry_after_s": {"type": "integer"},
+              "radius_m": {"type": "integer"}
+            }
+          },
+          "osm_notice": {"type": "string"},
           "supply_coverage_note": {
             "type": "string"
           }
@@ -146,8 +188,8 @@
         "notes": "No key required, unmetered."
       },
       "slo": {
-        "p50_ms": 200,
-        "p95_ms": 800,
+        "p50_ms": 1500,
+        "p95_ms": 9000,
         "success_rate_30d": null,
         "availability_30d": null,
         "supply_network_coverage_by_vertical": null
@@ -157,55 +199,46 @@
         "bad_input",
         "missing_capability",
         "rate_limited",
+        "osm_temporarily_unavailable",
         "out_of_supply_network",
         "transient",
         "internal"
       ],
       "examples": [
         {
-          "label": "Happy path — find hair salon near Atlanta",
+          "label": "Happy path - find hair salons near Atlanta (illustrative output)",
           "input": {
             "vertical": "personal_services",
             "location": {
-              "zip_or_city": "30309"
+              "zip_or_city": "Atlanta, GA"
             },
             "capability": "haircut",
-            "price_band": {
-              "max_usd": 50
-            },
-            "availability_window": {
-              "start_iso": "2026-04-29T09:00:00Z",
-              "end_iso": "2026-04-29T12:00:00Z"
-            }
+            "max_results": 3
           },
           "output": {
             "status": "success",
             "businesses": [
               {
-                "smb_id": "smb_001",
-                "name": "Cuts & Co.",
-                "vertical": "personal_services",
-                "address": "123 Main St, Atlanta, GA 30309",
-                "capabilities": [
-                  "haircut",
-                  "blowdry"
-                ],
-                "channels_available": [
-                  "direct_api:square",
-                  "sms"
-                ],
-                "price_range": {
-                  "min_usd": 35,
-                  "max_usd": 55
-                },
-                "verified_at": "2026-04-20T00:00:00Z",
-                "rank_score": 0.92
+                "smb_id": "osm:node/1001",
+                "name": "Example Cuts",
+                "source": "openstreetmap",
+                "category": "shop=hairdresser",
+                "address": "12 Peachtree St, Atlanta, GA 30303",
+                "address_parts": {"housenumber": "12", "street": "Peachtree St", "city": "Atlanta", "state": "GA", "postcode": "30303"},
+                "phone": "+1 404 555 0100",
+                "opening_hours": "Mo-Sa 09:00-18:00",
+                "latitude": 33.7495,
+                "longitude": -84.3885,
+                "distance_m": 60,
+                "osm": {"type": "node", "id": 1001, "url": "https://www.openstreetmap.org/node/1001"}
               }
-            ]
+            ],
+            "attribution": "(c) OpenStreetMap contributors",
+            "search": {"provider": "openstreetmap", "status": "ok", "radius_m": 5000}
           }
         },
         {
-          "label": "No results in supply network",
+          "label": "No results - say so, do not read it as 'none exist'",
           "input": {
             "vertical": "professional_services",
             "location": {
@@ -216,36 +249,27 @@
           "output": {
             "status": "success",
             "businesses": [],
-            "total_in_supply_network": 0,
-            "supply_coverage_note": "No verified businesses in this area for this capability. Try a broader location, an adjacent vertical, or import_booking_url."
+            "attribution": "(c) OpenStreetMap contributors",
+            "search": {"provider": "openstreetmap", "status": "location_not_found"},
+            "supply_coverage_note": "OpenStreetMap could not resolve the location to a place. Try a city or town name, optionally with the country."
           }
         },
         {
-          "label": "Channel fallback note in result",
+          "label": "OpenStreetMap unreachable - retriable, no invented rows",
           "input": {
             "vertical": "home_services",
             "location": {
-              "zip_or_city": "02139"
+              "zip_or_city": "Muscat, Oman"
             },
-            "capability": "plumbing"
+            "capability": "plumber"
           },
           "output": {
-            "status": "success",
-            "businesses": [
-              {
-                "smb_id": "smb_044",
-                "name": "FastFix Plumbing",
-                "channels_available": [
-                  "voice_ai",
-                  "sms"
-                ],
-                "capabilities": [
-                  "plumbing",
-                  "emergency_plumbing"
-                ]
-              }
-            ],
-            "supply_coverage_note": "This business is reachable via voice AI or SMS only — no direct scheduling API."
+            "status": "failure",
+            "reason_code": "osm_temporarily_unavailable",
+            "retriable": true,
+            "businesses": [],
+            "attribution": "(c) OpenStreetMap contributors",
+            "search": {"provider": "openstreetmap", "status": "unavailable", "reason": "upstream_timeout", "retry_after_s": 30}
           }
         }
       ],

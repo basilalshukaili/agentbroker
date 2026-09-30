@@ -42,7 +42,15 @@ except Exception as e:
 
 
 # Gate 1b: find_business smoke test
+#
+# find_business is backed by the public OpenStreetMap servers. A release gate
+# runs on every push and must never call them (rude to a volunteer-run free
+# service, slow, and it would fail whenever they have a bad minute). It runs
+# against the same offline fake OSM the test suite uses.
 try:
+    from tests import osm_fakes as _osm_fakes
+    from supply import osm_client as _osm_client
+    _osm_client.set_client(_osm_fakes.make_client()[0])
     from core.models import FindBusinessRequest, LocationFilter, Vertical, OperationStatus
     req = FindBusinessRequest(
         vertical=Vertical.PERSONAL_SERVICES,
