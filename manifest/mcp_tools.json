@@ -1,7 +1,7 @@
 [
   {
     "name": "find_business",
-    "description": "Find real businesses near a place, nearest first. Data is OpenStreetMap (ODbL, (c) OpenStreetMap contributors; attribution in every result): name, address parts, phone, website, hours when mapped, lat/lon. Coverage varies by region; listings are community-mapped, NOT verified by us, and source=openstreetmap rows cannot be booked. Plus matching supply-network rows. If OSM is unreachable: retriable 'temporarily unavailable', never invented rows.",
+    "description": "Find real businesses near a place, sorted by distance (nearest of those examined; dense areas are narrowed, see result.search). Data: OpenStreetMap (ODbL, (c) OpenStreetMap contributors, attributed per result); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Plus supply-network rows. If OSM is down: retriable 'temporarily unavailable', never invented rows.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -24,7 +24,8 @@
           ],
           "properties": {
             "zip_or_city": {
-              "type": "string"
+              "type": "string",
+              "description": "City, town, address or postal code, optionally with the country, e.g. 'Nizwa, Oman'. A bare 5-digit ZIP is read as a US ZIP; give any non-US postal code with its country (e.g. '10115, Germany')."
             },
             "radius_miles": {
               "type": "number",
@@ -32,7 +33,7 @@
               "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."
             }
           },
-          "description": "City, town or ZIP, optionally with country, e.g. 'Nizwa, Oman'. Geocoded by OSM."
+          "description": "City/town or ZIP, optionally with country ('Nizwa, Oman'). Geocoded by OSM."
         },
         "capability": {
           "type": "string",

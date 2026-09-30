@@ -31,6 +31,12 @@ a process-level cache and rate gate are exact. A restart empties the cache;
 that is acceptable for a free upstream at our volume and is noted as a
 follow-up rather than papered over with a new table.
 
+THE SAME HOLDS FOR THE NOMINATIM SPACING AND THE CONCURRENCY CAP: they are
+per PROCESS. deploy/Dockerfile (the file the VPS deploy script builds) runs one
+uvicorn worker, so they are exact there. deploy/railway.json asks for
+--workers 2, which would double the real request rate to the public servers;
+do not deploy this behind more than one worker without a shared limiter.
+
 Data is (c) OpenStreetMap contributors, ODbL 1.0. Attribution is added to
 every find_business result set by the caller of this module.
 """
@@ -257,7 +263,14 @@ class OSMClient:
         try:
             result = await factory()
         except asyncio.CancelledError:
-            fut.cancel()
+            # The LEADER was cancelled (its caller's deadline, a dropped
+            # connection). Followers are independent requests: cancelling the
+            # shared future would raise CancelledError - a BaseException that
+            # sails past `except Exception` - inside each of them and abort
+            # them too. Hand them an ordinary, retriable failure instead.
+            fut.set_exception(OSMUnavailable(
+                "busy", "the lookup this request was sharing was cancelled", retry_after_s=2))
+            fut.exception()          # mark retrieved: no "never retrieved" noise if nobody waited
             raise
         except BaseException as exc:
             fut.set_exception(exc)
@@ -357,13 +370,21 @@ class OSMClient:
 
     # ---------------------------------------------------------------- geocode
 
-    async def geocode(self, query: str, *, guard: Optional[Callable[[], None]] = None) -> Optional[dict]:
+    async def geocode(self, query: str, *, guard: Optional[Callable[[], None]] = None,
+                      country_codes: Optional[str] = None) -> Optional[dict]:
         """Resolve free text to one place, or None if OSM does not know it.
+
+        `country_codes` (Nominatim's `countrycodes`, e.g. "us") restricts the
+        search to those countries. It is part of the cache key: the same text
+        restricted and unrestricted are different questions.
 
         Returns {"latitude", "longitude", "display_name", "osm_type", "osm_id",
         "cached"}; raises OSMUnavailable on an upstream fault.
         """
-        key = "geo:" + _location_key(query)
+        cc = (country_codes or "").strip().lower()
+        if cc and not all(part.isalpha() and len(part) == 2 for part in cc.split(",")):
+            raise ValueError("country_codes must be comma-separated two-letter codes")
+        key = "geo:" + _location_key(query) + ("|cc=" + cc if cc else "")
         hit, value = self.cache.get(key)
         if hit:
             return dict(value, cached=True) if value else None
@@ -374,10 +395,13 @@ class OSMClient:
             hit2, value2 = self.cache.get(key)
             if hit2:
                 return dict(value2, cached=True) if value2 else None
+            params = {"q": query[:200], "format": "jsonv2", "limit": "1",
+                      "accept-language": "en"}
+            if cc:
+                params["countrycodes"] = cc
             data = await self._request(
                 "nominatim", "GET", self._nominatim_url, NOMINATIM_TIMEOUT, guard,
-                params={"q": query[:200], "format": "jsonv2", "limit": "1",
-                        "accept-language": "en"},
+                params=params,
             )
             place = _first_place(data)
             self.cache.set(key, place, GEOCODE_TTL_S if place else GEOCODE_MISS_TTL_S)

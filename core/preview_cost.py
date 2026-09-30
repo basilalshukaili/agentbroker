@@ -60,7 +60,12 @@ _PRICING: dict[str, dict] = {
 }
 
 _LATENCY = {
-    "find_business":                  {"p50": 200,  "p95": 800},
+    # find_business is a live OpenStreetMap lookup (geocode + Overpass), not an
+    # in-memory scan any more. UNCACHED lookups measured 3.7-25 s on 2026-09-30
+    # against the public servers (a repeat of the same query is near-instant);
+    # 25 s is the handler's own deadline. Keep in step with manifest slo;
+    # tests/unit/test_find_business_osm_fixes.py fails if they drift. Estimates.
+    "find_business":                  {"p50": 6000, "p95": 25000},
     "verify_business":                {"p50": 500,  "p95": 2000},
     "send_message":                   {"p50": 800,  "p95": 4000},
     "capture_lead":                   {"p50": 600,  "p95": 3000},

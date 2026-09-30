@@ -699,6 +699,11 @@ def render_privacy() -> str:
     <li><strong>Operational metadata:</strong> request timestamps, operation
         names, response codes, latency. Used for billing, abuse prevention,
         and debugging.</li>
+    <li><strong>Location text sent to <code>find_business</code>:</strong>
+        the city, postal code or address your agent asks us to search near,
+        and the search area, are sent to public OpenStreetMap services (see
+        section 7) to find businesses. Treat that field as public: do not put
+        a private person&rsquo;s home address in it.</li>
     <li><strong>Business data passed by your agent:</strong> phone numbers
         and email addresses are <strong>never stored in plaintext</strong>;
         we keep only an HMAC-SHA256 hash for compliance audit. Free-text
@@ -743,6 +748,12 @@ def render_privacy() -> str:
   <h2>7. Sub-processors</h2>
   <ul>
     <li><strong>Render</strong> (Frankfurt) &mdash; application hosting.</li>
+    <li><strong>OpenStreetMap Foundation</strong> (Nominatim geocoding,
+        nominatim.openstreetmap.org) and the operator of the public
+        <strong>Overpass API</strong> (overpass-api.de) &mdash; receive the
+        location text and search area from <code>find_business</code>, plus
+        our server&rsquo;s IP address, to resolve a place and list nearby
+        businesses. Their data is &copy; OpenStreetMap contributors (ODbL).</li>
     <li><strong>Twilio</strong> &mdash; SMS / voice carrier.</li>
     <li><strong>Vapi</strong> &mdash; voice AI agent fallback.</li>
     <li><strong>Resend</strong> &mdash; transactional email delivery.</li>

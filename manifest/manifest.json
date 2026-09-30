@@ -12,7 +12,7 @@
   "operations": [
     {
       "name": "find_business",
-      "description": "Find real businesses near a place, nearest first. Data is OpenStreetMap (ODbL, (c) OpenStreetMap contributors; attribution in every result): name, address parts, phone, website, hours when mapped, lat/lon. Coverage varies by region; listings are community-mapped, NOT verified by us, and source=openstreetmap rows cannot be booked. Plus matching supply-network rows. If OSM is unreachable: retriable 'temporarily unavailable', never invented rows.",
+      "description": "Find real businesses near a place, sorted by distance (nearest of those examined; dense areas are narrowed, see result.search). Data: OpenStreetMap (ODbL, (c) OpenStreetMap contributors, attributed per result); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Plus supply-network rows. If OSM is down: retriable 'temporarily unavailable', never invented rows.",
       "when_to_use": "Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.",
       "when_not_to_use": "Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.",
       "execution_profile": "sync",
@@ -39,11 +39,12 @@
             ],
             "properties": {
               "zip_or_city": {
-                "type": "string"
+                "type": "string",
+                "description": "City, town, address or postal code, optionally with the country, e.g. 'Nizwa, Oman'. A bare 5-digit ZIP is read as a US ZIP; give any non-US postal code with its country (e.g. '10115, Germany')."
               },
               "radius_miles": {"type": "number", "minimum": 0, "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."}
             },
-            "description": "City, town or ZIP, optionally with country, e.g. 'Nizwa, Oman'. Geocoded by OSM."
+            "description": "City/town or ZIP, optionally with country ('Nizwa, Oman'). Geocoded by OSM."
           },
           "capability": {
             "type": "string",
@@ -167,13 +168,19 @@
           "license": {"type": "string"},
           "search": {
             "type": "object",
-            "description": "What was actually searched: status (ok, location_not_found, unavailable, rate_limited), geocoded_place, radius_m, category_match {basis, osm_tags}, candidates_considered, cached",
+            "description": "What was actually searched: status (ok, location_not_found, unavailable, rate_limited), geocoded_place, radius_m (the radius really used; smaller than radius_requested_m when a dense area was narrowed), category_match {basis, osm_tags}, candidates_considered, candidates_capped, distance_order, cached",
             "properties": {
               "provider": {"type": "string"},
               "status": {"type": "string", "enum": ["ok", "location_not_found", "unavailable", "rate_limited"]},
               "reason": {"type": "string"},
               "retry_after_s": {"type": "integer"},
-              "radius_m": {"type": "integer"}
+              "radius_m": {"type": "integer", "description": "Radius actually searched, in metres"},
+              "radius_requested_m": {"type": "integer"},
+              "radius_narrowed": {"type": "boolean", "description": "True when the requested area held more than 150 matches and a smaller circle was searched so the nearest ones are not missed"},
+              "candidates_capped": {"type": "boolean", "description": "True when more matches exist than the 150 candidates examined; rows are then the nearest among those examined, not guaranteed nearest overall"},
+              "distance_order": {"type": "string", "enum": ["exact", "nearest_of_examined"], "description": "exact = every match within radius_m was examined"},
+              "country_restriction": {"type": "string", "description": "Present (us) when a bare 5-digit ZIP was read as a US ZIP"},
+              "narrowing_stopped_because": {"type": "string"}
             }
           },
           "osm_notice": {"type": "string"},
@@ -188,8 +195,8 @@
         "notes": "No key required, unmetered."
       },
       "slo": {
-        "p50_ms": 1500,
-        "p95_ms": 9000,
+        "p50_ms": 6000,
+        "p95_ms": 25000,
         "success_rate_30d": null,
         "availability_30d": null,
         "supply_network_coverage_by_vertical": null

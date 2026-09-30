@@ -154,12 +154,17 @@ components:
           properties:
             zip_or_city:
               type: string
+              description: >-
+                City, town, address or postal code, optionally with the country
+                (e.g. 'Nizwa, Oman'). A bare 5-digit ZIP is read as a US ZIP; give
+                any non-US postal code with its country (e.g. '10115, Germany').
             radius_miles:
               type: number
               minimum: 0
-              maximum: 25
               description: >-
-                Radius in miles around the geocoded place (default 3.1, capped at 25).
+                Radius in miles around the geocoded place (default 3.1). Values above
+                25 are accepted and capped at 25 (disclosed in result.search); a dense
+                area may be searched in a smaller circle, reported as result.search.radius_m.
                 Applies to OpenStreetMap results only; supply-network rows are matched
                 by city/state/ZIP text.
         capability:

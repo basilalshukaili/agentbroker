@@ -847,7 +847,7 @@ async def demo():
         location=LocationFilter(zip_or_city="online"),
         capability=None,
         max_results=5,
-    ))
+    ), include_osm=False)   # unauthenticated route: never a lookup on OpenStreetMap's servers
 
     return {
         "ok": True,

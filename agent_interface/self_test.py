@@ -56,11 +56,34 @@ async def _check_find_business() -> TestCheck:
         )
         receipt = await handle_find_business(req)
         ok = receipt.status == OperationStatus.SUCCESS
+        # find_business now depends on the public OpenStreetMap servers. When they
+        # are down it answers, correctly, with a retriable
+        # osm_temporarily_unavailable receipt that still carries the attribution
+        # and invents nothing - that is the CONTRACT working, so it passes here
+        # (with the reason recorded) rather than paging someone every time a
+        # volunteer-run server has a bad minute.
+        upstream_down = (
+            not ok
+            and receipt.reason_code == "osm_temporarily_unavailable"
+            and receipt.retriable is True
+            and isinstance(receipt.result, dict)
+            and bool(receipt.result.get("attribution"))
+            and receipt.result.get("businesses") == []
+            # a BUG in our own code also surfaces as osm_temporarily_unavailable
+            # (reason internal_error); that must still fail the self-test.
+            and (receipt.result.get("search") or {}).get("reason") != "internal_error"
+        )
+        if ok:
+            error = ""
+        elif upstream_down:
+            error = "osm_temporarily_unavailable (upstream dependency down; contract intact)"
+        else:
+            error = f"Unexpected status: {receipt.status}"
         return TestCheck(
             name="find_business",
-            passed=ok,
+            passed=ok or upstream_down,
             latency_ms=round((time.time() - start) * 1000, 2),
-            error="" if ok else f"Unexpected status: {receipt.status}",
+            error=error,
         )
     except Exception as e:
         return TestCheck("find_business", False, round((time.time() - start) * 1000, 2), str(e))
