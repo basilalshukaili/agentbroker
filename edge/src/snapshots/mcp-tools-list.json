@@ -5,7 +5,7 @@
     "tools": [
       {
         "name": "find_business",
-        "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result. [free, no key]",
+        "description": "Find real businesses near a place, sorted by distance (nearest of those examined; dense areas are narrowed, see result.search). Data: OpenStreetMap (ODbL, (c) OpenStreetMap contributors, attributed per result); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Plus supply-network rows. If OSM is down: retriable 'temporarily unavailable', never invented rows. [free, no key]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -28,19 +28,20 @@
               ],
               "properties": {
                 "zip_or_city": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "City, town, address or postal code, optionally with the country, e.g. 'Nizwa, Oman'. A bare 5-digit ZIP is read as a US ZIP; give any non-US postal code with its country (e.g. '10115, Germany')."
                 },
                 "radius_miles": {
                   "type": "number",
                   "minimum": 0,
-                  "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
+                  "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."
                 }
               },
-              "description": "Where to search. Matched against the business's city, state and ZIP as text -…"
+              "description": "City/town or ZIP, optionally with country ('Nizwa, Oman'). Geocoded by OSM."
             },
             "capability": {
               "type": "string",
-              "description": "Specific service capability required, e.g. 'haircut', 'plumbing',…"
+              "description": "Kind of business, e.g. 'haircut', 'plumber', 'dentist'. Mapped to OSM tags."
             },
             "price_band": {
               "type": "object",
@@ -48,7 +49,8 @@
                 "max_usd": {
                   "type": "number"
                 }
-              }
+              },
+              "description": "Supply-network rows only; OpenStreetMap has no prices."
             },
             "availability_window": {
               "type": "object",

@@ -29,7 +29,7 @@
     {
       "id": "find_business",
       "name": "Find Business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
+      "description": "Find real businesses near a place, sorted by distance (nearest of those examined; dense areas are narrowed, see result.search). Data: OpenStreetMap (ODbL, (c) OpenStreetMap contributors, attributed per result); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Plus supply-network rows. If OSM is down: retriable 'temporarily unavailable', never invented rows.",
       "tags": [
         "sync",
         "read_only"

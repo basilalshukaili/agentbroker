@@ -25,10 +25,10 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ### find_business
 
-Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.
+Find real businesses near a place, sorted by distance (nearest of those examined; dense areas are narrowed, see result.search). Data: OpenStreetMap (ODbL, (c) OpenStreetMap contributors, attributed per result); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Plus supply-network rows. If OSM is down: retriable 'temporarily unavailable', never invented rows.
 
-- **When to use**: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.
-- **When NOT to use**: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.
+- **When to use**: Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.
+- **When NOT to use**: Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.
 - **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~ms
