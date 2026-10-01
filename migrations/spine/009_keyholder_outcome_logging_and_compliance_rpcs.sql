@@ -1,9 +1,7 @@
 -- AgentBroker on the spine, 2026-10-01: outcome logging + the compliance write/read doors.
 --
--- Applies to the VPS "spine" (PostgREST at https://techmate.om/spine, Postgres database `spine`),
--- as `spine_owner` (BYPASSRLS, owns the objects). Run with:
---
---     python scripts/apply_sql.py <this file>          (HatchLoop repo, SUPABASE_DB_URL = spine tunnel)
+-- Applies to the PostgreSQL database behind AgentBroker's PostgREST endpoint (the "spine"), run as the
+-- role that owns the objects there (it bypasses row-level security). The operator's own apply tool runs it.
 --
 -- ADDITIVE AND IDEMPOTENT. Nothing here is dropped or renamed: the live container (build cd1b9a9)
 -- keeps calling `usage_events_insert` and keeps working while this is applied, and the previous
@@ -24,28 +22,13 @@
 --      (a STOP link or a WhatsApp STOP could not be recorded durably). Each gets one narrow
 --      SECURITY DEFINER function; the direct table door is closed for anon/authenticated/public.
 --
--- THREAT MODEL, STATED PRECISELY BECAUSE 006 REFUSED A BULK READ AND THIS ADDS ONE.
--- 006 declined to expose the opt-out list because on Supabase the anon key sat in public pages:
--- anyone could have downloaded every phone number and email that ever texted STOP. On the spine
--- that premise is gone: PostgREST has no anonymous role, the edge requires a valid JWT, and the
--- anon key is a secret held by the service and its operator, not a published one.
--- `consent_optouts_hydrate` is therefore callable only by the holder of a secret, and
--- three in-process readers (core/demand_queue.py, core/schedule_appointment.py,
--- agent_interface/whatsapp_webhook.py) consult the in-memory set WITHOUT the per-send durable
--- check, so the boot-time load is load-bearing for them. The per-contact boolean
--- `consent_optouts_is_opted_out` (006) stays the authoritative send-path check and is unchanged.
--- If the anon key ever returns to a public page, revoke `consent_optouts_hydrate` first.
---
--- WHAT A FORGED CALL COULD DO (the holder of the anon key; same honest accounting as 003/005):
---   * usage_events_insert_v2 - add analytics rows. Bounded: lengths are clamped, the enumerations
---     are validated, nothing is read back.
---   * compliance_audit_insert - add an audit row. It cannot overwrite or delete one: the insert is
---     `on conflict (audit_id) do nothing`, and there is no update or delete function.
---   * pending_keys_upsert / pending_keys_consume - overwrite or spend a PENDING email verification.
---     Verification links are still HMAC-signed (verify_token runs first), so this cannot mint or
---     claim a key; at worst it makes one pending link read as "already used".
---   * consent_optouts_record - add an opt-out, which only ever SUPPRESSES messages.
---   None of them can read a stored token, a stored audit row, or anyone's key.
+-- OPERATING INVARIANT. `consent_optouts_hydrate` returns the opt-out list in bulk (the server needs it
+-- once at start-up, because three in-process readers consult the in-memory set without the per-send
+-- durable check). That is acceptable only while the database anon credential is a secret held by the
+-- service and its operator. If that credential ever appears on a public page, revoke this function
+-- first. Every other function here only adds or spends rows (analytics, audit, a pending email
+-- verification, an opt-out - which only ever suppresses messages) and none can read a stored token,
+-- audit row or key. The fuller threat model is kept in the operator's private record.
 --
 -- NEW FUNCTIONS IN `public` ARE GRANTED TO anon/authenticated BY DEFAULT on this cluster (default
 -- privileges inherited from the hosted platform it was restored from). Every function below therefore
