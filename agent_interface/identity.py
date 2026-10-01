@@ -684,6 +684,29 @@ def agent_id_from_token(raw_token: Optional[str]) -> str:
     return ANONYMOUS
 
 
+def peek_agent_id(raw_token: Optional[str]) -> Optional[str]:
+    """The agent_id in a correctly SIGNED, unexpired token - or None. No I/O, never raises.
+
+    WHY THIS IS NOT validate_token. The rate limiter needs to know whether a request carries a
+    real key before the body is read, on the event loop, for every /mcp call. validate_token also
+    consults the durable revocation lists, which can hydrate over the network. This does the pure
+    HMAC and expiry check only, so it is safe in middleware. It is NOT an authorisation decision:
+    a revoked key still peeks as valid, and the only thing it is used for is choosing a rate-limit
+    bucket - where "a signed key gets its own bucket" is the whole point and a revoked key doing
+    so costs nothing.
+    """
+    if not raw_token or not isinstance(raw_token, str):
+        return None
+    try:
+        claims = _verify(raw_token.strip())
+        if float(claims.get("exp", 0) or 0) < time.time():
+            return None
+        agent_id = claims.get("agent_id")
+        return str(agent_id) if agent_id else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def revoke_jti(jti: str, reason: str = "manual") -> bool:
     """Revoke a specific jti directly, for callers that already hold the
     jti value rather than a raw token (e.g. portal.py's key/regenerate,

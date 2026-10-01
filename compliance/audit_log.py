@@ -173,32 +173,42 @@ def _mirror_durably(record: "AuditRecord") -> None:
 
 
 async def _write_row(record: "AuditRecord") -> None:
+    # THROUGH compliance_audit_insert, NOT THE TABLE (2026-10-01, key-holder audit fix 5).
+    # The table has RLS with no policy and this container holds only the `anon` JWT, so the old
+    # direct insert was refused on every call - 74 rejections in 21 hours, and the "immutable audit
+    # trail" the privacy policy promises was in-memory only. migrations/spine/009's function runs as
+    # the table owner and is `on conflict (audit_id) do nothing`: it can add a row, never alter one.
+    import logging
+    log = logging.getLogger("smb_broker.audit")
     try:
-        from storage.supabase_client import insert_row
-        await asyncio.wait_for(insert_row(_MIRROR_TABLE, {
-            "audit_id": record.audit_id,
-            "event_type": getattr(record.event_type, "value", str(record.event_type)),
-            "ts": record.timestamp.isoformat(),
-            "agent_id": record.agent_id,
-            "principal_kind": record.principal_kind,
-            "principal_id": record.principal_id,
-            "operation": record.operation,
-            "smb_id": record.smb_id,
+        from storage.supabase_client import _get_config, rpc
+        url, key = _get_config()
+        if not url or not key:
+            return                      # no database configured (dev, tests): memory only, quietly
+        out = await asyncio.wait_for(rpc("compliance_audit_insert", {
+            "p_audit_id": record.audit_id,
+            "p_event_type": getattr(record.event_type, "value", str(record.event_type)),
+            "p_ts": record.timestamp.isoformat(),
+            "p_agent_id": record.agent_id,
+            "p_principal_kind": record.principal_kind,
+            "p_principal_id": record.principal_id,
+            "p_operation": record.operation,
+            "p_smb_id": record.smb_id,
             # already hashed by record() - no raw identifier ever lands here
-            "recipient_id_hash": record.recipient_id_hash,
-            "channel": record.channel,
-            "use_case": record.use_case,
-            "jurisdiction": record.jurisdiction,
-            "decision": record.decision,
-            "reason": record.reason,
-            "token_hash": record.token_hash,
-            "trace_id": record.trace_id,
-            "metadata": record.metadata or {},
+            "p_recipient_id_hash": record.recipient_id_hash,
+            "p_channel": record.channel,
+            "p_use_case": record.use_case,
+            "p_jurisdiction": record.jurisdiction,
+            "p_decision": record.decision,
+            "p_reason": record.reason,
+            "p_token_hash": record.token_hash,
+            "p_trace_id": record.trace_id,
+            "p_metadata": record.metadata or {},
         }), timeout=3.0)
+        if not isinstance(out, dict) or "inserted" not in out:
+            log.warning("audit_mirror_failed id=%s err=unexpected_rpc_shape", record.audit_id)
     except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger("smb_broker.audit").warning(
-            "audit_mirror_failed id=%s err=%s", record.audit_id, exc)
+        log.warning("audit_mirror_failed id=%s err=%s", record.audit_id, exc)
 
 
 import asyncio  # noqa: E402  (used by _write_row's timeout)

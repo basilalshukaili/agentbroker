@@ -186,12 +186,17 @@ class TestHandleInbound:
             raw_message="STOP",
         )
         # FIX 3: opt_out_processed is now set from the Supabase durable write.
-        # Mock the insert to return a row so the test verifies the opt-out path
-        # without needing a live Supabase connection.
-        fake_row = {"id": "test-consent-uuid", "recipient_id": "+14045550001"}
-        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=fake_row):
+        # Since 2026-10-01 that write is the consent_optouts_record function (the container's
+        # anon key has no grant on the table itself). Mock it so the test verifies the opt-out
+        # path without needing a live Supabase connection.
+        rpc = AsyncMock(return_value={"recorded": True, "already_present": False})
+        with patch("storage.supabase_client.rpc", rpc):
             receipt = run(handle_inbound(req))
         assert receipt.result.get("opt_out_processed") is True
+        fn, payload = rpc.call_args.args
+        assert fn == "consent_optouts_record"
+        assert payload["p_recipient_id"] == "+14045550001"
+        assert payload["p_revocation_method"] == "keyword_STOP"
 
     def test_stop_with_failed_durable_write_is_not_charged(self):
         # A STOP whose durable write fails (insert_row -> None) must NOT be
@@ -205,7 +210,8 @@ class TestHandleInbound:
             sender=InboundSender(phone="+14045550002"),
             raw_message="STOP",
         )
-        with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=None):
+        with patch("storage.supabase_client.rpc", new_callable=AsyncMock,
+                   side_effect=RuntimeError("HTTP 403 permission denied")):
             receipt = run(handle_inbound(req))
         assert receipt.result.get("opt_out_processed") is False
         assert receipt.status == OperationStatus.FAILURE

@@ -130,24 +130,25 @@ def test_optout_is_durably_recorded(client, monkeypatch):
     """Memory-only opt-out is exactly the compliance leak fixed in August."""
     written = []
 
-    async def _capture(table, row):
-        written.append((table, row))
-        return {"ok": True}
+    async def _capture(fn, payload):
+        written.append((fn, payload))
+        return {"recorded": True, "already_present": False}
 
     import storage.supabase_client as sb
-    # The write goes through the STRICT writer now, because a discarded
+    # The write is STRICT (a failure must be visible), because a discarded
     # return value is how "You are unsubscribed" got rendered on the strength
-    # of a write that never happened.
-    monkeypatch.setattr(sb, "insert_row_strict", _capture)
+    # of a write that never happened. Since 2026-10-01 it goes through the
+    # consent_optouts_record function: the anon key has no grant on the table.
+    monkeypatch.setattr(sb, "rpc", _capture)
     monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
 
     r = client.get(f"/unsubscribe?t={unsub.make_token('ann@example.com')}")
     assert r.status_code == 200
     assert written, "opt-out must be written durably, not just held in memory"
-    table, row = written[0]
-    assert table == "consent_optouts"
-    assert row["recipient_id"] == "ann@example.com"
-    assert row["source"] == "unsubscribe_link"
+    fn, payload = written[0]
+    assert fn == "consent_optouts_record"
+    assert payload["p_recipient_id"] == "ann@example.com"
+    assert payload["p_source"] == "unsubscribe_link"
 
 
 def test_a_failed_durable_write_is_not_reported_as_success(client, monkeypatch):
@@ -160,11 +161,11 @@ def test_a_failed_durable_write_is_not_reported_as_success(client, monkeypatch):
     gets messaged again, which is the one outcome this endpoint exists to
     prevent.
     """
-    async def _boom(table, row):
+    async def _boom(fn, payload):
         raise RuntimeError("supabase down")
 
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row_strict", _boom)
+    monkeypatch.setattr(sb, "rpc", _boom)
     monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
 
     r = client.get(f"/unsubscribe?t={unsub.make_token('bob@example.com')}")
@@ -180,11 +181,11 @@ def test_rfc8058_failure_asks_the_mail_client_to_retry(client, monkeypatch):
     Returning {"ok": true} on a failed write spends the only chance the mail
     client gives us.
     """
-    async def _boom(table, row):
+    async def _boom(fn, payload):
         raise RuntimeError("supabase down")
 
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row_strict", _boom)
+    monkeypatch.setattr(sb, "rpc", _boom)
     monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
 
     r = client.post(f"/unsubscribe?t={unsub.make_token('cara@example.com')}")
@@ -216,7 +217,7 @@ def test_db_failure_still_enforces_in_memory(client, isolated_consent, monkeypat
         raise RuntimeError("supabase down")
 
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row_strict", _boom)
+    monkeypatch.setattr(sb, "rpc", _boom)
     monkeypatch.setattr(sb, "_get_config", lambda: ("https://x.supabase.co", "k"))
 
     r = client.get(f"/unsubscribe?t={unsub.make_token('ann@example.com')}")

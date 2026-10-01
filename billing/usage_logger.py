@@ -42,6 +42,8 @@ import asyncio
 import hashlib
 import logging
 import os
+import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -298,3 +300,171 @@ def fire_log_usage(
             _record_failure("no_running_event_loop")
     except Exception as exc:  # noqa: BLE001
         _record_failure(f"schedule_exception:{type(exc).__name__}")
+
+
+# ---------------------------------------------------------------------------
+# OUTCOME LOGGING (2026-10-01, key-holder audit fix 1)
+# ---------------------------------------------------------------------------
+# fire_log_usage above is called only after a handler RETURNS, so every error path - a tool
+# failure, a bad argument, an unknown tool, a crash, an HTTP 429 or 502 - wrote nothing, and the
+# question "did the people holding keys get what they wanted?" had no answer for any period.
+# These record every outcome, with the status code, latency, client name, the state of the key the
+# caller presented, and the NAMES of the arguments (never their values), through the
+# `usage_events_insert_v2` function that migrations/spine/009 creates.
+#
+# Same contract as fire_log_usage: fire-and-forget, never raises, never blocks a response, strong
+# references held, every failure counted in _stats so get_usage_logger_health() sees it.
+
+OUTCOMES = ("ok", "tool_failure", "tool_error", "rpc_error", "exception", "http_error")
+
+_V2_RPC = "usage_events_insert_v2"
+_V1_RPC = "usage_events_insert"
+# If the v2 function is missing (code deployed ahead of the migration, or a rollback of the
+# database), fall back to the original 7-field insert for this long, then try v2 again.
+_V2_RETRY_AFTER_S = 600.0
+_v2_missing_until = 0.0
+
+
+@dataclass
+class UsageEvent:
+    method: str
+    tool_name: Optional[str] = None
+    arguments: Optional[dict] = None
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    key_id: Optional[str] = None
+    principal_type: Optional[str] = None
+    outcome: str = "ok"
+    error_code: Optional[str] = None
+    http_status: Optional[int] = None
+    latency_ms: Optional[int] = None
+    client_name: Optional[str] = None
+    client_version: Optional[str] = None
+    key_state: Optional[str] = None
+    arg_names: Optional[list] = None
+    requested_name: Optional[str] = None
+    detail: Optional[str] = None
+
+
+def _safe_args_hash(arguments: Optional[dict]) -> Optional[str]:
+    if not arguments:
+        return None
+    try:
+        return _hash8(str(sorted((arguments or {}).items())))
+    except Exception:  # noqa: BLE001 - mixed key types etc.: still hash SOMETHING stable
+        return _hash8(repr(sorted(map(str, (arguments or {}).keys()))))
+
+
+def _is_missing_function(exc: Exception) -> bool:
+    text = str(exc)
+    return "PGRST202" in text or "HTTP 404" in text
+
+
+async def log_usage_outcome(event: UsageEvent) -> None:
+    """Record one outcome. Never raises. See the block comment above."""
+    global _v2_missing_until
+    try:
+        ip_hash = _hash8(event.ip) if event.ip else None
+        ua = (event.user_agent or "")[:512]
+        key_id = event.key_id
+        session_kind = classify_session_kind(event.method, event.tool_name, ua, key_id,
+                                             principal_type=event.principal_type)
+        clean_key_id = (key_id[:64] if key_id and key_id != "anonymous" else None)
+        base = {
+            "p_tool": event.tool_name or event.method,
+            "p_args_hash": _safe_args_hash(event.arguments),
+            "p_ip_hash": ip_hash,
+            "p_user_agent": ua,
+            "p_key_id": clean_key_id,
+            "p_session_kind": session_kind,
+            "p_method": event.method,
+        }
+        from storage.supabase_client import rpc
+
+        result = None
+        if time.monotonic() >= _v2_missing_until:
+            outcome = event.outcome if event.outcome in OUTCOMES else "ok"
+            try:
+                result = await rpc(_V2_RPC, {
+                    **base,
+                    "p_outcome": outcome,
+                    "p_error_code": event.error_code,
+                    "p_http_status": event.http_status,
+                    "p_latency_ms": event.latency_ms,
+                    "p_client_name": event.client_name,
+                    "p_client_version": event.client_version,
+                    "p_key_state": event.key_state,
+                    "p_arg_names": event.arg_names,
+                    "p_requested_name": event.requested_name,
+                    "p_detail": event.detail,
+                })
+            except Exception as exc:  # noqa: BLE001
+                if not _is_missing_function(exc):
+                    raise
+                _v2_missing_until = time.monotonic() + _V2_RETRY_AFTER_S
+                logger.error(
+                    "usage_log_v2_missing -- migrations/spine/009 is not applied; falling back "
+                    "to the 7-field usage_events_insert for %ds (outcome columns are NOT being "
+                    "recorded)", int(_V2_RETRY_AFTER_S))
+        if result is None and time.monotonic() < _v2_missing_until:
+            result = await rpc(_V1_RPC, base)
+        if result is None:
+            _record_failure("rpc_returned_none")
+        else:
+            _record_success()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("usage_log_failed method=%s tool=%s err=%s", event.method, event.tool_name,
+                     exc, exc_info=exc)
+        _record_failure(f"exception:{type(exc).__name__}")
+
+
+def fire_log_outcome(event: UsageEvent) -> None:
+    """Schedule log_usage_outcome on the running loop. Safe from sync or async code; skipped
+    (and counted) when there is no loop. Never raises."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            task = loop.create_task(log_usage_outcome(event))
+            _stats["scheduled"] += 1
+            _pending_tasks.add(task)
+            task.add_done_callback(_on_log_task_done)
+        else:
+            _record_failure("no_running_event_loop")
+    except Exception as exc:  # noqa: BLE001
+        _record_failure(f"schedule_exception:{type(exc).__name__}")
+
+
+class BurstThrottle:
+    """At most one log per key per `window_s`, counting what was held back.
+
+    A scanner at 23 requests a second would otherwise turn every HTTP 429 into a database write -
+    the limiter protecting the service from the flood, and the logging amplifying it. `admit`
+    returns (log_it, suppressed_since_last_log); the suppressed count goes into the row's `detail`
+    so a flood is still visible as a flood.
+    """
+
+    def __init__(self, window_s: float = 30.0, max_keys: int = 2000) -> None:
+        self.window_s = window_s
+        self.max_keys = max_keys
+        self._last: dict[str, float] = {}
+        self._held: dict[str, int] = {}
+
+    def admit(self, key: str, now: Optional[float] = None) -> tuple[bool, int]:
+        now = time.monotonic() if now is None else now
+        last = self._last.get(key)
+        if last is not None and now - last < self.window_s:
+            self._held[key] = self._held.get(key, 0) + 1
+            return False, 0
+        if len(self._last) >= self.max_keys:
+            cutoff = now - self.window_s
+            for k in [k for k, t in self._last.items() if t < cutoff]:
+                self._last.pop(k, None)
+                self._held.pop(k, None)
+            if len(self._last) >= self.max_keys:
+                self._last.clear()
+                self._held.clear()
+        self._last[key] = now
+        return True, self._held.pop(key, 0)
+
+
+RATE_LIMIT_LOG_THROTTLE = BurstThrottle()

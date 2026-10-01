@@ -90,7 +90,16 @@ async def handle_inbound(
             "revocation_method": "keyword_STOP",
             "source": "inbound_handler",
         }
-        inserted = await insert_row("consent_optouts", opt_out_row)
+        # Through consent_optouts_record (migrations/spine/009): the anon key has no grant on the
+        # table itself on the spine, so the direct insert was refused on every STOP and this
+        # tool answered opt_out_not_recorded forever.
+        from compliance.optout_store import record_optout_lenient
+        inserted = await record_optout_lenient(
+            recipient_id, channel,
+            use_case=opt_out_row["use_case"],
+            revocation_method=opt_out_row["revocation_method"],
+            source=opt_out_row["source"],
+        )
         result["opt_out_processed"] = inserted is not None
 
     # A STOP that was NOT durably recorded must never be reported as success or

@@ -45,10 +45,15 @@ def test_mirror_is_attempted_when_an_event_loop_exists(monkeypatch):
     """The whole point: recording must reach durable storage."""
     written = []
 
-    async def _capture(table, row):
-        written.append((table, row))
+    # Since 2026-10-01 the mirror goes through the SECURITY DEFINER function
+    # compliance_audit_insert, not the table: the container's anon JWT does not bypass RLS and
+    # the direct insert was refused on every call.
+    async def _capture(fn, payload):
+        written.append((fn, payload))
+        return {"inserted": True}
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row", _capture)
+    monkeypatch.setattr(sb, "rpc", _capture)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("https://spine.test", "anon-jwt"))
 
     async def go():
         log = AuditLog()
@@ -61,12 +66,41 @@ def test_mirror_is_attempted_when_an_event_loop_exists(monkeypatch):
     asyncio.run(go())
 
     assert written, "audit record must be mirrored durably"
-    table, row = written[0]
-    assert table == "compliance_audit"
-    assert row["decision"] == "block"
-    assert row["reason"] == "quiet_hours"
-    assert row["recipient_id_hash"] != "+15551234567"
+    fn, row = written[0]
+    assert fn == "compliance_audit_insert"
+    assert row["p_decision"] == "block"
+    assert row["p_reason"] == "quiet_hours"
+    assert row["p_recipient_id_hash"] != "+15551234567"
     assert "+15551234567" not in str(row), "raw recipient must never be persisted"
+
+
+def test_mirror_is_quiet_when_no_database_is_configured(monkeypatch):
+    """Dev and the test suite have no database by design; that must not be a warning per record."""
+    calls = []
+
+    async def _capture(fn, payload):
+        calls.append(fn)
+        return {"inserted": True}
+    import storage.supabase_client as sb
+    monkeypatch.setattr(sb, "rpc", _capture)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("", ""))
+
+    async def go():
+        AuditLog().record(AuditEventType.AUTHORIZATION_ALLOW, agent_id="a1", decision="allow")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+    asyncio.run(go())
+    assert calls == [], "nothing may be sent when no database is configured"
+
+
+def test_the_audit_mirror_uses_the_rpc_not_the_table(monkeypatch):
+    """The bug: 74 inserts in 21 hours were refused by RLS because the code wrote the table
+    directly as `anon`. Pin the transport so it cannot quietly drift back."""
+    import inspect
+    from compliance import audit_log
+    src = inspect.getsource(audit_log._write_row)
+    assert "compliance_audit_insert" in src
+    assert "insert_row(" not in src
 
 
 def test_recording_never_raises_when_storage_fails(monkeypatch):
@@ -74,7 +108,8 @@ def test_recording_never_raises_when_storage_fails(monkeypatch):
     async def _boom(*a, **k):
         raise RuntimeError("supabase down")
     import storage.supabase_client as sb
-    monkeypatch.setattr(sb, "insert_row", _boom)
+    monkeypatch.setattr(sb, "rpc", _boom)
+    monkeypatch.setattr(sb, "_get_config", lambda: ("https://spine.test", "anon-jwt"))
 
     async def go():
         log = AuditLog()

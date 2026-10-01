@@ -209,18 +209,40 @@ async def send_key_email(email: str, token_value: str, expires_iso: str) -> None
 # Durable pending_keys helpers
 # ---------------------------------------------------------------------------
 
-async def store_pending(email: str, token: str, expires_at: float) -> None:
-    """Upsert the pending verification row. Best-effort."""
+#
+# THE TRANSPORT IS A SECURITY DEFINER RPC, NOT THE TABLE (key-holder audit fix 5, 2026-10-01).
+# This container holds only the `anon` JWT, which does not bypass RLS, and pending_keys has RLS with
+# no policy: the old direct upsert was refused on every call, store_pending swallowed the refusal,
+# and consume_pending could never prove a row absent (it read "empty" for rows it was not allowed
+# to see), so single use was silently off for every link. migrations/spine/009 adds
+# pending_keys_upsert / pending_keys_consume, which run as the table owner. The consume is a
+# single DELETE ... RETURNING, so two clicks on one link cannot both win.
+
+async def store_pending(email: str, token: str, expires_at: float) -> bool:
+    """Upsert the pending verification row. True when it is stored OR when no database is
+    configured at all (local dev, tests: in-process state is the whole picture there);
+    False when a configured database refused or did not answer.
+
+    The caller must not send a verification link for a row that was not stored: now that consume
+    can prove a row absent, such a link would be refused as 'already used' on its first click."""
     try:
-        from storage.supabase_client import upsert_row
-        await upsert_row("pending_keys", {
-            "email": email,
-            "token": token,
-            "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }, on_conflict="email")
+        from storage.supabase_client import _get_config, rpc
+        url, key = _get_config()
+        if not url or not key:
+            return True
+        out = await rpc("pending_keys_upsert", {
+            "p_email": email,
+            "p_token": token,
+            "p_expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+            "p_created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if isinstance(out, dict) and out.get("stored") is True:
+            return True
+        logger.warning("pending_keys_store_failed email=%s err=unexpected_rpc_shape", email)
+        return False
     except Exception as exc:  # noqa: BLE001
         logger.warning("pending_keys_store_failed email=%s err=%s", email, exc)
+        return False
 
 
 class PendingLookupUnavailable(RuntimeError):
@@ -263,55 +285,31 @@ async def consume_pending(token: str, email: Optional[str] = None) -> Optional[s
     single-use when we can tell, and fall back to signature-only when we
     genuinely cannot - see verify_free_key.
     """
-    lookup = {"email": email} if email else {"token": token}
+    # ONE ATOMIC CALL, AUTHORITATIVE BOTH WAYS (migrations/spine/009 pending_keys_consume).
+    #
+    # The previous version read the table (200 [] for "no such row" AND for "a row RLS will not show
+    # you"), probed whether the table looked empty to tell the two apart - which also made a
+    # genuinely empty table read as "unavailable" - then deleted in a second request whose failure
+    # was only logged. The function runs as the table owner, so `found: false` means no row and
+    # nothing else, and the delete happens in the same statement as the lookup.
+    #
+    # What still raises PendingLookupUnavailable (the caller then falls back to the signature,
+    # because availability beats a replayed link during an outage): no database configured, a
+    # transport or HTTP error, a missing function, or an answer that is not the documented shape.
+    payload = {"p_email": email} if email else {"p_token": token}
     try:
-        from storage.supabase_client import select_rows_strict, SupabaseUnavailable
+        from storage.supabase_client import rpc
         try:
-            rows = await select_rows_strict("pending_keys", filters=lookup)
-        except SupabaseUnavailable as exc:
+            out = await rpc("pending_keys_consume", payload)
+        except RuntimeError as exc:
             raise PendingLookupUnavailable(str(exc)) from exc
-        if not rows:
-            # AN EMPTY ANSWER IS NOT ALWAYS AN ABSENT ROW.
-            #
-            # PostgREST returns 200 [] both for "no such row" and for "a row
-            # you are not allowed to see" - RLS filters silently, and
-            # _get_config() falls back to SUPABASE_ANON_KEY, which does NOT
-            # bypass RLS on this table. A misconfigured key would therefore
-            # refuse every FIRST click as "already used": a total signup
-            # outage that blames the user.
-            #
-            # So before concluding "used", prove the table is readable at all.
-            # If it looks entirely empty we are not looking at the truth, and
-            # unavailable is the honest answer. Same probe as the sanctions
-            # index uses to tell "no match" from "no rows".
-            try:
-                probe = await select_rows_strict("pending_keys", limit=1)
-            except SupabaseUnavailable as exc:
-                raise PendingLookupUnavailable(str(exc)) from exc
-            if not probe:
-                raise PendingLookupUnavailable(
-                    "pending_keys reads as completely empty - cannot tell an "
-                    "already-used link from an unreadable table")
+        if not isinstance(out, dict) or not isinstance(out.get("found"), bool):
+            raise PendingLookupUnavailable(
+                "pending_keys_consume returned an unexpected shape - refusing to read it as "
+                "'already used'")
+        if not out["found"]:
             return None
-        import httpx as _httpx
-        url = os.getenv("SUPABASE_URL", "").rstrip("/")
-        key = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
-        if url and key:
-            async with _httpx.AsyncClient(timeout=5.0) as client:
-                # CHECK THE DELETE. Discarding this response meant a DELETE
-                # refused by RLS left the row in place and single-use silently
-                # off, with nothing logged and nothing to notice.
-                resp = await client.delete(
-                    f"{url}/rest/v1/pending_keys",
-                    headers={"apikey": key, "Authorization": f"Bearer {key}"},
-                    params={k: f"eq.{v}" for k, v in lookup.items()},
-                )
-                if resp.status_code >= 300:
-                    logger.error(
-                        "pending_keys_delete_failed status=%s -- the row "
-                        "SURVIVED, so this verification link is still usable "
-                        "and single-use is NOT in force", resp.status_code)
-        return rows[0].get("email")
+        return out.get("email") or email
     except PendingLookupUnavailable:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -394,14 +392,17 @@ async def store_machine_minted(
     migration `machine_mintable_key.sql` adds that column.
     """
     try:
-        from storage.supabase_client import upsert_row
-        await upsert_row("pending_keys", {
-            "email": f"agent:{agent_id}",   # surrogate — no real email
-            "token": token_value[:512],       # store a prefix; full JWT is long
-            "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "source": "machine_minted",
-        }, on_conflict="email")
+        from storage.supabase_client import _get_config, rpc
+        url, key = _get_config()
+        if not url or not key:
+            return
+        await rpc("pending_keys_upsert", {
+            "p_email": f"agent:{agent_id}",   # surrogate — no real email
+            "p_token": token_value[:512],       # store a prefix; full JWT is long
+            "p_expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+            "p_created_at": datetime.now(timezone.utc).isoformat(),
+            "p_source": "machine_minted",
+        })
     except Exception as exc:  # noqa: BLE001
         logger.warning("machine_minted_store_failed agent_id=%s err=%s", agent_id, exc)
 

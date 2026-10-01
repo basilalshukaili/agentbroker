@@ -177,15 +177,17 @@ async def _record_optout(recipient_id: str, channel: str, method: str) -> bool:
         return True
 
     try:
-        from storage.supabase_client import insert_row_strict
-        await insert_row_strict("consent_optouts", {
-            "recipient_id": recipient_id,
-            "channel": channel,
-            "use_case": "marketing",
-            "revocation_method": method,
-            "source": "unsubscribe_link",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+        # Through consent_optouts_record (migrations/spine/009), not the table: the anon key has no
+        # grant on consent_optouts on the spine, so the direct insert was refused every time and
+        # this page could only ever say "in-memory only".
+        from compliance.optout_store import record_optout
+        await record_optout(
+            recipient_id, channel,
+            use_case="marketing",
+            revocation_method=method,
+            source="unsubscribe_link",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
         return True
     except Exception as exc:  # noqa: BLE001
         logger.error(

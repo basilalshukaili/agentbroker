@@ -198,10 +198,11 @@ async def _handle_message(msg: dict, contacts: dict, our_number: str) -> bool:
                 sender, "whatsapp", "marketing", "keyword_STOP")
         except Exception as exc:  # noqa: BLE001
             logger.warning("wa_optout_memory_failed: %s", exc)
-        await _bounded(insert_row("consent_optouts", {
-            "recipient_id": sender, "channel": "whatsapp", "use_case": "marketing",
-            "revocation_method": "keyword_STOP", "source": "whatsapp_webhook",
-        }), "optout_store")
+        from compliance.optout_store import record_optout_lenient
+        await _bounded(record_optout_lenient(
+            sender, "whatsapp", use_case="marketing",
+            revocation_method="keyword_STOP", source="whatsapp_webhook",
+        ), "optout_store")
         logger.info("wa_optout from=%s", sender)
         return True
 

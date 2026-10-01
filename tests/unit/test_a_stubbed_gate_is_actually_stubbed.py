@@ -670,6 +670,30 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
     ("tests/unit/test_anon_data_quota_rpc.py", "storage.supabase_client.rpc"):
         "targets billing.data_quota._consume_anon_data's deferred rpc import; this "
         "file never references billing.credits or run_metered_tool.",
+    # 2026-10-01 (key-holder audit fixes 1 and 5). Each of these files drives a consumer that
+    # imports rpc INSIDE the function body that uses it, so patching the definition site is the
+    # only patch that reaches it: billing/usage_logger.py log_usage_outcome, compliance/
+    # audit_log.py _write_row, compliance/optout_store.py (both functions), agent_interface/
+    # key_request_logic.py store_pending/consume_pending/store_machine_minted, main.lifespan's
+    # deferred hydration import. None of these files references billing.credits,
+    # run_metered_tool or get_balance, so billing/credits.py:35's eager binding is never reached.
+    ("tests/unit/test_audit_durability.py", "storage.supabase_client.rpc"):
+        "targets compliance.audit_log._write_row (deferred `from storage.supabase_client "
+        "import _get_config, rpc` inside the function); no reference to billing.credits.",
+    ("tests/unit/test_compliance_persistence.py", "storage.supabase_client.rpc"):
+        "targets compliance.optout_store, compliance.audit_log._write_row and "
+        "agent_interface.key_request_logic, all of which import rpc inside the function "
+        "body; no reference to billing.credits or run_metered_tool.",
+    ("tests/unit/test_outcome_logging.py", "storage.supabase_client.rpc"):
+        "targets billing.usage_logger.log_usage_outcome (deferred rpc import inside the "
+        "function); no reference to billing.credits or run_metered_tool.",
+    ("tests/unit/test_unsubscribe.py", "storage.supabase_client.rpc"):
+        "targets compliance.optout_store.record_optout (deferred rpc import inside the "
+        "function), reached from agent_interface.unsubscribe._record_optout; no reference "
+        "to billing.credits.",
+    ("tests/unit/test_verify_link_is_single_use.py", "storage.supabase_client.rpc"):
+        "targets agent_interface.key_request_logic.consume_pending (deferred rpc import "
+        "inside the function); no reference to billing.credits.",
     ("tests/unit/test_schedule_appointment_ownership.py", "storage.supabase_client.select_rows"):
         "patches storage.supabase_client's insert_row/upsert_row/select_rows together "
         "via its own `import storage.supabase_client as real` module reference, "

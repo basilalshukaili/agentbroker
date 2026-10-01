@@ -147,8 +147,27 @@ async def request_free_key(body: KeyRequestBody):
     base_url = os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
     verify_url = f"{base_url}/keys/verify?token={token}"
 
-    # Store pending (best-effort) + send email
-    await store_pending(email, token, expires_at)
+    # Record the pending verification FIRST, and do not email a link we could not record.
+    #
+    # The row is what makes a link single-use. consume_pending can now prove a row ABSENT, so a link
+    # whose row was never stored would be refused on its first click as "already used" - a person
+    # blamed for our database failing a moment earlier. A clean "try again" now is better than a
+    # dead link in their inbox. (No database configured at all is not a failure: store_pending
+    # reports True there, as local dev and the test suite have no database by design.)
+    if not await store_pending(email, token, expires_at):
+        logger.warning("onboarding_unavailable email_domain=%s reason=pending_not_recorded",
+                        email.split("@")[-1])
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "onboarding_unavailable",
+                "detail": (
+                    "We could not record your verification request just now, so no email was "
+                    "sent and no key was issued. Please try again in a minute. "
+                    + _free_tier_sentence() + ", so you may not need a key at all."
+                ),
+            },
+        )
     sent = await send_verification_email(email, verify_url)
 
     if not sent:

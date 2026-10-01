@@ -142,7 +142,7 @@ def _never_touch_supabase(monkeypatch):
     """store_pending is best-effort persistence, irrelevant to this bug and
     not something a unit test should depend on a live Supabase for."""
     async def _noop(*a, **kw):
-        return None
+        return True          # stored (store_pending reports True/False since 2026-10-01)
     monkeypatch.setattr(KR, "store_pending", _noop)
 
 

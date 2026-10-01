@@ -130,11 +130,31 @@ def _dispatch_branches() -> dict[str, ast.AST]:
     return branches
 
 
-def _forwarded(branch: ast.AST) -> tuple[set[str], bool]:
+def _module_functions() -> dict[str, ast.AST]:
+    """Every function defined in the dispatch module, by name. Lets a branch that hands `args`
+    whole to a helper (send_message -> _build_send_message_request, shared with the channel gate so
+    the gate can only act on a request the dispatcher would also accept) be credited with what the
+    helper reads, instead of being reported as forwarding nothing."""
+    with open(DISPATCH, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    return {n.name: n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _forwarded(branch: ast.AST, helpers: dict[str, ast.AST] | None = None,
+               _depth: int = 0) -> tuple[set[str], bool]:
     """Which arg keys the branch reads, and whether it splats everything."""
     keys: set[str] = set()
     splat = False
     for node in ast.walk(branch):
+        # f(args, ...) where f is a function of this module that itself reads args[...] / args.get(...)
+        if helpers and _depth < 2 and isinstance(node, ast.Call) \
+                and isinstance(node.func, ast.Name) and node.func.id in helpers \
+                and node.args and isinstance(node.args[0], ast.Name) \
+                and node.args[0].id == "args":
+            sub_keys, sub_splat = _forwarded(helpers[node.func.id], helpers, _depth + 1)
+            keys |= sub_keys
+            splat = splat or sub_splat
         # args["x"] and args.get("x")
         if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) \
                 and node.value.id == "args" and isinstance(node.slice, ast.Constant):
@@ -170,6 +190,7 @@ def main() -> int:
     problems: list[str] = []
     checked = 0
     splatted = 0
+    helpers = _module_functions()
     for tool, params in sorted(advertised.items()):
         branch = branches.get(tool)
         if branch is None:
@@ -177,7 +198,7 @@ def main() -> int:
                 f"{tool}: advertised in the manifest with no dispatch branch - "
                 f"calling it returns method-not-found")
             continue
-        keys, splat = _forwarded(branch)
+        keys, splat = _forwarded(branch, helpers)
         if splat:
             splatted += 1
             continue

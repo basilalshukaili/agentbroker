@@ -83,24 +83,42 @@ def test_an_invalid_signature_is_still_refused(monkeypatch):
 
 
 def test_consume_pending_separates_absent_from_unreachable(monkeypatch):
-    """The distinction the whole fix rests on. Both used to be None."""
+    """The distinction the whole fix rests on. Both used to be None.
+
+    Since 2026-10-01 the consume is ONE call to the pending_keys_consume function, which runs as
+    the table owner: `found: false` means no row, full stop (no more "probe whether the table looks
+    empty"), and anything that is not a documented answer is "unavailable", never "already used"."""
     from storage import supabase_client as sb
 
-    async def _empty(table, filters=None, **kw):
-        # The row is absent, but the TABLE is readable - which is what makes
-        # "already used" a safe conclusion. An entirely empty read is treated
-        # as unavailable now (RLS can hide rows behind a 200 []), so the probe
-        # has to see something.
-        if not filters:
-            return [{"email": "someone-else@example.com"}]
-        return []
+    calls = []
 
-    async def _down(table, filters=None, **kw):
-        raise sb.SupabaseUnavailable("no config")
+    async def _absent(fn, payload):
+        calls.append((fn, payload))
+        return {"found": False, "email": None}
 
-    monkeypatch.setattr(sb, "select_rows_strict", _empty)
+    async def _present(fn, payload):
+        return {"found": True, "email": "someone@example.com"}
+
+    async def _down(fn, payload):
+        raise RuntimeError("rpc('pending_keys_consume') failed: HTTP 503")
+
+    async def _garbled(fn, payload):
+        return [{"email": "someone@example.com"}]       # a table-shaped answer, not the contract
+
+    monkeypatch.setattr(sb, "rpc", _absent)
     assert asyncio.run(KRL.consume_pending("t")) is None
+    assert calls[0][0] == "pending_keys_consume"
+    assert calls[0][1] == {"p_token": "t"}
+    assert asyncio.run(KRL.consume_pending("t", email="someone@example.com")) is None
+    assert calls[1][1] == {"p_email": "someone@example.com"}
 
-    monkeypatch.setattr(sb, "select_rows_strict", _down)
+    monkeypatch.setattr(sb, "rpc", _present)
+    assert asyncio.run(KRL.consume_pending("t", email="someone@example.com")) == "someone@example.com"
+
+    monkeypatch.setattr(sb, "rpc", _down)
+    with pytest.raises(KRL.PendingLookupUnavailable):
+        asyncio.run(KRL.consume_pending("t"))
+
+    monkeypatch.setattr(sb, "rpc", _garbled)
     with pytest.raises(KRL.PendingLookupUnavailable):
         asyncio.run(KRL.consume_pending("t"))

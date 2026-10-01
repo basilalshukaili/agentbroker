@@ -329,10 +329,12 @@ class TestMCPTelemetryWiring:
 
         fired = []
 
-        def fake_fire(method, tool_name, arguments, ip, ua, key_id, **kwargs):
-            fired.append({"method": method, "tool": tool_name})
+        # Usage is recorded through fire_log_outcome since 2026-10-01 (every outcome, not
+        # only successes); this still pins the wiring: one event per request.
+        def fake_fire(event):
+            fired.append({"method": event.method, "tool": event.tool_name})
 
-        with mpatch("billing.usage_logger.fire_log_usage", fake_fire):
+        with mpatch("billing.usage_logger.fire_log_outcome", fake_fire):
             result = asyncio.run(
                 handle_mcp_request(
                     {"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -351,10 +353,10 @@ class TestMCPTelemetryWiring:
 
         fired = []
 
-        def fake_fire(method, tool_name, arguments, ip, ua, key_id, **kwargs):
-            fired.append(method)
+        def fake_fire(event):
+            fired.append(event.method)
 
-        with mpatch("billing.usage_logger.fire_log_usage", fake_fire):
+        with mpatch("billing.usage_logger.fire_log_outcome", fake_fire):
             result = asyncio.run(
                 handle_mcp_request(
                     {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},

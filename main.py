@@ -72,14 +72,13 @@ async def lifespan(app: FastAPI):
     # set so a recorded opt-out survives a process restart. Without this the
     # "non-bypassable" gate would leak to opted-out recipients after any redeploy.
     #
-    # NO LONGER THE ONLY LINE OF DEFENSE (2026-09-28). This bulk read goes
-    # through the anon key, which RLS blocks entirely for consent_optouts (no
-    # SELECT policy, by design -- see sql/agentbroker/006_consent_optouts_membership_rpc.sql).
-    # That means it gets HTTP 200 with an EMPTY ARRAY every time, forever --
-    # not a transient blip, a structural property of this credential against
-    # this table -- so "hydrated 0 durable opt-outs" below will now be the
-    # permanent, expected log line, and must NOT be read as proof nobody has
-    # opted out. compliance/pre_check.py no longer relies on this hydration
+    # NO LONGER THE ONLY LINE OF DEFENSE (2026-09-28). This bulk read USED to go
+    # straight at the table with the anon key, which RLS blocks entirely
+    # (HTTP 200 with an EMPTY ARRAY on Supabase, HTTP 403 on the spine), so
+    # "hydrated 0 durable opt-outs" was the permanent log line and must not
+    # have been read as proof nobody had opted out. As of 2026-10-01 it reads
+    # through a SECURITY DEFINER function and loads the real list (see below).
+    # compliance/pre_check.py no longer relies on this hydration
     # for enforcement: it calls compliance/optout_gate.py's
     # check_durable_optout() per send, which asks the durable record directly
     # through a SECURITY DEFINER RPC that bypasses RLS, and fails the send
@@ -104,18 +103,23 @@ async def lifespan(app: FastAPI):
         # PostgREST slice - supabase_client's own docstring warns about it -
         # so past 10k opt-outs we would hydrate a random subset and suppress
         # the wrong people.
-        from storage.supabase_client import select_rows_strict, SupabaseUnavailable
+        # THROUGH THE SECURITY DEFINER FUNCTION, NOT THE TABLE (2026-10-01, key-holder audit fix 5).
+        # The anon key this container holds has no grant on consent_optouts on the spine: the old
+        # table read was refused with HTTP 403 on every start (OPTOUT_HYDRATION_FAILED), so the
+        # in-memory set that demand_queue / schedule_appointment / the WhatsApp webhook consult began
+        # empty. compliance/optout_store.py pages the list through migrations/spine/009's
+        # consent_optouts_hydrate, ordered, and raises rather than return a partial list as whole.
+        from storage.supabase_client import SupabaseUnavailable
         from compliance.consent_store import get_consent_store
-        rows = await select_rows_strict("consent_optouts", limit=10000,
-                                        order="created_at.desc")
-        pairs = [(r.get("recipient_id"), r.get("channel")) for r in rows]
+        from compliance.optout_store import load_durable_optouts, HYDRATE_PAGE, HYDRATE_MAX_PAGES
+        pairs = await load_durable_optouts()
         loaded = get_consent_store().hydrate_opted_out(pairs)
         _log.info("hydrated %d durable opt-outs", loaded)
-        if len(rows) >= 10000:
+        if len(pairs) >= HYDRATE_PAGE * HYDRATE_MAX_PAGES:
             _log.error(
                 "OPTOUT_HYDRATION_TRUNCATED at %d rows - opt-outs beyond this "
-                "page are NOT suppressed in memory. Paginate this read.",
-                len(rows))
+                "page are NOT suppressed in memory. Raise HYDRATE_MAX_PAGES.",
+                len(pairs))
     except SupabaseUnavailable as exc:
         # NEVER BLOCK STARTUP - a service that will not boot is worse. But this
         # must not read as "there were none": until it succeeds, previously
@@ -236,17 +240,49 @@ _rl_request_counter: int = 0
 
 
 def _rl_client_ip(request: Request) -> str:
-    """Identify the caller. First X-Forwarded-For hop wins; else direct peer."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        # Take the leftmost (original) IP, strip whitespace.
-        first = xff.split(",", 1)[0].strip()
-        if first:
-            return first
+    """Identify the caller's network address.
+
+    X-Forwarded-For is believed ONLY when the TCP peer is one of our own proxies, and then read
+    from the right, skipping proxies (core/client_ip.py). It used to be "the first hop wins",
+    which is the caller's own choice of identity whenever the proxy in front appends rather than
+    replaces. Behind hatchloop.dev's Next.js rewrite every caller also arrived as the box's own
+    address; that is fixed in Caddy (deploy/caddy/install_mcp_direct.py), not here.
+    """
+    from core.client_ip import resolve_client_ip
     client = request.client
-    if client and client.host:
-        return client.host
-    return "unknown"
+    return resolve_client_ip(
+        client.host if client else None,
+        request.headers.get("x-forwarded-for"),
+        request.headers.get("x-real-ip"),
+    )
+
+
+def _rl_presented_token(request: Request) -> str:
+    """The credential this request carries, in the three places handle_mcp_request accepts one."""
+    h = request.headers
+    token = (h.get("x-agent-identity") or "").strip()
+    if token:
+        return token
+    auth = h.get("authorization") or ""
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip()
+    return (h.get("x-api-key") or "").strip()
+
+
+def _rl_bucket_for(request: Request, client_ip: str) -> tuple:
+    """(bucket id, key id or None). A caller holding a correctly signed key gets a bucket of its
+    OWN; everyone else shares the per-address bucket.
+
+    Before this, every caller of the canonical hatchloop.dev URL was one address to the origin and
+    therefore ONE bucket: a key holder could be refused because a scanner had spent the tokens
+    (17 HTTP 429s in four days of logs). Keying by key_id means a key holder is limited by what
+    THEY do. Only a valid signature earns a private bucket (identity.peek_agent_id: pure HMAC, no
+    I/O), so forging one is not possible and the number of buckets is bounded by issued keys."""
+    from agent_interface.identity import peek_agent_id
+    key_id = peek_agent_id(_rl_presented_token(request))
+    if key_id:
+        return f"key:{key_id}", key_id
+    return f"ip:{client_ip}", None
 
 
 def _rl_evict_stale(now: float) -> None:
@@ -307,8 +343,11 @@ async def _rate_limit_middleware(request: Request, call_next):
         _rl_evict_stale(now)
 
     client_ip = _rl_client_ip(request)
-    allowed = _rl_consume(client_ip, now)
+    bucket_id, bucket_key_id = _rl_bucket_for(request, client_ip)
+    allowed = _rl_consume(bucket_id, now)
     if not allowed:
+        _log_http_outcome(request, 429, "rate_limited", client_ip, bucket_key_id,
+                          throttle_key=bucket_id)
         return JSONResponse(
             status_code=429,
             content={"detail": "rate_limited", "retry_after_seconds": 1},
@@ -319,12 +358,72 @@ async def _rate_limit_middleware(request: Request, call_next):
     # way) can read it without being handed the HTTP request. The key is the
     # same one this limiter uses; the context var is reset when the request
     # ends so it can never leak into another request.
-    from core.caller_context import CALLER_KEY
-    _ck_token = CALLER_KEY.set(client_ip)
+    from core.caller_context import CALLER_KEY, CALLER_IP, REQUEST_OBSERVATION, RequestObservation
+    _ck_token = CALLER_KEY.set(bucket_id)
+    _ip_token = CALLER_IP.set(client_ip)
+    _box = RequestObservation()
+    _ob_token = REQUEST_OBSERVATION.set(_box)
     try:
-        return await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # An exception that escaped the app is an HTTP 500 the caller will see. Record it
+            # (the old code recorded nothing for it) and let it propagate unchanged.
+            if not _box.logged:
+                _log_http_outcome(request, 500, "unhandled_exception", client_ip, bucket_key_id)
+            raise
+        # Anything the MCP handler did not already record - a bad JSON body, a 404 for an unknown
+        # door, a 5xx from below it - is recorded here by status code. Successful requests the
+        # handler logged itself are not logged twice.
+        if response.status_code >= 400 and not _box.logged:
+            _log_http_outcome(request, response.status_code, _http_error_code(response.status_code),
+                              client_ip, bucket_key_id)
+        return response
     finally:
+        REQUEST_OBSERVATION.reset(_ob_token)
+        CALLER_IP.reset(_ip_token)
         CALLER_KEY.reset(_ck_token)
+
+
+def _http_error_code(status: int) -> str:
+    return {400: "bad_request", 404: "not_found", 405: "method_not_allowed", 413: "too_large",
+            415: "unsupported_media_type", 422: "unprocessable", 429: "rate_limited",
+            500: "server_error", 502: "bad_gateway", 503: "unavailable",
+            504: "gateway_timeout"}.get(status, f"http_{status}")
+
+
+def _log_http_outcome(request: Request, status: int, error_code: str, client_ip: str,
+                      key_id: Optional[str], throttle_key: Optional[str] = None) -> None:
+    """Record a request that failed at the HTTP layer, where the MCP handler never ran or never
+    finished (429, bad body, unknown door, crash). Never raises.
+
+    Rate-limit rejections are throttled to one row per bucket per 30 s with the held-back count in
+    `detail`: the limiter exists to shed a flood, and one database write per rejected request
+    would hand the flood a way to hurt us anyway."""
+    try:
+        from billing.usage_logger import UsageEvent, fire_log_outcome, RATE_LIMIT_LOG_THROTTLE
+        held = 0
+        if throttle_key is not None:
+            admit, held = RATE_LIMIT_LOG_THROTTLE.admit(throttle_key)
+            if not admit:
+                return
+        detail = f"{request.method} {request.url.path}"[:200]
+        if held:
+            detail += f" (+{held} more rate-limited since last row)"
+        fire_log_outcome(UsageEvent(
+            method="http",
+            tool_name=None,
+            ip=client_ip,
+            user_agent=request.headers.get("user-agent", ""),
+            key_id=key_id,
+            outcome="http_error",
+            error_code=error_code,
+            http_status=status,
+            key_state="valid" if key_id else ("none" if not _rl_presented_token(request) else "invalid"),
+            detail=detail,
+        ))
+    except Exception:  # noqa: BLE001 - the audit trail must never break the response
+        pass
 
 
 # ---------------------------------------------------------------------------
