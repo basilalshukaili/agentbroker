@@ -289,6 +289,20 @@ ERR_METHOD_NOT_FOUND = -32601
 ERR_INVALID_PARAMS = -32602
 ERR_INTERNAL = -32603
 
+# JSON-RPC notifications (a message WITHOUT an `id`) the MCP spec defines. The receiver never replies
+# to any notification, known or not; this set only decides whether one is logged as expected or as
+# something we did not recognise.
+KNOWN_NOTIFICATIONS = frozenset({
+    "notifications/initialized",
+    "notifications/cancelled",
+    "notifications/progress",
+    "notifications/roots/list_changed",
+})
+
+# A batch is answered request by request, so one POST could otherwise carry unbounded work through a
+# single rate-limit token. Real clients that batch send two or three; refuse anything larger whole.
+MAX_BATCH = 16
+
 
 class _Observed:
     """What the dispatcher learned about one request, for the outcome log.
@@ -298,20 +312,29 @@ class _Observed:
     forget one - which is exactly how the old success-only logging came to exist. So each exit sets
     a field here and ONE place, `_finish_request`, reads it."""
 
-    __slots__ = ("outcome", "error_code", "requested_name", "headers")
+    __slots__ = ("outcome", "error_code", "requested_name", "headers", "log_method")
 
     def __init__(self) -> None:
         self.outcome = "ok"
         self.error_code: Optional[str] = None
         self.requested_name: Optional[str] = None
         self.headers: dict = {}
+        # What to record as the method when it is not simply payload["method"] (a client's response
+        # has none; an unrecognised notification name is attacker-controlled text).
+        self.log_method: Optional[str] = None
 
 
-async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
-                             profile: Optional[str] = None) -> dict:
+async def handle_mcp_request(payload: Any, headers: Optional[dict] = None,
+                             profile: Optional[str] = None) -> Any:
     """
-    Main JSON-RPC dispatcher. Returns a dict suitable to be JSON-encoded
-    and sent back to the client.
+    Main JSON-RPC dispatcher. Returns a dict (one request), a list (a batch with at least one
+    request), or None - which the HTTP layer sends as 202 with no body.
+
+    None is returned when the message was a notification (no `id`) or a client's response to a
+    request of ours: JSON-RPC forbids replying to a notification, and MCP's Streamable HTTP
+    transport says a POST that carries only notifications and/or responses is accepted with 202.
+    Before 2026-10-01 `notifications/initialized` - sent by every client right after `initialize` -
+    was answered method_not_found: 32 of the 34 rpc_errors from real callers in 25 minutes.
 
     `headers` (case-insensitive dict) carries the HTTP request headers so the
     auth guard inside `tools/call` can pull `x-agent-identity` and gate
@@ -323,11 +346,40 @@ async def handle_mcp_request(payload: dict, headers: Optional[dict] = None,
     as anonymous - see `_finish_request` and agent_interface/key_state.py. Both are
     the 2026-09-30 key-holder audit's first two fixes.
     """
+    if isinstance(payload, list):
+        return await _handle_batch(payload, headers, profile)
+    return await _handle_one(payload, headers, profile)
+
+
+async def _handle_one(payload: Any, headers: Optional[dict], profile: Optional[str]) -> Optional[dict]:
     started = time.monotonic()
     obs = _Observed()
     response = await _handle_mcp_request_core(payload, headers, profile, obs)
     _finish_request(payload, response, obs, started, profile=profile)
     return response
+
+
+async def _handle_batch(batch: list, headers: Optional[dict], profile: Optional[str]) -> Any:
+    """A JSON-RPC batch: every member is dispatched (and logged) exactly as if it had arrived alone.
+    The reply is the list of the members that have one; a batch of only notifications and/or client
+    responses has no reply at all (None -> 202)."""
+    if not batch or len(batch) > MAX_BATCH:
+        started = time.monotonic()
+        obs = _Observed()
+        obs.outcome, obs.error_code = "rpc_error", "invalid_request"
+        obs.headers = _normalize_headers(headers)
+        response = JsonRpcResponse(id=None, error=_error(
+            ERR_INVALID_REQUEST,
+            "Empty batch" if not batch else f"Batch too large (max {MAX_BATCH} messages)",
+        )).to_dict()
+        _finish_request(batch, response, obs, started, profile=profile)
+        return response
+    replies = []
+    for member in batch:
+        reply = await _handle_one(member, headers, profile)
+        if reply is not None:
+            replies.append(reply)
+    return replies or None
 
 
 def _attach_auth_warning(response: dict, method: Optional[str], warning: dict) -> None:
@@ -393,7 +445,8 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
         from core.client_ip import first_hop
 
         h = obs.headers or {}
-        method = payload.get("method") if isinstance(payload, dict) else None
+        is_notification = obs.outcome == "notification"
+        method = obs.log_method or (payload.get("method") if isinstance(payload, dict) else None)
         params = (payload.get("params") if isinstance(payload, dict) else None) or {}
 
         status = classify_key(h.get("x-agent-identity", ""))
@@ -407,7 +460,8 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
         tool_name = arguments = None
         arg_names: Optional[list] = None
         requested_name = obs.requested_name
-        if method == "tools/call" and isinstance(params, dict):
+        # A notification is never executed, so it names no tool and hands over no client identity.
+        if method == "tools/call" and isinstance(params, dict) and not is_notification:
             raw_name = params.get("name")
             arguments = params.get("arguments")
             arg_names = _ro.safe_arg_names(arguments)
@@ -417,7 +471,7 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
                 requested_name = _ro.safe_requested_name(raw_name)
 
         fingerprint = _ro.client_fingerprint(ip, ua)
-        if method == "initialize":
+        if method == "initialize" and not is_notification:
             client_name, client_version = _ro.safe_client_info(params)
             _ro.CLIENTS.remember(fingerprint, client_name, client_version)
         else:
@@ -434,7 +488,7 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
             principal_type=status.principal_type,
             outcome=obs.outcome,
             error_code=obs.error_code,
-            http_status=200,
+            http_status=202 if is_notification else 200,
             latency_ms=int((time.monotonic() - started) * 1000),
             client_name=client_name,
             client_version=client_version,
@@ -450,9 +504,29 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
         pass
 
 
-async def _handle_mcp_request_core(payload: dict, headers: Optional[dict],
-                                   profile: Optional[str], obs: "_Observed") -> dict:
-    """The dispatcher proper. Sets `obs` at every exit; see _Observed."""
+def _normalize_headers(headers: Optional[dict]) -> dict:
+    """Lower-case header names, and promote Authorization: Bearer / X-Api-Key to X-Agent-Identity
+    when that header is absent (see the long comment at the call site in the dispatcher)."""
+    norm_headers: dict = {}
+    if headers:
+        for k, v in dict(headers).items():
+            norm_headers[k.lower()] = v
+    if not norm_headers.get("x-agent-identity"):
+        auth = str(norm_headers.get("authorization") or "")
+        if auth[:7].lower() == "bearer ":
+            norm_headers["x-agent-identity"] = auth[7:].strip()
+        elif norm_headers.get("x-api-key"):
+            norm_headers["x-agent-identity"] = str(norm_headers["x-api-key"]).strip()
+    return norm_headers
+
+
+async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
+                                   profile: Optional[str], obs: "_Observed") -> Optional[dict]:
+    """The dispatcher proper. Sets `obs` at every exit; see _Observed. Returns None for a
+    notification or a client response (nothing may be sent back)."""
+    not_an_object = not isinstance(payload, dict)
+    if not_an_object:
+        payload = {}
     rpc_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params", {}) or {}
@@ -463,10 +537,6 @@ async def _handle_mcp_request_core(payload: dict, headers: Optional[dict],
         # overwrites whatever arrived.
         params = {**params, "_profile": profile}
     # Normalize header keys to lower-case so callers don't have to.
-    norm_headers: dict = {}
-    if headers:
-        for k, v in dict(headers).items():
-            norm_headers[k.lower()] = v
 
     # ACCEPT THE HEADERS THE BIGGEST CLIENT CAN ACTUALLY SEND.
     #
@@ -490,19 +560,42 @@ async def _handle_mcp_request_core(payload: dict, headers: Optional[dict],
     #
     # X-Agent-Identity stays first and stays supported: it is published in our
     # manifests, our docs and every key we have ever emailed.
-    if not norm_headers.get("x-agent-identity"):
-        auth = str(norm_headers.get("authorization") or "")
-        if auth[:7].lower() == "bearer ":
-            norm_headers["x-agent-identity"] = auth[7:].strip()
-        elif norm_headers.get("x-api-key"):
-            norm_headers["x-agent-identity"] = str(norm_headers["x-api-key"]).strip()
+    norm_headers = _normalize_headers(headers)
     obs.headers = norm_headers
+
+    # NOTIFICATIONS AND CLIENT RESPONSES GET NO REPLY. JSON-RPC 2.0: a message without an `id` is a
+    # notification and "the Server MUST NOT reply to a Notification". MCP (Streamable HTTP): a POST
+    # carrying only notifications and/or responses is accepted with 202 and no body.
+    #
+    # This is decided on the ABSENCE of `id`, not on the method's name, so a notification we have
+    # never heard of is ignored (and logged) rather than answered with an error a client may treat
+    # as fatal. An id-less message naming a REQUEST method (tools/call, tools/list...) is therefore
+    # also a notification: it is NOT executed - nobody could receive the result, and a paid tool must
+    # not run for a caller that cannot be told what it cost. `"id": null` is present, so it is still
+    # a request and still answered.
+    if not not_an_object and "id" not in payload and isinstance(method, str) and method:
+        obs.outcome = "notification"
+        if method in KNOWN_NOTIFICATIONS:
+            obs.log_method = method
+        elif method in _METHOD_HANDLERS:
+            obs.log_method, obs.error_code = method, "request_without_id"
+        else:
+            from agent_interface import request_observer as _ro
+            obs.log_method, obs.error_code = "notification", "unknown_notification"
+            obs.requested_name = _ro.safe_requested_name(method)
+        return None
+    if not not_an_object and not method and "id" in payload and ("result" in payload or "error" in payload):
+        # A client's response to a request WE sent (ping, sampling...). We send none, but the
+        # transport requires it be accepted.
+        obs.outcome, obs.log_method = "notification", "response"
+        return None
 
     if not method:
         obs.outcome, obs.error_code = "rpc_error", "invalid_request"
         return JsonRpcResponse(
             id=rpc_id,
-            error=_error(ERR_INVALID_REQUEST, "Missing 'method' field"),
+            error=_error(ERR_INVALID_REQUEST,
+                         "Request must be a JSON object" if not_an_object else "Missing 'method' field"),
         ).to_dict()
 
     handler = _METHOD_HANDLERS.get(method)

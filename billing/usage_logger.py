@@ -315,7 +315,10 @@ def fire_log_usage(
 # Same contract as fire_log_usage: fire-and-forget, never raises, never blocks a response, strong
 # references held, every failure counted in _stats so get_usage_logger_health() sees it.
 
-OUTCOMES = ("ok", "tool_failure", "tool_error", "rpc_error", "exception", "http_error")
+# "notification": a JSON-RPC message with no id (notifications/initialized...) or a client's response -
+# accepted with 202, never answered, never an error. Needs migrations/spine/010, which teaches the
+# database function to accept it; deploy 010 BEFORE the code that sends it.
+OUTCOMES = ("ok", "tool_failure", "tool_error", "rpc_error", "exception", "http_error", "notification")
 
 _V2_RPC = "usage_events_insert_v2"
 _V1_RPC = "usage_events_insert"

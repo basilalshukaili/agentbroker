@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 import config
@@ -701,6 +701,9 @@ async def mcp_endpoint(request: Request):
     # Pass headers down so the per-tool auth gate inside `tools/call` can
     # read x-agent-identity and enforce the same scope rules /ops/* enforces.
     response = await handle_mcp_request(payload, headers=dict(request.headers))
+    if response is None:
+        # Only notifications/responses were sent: accepted, nothing to say (MCP Streamable HTTP).
+        return Response(status_code=202)
     return response
 
 
@@ -742,6 +745,8 @@ async def mcp_profile_endpoint(profile: str, request: Request):
         )
     response = await handle_mcp_request(
         payload, headers=dict(request.headers), profile=profile)
+    if response is None:
+        return Response(status_code=202)
     return response
 
 
