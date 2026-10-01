@@ -407,7 +407,8 @@ def _log_http_outcome(request: Request, status: int, error_code: str, client_ip:
             admit, held = RATE_LIMIT_LOG_THROTTLE.admit(throttle_key)
             if not admit:
                 return
-        detail = f"{request.method} {request.url.path}"[:200]
+        from agent_interface.request_observer import safe_path
+        detail = f"{request.method} {safe_path(request.url.path)}"[:200]
         if held:
             detail += f" (+{held} more rate-limited since last row)"
         fire_log_outcome(UsageEvent(

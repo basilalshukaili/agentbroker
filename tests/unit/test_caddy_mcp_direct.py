@@ -141,6 +141,45 @@ def test_every_capability_door_is_routed_with_and_without_a_trailing_slash():
     assert len(DOORS) >= 5
 
 
+def _handle_body(text: str, matcher: str) -> str:
+    """The text of `handle @<matcher> { ... }` (one level of nested braces), comments removed."""
+    start = text.index(f"handle @{matcher} {{")
+    depth, i = 0, text.index("{", start)
+    for j in range(i, len(text)):
+        depth += {"{": 1, "}": -1}.get(text[j], 0)
+        if depth == 0:
+            return _directives(text[start:j + 1])
+    raise AssertionError("unbalanced block")
+
+
+def test_the_trailing_slash_form_is_normalised_before_it_reaches_the_container():
+    """AUDIT FINDING (gate, P2): the matcher sends /mcp/<door>/ to the container unchanged, and the
+    origin has no trailing-slash route, so it answers 307 with an http:// Location - where today (via the
+    Next.js rewrite) the same POST answers 200. A client that follows the redirect would resend the POST
+    and its key header in clear before Caddy's own http->https redirect. The route must therefore strip
+    the slash, BEFORE the proxy."""
+    new = md.apply(LIVE, DOORS)
+    body = _handle_body(new, "mcp_doors")
+    assert "uri strip_suffix /" in body, body
+    assert body.index("uri strip_suffix /") < body.index("reverse_proxy"), "the path must be fixed before proxying"
+    # /mcp/agent-broker/ is rewritten to /mcp outright, so it never reaches the origin with a slash
+    ab = _handle_body(new, "mcp_agent_broker")
+    assert "rewrite * /mcp" in ab and "uri strip_suffix" not in ab
+
+
+def test_the_installer_probes_the_slash_form_of_every_door_and_agent_broker():
+    """The first version of this change shipped with probes for the no-slash URLs only, which is why the
+    307 above could not have been caught by the install's automatic rollback."""
+    checks = md.post_checks(DOORS)
+    wanted = {f"https://hatchloop.dev/mcp/{d}/" for d in DOORS} | {"https://hatchloop.dev/mcp/agent-broker/"}
+    got = {c[1]: c for c in checks if c[0] == "POST"}
+    for url in wanted:
+        assert url in got, f"no POST probe for {url}"
+        method, _, body, status, text = got[url]
+        assert status == 200 and '"serverInfo"' in text, (url, status, text)
+        assert body["method"] == "initialize"
+
+
 def test_a_new_profile_is_routed_automatically_because_the_list_is_generated():
     new = md.apply(LIVE, DOORS + ["brand-new-door"])
     assert "/mcp/brand-new-door" in new
@@ -177,6 +216,20 @@ def test_api_hatchloop_dev_gets_an_access_log_and_only_that_block():
     assert api.index("reverse_proxy 127.0.0.1:8010") < api.index("log {")
     other = re.search(r"^delivery\.techmate\.om \{\n.*?^\}\n", new, re.S | re.M).group(0)
     assert "log {" not in other
+
+
+def test_the_api_access_log_does_not_write_one_time_tokens_from_the_query_string():
+    """AUDIT FINDING (gate, P3): the hatchloop.dev log scrubs b= and t= because session tokens must not
+    reach disk. The new api.hatchloop.dev log serves the emailed verification link (/keys/verify?token=...)
+    and the unsubscribe link (/unsubscribe?t=...), so it needs the same scrub - and the WhatsApp
+    verification handshake token too."""
+    new = md.apply(LIVE, DOORS)
+    api = re.search(r"^api\.hatchloop\.dev \{\n.*?^\}\n", new, re.S | re.M).group(0)
+    assert "request>uri query {" in api, "the api log has no query-string filter"
+    q = api[api.index("request>uri query {"):]
+    q = q[:q.index("}")]
+    for name in ("token", "t", "b", "hub.verify_token"):
+        assert f"delete {name}\n" in q, name
 
 
 def test_it_is_idempotent_byte_for_byte():

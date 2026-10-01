@@ -95,6 +95,10 @@ def mcp_block(doors: Iterable[str]) -> str:
         "\t}\n"
         f"\t@mcp_doors path {_paths(doors)}\n"
         "\thandle @mcp_doors {\n"
+        # The origin has no trailing-slash route: /mcp/<door>/ would be answered 307 with an http://
+        # Location, where the Next.js rewrite this replaces answers 200. Strip the slash BEFORE proxying
+        # so both spellings keep behaving as they do today (gate finding, P2).
+        "\t\turi strip_suffix /\n"
         + proxy +
         "\t}\n"
         f"\t{MARK_END}\n"
@@ -127,6 +131,15 @@ _API_LOG = (
     f"\t\t\t{LOG_MARK}\n"
     "\t\t\trequest>headers>X-Agent-Identity replace REDACTED\n"
     "\t\t\trequest>headers>X-Api-Key replace REDACTED\n"
+    # This host serves the emailed verification link (/keys/verify?token=...), the unsubscribe link
+    # (/unsubscribe?t=...) and the WhatsApp handshake (hub.verify_token); one-time tokens must not
+    # reach disk - the same rule the hatchloop.dev log applies to b= and t= (gate finding, P3).
+    "\t\t\trequest>uri query {\n"
+    "\t\t\t\tdelete token\n"
+    "\t\t\t\tdelete t\n"
+    "\t\t\t\tdelete b\n"
+    "\t\t\t\tdelete hub.verify_token\n"
+    "\t\t\t}\n"
     "\t\t}\n"
     "\t}\n"
     f"\t{MARK_END}\n"
@@ -208,6 +221,11 @@ def post_checks(doors: Iterable[str]) -> list:
     ]
     for d in sorted(doors):
         checks.append(("POST", f"https://hatchloop.dev/mcp/{d}", INIT, 200, '"serverInfo"'))
+    # The trailing-slash spelling is a public URL too: the first version of this change shipped with no
+    # probe for it and would have answered 307 (http:// Location) instead of 200.
+    checks.append(("POST", "https://hatchloop.dev/mcp/agent-broker/", INIT, 200, '"serverInfo"'))
+    for d in sorted(doors):
+        checks.append(("POST", f"https://hatchloop.dev/mcp/{d}/", INIT, 200, '"serverInfo"'))
     checks += [
         # What must NOT have moved: the site, the retired-server pages, the moved dashboard.
         ("GET", "https://hatchloop.dev/", None, 200, ""),

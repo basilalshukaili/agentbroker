@@ -1,6 +1,6 @@
 --- a/Caddyfile
 +++ b/Caddyfile
-@@ -496,0 +497,30 @@
+@@ -496,0 +497,31 @@
 +	# >>> mcp_direct 2026-10-01
 +	# MCP STRAIGHT TO THE CONTAINER, NOT THROUGH NEXT.JS.
 +	# These were Next.js rewrites to https://api.hatchloop.dev: Caddy -> Next -> Caddy -> container.
@@ -24,6 +24,7 @@
 +	}
 +	@mcp_doors path /mcp/appointment-booking /mcp/appointment-booking/ /mcp/company-verification /mcp/company-verification/ /mcp/compliance-check /mcp/compliance-check/ /mcp/sanctions-screening /mcp/sanctions-screening/ /mcp/sms-whatsapp-messaging /mcp/sms-whatsapp-messaging/
 +	handle @mcp_doors {
++		uri strip_suffix /
 +		reverse_proxy 127.0.0.1:8010 {
 +			header_up X-Forwarded-Proto https
 +			header_up -X-Real-IP
@@ -31,13 +32,13 @@
 +	}
 +	# <<< mcp_direct
 +
-@@ -523,0 +554,5 @@
+@@ -523,0 +555,5 @@
 +			# mcp_direct: key headers never reach disk
 +			# Caddy redacts Authorization by default and NOT these two. X-Agent-Identity is the header
 +			# every key we have issued tells people to send.
 +			request>headers>X-Agent-Identity replace REDACTED
 +			request>headers>X-Api-Key replace REDACTED
-@@ -559,0 +595,19 @@
+@@ -559,0 +596,25 @@
 +
 +	# >>> mcp_direct 2026-10-01 (api access log)
 +	# api.hatchloop.dev had NO access log: the host that carries most MCP traffic left no record of
@@ -54,6 +55,12 @@
 +			# mcp_direct: key headers never reach disk
 +			request>headers>X-Agent-Identity replace REDACTED
 +			request>headers>X-Api-Key replace REDACTED
++			request>uri query {
++				delete token
++				delete t
++				delete b
++				delete hub.verify_token
++			}
 +		}
 +	}
 +	# <<< mcp_direct

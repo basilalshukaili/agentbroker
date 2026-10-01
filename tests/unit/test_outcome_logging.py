@@ -425,3 +425,32 @@ def test_the_http_layer_event_carries_the_valid_key_id(client, events):
     client.post("/mcp/not-a-door", json={}, headers={"x-agent-identity": key})
     e = events[-1]
     assert e.key_id == "free_http_keyed" and e.key_state == "valid"
+
+
+# ---------------------------------------------------------------------------
+# the URL path is attacker-controlled text too (gate finding, P3)
+# ---------------------------------------------------------------------------
+
+def test_safe_path_keeps_ordinary_routes_and_masks_anything_secret_shaped():
+    assert ro.safe_path("/mcp") == "/mcp"
+    assert ro.safe_path("/mcp/not-a-door") == "/mcp/not-a-door"
+    assert ro.safe_path("/mcp/sanctions-screening/") == "/mcp/sanctions-screening/"
+    # a key pasted into the path (the claims part of a token is ~380-416 characters, so the old
+    # 200-character cut-off kept the first half of it)
+    keyish = "eyJhZ2VudF9pZCI6ImZyZWVfeCJ9" + "a" * 300
+    assert ro.safe_path(f"/mcp/{keyish}") == "/mcp/<other>"
+    assert ro.safe_path("/mcp/" + "0123456789abcdef" * 4) == "/mcp/<other>"       # a bare hex signature
+    assert ro.safe_path("/mcp/has spaces and $symbols") == "/mcp/<other>"
+    assert ro.safe_path("/a/b/c/d/e/f/g") == "/a/b/c/d/..."                        # bounded depth
+    assert ro.safe_path("") == "/" and ro.safe_path(None) == "/"
+    assert len(ro.safe_path("/" + "x" * 500)) <= 120
+
+
+def test_a_key_pasted_into_the_url_path_is_not_stored_in_the_usage_row(client, events):
+    key = issue_token(TokenRequest(agent_id="free_path_leak", principal_id="p")).token
+    r = client.post(f"/mcp/{key}", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+    assert r.status_code == 404
+    e = events[-1]
+    assert e.outcome == "http_error" and e.http_status == 404
+    assert key[:20] not in e.detail and "eyJ" not in e.detail, e.detail
+    assert e.detail == "POST /mcp/<other>"

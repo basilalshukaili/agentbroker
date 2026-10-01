@@ -52,6 +52,33 @@ def safe_requested_name(name: Any) -> Optional[str]:
     return "<invalid>"
 
 
+_SEGMENT = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+_MAX_PATH_SEGMENTS = 4
+_MAX_PATH_CHARS = 120
+
+
+def safe_path(path: Any) -> str:
+    """A URL path made safe to store. The path is attacker-controlled text: a caller who pastes their key
+    into it (`/mcp/<key>`) would otherwise have the first part of it written to usage_events.detail, kept
+    out of harm only by a length cut-off that happened to land before the signature (gate finding, P3).
+
+    Each segment is kept only if it is identifier-shaped and not secret-shaped; anything else becomes
+    "<other>". Depth is bounded, and a trailing slash is preserved so `/mcp/x/` and `/mcp/x` stay
+    distinguishable in the log."""
+    if not isinstance(path, str) or not path:
+        return "/"
+    trailing = path.endswith("/") and len(path) > 1
+    segments = [s for s in path.split("/") if s != ""]
+    out = []
+    for seg in segments[:_MAX_PATH_SEGMENTS]:
+        out.append(seg if _SEGMENT.match(seg) and not _looks_like_secret(seg) else "<other>")
+    if len(segments) > _MAX_PATH_SEGMENTS:
+        out.append("...")
+        trailing = False
+    text = "/" + "/".join(out) + ("/" if trailing else "")
+    return text[:_MAX_PATH_CHARS]
+
+
 def safe_client_info(params: Any) -> tuple:
     """(name, version) from an `initialize` request's clientInfo; (None, None) if absent."""
     if not isinstance(params, dict):
