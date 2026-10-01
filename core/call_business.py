@@ -97,6 +97,24 @@ async def handle_call_business(
             trace_id=trace_id,
         )
 
+    # Voice configured but the outbound line is not verified for placing calls: same honest answer the
+    # MCP gate gives (core/channel_status), for callers that reach this handler without it (the REST twin).
+    if os.getenv("VAPI_API_KEY") and os.getenv("VAPI_PHONE_NUMBER_ID"):
+        from core.channel_status import VOICE, channel_state
+        _voice = channel_state(VOICE)
+        if not _voice.available:
+            return OutcomeReceipt(
+                operation_id=operation_id,
+                status=OperationStatus.FAILURE,
+                reason_code="channel_unavailable",
+                human_message=_voice.reason or "Voice calling is not enabled on this deployment.",
+                cost=CostRecord(amount=0.0, currency="USD", basis="no_charge_channel_unavailable"),
+                latency_ms=int((time.monotonic() - t0) * 1000),
+                retriable=True,
+                next_actions=["Use send_message on WhatsApp or email, or try again later."],
+                trace_id=trace_id,
+            )
+
     # Voice not provisioned → honest receipt, no crash, no charge.
     if not os.getenv("VAPI_API_KEY") or not os.getenv("VAPI_PHONE_NUMBER_ID"):
         return OutcomeReceipt(

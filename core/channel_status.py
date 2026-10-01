@@ -40,6 +40,11 @@ def _set(*names: str) -> bool:
     return all(bool(os.getenv(n, "").strip()) for n in names)
 
 
+def _truthy(name: str) -> bool:
+    """An explicit yes only. A flag that is merely present ("false", "0", "no") must not enable anything."""
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
 def _stubs_allowed() -> bool:
     try:
         from channels.stub_policy import stubs_allowed
@@ -85,7 +90,20 @@ def channel_state(channel: str) -> ChannelState:
         return ChannelState(EMAIL, False, "Email sending is not configured on this deployment.")
     if channel == VOICE:
         if _set("VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID"):
-            return ChannelState(VOICE, True)
+            # Configured is not the same as able to call. The outbound line this deployment holds was
+            # issued free by the voice vendor, whose documentation says such numbers are inbound-only
+            # and US-national, and the account has never placed a call. Until an operator attests
+            # (VAPI_OUTBOUND_VERIFIED) that an outbound call has actually succeeded - or connects a
+            # line that is known to place calls - saying "available" would send keyed callers into a
+            # credit hold and a refund, the failure the 2026-09-30 audit set out to remove.
+            if _truthy("VAPI_OUTBOUND_VERIFIED"):
+                return ChannelState(VOICE, True)
+            if _stubs_allowed():
+                return ChannelState(VOICE, True, simulated=True)
+            return ChannelState(
+                VOICE, False,
+                "Voice calling is not enabled on this deployment yet: the outbound phone line has not "
+                "been verified for placing calls.")
         if _stubs_allowed() and _set("VAPI_PHONE_NUMBER_ID"):
             return ChannelState(VOICE, True, simulated=True)
         return ChannelState(

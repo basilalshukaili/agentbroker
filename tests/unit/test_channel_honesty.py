@@ -24,7 +24,8 @@ from core import channel_status as cs
 CHANNEL_ENV = [
     "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_API_KEY_SID", "TWILIO_API_KEY_SECRET",
     "TWILIO_MESSAGING_SERVICE_SID", "TWILIO_FROM_NUMBER", "RESEND_API_KEY", "SENDGRID_API_KEY",
-    "VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_ID",
+    "VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID", "VAPI_OUTBOUND_VERIFIED",
+    "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_ID",
     "ALLOW_STUB_CHANNELS",
 ]
 
@@ -99,11 +100,42 @@ def test_sms_needs_credentials_AND_a_sender(monkeypatch):
     assert cs.channel_state("sms").available is True, "API-key auth mode counts"
 
 
-def test_voice_needs_the_key_and_the_phone_number(monkeypatch):
+def test_voice_needs_the_key_and_the_phone_number_and_a_verified_outbound_line(monkeypatch):
     monkeypatch.setenv("VAPI_API_KEY", "k")
     assert cs.channel_state("voice").available is False
     monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "pn")
+    # Configured is not the same as able to call. The line this deployment holds is a free number from
+    # the voice vendor, which the vendor documents as inbound-only and US-national, and no outbound call
+    # has ever been placed on it (the account's call history is empty). Until an operator attests that an
+    # outbound call has actually succeeded, the honest answer is "not enabled".
+    s = cs.channel_state("voice")
+    assert s.available is False
+    assert "not been verified" in (s.reason or "")
+    monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", "true")
     assert cs.channel_state("voice").available is True
+
+
+@pytest.mark.parametrize("value", ["", "false", "0", "no", "off", "nope", " "])
+def test_only_an_explicit_yes_counts_as_verified(monkeypatch, value):
+    monkeypatch.setenv("VAPI_API_KEY", "k")
+    monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "pn")
+    monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", value)
+    assert cs.channel_state("voice").available is False, value
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "1", "yes", " Yes "])
+def test_explicit_yes_spellings_count_as_verified(monkeypatch, value):
+    monkeypatch.setenv("VAPI_API_KEY", "k")
+    monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "pn")
+    monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", value)
+    assert cs.channel_state("voice").available is True, value
+
+
+def test_an_attestation_without_credentials_does_not_make_voice_available(monkeypatch):
+    monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", "true")
+    assert cs.channel_state("voice").available is False
+    monkeypatch.setenv("VAPI_API_KEY", "k")
+    assert cs.channel_state("voice").available is False, "a number is still needed"
 
 
 def test_email_and_whatsapp(monkeypatch):
@@ -122,6 +154,7 @@ def test_availability_is_read_at_call_time_not_import_time(monkeypatch):
     assert cs.channel_state("voice").available is False
     monkeypatch.setenv("VAPI_API_KEY", "k")
     monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "p")
+    monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", "true")
     assert cs.channel_state("voice").available is True
     monkeypatch.delenv("VAPI_API_KEY")
     assert cs.channel_state("voice").available is False
@@ -176,6 +209,7 @@ def test_a_partly_available_tool_stays_available_and_says_what_is_missing(monkey
 def test_when_everything_is_provisioned_nothing_is_annotated(monkeypatch):
     for n, v in {"TWILIO_ACCOUNT_SID": "a", "TWILIO_AUTH_TOKEN": "t", "TWILIO_FROM_NUMBER": "+1",
                  "RESEND_API_KEY": "k", "VAPI_API_KEY": "k", "VAPI_PHONE_NUMBER_ID": "p",
+                 "VAPI_OUTBOUND_VERIFIED": "true",
                  "WHATSAPP_ACCESS_TOKEN": "t", "WHATSAPP_PHONE_ID": "1"}.items():
         monkeypatch.setenv(n, v)
     tools = _tools()
@@ -312,9 +346,45 @@ def test_call_business_fails_early_without_voice_and_places_no_call(monkeypatch)
     assert trip.hit == []
 
 
+def test_call_business_with_credentials_but_an_unverified_line_fails_early_and_places_no_call(monkeypatch):
+    """The state production is in on 2026-10-01: Vapi key and phone-number id present, the number a free
+    vendor line (inbound-only per the vendor), no outbound call ever verified."""
+    monkeypatch.setenv("VAPI_API_KEY", "k")
+    monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "p")
+    trip = Tripwire(monkeypatch)
+    from channels.voice_ai import vapi
+    monkeypatch.setattr(vapi.VapiVoiceAdapter, "send",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("a call was placed")))
+    body = _body(_tool("call_business", {"business_phone": "+15551230000", "objective": "ask the hours"}))
+    assert body["error_code"] == "channel_unavailable"
+    assert "not been verified" in body["human_message"]
+    assert trip.hit == [], "the dispatcher (and so the credit hold) must not be reached"
+    listed = _tools()["call_business"]
+    assert listed["description"].startswith("[UNAVAILABLE"), listed["description"][:80]
+    assert listed["_meta"]["hatchloop/availability"]["available"] is False
+    assert "voice" in cs.unavailable_summary()
+
+
+def test_the_core_call_business_also_refuses_an_unverified_line_without_charging(monkeypatch):
+    """The REST twin (/ops/call_business) and any in-process caller reach core.call_business directly,
+    not through the MCP gate; they must get the same honest answer and no call."""
+    monkeypatch.setenv("VAPI_API_KEY", "k")
+    monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "p")
+    from channels.voice_ai import vapi
+    monkeypatch.setattr(vapi.VapiVoiceAdapter, "send",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("a call was placed")))
+    from core.call_business import handle_call_business
+    from core.models import CallBusinessRequest
+    receipt = _run(handle_call_business(CallBusinessRequest(business_phone="+15551230000", objective="ask the hours"),
+                                 agent_id="a", trace_id="t"))
+    assert receipt.reason_code == "channel_unavailable"
+    assert receipt.cost.amount == 0.0 and "not been verified" in receipt.human_message
+
+
 def test_call_business_reaches_the_dispatcher_when_voice_is_provisioned(monkeypatch):
     monkeypatch.setenv("VAPI_API_KEY", "k")
     monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "p")
+    monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", "true")
     trip = Tripwire(monkeypatch)
     resp = _tool("call_business", {"business_phone": "+15551230000", "objective": "ask the hours"})
     assert trip.hit == ["call_business"] and resp["result"]["isError"] is False

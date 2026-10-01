@@ -571,6 +571,9 @@ class TestSiblingProducersOwnership:
     def test_call_business_rest_route_binds_the_caller(self, monkeypatch):
         monkeypatch.setenv("VAPI_API_KEY", "test_key")
         monkeypatch.setenv("VAPI_PHONE_NUMBER_ID", "test_number_id")
+        # This test is about who owns the operation, so it assumes voice is enabled; a deployment whose
+        # outbound line is unverified answers channel_unavailable before reaching the adapter.
+        monkeypatch.setenv("VAPI_OUTBOUND_VERIFIED", "true")
 
         import core.call_business as cb
         from channels.adapter_interface import ChannelResponse

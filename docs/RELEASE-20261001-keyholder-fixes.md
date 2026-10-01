@@ -46,9 +46,12 @@ recorded in the private operations record, not in this document.
 
 ## Things this release deliberately does not do
 
-* It does not make SMS or voice work. SMS needs a carrier account and a registered US 10DLC campaign;
-  voice is provisioned (a Vapi number, status active) but a real call has not been placed to prove the
-  request shape end to end. Both are now honest instead of failing late.
+* It does not make SMS or voice work. SMS needs a carrier account and a registered US 10DLC campaign.
+  Voice has credentials and an outbound number, but that number was issued free by the voice vendor, whose
+  documentation describes such numbers as inbound-only and US-national, and no outbound call has ever been
+  placed on it. So voice is reported as **not enabled** (`channel_unavailable`, nothing held or charged)
+  until an operator sets `VAPI_OUTBOUND_VERIFIED=true` after a controlled call succeeds, or connects a line
+  known to place calls. Both channels are now honest instead of failing late.
 * It does not change `find_business`, `mint_key`, or anything else in the audit's ranked list.
 * It does not route `/.well-known/*`, `/keys/*` or `/webhooks/*` off Next.js; those still take the old hop.
 
