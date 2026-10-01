@@ -1,0 +1,4 @@
+# Scripts uploaded to the Linux box and run by path. A CRLF checkout (core.autocrlf=true on Windows)
+# breaks the shebang and every later line.
+deploy/caddy/*.sh text eol=lf
+deploy/caddy/remote_scrub_logs.py text eol=lf

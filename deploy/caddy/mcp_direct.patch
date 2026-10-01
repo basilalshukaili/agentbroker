@@ -1,0 +1,59 @@
+--- a/Caddyfile
++++ b/Caddyfile
+@@ -496,0 +497,30 @@
++	# >>> mcp_direct 2026-10-01
++	# MCP STRAIGHT TO THE CONTAINER, NOT THROUGH NEXT.JS.
++	# These were Next.js rewrites to https://api.hatchloop.dev: Caddy -> Next -> Caddy -> container.
++	# 141 of 54,053 POSTs (0.26%) were 502 over four days, at :27-:28 and :57-:58 past the hour
++	# (the site's auto-deploy restarting Next), and every caller reached the origin as this box's own
++	# address, i.e. one shared rate-limit bucket. Same public URLs; only the hop is removed.
++	#
++	# ONLY the paths Next.js rewrote are routed (not a /mcp/* wildcard): the retired servers'
++	# pages under /mcp/ answer 410 from Next.js and must keep doing so.
++	#
++	# NO trusted_proxies on purpose: with none, Caddy replaces any client-sent X-Forwarded-For with
++	# the real peer address. The app believes that header only from its own proxy
++	# (core/client_ip.py, TRUSTED_PROXY_CIDRS), and X-Real-IP is stripped here.
++	@mcp_agent_broker path /mcp/agent-broker /mcp/agent-broker/
++	handle @mcp_agent_broker {
++		rewrite * /mcp
++		reverse_proxy 127.0.0.1:8010 {
++			header_up X-Forwarded-Proto https
++			header_up -X-Real-IP
++		}
++	}
++	@mcp_doors path /mcp/appointment-booking /mcp/appointment-booking/ /mcp/company-verification /mcp/company-verification/ /mcp/compliance-check /mcp/compliance-check/ /mcp/sanctions-screening /mcp/sanctions-screening/ /mcp/sms-whatsapp-messaging /mcp/sms-whatsapp-messaging/
++	handle @mcp_doors {
++		reverse_proxy 127.0.0.1:8010 {
++			header_up X-Forwarded-Proto https
++			header_up -X-Real-IP
++		}
++	}
++	# <<< mcp_direct
++
+@@ -523,0 +554,5 @@
++			# mcp_direct: key headers never reach disk
++			# Caddy redacts Authorization by default and NOT these two. X-Agent-Identity is the header
++			# every key we have issued tells people to send.
++			request>headers>X-Agent-Identity replace REDACTED
++			request>headers>X-Api-Key replace REDACTED
+@@ -559,0 +595,19 @@
++
++	# >>> mcp_direct 2026-10-01 (api access log)
++	# api.hatchloop.dev had NO access log: the host that carries most MCP traffic left no record of
++	# who called or how it answered. Same rotation as the other sites, same key-header redaction.
++	# `caddy validate` creates this file as whoever runs it; the installer chowns it to caddy
++	# before the reload (a root-owned log makes a valid config fail to reload).
++	log {
++		output file /var/log/caddy/api.hatchloop.dev.log {
++			roll_size 20MiB
++			roll_keep 10
++		}
++		format filter {
++			wrap json
++			# mcp_direct: key headers never reach disk
++			request>headers>X-Agent-Identity replace REDACTED
++			request>headers>X-Api-Key replace REDACTED
++		}
++	}
++	# <<< mcp_direct
