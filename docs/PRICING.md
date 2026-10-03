@@ -17,8 +17,14 @@ minimum. Credits do not expire.
 > `payments.premium_data_quota_enforced`), derived from the same function the
 > gates evaluate (`billing/switches.py`).
 > **As of 2026-10-04 all three are off on the running service**: no call is
-> charged, the premium-data quota is not enforced, and a payment attached to a
-> call is ignored.
+> charged, the premium-data quota is not enforced, a payment attached to a
+> call is ignored, and credit packages are not on sale (`/billing/checkout`
+> opens no checkout while `CREDITS_ENABLED` is off, because a purchase made then
+> would mint a key that is never credited; `/checkout` says so).
+>
+> While no rail is on, every price below is a schedule: tool descriptions,
+> `llms.txt` and `preview_cost` still show the figure and say it is "not charged
+> while no payment rail is on".
 
 ---
 

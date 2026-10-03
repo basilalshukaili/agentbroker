@@ -174,8 +174,9 @@ get 500/day. **As of 2026-10-04 metering and credits are off, so these three too
 unmetered and nothing is charged;** `preview_cost` and `payments` in
 `https://api.hatchloop.dev/.well-known/mcp.json` (`status`, `rails`, `premium_data_quota_enforced`)
 report the live state. Once metering is on, beyond the quota: top up credits by card at
-https://hatchloop.dev/pricing, or, while the x402 rail is on (it is off today), pay per call in
-USDC on Base by attaching an x402 payment in `params._meta["x402/payment"]` (no account needed).
+https://hatchloop.dev/pricing (only while credits are on; they are off today), or, while the x402
+rail is on (it is off today), pay per call in USDC on Base by attaching an x402 payment in
+`params._meta["x402/payment"]` (no account needed).
 
 ## Optional: unlock the write tools (free)
 
@@ -194,8 +195,8 @@ Click the verification link in the email, then add the key as a header using the
 
 Free tier (write tools): 100 operations/day. Free tier (premium data tools): 500 calls/day once
 metering is on (not enforced as of 2026-10-04; see above).
-Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing (the credit ledger is
-switched off as of 2026-10-04; see above).
+Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing are on sale only while the
+credit ledger is switched on; it is off as of 2026-10-04, so they are not on sale (see above).
 
 ## Verify it is working
 

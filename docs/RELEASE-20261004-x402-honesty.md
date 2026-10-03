@@ -44,6 +44,41 @@ What now follows the switches:
 - A bare price request (`_meta["x402/payment"]` = any string) no longer pages the founder as "a real buyer";
   only a structured payment payload does (`billing/x402_gate._is_signed_payment_attempt`).
 
+## Second pass (review of the first pass; every item has a test that fails without it)
+
+The review found the first pass left the same defect standing on surfaces it had not looked at. Fixed:
+
+- **Cost and quota claims.** With metering off, the three premium data tools are free and unmetered (the
+  descriptor says `premium_data_quota_enforced: false`), yet `tools/list` tagged them "[free in quota, then
+  $0.02/call]" and `llms.txt` / `llms-full.txt` said "free within the daily quota, then $0.02 per call". They now say
+  free, and the quota wording returns only while `DATA_METERING_ENABLED` is on. The manifest's static
+  `free_quota_note` no longer states the quota flatly (it is conditional and points at the live descriptor).
+- **A price is a schedule while no rail can charge it.** With no rail on, a priced tool's tag, its `Cost:` sentence in
+  `llms.txt` / the tool JSON, and `preview_cost`'s basis say "not charged while no payment rail is on". The dollar
+  figures do not move (receipts and the x402 gate read the same schedule). One sentence, `billing.switches.NOT_CHARGED`.
+  **This labelling is a product-wording call; it is reversible in one place** (`not_charged_note()` returns `""`).
+- **x402 on, metering off.** The three data tools are answered free before the x402 branch, so they are no longer tagged
+  "[or pay per call: x402 ...]" in that state (a payment attached to one was never read).
+- **`/checkout` and `/billing/checkout`.** With credits off the page no longer sells credits (no package table, no
+  pay button, no "bought by card") and `/billing/checkout` redirects to `/checkout` instead of minting a Polar session:
+  a purchase made while credits are off mints a key but is never credited (the grant is skipped and is idempotent on the
+  order id). "Two rails" needs both rails; x402 alone reads "One rail". The page, the link and the webhook's grant all
+  call `billing.switches.credits_enabled()`.
+- **Other surfaces that sold credits:** the free-key success page, the past-quota messages of the premium data tools
+  (reachable in "metering on, credits off", the first-flip state) and the OAuth consent page are now gated on credits.
+  `smithery.yaml` / `glama.json` (generated from `registry/servers.yaml`) are static, so they say nothing about credits or
+  a quota and point at the live descriptor. `scripts/check_pricing.py` now polices these generators and refuses an offer
+  of credits or a quota promise in static copy; its option and status rules no longer depend on how a literal is quoted.
+- **The buyer-intent predicate is the SDK's own parse** (`x402.mcp.utils.extract_payment_from_meta`), so it cannot disagree
+  with the SDK in either direction: a valid payment sent as a JSON string is counted; `{"payload": {"a": 1}}` is not.
+- **`live_verify_release.py payments` requires positive evidence.** A 500 from `/keys/request`, a failed or empty
+  `tools/list`, an unreadable `preview_cost`, an unreadable `send_message` refusal, or a `/.well-known/x402` that does not
+  answer 404 while the rail is off each fail the check. Tool descriptions are judged per tool against the descriptor (the
+  quota tag, the x402 mention on the data tools, "not charged" versus a live rail). The receipt also says whether the
+  committed edge snapshot's payments block is in step (informational).
+- **Gate side pinned.** Three mutations survived the first pass (the data-tool bypass, the REST credits middleware, the
+  data block of `check_quota`); `tests/unit/test_switch_gates_are_pinned.py` kills all six directions.
+
 ## Edge snapshot
 
 `edge/src/snapshots/mcp.json` is regenerated (`refresh_edge_snapshots.py --local-routes mcp.json`): it is the
@@ -51,6 +86,13 @@ only snapshot that carries `payments`. Seven other snapshots were ALREADY stale 
 (agents, openai-tools, anthropic-tools, manifest, llms, llms-full, openapi); they are not touched here.
 The snapshot is the all-switches-off document, which is what the origin serves today; after any switch is
 flipped on, regenerate it (or `refresh_edge_snapshots.py --check` against the live origin will say it is stale).
+
+The edge worker is not in the live path today (neither `api.hatchloop.dev` nor `hatchloop.dev` answers with
+`x-edge-source`), so the snapshot is latent, not live. **Procedure for flipping any money switch:** flip it, redeploy,
+then `python scripts/refresh_edge_snapshots.py --local-routes mcp.json` (without `--check`, rewrites it) and commit; the
+`payments` receipt field `edge_snapshot_payments_in_step` says whether they agree. Tool-definition and discovery snapshots
+(`mcp-tools-list.json`, `llms*.txt`, `openai-tools.json`, `anthropic-tools.json`, `manifest.json`, ...) still carry the old
+cost wording; refresh them before the edge worker is next deployed.
 
 ## Deploy preconditions (read before shipping)
 
@@ -71,12 +113,23 @@ flipped on, regenerate it (or `refresh_edge_snapshots.py --check` against the li
 reads only: it fails when any surface offers a rail the descriptor does not list (or omits one it does), when
 `/.well-known/x402` is served without the rail, when the premium-data quota flag disagrees with `preview_cost`
 for `screen_sanctions`, and, with `--expect-rails`, when the descriptor names a different set than the one that
-was staged. Run against `48e8b62` before this release it fails on the two x402 offers and the missing
-`premium_data_quota_enforced` field, and on the credits rail once `--expect-rails ""` is given.
+was staged. It also fails when any tool description promises a quota the descriptor says is not enforced, quotes a price
+as a charge while no rail is on, or offers x402 on a premium data tool while metering is off, and when any surface it needs
+cannot be read. Run against `48e8b62` before this release it fails on the two x402 offers and the missing
+`premium_data_quota_enforced` field, on the quota tags, and on the credits rail once `--expect-rails ""` is given.
 
 ## Not changed on purpose
 
-Legal text (`/terms`, `/refund`: "Payments settled on-chain via x402 are final"), the `/releases` changelog
-(history), the human `/checkout` page's credit-package half, `hatchloop.dev/pricing`, per-tool cost tags
-(`[free in quota, then $0.02/call]`), and the registry-submission scripts under `deploy/` and
-`scripts/submit_to_registries.py`. Each still states the price schedule, not the switch state.
+Legal text (`/terms`, `/refund`: "Payments settled on-chain via x402 are final"; the refund policy's credit-package
+window), the `/releases` changelog (history), `hatchloop.dev/pricing` and the rest of that Next.js site (not in this
+repo; a Polar purchase link there is the same trap as `/billing/checkout` was - see the founder decision below),
+`render_home` / `render_pricing` in `web/pages.py` (dead code behind redirects), and the registry-submission scripts under
+`deploy/` and `scripts/submit_to_registries.py` (static marketing copy; regenerate from the live descriptor before any
+use). The seven stale edge snapshots stay stale (see above).
+
+## Founder decisions this release surfaces (not made here)
+
+1. **Credits.** While `CREDITS_ENABLED` is off, nothing can be bought on this service. Either keep it that way until the
+   ledger is switched on, or switch it on first. The Polar purchase path on `hatchloop.dev/pricing` must be decided with it.
+2. **"Not charged while no payment rail is on"** now appears next to every list price while no rail is on. It is true; if
+   you would rather the schedule not say so, `billing.switches.not_charged_note()` is the one place to change.
