@@ -241,16 +241,23 @@ async def _check_metering_pipeline() -> TestCheck:
 
     It fails when a rail is FAILING NOW, not when it has ever failed: unhealthy means a
     sustained share of the last few minutes of writes failed (billing/pipeline_health.py:
-    at least 3 failures and at least half of the recent attempts), or writes are stuck
-    pending. It used to fail for the rest of the process's life on the first failed write.
+    at least 3 failures and at least half of the recent attempts), or at least three writes in
+    a row have failed over more than two minutes and none has succeeded since, or writes are
+    stuck pending. It used to fail for the rest of the process's life on the first failed write.
     On 2026-10-02 12:12 UTC and again on 2026-10-03 07:16 UTC the database's shared connection
     pool starved for 10-25 seconds and usage_events writes failed (13 of the last 24 hours'
     15,283); the public self_test said `healthy: false` from the first stall until the
-    container was restarted at 18:39 on 2026-10-03, about 30 hours. A dead rail (every write
-    rejected) still trips it after three writes. A failure that something succeeded after is
-    transient, not an outage: once a rail's last three writes have all succeeded it reads healthy
-    at once, and a burst that was never followed by a success clears by itself ten minutes
-    after it ends (billing/pipeline_health.py).
+    container was restarted at 18:39 on 2026-10-03, about 30 hours. A rail that rejects every
+    write trips it after three writes however far apart they are, and stays tripped between
+    them: a rail written to rarely is judged on its run of consecutive failures, not on a
+    ten-minute window it cannot fill. A failure that something succeeded after is transient, not
+    an outage: once a rail's last three writes have all succeeded it reads healthy at once, even
+    if it was mostly failing a moment before, and a short burst that was never followed by a
+    write clears by itself ten minutes after it ends. A run of failures that lasted longer than
+    two minutes and was then followed by no write at all stays red until one succeeds or an hour
+    has passed since its newest failure.
+    What it does not catch: a rail failing at a steady rate under half of its writes (the
+    cumulative counters show it; this check does not read them).
     A clean process that has logged nothing yet is healthy by default.
     """
     start = time.time()

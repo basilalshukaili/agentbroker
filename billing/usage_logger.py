@@ -81,14 +81,15 @@ def get_usage_logger_health() -> dict:
     silently-dead metering pipeline from a healthy one, instead of only
     finding out from a downstream row count days later.
 
-    `healthy` is the verdict (False only while a sustained share of recent writes
-    is failing, see billing/pipeline_health.py); `failed`/`succeeded`/
+    `healthy` is the verdict (False while a sustained share of recent writes is failing, or
+    while at least three writes in a row have failed over more than two minutes and none has
+    succeeded since; see billing/pipeline_health.py); `failed`/`succeeded`/
     `last_failure_reason` are the cumulative counters and never reset."""
-    healthy, why = _window.assess()
-    snap = _window.snapshot()
-    return {**_stats, "pending": len(_pending_tasks), "healthy": healthy,
-            "unhealthy_reason": why, "recent_attempts": snap["attempts"],
-            "recent_failed": snap["failed"], "window_s": snap["window_s"]}
+    # One look at the window gives the verdict and the counts beside it, so they cannot disagree.
+    v = _window.evaluate()
+    return {**_stats, "pending": len(_pending_tasks), "healthy": v["healthy"],
+            "unhealthy_reason": v["reason"], "recent_attempts": v["attempts"],
+            "recent_failed": v["failed"], "window_s": v["window_s"]}
 
 
 def _record_success() -> None:

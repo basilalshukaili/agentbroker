@@ -70,11 +70,11 @@ _window = RollingOutcomes()
 
 def get_durable_meter_health() -> dict:
     """Snapshot for a health check — see usage_logger.get_usage_logger_health()."""
-    healthy, why = _window.assess()
-    snap = _window.snapshot()
-    return {**_stats, "pending": len(_pending_tasks), "healthy": healthy,
-            "unhealthy_reason": why, "recent_attempts": snap["attempts"],
-            "recent_failed": snap["failed"], "window_s": snap["window_s"]}
+    # One look at the window gives the verdict and the counts beside it, so they cannot disagree.
+    v = _window.evaluate()
+    return {**_stats, "pending": len(_pending_tasks), "healthy": v["healthy"],
+            "unhealthy_reason": v["reason"], "recent_attempts": v["attempts"],
+            "recent_failed": v["failed"], "window_s": v["window_s"]}
 
 
 def _record_success() -> None:
