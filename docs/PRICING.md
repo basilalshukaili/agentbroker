@@ -8,6 +8,18 @@
 **1 credit = 1 US cent.** There is no subscription, no monthly fee, and no
 minimum. Credits do not expire.
 
+> **This file is the price schedule. Whether a rail is switched on is a separate
+> fact, and it is not typed here.** Three switches decide it: `CREDITS_ENABLED`
+> (calls are charged to a credit balance and purchases grant credits),
+> `DATA_METERING_ENABLED` (the premium-data daily quota is enforced) and
+> `X402_ENABLED` (pay-per-call USDC is accepted). The running service reports
+> them in `/.well-known/mcp.json` (`payments.status`, `payments.rails`,
+> `payments.premium_data_quota_enforced`), derived from the same function the
+> gates evaluate (`billing/switches.py`).
+> **As of 2026-10-04 all three are off on the running service**: no call is
+> charged, the premium-data quota is not enforced, and a payment attached to a
+> call is ignored.
+
 ---
 
 ## What is free
@@ -62,6 +74,10 @@ back; a truly anonymous booking or call can no longer be polled by
 Past the quota the tool returns an honest failure
 (`reason_code: free_quota_exceeded`, `cost: $0`) — never a silent charge.
 
+While `DATA_METERING_ENABLED` is off (as of 2026-10-04) there is no quota: these
+three tools run free and unmetered for everyone, and `preview_cost` reports
+$0.00 for them.
+
 ## Write tools — free tier, then credits
 
 The 8 write tools perform real outbound actions, so they require an
@@ -73,11 +89,15 @@ The 8 write tools perform real outbound actions, so they require an
 | Credits | see packages | no daily cap |
 | x402 (USDC on Base) | per call, same prices as credits | no signup, no daily cap |
 
-The x402 rail has been live since 2026-08-29: attach a signed payment in
-`params._meta["x402/payment"]` on a `tools/call` and the call is served with
-no key and no account — the server answers an unpaid attempt with a priced
-offer first. It is the one payment path an autonomous agent can complete
-without a human.
+The x402 rail was enabled on 2026-08-29 and is **switched off on the running
+service as of 2026-10-04** (`X402_ENABLED` is not set there). While it is on:
+attach a signed payment in `params._meta["x402/payment"]` on a `tools/call` and
+the call is served with no key and no account — the server answers an unpaid
+attempt with a priced offer first. It is the one payment path an autonomous
+agent can complete without a human. Every surface that mentions it (tool
+descriptions, `auth_required` text, key-request guidance, the discovery
+documents, `/.well-known/x402`) is derived from the gate and appears only while
+it is on.
 
 A call that fails, and a call that succeeds without doing billable work (a
 duplicate lead, a booking that was not made — any receipt whose `cost.amount`

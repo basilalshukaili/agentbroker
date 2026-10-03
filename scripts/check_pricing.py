@@ -275,13 +275,28 @@ def _check_file(path: Path) -> list[str]:
 # marketing prose may still say whatever is currently true; this only polices
 # the generators, which are the surfaces an agent actually reads.
 
+# THE SAME DEFECT IN A THIRD SHAPE (2026-10-04). The first rule below only matched the JSON
+# spelling `"rails": [...]`. The generator actually wrote `rails = ["credits"] + (...)` and
+# `"status": "active"`, which no rule matched, so the credits rail stayed a constant for six
+# weeks after the checker was written - and was false from the day the VPS container started
+# with CREDITS_ENABLED and DATA_METERING_ENABLED set to "false". Rails, status and the numbered
+# "Option N (credits)" / "Option N (pay per call" sentences now come from billing/switches.py
+# (and x402_gate.enabled() behind it); every spelling of a literal is refused here.
 _RAIL_ASSERTIONS = [
     (r'"rails"\s*:\s*\[[^\]]*\]',
-     'hardcodes the payment rails - derive them from x402_gate.enabled()'),
+     'hardcodes the payment rails - derive them from billing.switches.live_rails()'),
+    (r'\brails\s*=\s*\[\s*["\']',
+     'assigns a literal list of payment rails - derive it from billing.switches.live_rails()'),
+    (r'"status"\s*:\s*"active"',
+     'hardcodes payments status "active" - use billing.switches.payments_status()'),
+    (r'["\']\s*Option\s+\d\s*\((credits|pay per call)',
+     'numbers a payment option by hand - build the option list from billing.switches so '
+     'the numbers close up and a switched-off rail is not offered'),
     (r'(?i)(x402|crypto)[^\n]{0,40}(is\s+not\s+offered|switched\s+off|is\s+off\b)',
      'asserts the crypto rail is off - it was ON for weeks while this said so'),
     (r'(?i)all tools are (currently )?free to call',
-     'asserts everything is free - credits have been live since 2026-08-24'),
+     'asserts everything is free - true only while no rail is switched on; derive it '
+     'from billing.switches'),
 ]
 
 # Files that GENERATE what an agent reads. Prose files are excluded on purpose:
@@ -291,6 +306,8 @@ _GENERATORS = [
     "agent_interface/well_known.py",
     "agent_interface/mcp_server.py",
     "agent_interface/discovery.py",
+    # The key-request guidance an agent is sent to from the auth_required error.
+    "agent_interface/key_requests.py",
     # Lives in the parent orchestration repo but emits copy pasted into four
     # public directories. This exact omission let a hardcoded "crypto is not
     # offered" survive while production advertised x402.
