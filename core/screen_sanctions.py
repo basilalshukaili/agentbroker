@@ -27,6 +27,17 @@ data, so a finding is asserted only on an exact normalised token-set equality;
 every partial overlap is returned as possible_matches_unverified for the caller
 to judge. See the note where the filter is applied.
 
+ARABIC NAMES (core/arabic_names.py). A name in Arabic script, or a Latin name
+with Arabic-name structure (al-, bin, Abd al-X, Abu X), is also compared BY SOUND
+with every name on the three lists, and an Arabic-script name with the
+Arabic-script aliases the EU and UK print for their entries. A sound-alike is a
+graded CANDIDATE (match_confidence, token_alignment, match_explanation), never a
+finding. The one new kind of finding is deliberately narrow: an Arabic-script
+query equal, element for element, to an Arabic-script alias the publisher
+printed. An Arabic-script query is never reported clean. Method, thresholds and
+the measured recall: docs/ARABIC_SANCTIONS_EVAL.md. The English path above is
+unchanged, and a test pins that.
+
 Design:
   * 10-second timeout per upstream; fail-open to partial results.
   * If all upstreams fail, returns sources_unavailable populated -- never fabricates
@@ -48,16 +59,20 @@ Design:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import csv
 import io
 import os
 import re
+import sys
+import threading
 import time
 import unicodedata
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from core import arabic_names as _ar
 from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 from core.untrusted import fence as _fence_untrusted
@@ -139,11 +154,16 @@ def _ascii(s: str) -> str:
     because the comment said there was nothing to check.
 
     What is actually true now: _normalize_name reduces to [a-z0-9 ], so a
-    Cyrillic, Arabic or CJK name normalises to NOTHING and cannot match any
-    index entry. That is handled honestly rather than silently - see
+    Cyrillic or CJK name normalises to NOTHING and cannot match any index
+    entry. That is handled honestly rather than silently - see
     _is_screenable, which reports such a name as NOT SCREENED instead of
     returning a clean result - but it is a real coverage gap, not a solved
-    problem. Transliteration is the fix and it is not built yet.
+    problem.
+
+    ARABIC IS NO LONGER IN THAT GAP (2026-10-03). core/arabic_names.py reads
+    Arabic script directly and compares Arabic and Latin names by sound; see the
+    section "ARABIC-SCRIPT AND TRANSLITERATION-AWARE MATCHING" below. Cyrillic
+    and CJK are still not screened, and still say so.
 
     The receipt is the audit artefact, and an audit record that cannot say
     what was screened is not an audit record. "Wire-safe" was never a real
@@ -270,6 +290,10 @@ _GENERIC_NAME_WORDS = frozenset({
     "western", "northern", "southern", "arab", "arabian", "regional",
     "overseas", "worldwide", "continental", "universal", "united", "national",
 })
+
+# The Arabic/transliteration layer must never disagree with this set about what
+# a generic word is, so it is handed the set rather than keeping its own copy.
+_ar.set_generic_latin(_GENERIC_NAME_WORDS)
 
 
 def _word_match_score(query: str, candidate: str) -> float:
@@ -794,6 +818,14 @@ def _uk_parse(raw: str) -> list[dict]:
         # both the code and the name the caller supplies.
         iCty = [hdr.index(c) for c in ("Address Country", "Nationality(/ies)",
                                        "Country of birth") if c in hdr]
+        # THE NAME IN THE LISTED PARTY'S OWN SCRIPT. The FCDO publishes it in a
+        # column of its own ("Name non-latin script"), which this parser used to
+        # ignore: on the 2026-10-03 copy 735 rows (677 entries) carry an Arabic or
+        # Persian spelling that was never indexed, so an Arabic-script query had
+        # nothing of the publisher's to be compared with. Only Arabic-script
+        # values are taken; Cyrillic (3,391 rows) and CJK are not screened (see
+        # _is_screenable).
+        iNL = hdr.index("Name non-latin script") if "Name non-latin script" in hdr else None
         seen: set[tuple[str, str]] = set()
         for r in rows[hdr_i + 1:]:
             if len(r) <= max(name_cols + [iUid]):
@@ -808,7 +840,7 @@ def _uk_parse(raw: str) -> list[dict]:
             seen.add((uid, nm))
             st = (r[iType] if iType is not None and iType < len(r) else "").lower()
             # "Individual" / "Entity" / "Ship" in the current feed.
-            out.append({
+            rec = {
                 "name": nm,
                 "entity_id": uid,
                 "programme": (r[iReg].strip()[:80] if iReg is not None and iReg < len(r) else ""),
@@ -817,7 +849,13 @@ def _uk_parse(raw: str) -> list[dict]:
                                      for i in iCty if i < len(r)
                                      for c in r[i].split(";")
                                      if 1 < len(c.strip()) <= 40}),
-            })
+            }
+            out.append(rec)
+            if iNL is not None and iNL < len(r):
+                nl = r[iNL].strip()
+                if nl and _ar.has_arabic_script(nl) and (uid, nl) not in seen:
+                    seen.add((uid, nl))
+                    out.append(dict(rec, name=nl))
     except Exception:
         pass
     return out
@@ -1236,6 +1274,534 @@ def _is_screenable(toks: set) -> Optional[str]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# ARABIC-SCRIPT AND TRANSLITERATION-AWARE MATCHING  (core/arabic_names.py)
+# ---------------------------------------------------------------------------
+#
+# WHY. An Arabic-script name normalised to nothing and so matched nothing, and a
+# Latin-script Arabic name matched only if the SPELLING was identical - while
+# the lists themselves carry six romanisations of one man inside one entry. For
+# an Oman-registered company whose customers write in Arabic, that was the
+# largest hole in this tool. core/arabic_names.py compares names by sound;
+# this section wires it into the three lists.
+#
+# THE RULE THAT DOES NOT CHANGE: A SOUND-ALIKE IS A CANDIDATE, NEVER A FINDING.
+# Candidates carry match_confidence (high or medium), the element-by-element
+# alignment that produced them, and a sentence saying what kind of evidence they
+# are. The one new kind of finding is deliberately narrow: an Arabic-script
+# query that is, element for element and after folding only spelling
+# conventions, an Arabic-script ALIAS the publisher itself printed. That is the
+# same evidence as a Latin token-set equality, in the other script.
+#
+# LOW-CONFIDENCE ALIGNMENTS ARE COUNTED, NOT LISTED. A pair that shares only
+# very common Arab name elements ("Muhammad Ali") is a coincidence, and listing
+# it would teach callers to ignore the field. The count is reported
+# (arabic_matching.low_confidence_not_listed) so the omission is visible.
+#
+# AN ARABIC-SCRIPT QUERY IS NEVER REPORTED "CLEAN". It is matched against Latin
+# list entries by transliteration, which is lossy by nature, so an empty result
+# means "nothing found by sound or spelling" - and the screen reports `partial`
+# with that sentence, exactly as a reduced screen does.
+
+_PHONETIC_STATS: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "screen_sanctions_phonetic_stats", default=None)
+
+_PHONETIC_FETCH_LIMIT = 150     # index rows pulled per lookup pattern
+_PHONETIC_PER_LIST = 5          # candidates reported per list
+_PHONETIC_LISTED = ("medium", "high")
+_CONF_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+_ARABIC_SCRIPT_NOTE = (
+    "Arabic-script query: matched against Latin-script list entries by "
+    "transliteration (sound) and against Arabic-script aliases by spelling. "
+    "Romanisation is not standardised, so a spelling this matcher does not "
+    "generate can be missed - an empty result means nothing was found by sound "
+    "or spelling, not that the party is clear")
+
+_ARABIC_METHOD = (
+    "Arabic-aware layer (core/arabic_names.py): the article, filial particles "
+    "(bin, ibn, bint), titles and compound elements (Abd al-X, Abu X, X al-Din) "
+    "are normalised; Arabic spelling conventions are folded; and Arabic and "
+    "Latin name elements are compared by consonant skeleton with a weighted edit "
+    "distance. A sound-based match is a CANDIDATE with a stated confidence, "
+    "never a finding. Only an Arabic-script query equal to an Arabic-script alias "
+    "the publisher printed is treated as a finding.")
+
+
+def _bump(key: str, n: int = 1) -> None:
+    stats = _PHONETIC_STATS.get()
+    if stats is not None and n:
+        stats[key] = stats.get(key, 0) + n
+
+
+def _alignment_fields(al) -> dict:
+    """The structured evidence for one sound-based match. The listed element
+    strings are the publisher's words reduced to bare letters; they are fenced
+    as untrusted like every other list-derived string (core/untrusted.py)."""
+    return {
+        "match_basis": al.basis,
+        "match_confidence": al.confidence,
+        "match_explanation": al.explanation,
+        "token_alignment": [
+            {"query_element": _ascii(q), "listed_element": _ascii(lst),
+             "similarity": sim, "relation": how}
+            for q, lst, sim, how in al.pairs],
+        "query_elements_unmatched": [_ascii(x) for x in al.unmatched_query],
+        "listed_elements_unmatched": len(al.unmatched_listed),
+    }
+
+
+def _sound_match(al, *, name, list_label, source_url, program, etype,
+                 countries, want_country, matcher, primary=None) -> dict:
+    m = {
+        "name": _ascii(name),
+        "list": list_label,
+        # A name-level similarity in 0..1. NOT comparable with the token-overlap
+        # score on exact matches, and uncalibrated like it.
+        "match_score": round(al.score, 2),
+        "program": _ascii(program or "") or None,
+        "entity_type": etype or "ENTITY",
+        "source_url": source_url,
+        "_matcher": matcher,
+    }
+    m.update(_alignment_fields(al))
+    if countries is not None:
+        m["countries"] = [_ascii(c) for c in countries] or None
+    if want_country:
+        m["country_match"] = _country_matches(want_country, countries or [])
+    if primary and _ascii(primary) != m["name"]:
+        m["listed_primary_name"] = _ascii(primary)
+    return m
+
+
+async def _arabic_db_matches(aq, list_code: str, list_label: str,
+                             source_url: str, want_country: Optional[str],
+                             version: Optional[str] = None,
+                             ) -> tuple[list[dict], list[str]]:
+    """Arabic-script and sound-based matches from the EU or UK index.
+
+    Returns (matches, notes). `notes` are disclosures about a lookup that could
+    not run or hit its limit; the caller files them as reduced-screen notes.
+    `version` is the list's refresh day, which says which copy of the list an
+    in-process sound index was built from.
+
+    TWO LOOKUPS, because the two kinds of row need different handling:
+
+      * Arabic-script ALIAS rows (the publisher printed them) are found by the
+        Arabic name_key and by token containment, exactly as Latin rows are.
+      * Latin rows are found by SOUND, from the in-process index of the list
+        (see "In-process sound indexes"). While that index is still being built,
+        or if it cannot be built, the database is asked instead: one regular
+        expression per identifying element over-fetches the rows that could
+        contain it and arabic_names.compare() re-scores what came back. That
+        path needs no new column and no re-index, and it reaches the right row
+        less often, so a call that had to use it says so.
+    """
+    from storage.supabase_client import (
+        select_rows_strict, SupabaseUnavailable, RawFilter)
+
+    notes: list[str] = []
+    found: dict[str, tuple] = {}
+    low = 0
+    arabic_script = aq.script in ("arabic", "mixed")
+
+    def consider(r: dict, al, matcher: str) -> None:
+        nonlocal low
+        if al is None:
+            return
+        if matcher != "arabic_script_exact" and al.confidence not in _PHONETIC_LISTED:
+            low += 1
+            return
+        who = r.get("entity_id") or r.get("name_key") or r.get("display_name")
+        rank = (1 if matcher == "arabic_script_exact" else 0,
+                _CONF_ORDER.get(al.confidence, 0), al.score)
+        prev = found.get(who)
+        if prev is not None and prev[0] >= rank:
+            return
+        found[who] = (rank, al, r, matcher)
+
+    # 1. Arabic-script aliases ------------------------------------------------
+    if arabic_script and aq.arabic_all_key:
+        key = " ".join(aq.arabic_all_key)
+        try:
+            rows = list(await select_rows_strict(
+                "sanctions_names",
+                filters={"list_code": list_code, "name_key": key}, limit=5))
+            if len(aq.arabic_key) >= 2:
+                sup = await select_rows_strict(
+                    "sanctions_names",
+                    filters={"list_code": list_code,
+                             "tokens": "cs.{" + ",".join(aq.arabic_key) + "}"},
+                    limit=8)
+                have = {r.get("name_key") for r in rows}
+                rows += [r for r in sup if r.get("name_key") not in have]
+        except SupabaseUnavailable:
+            rows = []
+            notes.append(
+                f"{list_label} (Arabic-script alias lookup unavailable on this "
+                f"call; Arabic spelling was NOT checked)")
+        for r in rows:
+            if r.get("name_key") == key:
+                consider(r, _ar.exact_alignment(aq), "arabic_script_exact")
+            else:
+                consider(r, _ar.compare(aq, _ar.analyse(r.get("display_name") or "")),
+                         "name_sound_match")
+
+    # 2. Latin rows, by sound -------------------------------------------------
+    served_by_index = False
+    if aq.phonetic_ok and version:
+        try:
+            idx, info = await _sound_index(
+                _list_phonetic_state.setdefault(list_code, _new_slot()), version,
+                lambda: _build_list_phonetic_index(list_code))
+            hits = await asyncio.to_thread(idx.search, aq, 60, "low")
+            for al, i in hits:
+                ent, prog, etype, countries = info[idx.meta[i]]
+                consider({"entity_id": ent, "display_name": idx.names[i],
+                          "programme": prog, "etype": etype,
+                          "countries": list(countries)}, al, "name_sound_match")
+            served_by_index = True
+        except _PhoneticIndexNotReady:
+            notes.append(
+                f"{list_label} (the sound index for this list was still being built; "
+                f"a narrower database lookup was used on this call, which can miss "
+                f"names written as one word in one list and two in another)")
+        except Exception:                       # noqa: BLE001
+            notes.append(
+                f"{list_label} (the sound index for this list could not be built; "
+                f"a narrower database lookup was used on this call, which can miss "
+                f"names written as one word in one list and two in another)")
+    if aq.phonetic_ok and not served_by_index:
+        if not version:
+            notes.append(
+                f"{list_label} (no refresh date for the list, so no sound index could "
+                f"be used; a narrower database lookup was used on this call, which can "
+                f"miss names written as one word in one list and two in another)")
+
+        async def fetch(extra_filters: list[dict]) -> list:
+            return await asyncio.gather(*[
+                select_rows_strict(
+                    "sanctions_names",
+                    # RawFilter: these values are built here from consonant
+                    # classes, never from the caller's text, and use operators
+                    # (`imatch`, a logic tree) that plain values may not.
+                    filters=dict({k: RawFilter(v) for k, v in f.items()},
+                                 list_code=list_code),
+                    order="name_key.asc", limit=_PHONETIC_FETCH_LIMIT)
+                for f in extra_filters], return_exceptions=True)
+
+        # A regular expression per identifying element (PostgREST `imatch`): the
+        # consonants in order, the confusable spellings of each as alternatives,
+        # vowels free, anchored to whole tokens. Selective enough that the row
+        # limit is rarely reached. If the server refuses the operator, fall back
+        # to ILIKE patterns of the stable consonants (broader, same results after
+        # re-scoring, but it reaches the row limit sooner).
+        values = _ar.retrieval_filters(aq)
+        results = await fetch(values) if values else []
+        if values and any(isinstance(r, SupabaseUnavailable) for r in results):
+            values = [{"name_key": "ilike." + p} for p in _ar.retrieval_patterns(aq)]
+            results = await fetch(values) if values else []
+        if not values:
+            notes.append(
+                f"{list_label} (this name has too few stable consonants to be "
+                f"looked up by sound; only exact spelling was checked)")
+        fetched: dict[str, dict] = {}
+        truncated = False
+        for res in results:
+            if isinstance(res, SupabaseUnavailable):
+                notes.append(
+                    f"{list_label} (sound lookup unavailable on this call; only "
+                    f"exact spelling was checked)")
+                break
+            if isinstance(res, BaseException):
+                raise res
+            if len(res) >= _PHONETIC_FETCH_LIMIT:
+                truncated = True
+            for r in res:
+                fetched.setdefault(str(r.get("name_key")), r)
+        if truncated:
+            notes.append(
+                f"{list_label} (a very common name: the sound lookup reached its "
+                f"row limit, so further candidates may exist)")
+        for r in fetched.values():
+            nm = r.get("display_name") or ""
+            if _ar.has_arabic_script(nm):
+                continue
+            consider(r, _ar.compare(aq, _ar.analyse(nm)), "name_sound_match")
+
+    _bump("low_confidence_not_listed", low)
+    ranked = sorted(found.values(), key=lambda t: t[0], reverse=True)[:_PHONETIC_PER_LIST]
+
+    # An Arabic alias on its own is hard to act on for a reader of English: say
+    # whose alias it is. Bounded to the top few hits; failure just omits it.
+    primaries: dict[int, str] = {}
+    for n, (rank, al, r, matcher) in enumerate(ranked[:3]):
+        nm = r.get("display_name") or ""
+        if _ar.has_arabic_script(nm) and r.get("entity_id"):
+            try:
+                sib = await select_rows_strict(
+                    "sanctions_names",
+                    filters={"list_code": list_code, "entity_id": r["entity_id"]},
+                    limit=12)
+            except SupabaseUnavailable:
+                continue
+            for srow in sib:
+                snm = srow.get("display_name") or ""
+                if snm and not _ar.has_arabic_script(snm):
+                    primaries[n] = snm
+                    break
+
+    out = []
+    for n, (rank, al, r, matcher) in enumerate(ranked):
+        out.append(_sound_match(
+            al, name=r.get("display_name") or "", list_label=list_label,
+            source_url=source_url, program=r.get("programme"),
+            etype=r.get("etype"), countries=r.get("countries") or [],
+            want_country=want_country, matcher=matcher,
+            primary=primaries.get(n)))
+    return out, notes
+
+
+# --- In-process sound indexes: OFAC, EU, UK ---------------------------------
+#
+# Finding the names that SOUND like a query means comparing it with every name
+# on a list. The OFAC list lives in this process already (parsed from a CSV), and
+# the EU and UK lists are read out of the index table once and kept the same way:
+# each list is analysed ONCE per copy into a SkeletonIndex (core/arabic_names.py)
+# and a query is compared with the few hundred names that index returns.
+#
+# WHY NOT ASK THE DATABASE FOR THE ROWS. That was the first design (a regular
+# expression per name element, see _arabic_db_matches), and it is kept as the
+# fallback, but measured against the same 150 gold entries it reached the right
+# row only 80% of the time: a regex over a sorted token string cannot follow a
+# name that is spelled as one word in one list and two in another (Gholam Reza /
+# Gholamreza, Abd al-Hai / Abdulhai, Shams-abad / Shamsabad), and it hits its row
+# limit on any query built from common names. The index has neither problem.
+#
+# Each index is built in a thread of its own, so a request that stops waiting for
+# it does not stop it, and a rebuild for a newer copy of the list runs while the
+# previous copy keeps answering.
+
+_SOUND_INDEX_WAIT_S = 9.0     # how long ONE request waits for a first build
+_SOUND_FAIL_BACKOFF_S = 60.0  # after a failed build, do not retry sooner than this
+_LIST_PAGE = 1000
+_LIST_PAGE_CAP = 400          # 400 pages of 1000: ten times the biggest list
+_sound_guard = threading.Lock()
+
+
+def _new_slot() -> dict:
+    return {"key": None, "index": None, "info": None,
+            "future": None, "future_key": None, "failed_at": 0.0}
+
+
+_ofac_phonetic_state: dict = _new_slot()
+_list_phonetic_state: dict[str, dict] = {"EU": _new_slot(), "UK": _new_slot()}
+
+
+class _PhoneticIndexNotReady(Exception):
+    """A sound index was still being built when this call stopped waiting for it."""
+
+
+def _start_index_build(slot: dict, key, work):
+    """Start (or join) the build of `slot` for `key`; `work()` returns
+    (index, info). Returns a concurrent.futures.Future, or None when the slot
+    already holds `key`.
+
+    A thread and a concurrent Future, not an asyncio task: the index outlives any
+    one request, and a task would die with the event loop that made it."""
+    from concurrent.futures import Future
+
+    with _sound_guard:
+        if slot["key"] == key and slot["index"] is not None:
+            return None
+        running = slot["future"]
+        if running is not None and slot["future_key"] == key:
+            if not running.done():
+                return running
+            if (running.exception() is not None
+                    and time.time() - slot["failed_at"] < _SOUND_FAIL_BACKOFF_S):
+                return running              # failed a moment ago: report that, do not retry
+        fut: Future = Future()
+        slot["future"], slot["future_key"] = fut, key
+
+    def run() -> None:
+        try:
+            idx, info = work()
+        except BaseException as exc:            # noqa: BLE001
+            with _sound_guard:
+                slot["failed_at"] = time.time()
+            fut.set_exception(exc)
+            return
+        with _sound_guard:
+            # Publish only while this is still the build the slot wants. A newer
+            # copy of the list may have been asked for while this one ran, and
+            # whichever finishes LAST must not overwrite the newer with the older.
+            if slot["future"] is fut:
+                slot.update(key=key, index=idx, info=info)
+        fut.set_result(True)
+
+    try:
+        threading.Thread(target=run, name="sound-index", daemon=True).start()
+    except BaseException as exc:                # noqa: BLE001
+        # No thread to run it: fail the published Future now, or every request
+        # for this copy of the list would join a build nobody is doing.
+        with _sound_guard:
+            slot["failed_at"] = time.time()
+        fut.set_exception(exc)
+    return fut
+
+
+async def _sound_index(slot: dict, key, work):
+    """(index, info) for `key`. Builds it if need be; if an older copy is already
+    held it is served while the new one builds (the lists change once a day and
+    the table is already gated on its own age), otherwise this call waits up to
+    _SOUND_INDEX_WAIT_S and then raises _PhoneticIndexNotReady."""
+    fut = _start_index_build(slot, key, work)
+    if fut is not None:
+        with _sound_guard:
+            have_older = slot["index"] is not None
+        if not have_older:
+            # SHIELDED: wait_for cancels what it waits on when the time is up, and
+            # cancelling an asyncio future made by wrap_future cancels the build's
+            # own Future - the build would finish and then fail to record its
+            # result, for the next request as well. The shield takes the
+            # cancellation instead. (Nor is this wait made in an executor thread:
+            # concurrent first calls would fill the pool and queue behind each
+            # other's timeouts, so the bound would not be a bound.)
+            try:
+                await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(fut)),
+                                       _SOUND_INDEX_WAIT_S)
+            except asyncio.TimeoutError:
+                raise _PhoneticIndexNotReady() from None
+    with _sound_guard:
+        if slot["index"] is None:
+            raise _PhoneticIndexNotReady()
+        return slot["index"], slot["info"]
+
+
+async def _load_list_rows(list_code: str) -> list[dict]:
+    """Every row of one list in the index table, read a page at a time.
+
+    Pages by what the server actually returned, not by what was asked for: a
+    server that caps a page below _LIST_PAGE must not be taken for the end of the
+    table. Stops at an empty page, and if a page begins where the last one did
+    (a server that ignores `offset`) rather than reading the same page for ever."""
+    from storage.supabase_client import select_rows_strict
+
+    keep = ("name_key", "display_name", "entity_id", "programme", "etype", "countries")
+    rows: list[dict] = []
+    offset = 0
+    last_first = None
+    for _ in range(_LIST_PAGE_CAP):
+        page = await select_rows_strict(
+            "sanctions_names", filters={"list_code": list_code},
+            order="name_key.asc", limit=_LIST_PAGE, offset=offset)
+        if not page:
+            return rows
+        first = page[0].get("name_key")
+        if last_first is not None and first == last_first:
+            # (list_code, name_key) is unique, so two pages never begin alike
+            # unless the server is not honouring `offset`. A partial list must
+            # FAIL the build, not become the index: the caller then says the
+            # sound index could not be built and uses the database instead.
+            raise RuntimeError(f"{list_code}: the server repeated a page, so the "
+                               f"list was not read completely")
+        last_first = first
+        rows.extend({k: r.get(k) for k in keep} for r in page)
+        offset += len(page)
+    raise RuntimeError(f"{list_code}: more than {_LIST_PAGE_CAP} pages, which is "
+                       f"not a list this code has seen; refusing a partial index")
+
+
+def _build_list_phonetic_index(list_code: str):
+    """Read one list out of the index table and index its Latin names by sound.
+    Runs in a worker thread, so it brings its own event loop for the reads."""
+    rows = asyncio.run(_load_list_rows(list_code))
+    if not rows:
+        raise RuntimeError(f"{list_code}: the index table returned no rows")
+    idx = _ar.SkeletonIndex()
+    info: list[tuple] = []
+    for r in rows:
+        nm = r.get("display_name") or ""
+        # Arabic-script rows are found by spelling (see _arabic_db_matches); the
+        # sound index holds the Latin ones, which is what an Arabic query is
+        # compared against.
+        if not nm or _ar.has_arabic_script(nm):
+            continue
+        idx.add(nm, len(info))
+        info.append((sys.intern(str(r.get("entity_id") or "")), r.get("programme"),
+                     sys.intern(r.get("etype") or "ENTITY"),
+                     tuple(r.get("countries") or ())))
+    return idx.freeze(), info
+
+
+def _build_ofac_phonetic_index(csv_text: str, alt_text: Optional[str]):
+    """Index every OFAC name and alias by sound. CPU-heavy (a few seconds), done
+    once per copy of the list, and run in a worker thread."""
+    idx = _ar.SkeletonIndex()
+    info: dict[str, tuple] = {}
+    aliases: dict[str, list[str]] = {}
+    if alt_text:
+        try:
+            for row in csv.reader(io.StringIO(alt_text)):
+                if len(row) < 4:
+                    continue
+                ent, alt = row[0].strip(), (row[3] or "").strip()
+                if ent and alt and alt != "-0-":
+                    aliases.setdefault(ent, []).append(alt)
+        except Exception:                       # noqa: BLE001
+            pass
+    for row in csv.reader(io.StringIO(csv_text)):
+        if len(row) < 4:
+            continue
+        ent = row[0].strip()
+        primary = (row[1] or "").strip()
+        if not primary or primary == "-0-" or ent in info:
+            continue
+        sdn_type = (row[2] or "").strip().lower()
+        etype = ("INDIVIDUAL" if sdn_type == "individual"
+                 else "VESSEL" if sdn_type == "vessel"
+                 else "AIRCRAFT" if sdn_type == "aircraft" else "ENTITY")
+        program = (row[3] or "").strip()
+        info[ent] = (primary, "" if program == "-0-" else program[:80], etype)
+        for nm in [primary] + aliases.get(ent, []):
+            if re.search(r"[A-Za-z]", nm):
+                idx.add(nm, ent)
+    return idx.freeze(), info
+
+
+async def _ofac_phonetic_matches(csv_text: str, alt_text: Optional[str], aq,
+                                 ) -> list[dict]:
+    key = (len(csv_text), hash(csv_text[:4096]), hash(csv_text[-4096:]),
+           len(alt_text or ""), hash((alt_text or "")[:2048]))
+    idx, info = await _sound_index(
+        _ofac_phonetic_state, key,
+        lambda: _build_ofac_phonetic_index(csv_text, alt_text))
+    hits = await asyncio.to_thread(idx.search, aq, 60, "low")
+
+    best: dict[str, tuple] = {}
+    low = 0
+    for al, i in hits:
+        if al.confidence not in _PHONETIC_LISTED:
+            low += 1
+            continue
+        ent = idx.meta[i]
+        rank = (_CONF_ORDER.get(al.confidence, 0), al.score)
+        if ent not in best or best[ent][0] < rank:
+            best[ent] = (rank, al, idx.names[i])
+    _bump("low_confidence_not_listed", low)
+    out = []
+    for ent, (rank, al, listed_name) in sorted(
+            best.items(), key=lambda kv: kv[1][0], reverse=True)[:_PHONETIC_PER_LIST]:
+        primary, program, etype = info[ent]
+        out.append(_sound_match(
+            al, name=listed_name, list_label="OFAC-SDN",
+            source_url="https://sanctionssearch.ofac.treas.gov/",
+            program=program, etype=etype, countries=None, want_country=None,
+            matcher="name_sound_match", primary=primary))
+    return out
+
+
 async def _screen_list_db(name: str, list_code: str, list_label: str,
                           source_url: str,
                           want_country: Optional[str] = None,
@@ -1270,6 +1836,8 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
         select_rows, select_rows_strict, SupabaseUnavailable)
 
     toks = sorted(set(_normalize_name(name).split()))
+    aq = _ar.analyse(name)
+    arabic_script = aq.script in ("arabic", "mixed")
 
     # A NAME WE CANNOT SCREEN IS NOT A CLEAN SCREEN.
     #
@@ -1301,7 +1869,9 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     # name and a real one, so it is surfaced as a candidate and never asserted
     # as a finding - which is the same treatment single-token queries already
     # get, for the same reason.
-    weak_only = _is_screenable(set(toks))
+    # An Arabic-script name has no Latin tokens, so _is_screenable would call it
+    # unscreenable; the Arabic layer decides instead (see arabic_names).
+    weak_only = aq.weak_reason if arabic_script else _is_screenable(set(toks))
 
     refreshed = await _list_refreshed_at(list_code)
     age = _days_since(refreshed)
@@ -1357,14 +1927,16 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
             "countries": [_ascii(c) for c in (r.get("countries") or [])] or None,
         }
 
-    try:
-        exact = await select_rows_strict(
-            "sanctions_names",
-            filters={"list_code": list_code, "name_key": " ".join(toks)},
-            limit=5,
-        )
-    except SupabaseUnavailable:
-        exact = None                            # distinguish failure from empty
+    exact: Optional[list] = []
+    if toks:                                    # an Arabic-script name has no Latin key
+        try:
+            exact = await select_rows_strict(
+                "sanctions_names",
+                filters={"list_code": list_code, "name_key": " ".join(toks)},
+                limit=5,
+            )
+        except SupabaseUnavailable:
+            exact = None                        # distinguish failure from empty
 
     if exact is None:
         # NOT SCREENED, and the caller is told so. An index we could not reach
@@ -1447,6 +2019,27 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
             # out, when the listing simply does not record one.
             m["country_match"] = _cm
         out.append(m)
+
+    # Arabic-script aliases and sound-based candidates (core/arabic_names.py).
+    # Only for a name with Arabic script or positive evidence of Arabic-name
+    # structure: an ordinary English name never reaches this, which is what
+    # keeps every behaviour pinned by the existing tests unchanged.
+    if aq.engaged:
+        try:
+            extra, notes = await _arabic_db_matches(
+                aq, list_code, list_label, source_url, want_country,
+                version=refreshed)
+        except Exception:                       # noqa: BLE001
+            extra, notes = [], [
+                f"{list_label} (the Arabic/sound lookup failed on this call; "
+                f"only exact spelling was checked)"]
+        if weak_only:
+            for m in extra:
+                m["_single_token_query"] = True
+                m["_weak_name_reason"] = weak_only
+        out.extend(extra)
+        partial.extend(notes)
+
     # A country hit ranks above a country miss, and an unknown sits between
     # them - but every one of them is still in the list.
     _rank = {True: 0, None: 1, False: 2}
@@ -1508,6 +2101,22 @@ async def _call_ofac_sdn(
         sources_queried.append(_OFAC_ALT_CSV_URL)
 
     matches = _parse_ofac_sdn(csv_text, name, alt_text)
+
+    # Sound-based and Arabic-script matching. OFAC publishes Latin script only,
+    # so an Arabic query reaches it by transliteration.
+    aq = _ar.analyse(name)
+    if aq.phonetic_ok:
+        try:
+            matches = matches + await _ofac_phonetic_matches(csv_text, alt_text, aq)
+        except _PhoneticIndexNotReady:
+            sources_unavailable.append(
+                "OFAC-SDN (the transliteration index for this copy of the list "
+                "was still being built; only exact spelling was checked on this "
+                "call - ask again in a minute)")
+        except Exception:                       # noqa: BLE001
+            sources_unavailable.append(
+                "OFAC-SDN (the transliteration pass failed on this call; only "
+                "exact spelling was checked)")
     return matches, sources_queried, sources_unavailable
 
 
@@ -1691,6 +2300,8 @@ async def handle_screen_sanctions(
 
     # --- Run upstreams (OpenSanctions primary, OFAC CSV fallback) ----------
     import asyncio
+    _phonetic_stats: dict = {}
+    _PHONETIC_STATS.set(_phonetic_stats)
 
     # SCREENABILITY IS DECIDED ONCE, FOR EVERY SOURCE.
     #
@@ -1700,8 +2311,18 @@ async def handle_screen_sanctions(
     # covers two of three sources is not a safety rule; it just moves which
     # list makes the false accusation.
     _q_toks = set(_normalize_name(name_clean).split())
-    _unscreenable = _is_screenable(_q_toks)
-    _single_token = len(_q_toks) == 1
+    _aq = _ar.analyse(name_clean)
+    _arabic_script = _aq.script in ("arabic", "mixed")
+    if _arabic_script:
+        # No Latin tokens to judge: the Arabic layer says whether the name
+        # carries enough to identify anyone by sound.
+        _unscreenable = _aq.weak_reason
+        # Titles count here: in "Abd al-Manan Agha" the last word is a surname
+        # that happens to be spelled like a title. Only generic words do not.
+        _single_token = len([u for u in _aq.units if not u.generic]) == 1
+    else:
+        _unscreenable = _is_screenable(_q_toks)
+        _single_token = len(_q_toks) == 1
 
     ofac_task = asyncio.create_task(
         _call_ofac_sdn(name_clean)
@@ -1732,6 +2353,9 @@ async def handle_screen_sanctions(
     all_sources_unavailable.extend(_ascii(s) for s in ofac_unavail)
     all_sources_unavailable.extend(_ascii(s) for s in eu_unavail)
     all_sources_unavailable.extend(_ascii(s) for s in uk_unavail)
+    if _arabic_script and not _unscreenable:
+        # NEVER "CLEAN": transliteration is lossy. See the section above.
+        all_sources_unavailable.append(_ARABIC_SCRIPT_NOTE)
 
     # Merge and deduplicate by (normalized name, list) key
     merged: list[dict] = []
@@ -1750,11 +2374,18 @@ async def handle_screen_sanctions(
             m["_single_token_query"] = True
 
     for m in ofac_matches:
-        m["_matcher"] = "local_word_overlap"
+        # setdefault: the sound-based matches added in _call_ofac_sdn carry their
+        # own tag, and overwriting it would file them with the matcher that has
+        # a different safety rule attached (see the weak-name block below).
+        m.setdefault("_matcher", "local_word_overlap")
     # EU/UK already carry the tag from _screen_list.
 
     for m in ofac_matches + eu_matches + uk_matches:
-        key = (_normalize_name(m.get("name", "")), m.get("list", ""))
+        # An Arabic-script name normalises to "" in the Latin tokeniser, which
+        # would collapse every Arabic alias on one list into a single key.
+        key = (_normalize_name(m.get("name", ""))
+               or _ar.normalise_arabic(m.get("name", ""))
+               or m.get("name", ""), m.get("list", ""))
         if key not in seen_keys:
             seen_keys.add(key)
             merged.append(m)
@@ -1938,6 +2569,10 @@ async def handle_screen_sanctions(
             if m.get("_single_token_query"):
                 # One word identifies nobody. Surfaced, never asserted.
                 possible.append(m)
+            elif m.get("_matcher") == "arabic_script_exact":
+                # The query IS an Arabic-script alias the publisher printed, element
+                # for element: the same evidence as a Latin token-set equality.
+                confident.append(m)
             elif q_set and set(_normalize_name(m.get("name", "")).split()) == q_set:
                 confident.append(m)
             else:
@@ -1997,6 +2632,19 @@ async def handle_screen_sanctions(
             "if you need to.")
     if all_sources_unavailable:
         result_payload["sources_unavailable"] = all_sources_unavailable
+    if _aq.engaged:
+        result_payload["arabic_matching"] = {
+            "applied": bool(_aq.phonetic_ok),
+            "query_script": _aq.script,
+            "query_elements": [u.text.replace("|", "") for u in _aq.required],
+            "not_applied_reason": _aq.weak_reason,
+            "method": _ARABIC_METHOD,
+            "sound_based_candidates": sum(
+                1 for m in unverified + merged
+                if str(m.get("_matcher", "")) == "name_sound_match"),
+            "low_confidence_not_listed": _phonetic_stats.get(
+                "low_confidence_not_listed", 0),
+        }
     if unverified:
         # Surfaced, never hidden. The caller may well want to look at these -
         # they simply must not be handed over as findings.
@@ -2010,6 +2658,11 @@ async def handle_screen_sanctions(
             "Check each against the official source before acting on it.")
 
     # --- Human message ---------------------------------------------------
+    _n_sound = sum(1 for m in unverified if m.get("_matcher") == "name_sound_match")
+    _sound_sentence = (
+        f" {_n_sound} of them are sound-based transliteration or spelling-variant "
+        f"candidates: see match_confidence, match_explanation and token_alignment "
+        f"on each." if _n_sound else "")
     if matched:
         top = merged[0]
         # top['name'] and top['program'] are the PUBLISHER'S strings - the
@@ -2049,7 +2702,7 @@ async def handle_screen_sanctions(
                f"party listed under a fuller or different spelling (a "
                f"patronymic, a middle name, a transliteration) appears there "
                f"rather than here. Treat this result as a FLOOR on exposure, "
-               f"not a complete picture.")
+               f"not a complete picture." + _sound_sentence)
         )
         reason_code = "matched"
     elif not screened_ok:
@@ -2109,7 +2762,8 @@ async def handle_screen_sanctions(
                f"some of these words and are listed in "
                f"possible_matches_unverified. They are not findings - our "
                f"matcher is uncalibrated and only asserts a match on an exact "
-               f"token-set equality - but a human should look at them.")
+               f"token-set equality - but a human should look at them."
+               + _sound_sentence)
             # THE UNQUALIFIED CLEAN IS THE DANGEROUS ONE.
             #
             # An external black-box review (2026-09-01, run from a different
@@ -2137,10 +2791,17 @@ async def handle_screen_sanctions(
             # sanctioned is its own serious harm. Changing match semantics on a
             # sanctions tool is a founder decision, not a patch.
             + ("" if unverified else
-               ". NOTE: this screen matches on exact name-token equality only, "
-               "so a variant spelling, transliteration, or a missing or extra "
-               "middle name can read as clean. Treat this as 'nothing matched "
-               "the name as written', not as 'this party is not sanctioned'.")
+               (". NOTE: this is an Arabic-aware screen - names are also matched "
+                "by sound across Arabic and Latin spellings - but romanisation is "
+                "not standardised, so a spelling it does not generate, or a "
+                "missing or extra middle name, can still read as clean. Treat "
+                "this as 'nothing matched by sound or spelling', not as 'this "
+                "party is not sanctioned'."
+                if _aq.engaged else
+                ". NOTE: this screen matches on exact name-token equality only, "
+                "so a variant spelling, transliteration, or a missing or extra "
+                "middle name can read as clean. Treat this as 'nothing matched "
+                "the name as written', not as 'this party is not sanctioned'."))
         )
         if all_sources_unavailable:
             no_match_detail += ". NOTE: some sources were unavailable -- screening may be incomplete."
@@ -2179,7 +2840,8 @@ async def handle_screen_sanctions(
                 "Exact normalised token-set equality, order-insensitive, and "
                 "UNCALIBRATED: no name-frequency data, so a partial overlap is "
                 "never asserted as a finding. Entries sharing some but not all "
-                "of the query's words are returned as unverified candidates."),
+                "of the query's words are returned as unverified candidates."
+                + (" " + _ARABIC_METHOD if _aq.engaged else "")),
             "outcome": {
                 "screening_status": result_payload["screening_status"],
                 "reason_code": reason_code,

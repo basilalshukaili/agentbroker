@@ -1,0 +1,3499 @@
+{
+"_about": "Excerpt of the publishers' own EU, UK and OFAC list files: entries that carry an Arabic or Persian script name beside the Latin one. Built by scripts/build_arabic_sanctions_fixture.py. Every string is a published name; nothing is invented.",
+"seed": 20261003,
+"hand_picked": 43,
+"snapshot": {
+"EU": {
+"publisher": "European Commission, consolidated financial sanctions (FSF)",
+"licence": "European Commission open data reuse policy (commercial reuse permitted, attribution)",
+"fetched": "2026-10-03"
+},
+"UK": {
+"publisher": "UK Foreign, Commonwealth & Development Office, UK Sanctions List",
+"licence": "Open Government Licence v3.0",
+"report_date": "02-Oct-2026",
+"fetched": "2026-10-03"
+},
+"OFAC": {
+"publisher": "US Department of the Treasury, OFAC (SDN.CSV, ALT.CSV)",
+"licence": "US Government work, public domain",
+"fetched": "2026-10-03"
+}
+},
+"entities": [
+{
+"list": "EU",
+"id": "551",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"EG"
+],
+"latin": [
+"Ayman Al-Zawahari",
+"Ahmed Fuad Salim",
+"Aiman Muhammed Rabi Al-Zawahiri",
+"Abdul Qader Abdul Aziz Abdul Moez Al Doctor",
+"Dhawahri Ayman",
+"Eddaouahiri Ayman",
+"Nur Al Deen Abu Mohammed",
+"Abu Fatma",
+"Abu Mohammed",
+"Al Zawahry Aiman Mohamed Rabi"
+],
+"arabic": [
+"الظواهري ربيع محمد أيمن"
+],
+"ofac_ent": "2676"
+},
+{
+"list": "EU",
+"id": "534",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"DZ",
+"PS"
+],
+"latin": [
+"Boubekeur Boulghiti",
+"Boubakeur Boulghit",
+"Abou Yasser Al-Jaziri",
+"Yasir Al-Jazari",
+"Abou Yasser El Djazairi",
+"Abou Bakr Al Djazairi",
+"Abu Bakr al-Jaziri"
+],
+"arabic": [
+"أبوبكر الجزائري"
+],
+"ofac_ent": "7148"
+},
+{
+"list": "EU",
+"id": "923",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"KW",
+"SA",
+"US"
+],
+"latin": [
+"Khalid Abd Al-Rahman Hamd Al-Fawaz",
+"Khaled AL-FAUWAZ",
+"Khaled A. Al-Fauwaz",
+"Khalid Al-Fawwaz",
+"Khalik Al Fawwaz",
+"Khaled Al-Fawwaz",
+"Khaled Al Fawwaz",
+"Khalid Abdulrahman H. Al Fawaz",
+"Abu-Khalil"
+],
+"arabic": [
+"خالد عبد الرحمن حمد الفواز"
+],
+"ofac_ent": "7209"
+},
+{
+"list": "EU",
+"id": "1082",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"DZ"
+],
+"latin": [
+"Abou Abbes Khaled",
+"Belaouar Khaled Abou El Abass",
+"Belaouer Khaled Abou El Abass",
+"Belmokhtar Khaled Abou El Abes",
+"Khaled Abou El Abass",
+"Khaled Abou El Abbes",
+"Khaled Abou El Abes",
+"Khaled Abulabbas Na Oor",
+"Mukhtar Belmukhtar",
+"Belaoua"
+],
+"arabic": [
+"مختار بلمختار"
+],
+"ofac_ent": "8084"
+},
+{
+"list": "EU",
+"id": "514",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [],
+"latin": [
+"Abdul Manan Agha",
+"Abdul Manan",
+"Abdul Man’am Saiyid",
+"Saiyid Abd al-Man"
+],
+"arabic": [
+"عبد المنان آغا"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "1020",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"TN"
+],
+"latin": [
+"Moussa Ben Omar Ben Ali Essaadi",
+"Dah Dah",
+"Abdelrahmman",
+"Bechir"
+],
+"arabic": [
+"موسى بن عمر بن علي السعدي"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "1084",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"DZ",
+"FR",
+"MA",
+"TN"
+],
+"latin": [
+"Zarga",
+"Nadra",
+"Imed Ben Mekki Zarkaoui",
+"Dour Nadre",
+"Daour Nadre",
+"Imad ben al-Mekki ben al-Akhdar al-Zarkaoui"
+],
+"arabic": [
+"عماد بن مكي زرقاوي"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "1095",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"IT",
+"TN"
+],
+"latin": [
+"Noureddine Ben Ali Ben Belkassem Al-Drissi",
+"Drissi Noureddine",
+"Abou Ali",
+"Faycal"
+],
+"arabic": [
+"نور الدين بن علي بن بلقاسم الدريسي"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "642",
+"etype": "ENTITY",
+"programme": "TAQA",
+"countries": [],
+"latin": [
+"Makhtab Al-Khidamat",
+"Al Kifah",
+"MAK",
+"Afghan Service Bureau",
+"Oficina de Servicios Afgana",
+"Gabinete de Serviços afegão"
+],
+"arabic": [
+"مكتب الخدمات"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "3780",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Fereidoun ABBASI-DAVANI",
+"Fereidoun ABASSI-DAVANI",
+"Fereidun ABASSI-DAVANI",
+"Fereydoon ABASSI-DAVANI",
+"Fereydoun ABASSI-DAVANI",
+"Fereidoon ABASSI-DAVANI"
+],
+"arabic": [
+"فریدون عباسی دوانی"
+],
+"ofac_ent": "15570"
+},
+{
+"list": "EU",
+"id": "3782",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Ali Akbar AHMADIAN",
+"Ali Akbar Ahmedian"
+],
+"arabic": [
+"علی اکبر احمدیان"
+],
+"ofac_ent": "10480"
+},
+{
+"list": "EU",
+"id": "3808",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Mohammad Baqer ZOLQADR",
+"Mohammad Bagher ZOLGHADR",
+"Mohammad Baqer ZULQADER",
+"Mohammad Baqer Zolqader",
+"Mohammad Baqer Zolqadir",
+"Mohammad Bakr Zolkadr",
+"Mohammad Bakr Zolqadr"
+],
+"arabic": [
+"محمد باقر ذو القدر"
+],
+"ofac_ent": "58414"
+},
+{
+"list": "EU",
+"id": "3825",
+"etype": "ENTITY",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Qods Aeronautics Industries",
+"Light Aircraft Design and Manufacturing Industries",
+"Company for Designing and Manufacturing Light Aircraft",
+"Quds Air Industries",
+"QAI",
+"Qods Aviation Industries"
+],
+"arabic": [
+"شرکت صنایع هوایی قدس"
+],
+"ofac_ent": "16418"
+},
+{
+"list": "EU",
+"id": "4000",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"DZ"
+],
+"latin": [
+"Abdelmalek Droukdel",
+"Abou Mossaab Abdelouadoud"
+],
+"arabic": [
+"عبد المالك دروكدال"
+],
+"ofac_ent": "10612"
+},
+{
+"list": "EU",
+"id": "4140",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"KW"
+],
+"latin": [
+"Hamid Abdallah Ahmad Al-Ali",
+"Hamed Abdullah Al-Ali",
+"Hamed Al-'Ali",
+"Hamed bin 'Abdallah Al-'Ali",
+"Hamid 'Abdallah Al-'Ali",
+"Hamid 'Abdallah Ahmad Al-'Ali",
+"Hamid bin Abdallah Ahmed Al-Ali",
+"Hamid Abdallah Ahmed Al-Ali"
+],
+"arabic": [
+"حامد عبد الله أحمد العلي"
+],
+"ofac_ent": "10009"
+},
+{
+"list": "EU",
+"id": "5529",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"EG",
+"IQ",
+"JO"
+],
+"latin": [
+"Muthanna Harith Salman Al-Dari",
+"Muthanna Al Dari",
+"Muthana Harith Al Dari",
+"Muthanna Harith Sulayman Al-Dari",
+"Muthanna Harith Sulayman Al-Dhari",
+"Muthanna Hareth Al-Dhari",
+"Muthana Haris Al-Dhari",
+"Muthanna Harith Sulayman Al Dari Al-Zawba’",
+"Muthanna Harith Sulayman Al-Dari Al-Zobai",
+"Muthanna Harith Sulayman Al-Dari al-Zawba’i"
+],
+"arabic": [
+"مثنى حارث سلمان الضاري"
+],
+"ofac_ent": "11493"
+},
+{
+"list": "EU",
+"id": "5759",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Hossein SALAMI",
+"Hosein SALIMI",
+"Hosain SALIMI",
+"Hussain SALIMI",
+"Husain SALIMI",
+"Hossein SALIMI",
+"Husain SALEEMI",
+"Hussain SALEEMI",
+"Hossein SALEEMI",
+"Hosein SALEEMI"
+],
+"arabic": [
+"حسین سلامی"
+],
+"ofac_ent": "10584"
+},
+{
+"list": "EU",
+"id": "6017",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"AF"
+],
+"latin": [
+"Said Jan ‘Abd Al-Salam",
+"Sa’id Jan ‘Abd-al-Salam",
+"Dilawar Khan Zain Khan",
+"Qazi ‘Abdallah",
+"Qazi Abdullah",
+"Ibrahim Walid",
+"Qasi Sa’id Jan",
+"Said Jhan",
+"Farhan Khan",
+"Aziz Cairo"
+],
+"arabic": [
+"سعید جان عبد السلام"
+],
+"ofac_ent": "12562"
+},
+{
+"list": "EU",
+"id": "6177",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"SA",
+"YE"
+],
+"latin": [
+"Ibrahim Hassan Tali Al-Asiri",
+"Ibrahim Hassan Tali Asiri",
+"Ibrahim Hasan Talea Aseeri",
+"Ibrahim Hassan al-Asiri",
+"Ibrahim Hasan Tali Asiri",
+"Ibrahim Hassan Tali Assiri",
+"Ibrahim Hasan Tali’A ’Asiri",
+"Ibrahim Hasan Tali al-’Asiri",
+"Ibrahim Hassan Al Asiri",
+"Abu Saleh"
+],
+"arabic": [
+"إبراهيم حسن طالع عسيري",
+"إبراهيم حسن طالع العسيري"
+],
+"ofac_ent": "12669"
+},
+{
+"list": "EU",
+"id": "6215",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Ahmad-Reza RADAN"
+],
+"arabic": [
+"احمدرضا رادان"
+],
+"ofac_ent": "12251"
+},
+{
+"list": "EU",
+"id": "6303",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Maher AL-ASSAD",
+"Mahir AL-ASSAD"
+],
+"arabic": [
+"ماهر الاسد"
+],
+"ofac_ent": "12725"
+},
+{
+"list": "EU",
+"id": "6304",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Ali Al-Mamlouk",
+"Ali Mamlouk",
+"Ali MAMLUK",
+"Abu Ayham"
+],
+"arabic": [
+"علي مملوك",
+"أبو أيهم",
+"علي المملوك"
+],
+"ofac_ent": "12722"
+},
+{
+"list": "EU",
+"id": "6307",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Hafez Makhlouf",
+"Hafiz MAKHLOUF",
+"Háfiz Machlúf"
+],
+"arabic": [
+"حافظ مخلوف"
+],
+"ofac_ent": "10569"
+},
+{
+"list": "EU",
+"id": "6310",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Rami MAKHLOUF",
+"Rámí MACHLÚF"
+],
+"arabic": [
+"رامي مخلوف"
+],
+"ofac_ent": "10725"
+},
+{
+"list": "EU",
+"id": "6400",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Bashar AL-ASSAD"
+],
+"arabic": [
+"بشارالاسد"
+],
+"ofac_ent": "12735"
+},
+{
+"list": "EU",
+"id": "6478",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"IR"
+],
+"latin": [
+"Mohammad Ali JAFARI",
+"Ja'fari, Aziz",
+"Jaafari, Aziz",
+"Mohammad Ali JA'FARI",
+"Mohammad Ali JAFARI-NAJAFABADI",
+"Mohamed Ali JAFARI",
+"Muhammad Ali JAFARI",
+"Mohammed Ali JAFARI",
+"Mohammad Ali JAAFARI",
+"Jafari, Mohammad Ali"
+],
+"arabic": [
+"محمد علي جعفري"
+],
+"ofac_ent": "12066"
+},
+{
+"list": "EU",
+"id": "6612",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"IQ",
+"SY"
+],
+"latin": [
+"Ibrahim Awwad Ibrahim Ali Al-Badri Al-Samarrai",
+"Ibrahim 'Awad Ibrahim al-Badri al-Samarrai",
+"Abu Du’a",
+"Abu Duaa'",
+"Dr. Ibrahim",
+"Abu Bakr al-Baghdadi al-Husayni al-Quraishi",
+"Abu Bakr al-Baghdadi",
+"Ibrahim 'Awad Ibrahim al-Samarra'i",
+"Dr Ibrahim Awwad Ibrahim al-Samarra'i",
+"Dr Ibrahim “Awwad Ibrahim” Ali al-Badri al- Samarrai'"
+],
+"arabic": [
+"السامرائي البدري علي إبراهيم عواد إبراهيم",
+"ي القريش الحسيني البغدادي بكر أبو",
+"ء دعا أبو"
+],
+"ofac_ent": "12926"
+},
+{
+"list": "UK",
+"id": "IRQ0145",
+"etype": "INDIVIDUAL",
+"programme": "The Iraq (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"IRAQ",
+"SYRIA"
+],
+"latin": [
+"IBRAHIM SABAWI IBRAHIM HASAN AL-TIKRITI",
+"Ibrahim Sabawi Ibrahim Al-Hassan Al-Tikriti",
+"Ibrahim Sabawi Ibrahim Hassan Al-Tikriti",
+"Ibrahim Sab'awi Ibrahim Hasan Al-Tikriti",
+"Muhammad Da'ud Salman"
+],
+"arabic": [
+"إبراهيم سبعاوي إبراهيم حسن التكريتي"
+],
+"ofac_ent": "9332"
+},
+{
+"list": "UK",
+"id": "IRQ0097",
+"etype": "INDIVIDUAL",
+"programme": "The Iraq (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"IRAQ"
+],
+"latin": [
+"SAB'AWI IBRAHIM HASSAN AL-TIKRITI"
+],
+"arabic": [
+"سبعاوي إبراهيم حسن التكريتي"
+],
+"ofac_ent": "7878"
+},
+{
+"list": "UK",
+"id": "IRQ0112",
+"etype": "INDIVIDUAL",
+"programme": "The Iraq (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"IRAQ"
+],
+"latin": [
+"GHAZI HAMMUD AL-UBAIDI"
+],
+"arabic": [
+"غازي حمود العبيدي"
+],
+"ofac_ent": "7893"
+},
+{
+"list": "UK",
+"id": "AQD0190",
+"etype": "INDIVIDUAL",
+"programme": "Isil (Da'esh) and Al-Qaeda (United Nations Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"KUWAIT"
+],
+"latin": [
+"HAMID ABDALLAH AHMAD AL-ALI",
+"Hamed Abdullah Al-Ali",
+"Hamid Abdallah Ahmed Al-Ali",
+"Hamid bin Abdallah Ahmed Al-Ali",
+"Hamed Al-'Ali",
+"Hamed bin 'Abdallah Al-'Ali",
+"Hamid 'Abdallah Al-'Ali",
+"Hamid 'Abdallah Ahmad Al-'Ali",
+"Abu Salim"
+],
+"arabic": [
+"حامد عبد الله أحمد العلي"
+],
+"ofac_ent": "10009"
+},
+{
+"list": "UK",
+"id": "AQD0271",
+"etype": "INDIVIDUAL",
+"programme": "Isil (Da'esh) and Al-Qaeda (United Nations Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"IRAQ"
+],
+"latin": [
+"Nashwan Abd Al-Razzaq ABD AL-BAQI",
+"Abu Abdallah",
+"Abd al-Hadi al-Ansari",
+"Abdul Hadi Arif ALI",
+"Abd Al-Hadi Al-Iraqi",
+"Abdal Al-Hadi Al-Iraqi",
+"Abd al-Muhayman",
+"Abdul Hadi al-Taweel",
+"Abu Ayub",
+"Omar Uthman Mohammed"
+],
+"arabic": [
+"نشوان عبد الرزاق عبد الباقي"
+],
+"ofac_ent": "15414"
+},
+{
+"list": "UK",
+"id": "AQD0305",
+"etype": "INDIVIDUAL",
+"programme": "Isil (Da'esh) and Al-Qaeda (United Nations Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"LIBYA"
+],
+"latin": [
+"SALEM NOR ELDIN AMOHAMED AL-DABSKI",
+"Abdallah al- Masri",
+"Abu Al-Ward",
+"Abu Naim",
+"Abdullah Ragab"
+],
+"arabic": [
+"سالم نور الدين امحمد الدبيسكي"
+],
+"ofac_ent": "10327"
+},
+{
+"list": "UK",
+"id": "IRN0168",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) Regulations 2023",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Alireza ZAKANI"
+],
+"arabic": [
+"علیرضا زاکانی"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "SYR0023",
+"etype": "INDIVIDUAL",
+"programme": "The Syria (Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"SYRIA"
+],
+"latin": [
+"Atej Najib",
+"Atef Najeeb",
+"Atej Najeeb",
+"Atif Najeeb",
+"Atef Najib",
+"Atif Najib"
+],
+"arabic": [
+"نجيب عاطف"
+],
+"ofac_ent": "12724"
+},
+{
+"list": "UK",
+"id": "AFG0042",
+"etype": "INDIVIDUAL",
+"programme": "The Afghanistan (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"AFGHANISTAN"
+],
+"latin": [
+"ABDULHAI MOTMAEN",
+"Abdul HAQ"
+],
+"arabic": [
+"عبدالحی مطمئن"
+],
+"ofac_ent": "11353"
+},
+{
+"list": "UK",
+"id": "INU0352",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) (Nuclear) (EU Exit) Regulations 2019",
+"countries": [
+"IRAN"
+],
+"latin": [
+"REZA AGHAZADEH",
+"Gholam Reza Aghazadeh"
+],
+"arabic": [
+"غلامرضا آقازاده"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "149403",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Mahdi SHAMSABAD",
+"Mehdi SHAMSABAD"
+],
+"arabic": [
+"آباد شمس مهدی"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "113197",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [],
+"latin": [
+"Meezar Sawan",
+"Mayzar 'Abdu SAWAN"
+],
+"arabic": [
+"مايزار عبد الصوان"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "147462",
+"etype": "INDIVIDUAL",
+"programme": "UKR",
+"countries": [
+"IR"
+],
+"latin": [
+"Hamid VAHEDI"
+],
+"arabic": [
+"حمید واحدی"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "150654",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Zohreh ELAHIAN"
+],
+"arabic": [
+"الهیان زهره"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "IRN0026",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) Regulations 2023",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Esmail Ahmadi-Moqaddam",
+"Esmail Ahmadi-Moghadam",
+"Ismael Ahmadi-Moghadam",
+"Ismael Ahmadi-Moqaddam"
+],
+"arabic": [
+"اسماعیل احمدی‌مقدم"
+],
+"ofac_ent": "12762"
+},
+{
+"list": "UK",
+"id": "INU0003",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) (Nuclear) (EU Exit) Regulations 2019",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Ali Fadavi"
+],
+"arabic": [
+"علی فدوی"
+],
+"ofac_ent": "13153"
+},
+{
+"list": "EU",
+"id": "118547",
+"etype": "INDIVIDUAL",
+"programme": "TAQA",
+"countries": [
+"IQ"
+],
+"latin": [
+"Taha al-Khuwayt",
+"Hajji Abd al-Nasr",
+"Hajji Abdelnasser",
+"Taha Ibrahim Abdallah Bakr Al Khuwayt",
+"Mullah Khuwayt",
+"Mullah Taha",
+"Hajji ‘Abd Al-Nasir"
+],
+"arabic": [
+"طه إبراهيم عبد الله بكر ال خويت"
+],
+"ofac_ent": "26095"
+},
+{
+"list": "UK",
+"id": "SYR0027",
+"etype": "INDIVIDUAL",
+"programme": "The Syria (Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"SYRIA"
+],
+"latin": [
+"Bassam Al Hassan",
+"Bassam Hasan",
+"Bassam Al Hasan"
+],
+"arabic": [
+"بسام الحسن"
+],
+"ofac_ent": "16235"
+},
+{
+"list": "EU",
+"id": "109880",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [],
+"latin": [
+"Khalil Tahir Hamid",
+"Tahir Hamid Khali",
+"Tahir Hamid KHALIL"
+],
+"arabic": [
+"طاهر حامد خليل"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "AFG0015",
+"etype": "INDIVIDUAL",
+"programme": "The Afghanistan (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"AFGHANISTAN"
+],
+"latin": [
+"MOHAMMAD NAIM BARICH KHUDAIDAD",
+"Naim Barech Akhund",
+"Naeem Baraich",
+"Naeem Barech",
+"Naim Barech",
+"Naim Bareh",
+"Naeem Baric",
+"Gul Mohammed Naim Barich",
+"Naim Naim Barich",
+"Naim Berich"
+],
+"arabic": [
+"محمد نعيم بريخ خدايداد"
+],
+"ofac_ent": "15238"
+},
+{
+"list": "EU",
+"id": "152809",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"‘Hamida’",
+"Abdellatif HAMID"
+],
+"arabic": [
+"عبد اللطيف حميدة"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "INU0324",
+"etype": "ENTITY",
+"programme": "The Iran (Sanctions) (Nuclear) (EU Exit) Regulations 2019",
+"countries": [
+"IRAN"
+],
+"latin": [
+"MASJED-SOLEYMAN OIL & GAS COMPANY",
+"MASJED -E-SOLEYMAN OIL AND GAS PRODUCING",
+"MASJED-SOLEYMAN OIL AND GAS COMPANY (MSOGC)",
+"MSOGC"
+],
+"arabic": [
+"شرکت نفت و گاز مسجدسلیمان"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "6875",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [],
+"latin": [
+"Mohamed MAARUF",
+"Mohammad MAARUF",
+"Muhammad MAARUF",
+"Mohammed MAARUF",
+"Mohamed MAAROUF",
+"Mohamed MA'RUF",
+"Mohammed MA'RUF",
+"Muhammad MA'RUF",
+"Mohammad MA'RUF",
+"Mohammed MAAROUF"
+],
+"arabic": [
+"محمد معروف"
+],
+"ofac_ent": "40078"
+},
+{
+"list": "UK",
+"id": "IRN0129",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) Regulations 2023",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Salar Abnoush",
+"Salar Abanush",
+"Salar Velayatmadar"
+],
+"arabic": [
+"سالار آبنوش",
+"سالار ولایتمدار"
+],
+"ofac_ent": "39257"
+},
+{
+"list": "EU",
+"id": "148363",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Moslem MOEIN"
+],
+"arabic": [
+"مسلم معین"
+],
+"ofac_ent": "40299"
+},
+{
+"list": "UK",
+"id": "SYR0141",
+"etype": "INDIVIDUAL",
+"programme": "The Syria (Sanctions) (EU Exit) Regulations 2019",
+"countries": [],
+"latin": [
+"Malik Hasan",
+"Malek Hasan",
+"Malek Hassan",
+"Malik Hassan"
+],
+"arabic": [
+"مالك حسن"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "AFG0116",
+"etype": "INDIVIDUAL",
+"programme": "The Afghanistan (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"AFGHANISTAN"
+],
+"latin": [
+"ABDUL HABIB ALIZAI",
+"Loi Agha",
+"Agha Jan Alazai",
+"Agha Jan Alizai",
+"Abdul Habib",
+"Agha Jan",
+"Loi Lala"
+],
+"arabic": [
+"عبد الحبیب عالیزی",
+"اغا جان عالیزی"
+],
+"ofac_ent": "12018"
+},
+{
+"list": "UK",
+"id": "IRN0108",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) Regulations 2023",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Hasan Hassanzadeh"
+],
+"arabic": [
+"حسن حسن زاده"
+],
+"ofac_ent": "40301"
+},
+{
+"list": "EU",
+"id": "6955",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Manal AL-ASSAD",
+"Manal AL AHMAD",
+"Manal AL JADAAN"
+],
+"arabic": [
+"منال الأسد"
+],
+"ofac_ent": "29076"
+},
+{
+"list": "EU",
+"id": "131805",
+"etype": "INDIVIDUAL",
+"programme": "YEM",
+"countries": [
+"YE"
+],
+"latin": [
+"Abu Yasser",
+"Saleh al Sha’ir",
+"Saleh al  Shae",
+"Saleh Mesfer al Shaer",
+"Saleh Musfer Saleh al Shaer",
+"Saleh Mosfer Saleh al Shaer",
+"Saleh Mesfer Saleh Al Shaer"
+],
+"arabic": [
+"صالح مسفر صالح الشاعر"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "113175",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [],
+"latin": [
+"Ali WANUS",
+"Ali Wannous"
+],
+"arabic": [
+"علي وانوس"
+],
+"ofac_ent": "20941"
+},
+{
+"list": "UK",
+"id": "CHW0004",
+"etype": "INDIVIDUAL",
+"programme": "The Chemical Weapons (Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"SYRIA"
+],
+"latin": [
+"Said Said",
+"Saeed Sa'id"
+],
+"arabic": [
+"سعيد سعيد"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "AFG0094",
+"etype": "INDIVIDUAL",
+"programme": "The Afghanistan (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"AFGHANISTAN"
+],
+"latin": [
+"Azizirahman ABDUL AHAD",
+"AZIZURAHMAN ABDUL AHAD"
+],
+"arabic": [
+"عزیز الرحمان عبد الاحد"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "149393",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Mohammad JABARI"
+],
+"arabic": [
+"محمد جباری"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "SYR0270",
+"etype": "ENTITY",
+"programme": "The Syria (Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"SYRIA"
+],
+"latin": [
+"Rawafed Damascus Private Joint Stock Company",
+"Rawafed Tributary Damascus Private Joint Stock Company",
+"Rawafid Damascus Private Joint Stock Company",
+"Rawafid Tributary Damascus Private Joint Stock Company"
+],
+"arabic": [
+"روافد"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "149439",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Morteza PIRI"
+],
+"arabic": [
+"مرتضی پیری"
+],
+"ofac_ent": "39680"
+},
+{
+"list": "UK",
+"id": "SYR0137",
+"etype": "INDIVIDUAL",
+"programme": "The Syria (Sanctions) (EU Exit) Regulations 2019",
+"countries": [
+"SYRIA"
+],
+"latin": [
+"Mansour Fadlallah Azzam",
+"Mansour Fadl Allah Azam",
+"Mansour Fadlallah Azam",
+"Mansur Fadl Allah Azam",
+"Mansur Fadlallah Azam",
+"Mansour Fadl Allah Azzam",
+"Mansur Fadl Allah Azzam",
+"Mansur Fadlallah Azzam"
+],
+"arabic": [
+"منصور فضل الله زام"
+],
+"ofac_ent": "15222"
+},
+{
+"list": "UK",
+"id": "IRN0088",
+"etype": "INDIVIDUAL",
+"programme": "The Iran (Sanctions) Regulations 2023",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Issa Zarepour",
+"Eisa Zarepour"
+],
+"arabic": [
+"عیسی زارع پور"
+],
+"ofac_ent": "39437"
+},
+{
+"list": "EU",
+"id": "141882",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"SY"
+],
+"latin": [
+"Muhammad Essam Shammout",
+"Muhammad Issam Shammout",
+"Mohamed Essam Shammout",
+"Mohammed Issam Shammout",
+"Issam SHAMMOUT"
+],
+"arabic": [
+"محمد عصام شموط"
+],
+"ofac_ent": "18135"
+},
+{
+"list": "EU",
+"id": "182051",
+"etype": "ENTITY",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Naji Research and Development Company (NRDC)"
+],
+"arabic": [
+"شرکت پژوهش و توسعه ناجی"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "IRQ0075",
+"etype": "INDIVIDUAL",
+"programme": "The Iraq (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"IRAQ"
+],
+"latin": [
+"SAIF-AL-DIN FULAYYIH HASSAN TAHA AL-RAWI",
+"Ayad Futayyih Al-Rawi"
+],
+"arabic": [
+"سيف الدين فليح حسن طه الراوي"
+],
+"ofac_ent": "7856"
+},
+{
+"list": "UK",
+"id": "INU0080",
+"etype": "ENTITY",
+"programme": "The Iran (Sanctions) (Nuclear) (EU Exit) Regulations 2019",
+"countries": [
+"IRAN"
+],
+"latin": [
+"Islamic Revolutionary Guard Corps (IRGC)",
+"Pasdaran",
+"Pasdaran Inqilab",
+"Pasdaran-e Enqelab-e-Islami",
+"Revolutionary Guards",
+"Sepah-e Pasdaran-e Enghlab-e Eslami"
+],
+"arabic": [
+"سپاه پاسداران انقلاب اسلامی"
+],
+"ofac_ent": "10391"
+},
+{
+"list": "EU",
+"id": "152815",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [
+"LB"
+],
+"latin": [
+"Noah ZAYTAR",
+"Noah ZAITER",
+"Nouh ZAITER"
+],
+"arabic": [
+"نوح زعيتر"
+],
+"ofac_ent": null
+},
+{
+"list": "EU",
+"id": "3787",
+"etype": "INDIVIDUAL",
+"programme": "IRN",
+"countries": [
+"IR"
+],
+"latin": [
+"Ahmad Vahid DASTJERDI"
+],
+"arabic": [
+"احمد وحید دستجردی"
+],
+"ofac_ent": "10582"
+},
+{
+"list": "EU",
+"id": "7073",
+"etype": "INDIVIDUAL",
+"programme": "SYR",
+"countries": [],
+"latin": [
+"Riad AL-AHMED",
+"Riyad AL-AHMED",
+"Riad AL-AHMAD",
+"Riyad AL-AHMAD"
+],
+"arabic": [
+"رياض الأحمد"
+],
+"ofac_ent": null
+},
+{
+"list": "UK",
+"id": "AFG0019",
+"etype": "INDIVIDUAL",
+"programme": "The Afghanistan (Sanctions) (EU Exit) Regulations 2020",
+"countries": [
+"AFGHANISTAN"
+],
+"latin": [
+"NIK MOHAMMAD DOST MOHAMMAD",
+"Nik Mohammad"
+],
+"arabic": [
+"نیک محمد دوست محمد"
+],
+"ofac_ent": null
+}
+],
+"ofac_sdn_rows": [
+[
+"2676",
+"AL ZAWAHIRI, Dr. Ayman",
+"individual",
+"SDGT",
+"Operational and Military Leader of JIHAD GROUP",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 19 Jun 1951; POB Giza, Egypt; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport 1084010 (Egypt); alt. Passport 19820215; Operational and Military Leader of JIHAD GROUP."
+],
+[
+"7148",
+"BOULGHITI, Boubekeur",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 13 Feb 1970; POB Rouiba, Algiers, Algeria; nationality Algeria; Gender Male; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; a.k.a. 'AL-JAZIRI, Abu Bakr'; a.k.a. 'AL DJAZAIRI, Abou Bakr'; a.k.a. 'EL DJAZAIRI, Abou Yasser'; a.k.a. 'AL-JAZARI, Yasir'; a.k.a. 'AL-JAZIRI, Abou Yasser'."
+],
+[
+"7209",
+"AL-FAWAZ, Khalid Abd al-Rahman Hamd",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 25 Aug 1962; alt. DOB 24 Aug 1962; POB Kuwait; nationality Saudi Arabia; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport 456682 issued 06 Nov 1990 expires 13 Sep 1995."
+],
+[
+"7856",
+"AL-RAWI, Saif-al-Din Fulayyih Hassan Taha",
+"individual",
+"IRAQ2",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1953; POB Ar Ramadi, al-Anbar Governorate, Iraq; nationality Iraq; Republican Guard chief of staff."
+],
+[
+"7878",
+"AL-TIKRITI, Sab'awi Ibrahim Hassan",
+"individual",
+"IRAQ2",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1947; POB Tikrit, Iraq; nationality Iraq; presidential advisor; half-brother of Saddam Hussein al-Tikriti."
+],
+[
+"7893",
+"AL-UBAIDI, Ghazi Hammud",
+"individual",
+"IRAQ2",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1944; POB Baghdad, Iraq; nationality Iraq; Ba'th party regional command chairman, Wasit."
+],
+[
+"8084",
+"BELMOKHTAR, Mokhtar",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 01 Jun 1972; POB Ghardaia, Algeria; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886."
+],
+[
+"9332",
+"AL-TIKRITI, Ibrahim Sabawi Ibrahim Hasan",
+"individual",
+"IRAQ2",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 25 Oct 1983; alt. DOB 1977; POB Baghdad, Iraq; nationality Iraq; Passport 284173 (Iraq) expires 21 Aug 2005."
+],
+[
+"10009",
+"AL-ALI, Hamid",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 20 Jan 1960; citizen Kuwait; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; a.k.a. 'ABU SALIM'."
+],
+[
+"10327",
+"AL-DIBISKI, Nur Al-Din",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB circa 1963; POB Tripoli, Libya; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport 1990/345751 (Libya); a.k.a. 'AL-WARD, Abu'; a.k.a. 'AL-WARD, 'Abd'; a.k.a. 'AL-WARUD, Abu'; a.k.a. 'NAIM, Abu'."
+],
+[
+"10391",
+"ISLAMIC REVOLUTIONARY GUARD CORPS",
+"-0- ",
+"FTO] [SDGT] [NPWMD] [IRGC] [IFSR] [IRAN-HR] [HRIT-IR] [ELECTION-EO13848",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"Additional Sanctions Information - Subject to Secondary Sanctions; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886."
+],
+[
+"10480",
+"AHMADIAN, Ali Akbar",
+"individual",
+"SDGT] [NPWMD] [IRGC] [IFSR",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB circa 1961; POB Kerman, Iran; nationality Iran; citizen Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886."
+],
+[
+"10569",
+"MAKHLUF, Hafiz",
+"individual",
+"LEBANON",
+"Colonel",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB circa 1975; POB Damascus, Syria; Colonel."
+],
+[
+"10582",
+"DASTJERDI, Ahmad Vahid",
+"individual",
+"NPWMD] [IFSR",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 15 Jan 1954; Additional Sanctions Information - Subject to Secondary Sanctions; Diplomatic Passport A0002987 (Iran)."
+],
+[
+"10584",
+"SALIMI, Hosein",
+"individual",
+"SDGT] [NPWMD] [IRGC] [IFSR",
+"Commander-in-Chief of the Islamic Revolutionary Guard Corps",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1960; POB Golpayegan, Isfahan province, Iran; nationality Iran; citizen Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport D08531177 (Iran); Commander-in-Chief of the Islamic Revolutionary Guard Corps."
+],
+[
+"10612",
+"DROUKDEL, Abdelmalek",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 20 Apr 1970; POB Meftah, Algeria; alt. POB Khemis El Khechna, Algeria; nationality Algeria; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; a.k.a. 'ABDELWADOUD, Abou'."
+],
+[
+"10725",
+"MAKHLUF, Rami",
+"individual",
+"PAARSSR-EO13894",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 10 Jul 1969; POB Syria; nationality Syria; citizen Syria; Gender Male; Passport 98044 (Syria)."
+],
+[
+"11353",
+"HAQ, Abdul",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 10 Oct 1971; POB Chele County, Khuttan Area, Xinjiang Uighur Autonomous Region, China; nationality China; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; National ID No. 653225197110100533 (China); a.k.a. 'ABUDUHAKE'; a.k.a. 'AL-HAQ, 'Abd'; a.k.a. 'SAIMAITI, Abdul'; a.k.a. 'MUHELISI'; a.k.a. 'QERMAN'; a.k.a. 'SAIFUDING'."
+],
+[
+"11493",
+"AL-DARI, Muthanna Harith",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 16 Jun 1969; nationality Iraq; citizen Iraq; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886."
+],
+[
+"12018",
+"ALIZAI, Haji Agha Jan",
+"individual",
+"SDNTK] [SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 15 Oct 1963; alt. DOB 14 Feb 1973; alt. DOB 1957; POB Khandahar, Afghanistan; alt. POB Helmand, Afghanistan; nationality Afghanistan; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886."
+],
+[
+"12066",
+"JAFARI, Mohammad Ali",
+"individual",
+"SDGT] [NPWMD] [IRGC] [IFSR] [IRAN-HR",
+"Commander-in-Chief, Islamic Revolutionary Guard Corps; Commander, Islamic Revolutionary Guard Corps; Major General; Brigadier Commander",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 01 Sep 1957; POB Yazd, Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Commander-in-Chief, Islamic Revolutionary Guard Corps; Commander, Islamic Revolutionary Guard Corps; Major General; Brigadier Commander; a.k.a. 'JA'FARI, Aziz'."
+],
+[
+"12251",
+"RADAN, Ahmad-Reza",
+"individual",
+"IRAN-HR",
+"Deputy Chief, National Police; Deputy Police Chief; Brigadier General",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1963; alt. DOB 1964; POB Isfahan, Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Deputy Chief, National Police; Deputy Police Chief; Brigadier General."
+],
+[
+"12562",
+"'ABD AL-SALAM, Said Jan",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 05 Feb 1981; alt. DOB 01 Jan 1972; nationality Afghanistan; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport OR801168 (Afghanistan) issued 28 Feb 2006 expires 27 Feb 2011; alt. Passport 4117921 (Pakistan) issued 09 Sep 2008 expires 09 Sep 2013; National ID No. 281020505755 (Kuwait); Passport OR801168 and Kuwaiti National ID No. 281020505755 issued under the name Said Jan 'Abd al-Salam; Passport 4117921 issued under the name Dilawar Khan Zain Khan; a.k.a. 'NANGIALI'."
+],
+[
+"12669",
+"AL-ASIRI, Ibrahim Hassan Tali",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 19 Apr 1982; alt. DOB 18 Apr 1982; POB Riyadh, Saudi Arabia; nationality Saudi Arabia; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport F654645 issued 30 Apr 2005; National ID No. 1028745097 (Saudi Arabia); Member of al-Qa'ida in the Arabian Peninsula, is wanted by the Government of Saudi Arabia and Interpol has issued an Orange Notice: File no. 2009/52/OS/CCC; a.k.a. 'ABU SALEH'; a.k.a. 'ABOSSLAH'."
+],
+[
+"12722",
+"MAMLUK, Ali",
+"individual",
+"HRIT-SY",
+"Major General",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1947; POB Amara, Damascus, Syria; Major General; Position: Director, General Intelligence Directorate."
+],
+[
+"12724",
+"NAJIB, Atif",
+"individual",
+"PAARSSR-EO13894",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1960; POB Jablah, Syria; nationality Syria; Gender Male."
+],
+[
+"12725",
+"AL-ASSAD, Maher",
+"individual",
+"PAARSSR-EO13894",
+"Major General; Commander of the Syrian Army's 4th Armored Division",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 08 Dec 1967; POB Damascus, Syria; nationality Syria; Gender Male; Diplomatic Passport 4138 (Syria); Major General; Commander of the Syrian Army's 4th Armored Division."
+],
+[
+"12735",
+"AL-ASSAD, Bashar",
+"individual",
+"PAARSSR-EO13894",
+"President of the Syrian Arab Republic",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 11 Sep 1965; POB Damascus, Syria; nationality Syria; Gender Male; President of the Syrian Arab Republic."
+],
+[
+"12762",
+"MOGHADAM, Ismail Ahmadi",
+"individual",
+"IRAN-HR] [IRAN-TRA",
+"Head of Iranian Police",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1961; POB Tehran, Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Head of Iranian Police; Alternate Title, Chief, Iran's Law Enforcement Forces; Alternate Title, Police Chief, Alternate Title, Commander of Iran's Law Enforcement Force; Alternate Title, Brigadier General."
+],
+[
+"12926",
+"AL-BADRI, Dr. Ibrahim 'Awwad Ibrahim 'Ali",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1971; POB Samarra'i, Iraq; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; a.k.a. 'ABU DU'A'; a.k.a. 'DR. IBRAHIM'; a.k.a. 'ABU BAKR AL-BAGHDADI'."
+],
+[
+"13153",
+"FADAVI, Ali",
+"individual",
+"NPWMD] [IFSR",
+"Islamic Revolutionary Guards Corps Navy Commander",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB Feb 1961; Additional Sanctions Information - Subject to Secondary Sanctions; Islamic Revolutionary Guards Corps Navy Commander."
+],
+[
+"15222",
+"AZZAM, Mansour Fadlallah",
+"individual",
+"PAARSSR-EO13894",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1960; POB Sweida, Syria; nationality Syria; Gender Male."
+],
+[
+"15238",
+"BARICH, Mohammad Naim",
+"individual",
+"SDNTK",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 01 Jan 1975; alt. DOB 01 Jan 1974; alt. DOB 01 Jan 1976; POB Lakhi Village, Hazarjuft Area, Garmsir District, Helmand Province, Afghanistan; alt. POB Laki Village, Garmsir District, Helmand Province, Afghanistan; alt. POB Lakari Village, Garmsir District, Helmand Province, Afghanistan; alt. POB Darvishan, Garmsir District, Helmand Province, Afghanistan; alt. POB De Luy Wiyalah Village, Garmsir District, Helmand Province, Afghanistan; nationality Afghanistan; a.k.a. 'MULLAH NAIMULLAH'; a.k.a. 'HAJI GUL MOHAMMAD'."
+],
+[
+"15414",
+"MUJAHID, Abdullah",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 15 May 1970; POB Bhalwal, Sargodha District, Punjab Province, Pakistan; citizen Pakistan; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport DM1074371 (Pakistan) issued 30 May 2009 expires 29 May 2014; National ID No. 3540118204373 (Pakistan)."
+],
+[
+"15570",
+"ABBASI-DAVANI, Fereidoun",
+"individual",
+"NPWMD] [IFSR",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1958; alt. DOB 1959; POB Abadan, Iran; Additional Sanctions Information - Subject to Secondary Sanctions; a.k.a. 'DR. ABBASI'."
+],
+[
+"16235",
+"AL-HASSAN, Bassam",
+"individual",
+"PAARSSR-EO13894",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1961; alt. DOB 1960; alt. DOB 1962; POB Homs, Syria; nationality Syria; Gender Male."
+],
+[
+"16418",
+"QODS AVIATION INDUSTRIES",
+"-0- ",
+"NPWMD] [IFSR] [IRAN-CON-ARMS-EO] [RUSSIA-EO14024",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"Additional Sanctions Information - Subject to Secondary Sanctions; Secondary sanctions risk: See Section 11 of Executive Order 14024.; National ID No. 14005441856 (Iran); Registration Number 483250 (Iran); Linked To: MINISTRY OF DEFENSE AND ARMED FORCES LOGISTICS."
+],
+[
+"18135",
+"SHAMMOUT, Issam",
+"individual",
+"SDGT] [IFSR",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 26 Aug 1971; Additional Sanctions Information - Subject to Secondary Sanctions; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport 006327129 (Syria); Linked To: MAHAN AIR."
+],
+[
+"20941",
+"WANUS, Ali",
+"individual",
+"NPWMD",
+"Scientific Studies and Research Center Brigadier General",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 05 Feb 1964; Scientific Studies and Research Center Brigadier General; Linked To: SCIENTIFIC STUDIES AND RESEARCH CENTER."
+],
+[
+"26095",
+"'ABD AL-NASIR, Hajji",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1967; alt. DOB 1966; alt. DOB 1968; POB Tall 'Afar, Iraq; nationality Iraq; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; a.k.a. 'ABDELNASSER, Hajji'; a.k.a. 'ABD AL-NASR, Hajji'; a.k.a. 'AL-KHUWAYT, Taha'."
+],
+[
+"29076",
+"AL-ASSAD, Manal",
+"individual",
+"PAARSSR-EO13894",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 02 Feb 1970; POB Damascus, Syria; nationality Syria; Gender Female."
+],
+[
+"39257",
+"ABNOUSH, Salar",
+"individual",
+"IRAN-HR",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 02 May 1962; POB Hamedan, Iran; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male."
+],
+[
+"39437",
+"ZAREPOUR, Eisa",
+"individual",
+"IRAN-TRA",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 21 Apr 1980; POB Eslamabad-e Gharb, Kermanshah, Iran; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; Passport E96027104 (Iran) expires 29 Sep 2020; alt. Passport U39823438 (Iran) expires 13 Nov 2021; alt. Passport E20082749 (Iran) expires 21 Jan 2016; National ID No. 3341246576 (Iran)."
+],
+[
+"39680",
+"PIRI, Morteza",
+"individual",
+"IRAN-HR",
+"Warden of Zahedan Central Prison",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 05 Jul 1977; POB Zabol, Sistan and Baluchistan Province, Iran; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; National ID No. 4072307122 (Iran); Warden of Zahedan Central Prison."
+],
+[
+"40078",
+"MARUF, Muhammad",
+"individual",
+"SDGT",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 31 Jan 1988; alt. DOB 31 Jan 1985; POB Pakistan; nationality Pakistan; Gender Male; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; a.k.a. 'HAMZAH, Ali'; Linked To: AL-QA'IDA IN THE INDIAN SUBCONTINENT."
+],
+[
+"40299",
+"MOEIN, Moslem",
+"individual",
+"IRAN-HR",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 22 Sep 1985; POB Eslamabad, Iran; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; National ID No. 3341588477 (Iran); Birth Certificate Number 3477 (Iran); Linked To: BASIJ RESISTANCE FORCE."
+],
+[
+"40301",
+"HASSANZADEH, Hassan",
+"individual",
+"IRGC] [IRAN-HR",
+"IRGC Brigadier General",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 21 Mar 1957; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; IRGC Brigadier General; Linked To: ISLAMIC REVOLUTIONARY GUARD CORPS."
+],
+[
+"58414",
+"ZOLQADR, Mohammad Baqer",
+"individual",
+"IRAN-CON-ARMS-EO",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"-0- ",
+"DOB 1954; POB Faisa, Iran; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male."
+]
+],
+"ofac_alt_rows": [
+[
+"2676",
+"4760",
+"aka",
+"AL-ZAWAHIRI, Ayman",
+"-0- "
+],
+[
+"2676",
+"4761",
+"aka",
+"SALIM, Ahmad Fuad",
+"-0- "
+],
+[
+"2676",
+"4787",
+"aka",
+"AL-ZAWAHIRI, Aiman Muhammad Rabi",
+"-0- "
+],
+[
+"7148",
+"35173",
+"aka",
+"BOULGHIT, Boubakeur",
+"-0- "
+],
+[
+"7209",
+"5136",
+"aka",
+"AL-FAUWAZ, Khaled",
+"-0- "
+],
+[
+"7209",
+"5137",
+"aka",
+"AL-FAUWAZ, Khaled A.",
+"-0- "
+],
+[
+"7209",
+"5138",
+"aka",
+"AL-FAWWAZ, Khalid",
+"-0- "
+],
+[
+"7209",
+"5139",
+"aka",
+"AL FAWWAZ, Khalid",
+"-0- "
+],
+[
+"7209",
+"5140",
+"aka",
+"AL FAWWAZ, Khaled",
+"-0- "
+],
+[
+"7209",
+"5141",
+"aka",
+"AL-FAWWAZ, Khaled",
+"-0- "
+],
+[
+"7209",
+"10002",
+"aka",
+"AL FAWAZ, Khalid Abdulrahman H.",
+"-0- "
+],
+[
+"7856",
+"5659",
+"aka",
+"AL-RAWI, Ayad Futayyih",
+"-0- "
+],
+[
+"7878",
+"5677",
+"aka",
+"AL-TAKRITI, Sabawi Ibrahim Hassan",
+"-0- "
+],
+[
+"9332",
+"8754",
+"aka",
+"AL-TIKRITI, Ibrahim Sab'awi Ibrahim Hasan",
+"-0- "
+],
+[
+"9332",
+"8755",
+"aka",
+"AL-TIKRITI, Ibrahim Sabawi Ibrahim Hassan",
+"-0- "
+],
+[
+"9332",
+"8756",
+"aka",
+"AL-TIKRITI, Ibrahim Sabawi Ibrahim Al-Hassan",
+"-0- "
+],
+[
+"9332",
+"8757",
+"aka",
+"SALMAN, Muhammad Da'ud",
+"-0- "
+],
+[
+"10009",
+"9699",
+"aka",
+"AL-ALI, Dr. Hamed Abdullah",
+"-0- "
+],
+[
+"10009",
+"9701",
+"aka",
+"AL-ALI, Hamid bin Abdallah Ahmed",
+"-0- "
+],
+[
+"10009",
+"9702",
+"aka",
+"AL-'ALI, Hamid 'Abdallah Ahmad",
+"-0- "
+],
+[
+"10009",
+"9704",
+"aka",
+"AL-'ALI, Hamid 'Abdallah",
+"-0- "
+],
+[
+"10009",
+"9718",
+"aka",
+"AL-'ALI, Hamed",
+"-0- "
+],
+[
+"10009",
+"9719",
+"aka",
+"AL-'ALI, Hamed bin 'Abdallah",
+"-0- "
+],
+[
+"10327",
+"10024",
+"aka",
+"AL-DABSKI, Salem Nor Eldin Amohamed",
+"-0- "
+],
+[
+"10327",
+"10025",
+"aka",
+"AL-DABSKI, Salim Nur al-Din",
+"-0- "
+],
+[
+"10327",
+"10026",
+"aka",
+"AL-DABASKI, Salim Nur al-Din",
+"-0- "
+],
+[
+"10327",
+"10027",
+"aka",
+"RAJAB, Abdallah",
+"-0- "
+],
+[
+"10327",
+"10052",
+"aka",
+"RAGAB, Abdullah",
+"-0- "
+],
+[
+"10391",
+"10175",
+"aka",
+"IRGC",
+"-0- "
+],
+[
+"10391",
+"10176",
+"aka",
+"THE IRANIAN REVOLUTIONARY GUARDS",
+"-0- "
+],
+[
+"10391",
+"10177",
+"aka",
+"IRG",
+"-0- "
+],
+[
+"10391",
+"10178",
+"aka",
+"THE ARMY OF THE GUARDIANS OF THE ISLAMIC REVOLUTION",
+"-0- "
+],
+[
+"10391",
+"10179",
+"aka",
+"AGIR",
+"-0- "
+],
+[
+"10391",
+"10180",
+"aka",
+"SEPAH-E PASDARAN-E ENQELAB-E ESLAMI",
+"-0- "
+],
+[
+"10391",
+"10181",
+"aka",
+"PASDARN-E ENGHELAB-E ISLAMI",
+"-0- "
+],
+[
+"10391",
+"10182",
+"aka",
+"PASDARAN-E INQILAB",
+"-0- "
+],
+[
+"10391",
+"10183",
+"aka",
+"REVOLUTIONARY GUARDS",
+"-0- "
+],
+[
+"10391",
+"10184",
+"aka",
+"REVOLUTIONARY GUARD",
+"-0- "
+],
+[
+"10391",
+"10185",
+"aka",
+"SEPAH",
+"-0- "
+],
+[
+"10391",
+"10186",
+"aka",
+"PASDARAN",
+"-0- "
+],
+[
+"10391",
+"10187",
+"aka",
+"SEPAH PASDARAN",
+"-0- "
+],
+[
+"10391",
+"10188",
+"aka",
+"ISLAMIC REVOLUTIONARY CORPS",
+"-0- "
+],
+[
+"10391",
+"42196",
+"aka",
+"ISLAMIC REVOLUTIONARY GUARDS CORPS",
+"-0- "
+],
+[
+"10391",
+"42197",
+"aka",
+"ISLAMIC REVOLUTION GUARDS CORPS",
+"-0- "
+],
+[
+"10391",
+"42198",
+"aka",
+"IRAN'S REVOLUTIONARY GUARD CORPS",
+"-0- "
+],
+[
+"10391",
+"42199",
+"aka",
+"ISLAMIC REVOLUTIONARY GUARDS",
+"-0- "
+],
+[
+"10391",
+"42200",
+"aka",
+"IRAN'S REVOLUTIONARY GUARDS",
+"-0- "
+],
+[
+"10391",
+"42201",
+"aka",
+"ARMY OF THE GUARDIANS OF THE ISLAMIC REVOLUTION",
+"-0- "
+],
+[
+"10391",
+"42202",
+"aka",
+"SEPAH-E PASDARAN-E ENGHELAB-E ESLAMI",
+"-0- "
+],
+[
+"10391",
+"42203",
+"aka",
+"SEPAH-E PASDARAN ENGHELAB ISLAMI",
+"-0- "
+],
+[
+"10480",
+"10367",
+"aka",
+"AHMADIYAN, Ali Akbar",
+"-0- "
+],
+[
+"10569",
+"10488",
+"aka",
+"MAKHLOUF, Hafez",
+"-0- "
+],
+[
+"10582",
+"10474",
+"aka",
+"VAHID, Ahmed Dastjerdi",
+"-0- "
+],
+[
+"10584",
+"10476",
+"aka",
+"SALAMI, Hossein",
+"-0- "
+],
+[
+"10584",
+"10478",
+"aka",
+"SALAMI, Hoseyn",
+"-0- "
+],
+[
+"10584",
+"10479",
+"aka",
+"SALAMI, Hussayn",
+"-0- "
+],
+[
+"10612",
+"10524",
+"aka",
+"DROUKDAL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10525",
+"aka",
+"DROUKADAL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10526",
+"aka",
+"DARDAKIL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10527",
+"aka",
+"DROKDAL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10528",
+"aka",
+"DOURKDAL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10529",
+"aka",
+"DROUGDEL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10530",
+"aka",
+"DROUKBEL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10531",
+"aka",
+"DERDOUKAL, Abdelmalek",
+"-0- "
+],
+[
+"10612",
+"10532",
+"aka",
+"DEROUDEL, Abdel Malek",
+"-0- "
+],
+[
+"10612",
+"10533",
+"aka",
+"DROUKDEL, Abdel Malek",
+"-0- "
+],
+[
+"10612",
+"10534",
+"aka",
+"DROUKDAL, Abdelmalik",
+"-0- "
+],
+[
+"10612",
+"10535",
+"aka",
+"DRUKDAL, 'Abd al-Malik",
+"-0- "
+],
+[
+"10612",
+"10536",
+"aka",
+"DURIKDAL, 'Abd al-Malik",
+"-0- "
+],
+[
+"10612",
+"10537",
+"aka",
+"DROKDAL, 'Abd-al-Malik",
+"-0- "
+],
+[
+"10612",
+"10538",
+"aka",
+"DRIDQAL, Abd-al-Malik",
+"-0- "
+],
+[
+"10612",
+"10539",
+"aka",
+"DROUKDEL, Abdelouadour",
+"-0- "
+],
+[
+"10612",
+"10540",
+"aka",
+"ABD-AL-WADUD, Abu-Mus'ab",
+"-0- "
+],
+[
+"10612",
+"10541",
+"aka",
+"ABDELOUADOUD, Abou Mossaab",
+"-0- "
+],
+[
+"10612",
+"10542",
+"aka",
+"ABDELOUDOUD, Abu Musab",
+"-0- "
+],
+[
+"10612",
+"10543",
+"aka",
+"ABDELOUADODUD, Abu Mussaab",
+"-0- "
+],
+[
+"10612",
+"10544",
+"aka",
+"ABDELOUADOUD, Abu Mus'ab",
+"-0- "
+],
+[
+"10612",
+"10546",
+"aka",
+"ABDELOUADOUD, Abu Mossab",
+"-0- "
+],
+[
+"10612",
+"10547",
+"aka",
+"ABDELOUADOUDE, Abou Moussaab",
+"-0- "
+],
+[
+"10612",
+"10548",
+"aka",
+"ABDELOUADOUD, Abou Moussab",
+"-0- "
+],
+[
+"10612",
+"10549",
+"aka",
+"ABDELOUADOUD, Abou Mousaab",
+"-0- "
+],
+[
+"10612",
+"10550",
+"aka",
+"ABDELOUADOUD, Abou Musab",
+"-0- "
+],
+[
+"10612",
+"10551",
+"aka",
+"OUDOUD, Abu Musab",
+"-0- "
+],
+[
+"10612",
+"10552",
+"aka",
+"ABDELOUADOUD, Abou Mossab",
+"-0- "
+],
+[
+"10612",
+"10553",
+"aka",
+"ABD EL OUADOUD, Abou Mossab",
+"-0- "
+],
+[
+"10612",
+"10554",
+"aka",
+"ABD EL OUADOUD, Abou Mousab",
+"-0- "
+],
+[
+"10612",
+"10555",
+"aka",
+"ABD EL-OUADOUD, Abi Mossaab",
+"-0- "
+],
+[
+"10612",
+"10556",
+"aka",
+"ABDELOUADOUD, Abi Mousaab",
+"-0- "
+],
+[
+"10612",
+"10557",
+"aka",
+"ABDEL EL-WADOUD, Abu Mossaab",
+"-0- "
+],
+[
+"10612",
+"10558",
+"aka",
+"ABDEL WADOUD, Abou Mossab",
+"-0- "
+],
+[
+"10612",
+"10559",
+"aka",
+"ABDELWADOUD, Abou Mossab",
+"-0- "
+],
+[
+"10612",
+"10560",
+"aka",
+"ABDEL WADOUD, Abou Moussaab",
+"-0- "
+],
+[
+"10612",
+"10561",
+"aka",
+"ABD AL-WADOUB, Abdou Moussa",
+"-0- "
+],
+[
+"10612",
+"10562",
+"aka",
+"ABKELWADOUD, Abou Mosaab",
+"-0- "
+],
+[
+"10612",
+"10564",
+"aka",
+"ABOU MOSSAB, Abdelouadoud",
+"-0- "
+],
+[
+"10612",
+"10565",
+"aka",
+"ABOU MOSSAAH, Abdelouadoud",
+"-0- "
+],
+[
+"10612",
+"10566",
+"aka",
+"ABOU MOSSAAB, Abdelwadoud",
+"-0- "
+],
+[
+"10612",
+"10567",
+"aka",
+"ABU MUSAB, Abdelwadoud",
+"-0- "
+],
+[
+"10612",
+"10568",
+"aka",
+"ABDELMALEK, Droukdal",
+"-0- "
+],
+[
+"10612",
+"10569",
+"aka",
+"ABDELMALEK, Drokdal",
+"-0- "
+],
+[
+"10612",
+"10570",
+"aka",
+"ABDELMALEK, Droukdel",
+"-0- "
+],
+[
+"10725",
+"10756",
+"aka",
+"MAKHLOUF, Rami",
+"-0- "
+],
+[
+"10725",
+"10757",
+"aka",
+"MAKHLOUF, Rami Bin Mohammed",
+"-0- "
+],
+[
+"10725",
+"10758",
+"aka",
+"MAKHLOUF, Rami Mohammad",
+"-0- "
+],
+[
+"11353",
+"11930",
+"aka",
+"HEQ, Abdul",
+"-0- "
+],
+[
+"11353",
+"11932",
+"aka",
+"JUNDULLAH, Abdulheq",
+"-0- "
+],
+[
+"11353",
+"11934",
+"aka",
+"MAIMAITI, Maimaitiming",
+"-0- "
+],
+[
+"11353",
+"11937",
+"aka",
+"MEMETI, Memetiming",
+"-0- "
+],
+[
+"11353",
+"11939",
+"aka",
+"AXIMU, Memetiming",
+"-0- "
+],
+[
+"11353",
+"11941",
+"aka",
+"QEKEMAN, Memetiming",
+"-0- "
+],
+[
+"11353",
+"11942",
+"aka",
+"IMAN, Maimaiti",
+"-0- "
+],
+[
+"11353",
+"11943",
+"aka",
+"MAIMAITI, Maiumaitimin",
+"-0- "
+],
+[
+"11353",
+"11945",
+"aka",
+"KHALIQ, Muhammad Ahmed",
+"-0- "
+],
+[
+"11493",
+"12159",
+"aka",
+"AL DARI, Dr. Muthanna",
+"-0- "
+],
+[
+"11493",
+"12160",
+"aka",
+"AL DARI, Muthana Harith",
+"-0- "
+],
+[
+"11493",
+"12162",
+"aka",
+"AL-DARI, Muthanna Harith Sulayman",
+"-0- "
+],
+[
+"11493",
+"12163",
+"aka",
+"AL-DHARI, Muthanna Harith Sulayman",
+"-0- "
+],
+[
+"11493",
+"12164",
+"aka",
+"AL-DHARI, Muthanna Hareth",
+"-0- "
+],
+[
+"11493",
+"12165",
+"aka",
+"AL-DHARI, Muthana Haris",
+"-0- "
+],
+[
+"11493",
+"12166",
+"aka",
+"AL DARI AL-ZAWBA', Doctor Muthanna Harith Sulayman",
+"-0- "
+],
+[
+"11493",
+"12167",
+"aka",
+"AL-DARI AL-ZOBAI, Muthanna Harith Sulayman",
+"-0- "
+],
+[
+"11493",
+"12168",
+"aka",
+"AL-DARI AL-ZAWBA'I, Muthanna Harith Sulayman",
+"-0- "
+],
+[
+"12018",
+"12831",
+"aka",
+"ALIZAI, Agha Jan",
+"-0- "
+],
+[
+"12066",
+"12954",
+"aka",
+"JAFARI-NAJAFABADI, Mohammad Ali",
+"-0- "
+],
+[
+"12066",
+"13181",
+"aka",
+"JAFARI, Ali",
+"-0- "
+],
+[
+"12066",
+"13182",
+"aka",
+"JA'FARI, Mohammad Ali",
+"-0- "
+],
+[
+"12562",
+"13475",
+"aka",
+"'ABD-AL-SALAM, Sa'id Jan",
+"-0- "
+],
+[
+"12562",
+"13476",
+"aka",
+"'ABDALLAH, Qazi",
+"-0- "
+],
+[
+"12562",
+"13477",
+"aka",
+"ABDULLAH, Qazi",
+"-0- "
+],
+[
+"12562",
+"13478",
+"aka",
+"WALID, Ibrahim",
+"-0- "
+],
+[
+"12562",
+"13479",
+"aka",
+"ZAIN KHAN, Dilawar Khan",
+"-0- "
+],
+[
+"12562",
+"13480",
+"aka",
+"SA'ID JAN, Qasi",
+"-0- "
+],
+[
+"12562",
+"13481",
+"aka",
+"JHAN, Said",
+"-0- "
+],
+[
+"12562",
+"13482",
+"aka",
+"KHAN, Farhan",
+"-0- "
+],
+[
+"12562",
+"13483",
+"aka",
+"CAIRO, Aziz",
+"-0- "
+],
+[
+"12669",
+"13747",
+"aka",
+"ASSIRI, Ibrahim Hassan Tali",
+"-0- "
+],
+[
+"12669",
+"13748",
+"aka",
+"'ASIRI, Ibrahim Hasan Tali'A",
+"-0- "
+],
+[
+"12669",
+"13749",
+"aka",
+"AL-'ASIRI, Ibrahim Hasan Tali",
+"-0- "
+],
+[
+"12669",
+"13750",
+"aka",
+"AL-'ASIRI, Ibrahim",
+"-0- "
+],
+[
+"12669",
+"13751",
+"aka",
+"AL ASIRI, Ibrahim Hassan",
+"-0- "
+],
+[
+"12722",
+"13826",
+"aka",
+"MAMLUK, 'Ali",
+"-0- "
+],
+[
+"12724",
+"13828",
+"aka",
+"NAJEEB, Atef",
+"-0- "
+],
+[
+"12724",
+"13832",
+"aka",
+"NAJIB, Atef",
+"-0- "
+],
+[
+"12725",
+"13829",
+"aka",
+"ASSAD, Maher",
+"-0- "
+],
+[
+"12725",
+"13830",
+"aka",
+"ASSAD, Mahar",
+"-0- "
+],
+[
+"12725",
+"45744",
+"aka",
+"AL-ASAD, Mahir",
+"-0- "
+],
+[
+"12735",
+"13846",
+"aka",
+"AL-ASAD, Bashar",
+"-0- "
+],
+[
+"12735",
+"13847",
+"aka",
+"ASSAD, Bashar",
+"-0- "
+],
+[
+"12735",
+"13848",
+"aka",
+"AL ASSAD, Bashar Hafez",
+"-0- "
+],
+[
+"12762",
+"13932",
+"aka",
+"MOGHADDAM, Ismail Ahmadi",
+"-0- "
+],
+[
+"12762",
+"13933",
+"aka",
+"MOGHADDAM, Esameel Ahmadi",
+"-0- "
+],
+[
+"12762",
+"13934",
+"aka",
+"AHMADI-MOGHADDAM, Esma'il",
+"-0- "
+],
+[
+"12762",
+"13935",
+"aka",
+"AHMADI-MOQADDAM, Esma'il",
+"-0- "
+],
+[
+"12762",
+"23041",
+"aka",
+"AHMADI MOGHADDAM, Esma'il",
+"-0- "
+],
+[
+"12762",
+"23042",
+"aka",
+"AHMADI MOGHADAM, Ismail",
+"-0- "
+],
+[
+"12762",
+"23043",
+"aka",
+"AHMADI-MOGHADDAM, Esmail",
+"-0- "
+],
+[
+"12926",
+"14389",
+"aka",
+"AL-SAMARRA'I, Ibrahim 'Awad Ibrahim al-Badri",
+"-0- "
+],
+[
+"12926",
+"14390",
+"aka",
+"AL-SAMARRA'I, Ibrahim Awwad Ibrahim",
+"-0- "
+],
+[
+"12926",
+"14391",
+"aka",
+"AL-SAMARRA'I, Dr. Ibrahim Awwad Ibrahim",
+"-0- "
+],
+[
+"12926",
+"14397",
+"aka",
+"AL-QURASHI, Abu Bakr al-Baghdadi al-Husseini",
+"-0- "
+],
+[
+"12926",
+"14398",
+"aka",
+"AL-QURAISHI, Abu Bakr al-Baghdadi al-Husayni",
+"-0- "
+],
+[
+"12926",
+"14399",
+"aka",
+"AL-BAGHDADI, Abu Bakr al-Husayni",
+"-0- "
+],
+[
+"13153",
+"14811",
+"aka",
+"FADWI, Ali",
+"-0- "
+],
+[
+"15238",
+"22424",
+"aka",
+"BARAICH, Mullah Naeem",
+"-0- "
+],
+[
+"15238",
+"22426",
+"aka",
+"BAREH, Mullah Naim",
+"-0- "
+],
+[
+"15238",
+"22428",
+"aka",
+"BARICH, Mullah Naim",
+"-0- "
+],
+[
+"15238",
+"22429",
+"aka",
+"BARECH, Mullah Naim",
+"-0- "
+],
+[
+"15238",
+"22430",
+"aka",
+"BARICH, Haji Gul Mohammed Naim",
+"-0- "
+],
+[
+"15238",
+"22445",
+"aka",
+"BARECH AKHUND, Mullah Naim",
+"-0- "
+],
+[
+"15238",
+"22446",
+"aka",
+"BARIC, Mullah Naeem",
+"-0- "
+],
+[
+"15238",
+"22928",
+"aka",
+"BERICH, Naim",
+"-0- "
+],
+[
+"15414",
+"22727",
+"aka",
+"ABDALLAH, Abu",
+"-0- "
+],
+[
+"15570",
+"23058",
+"aka",
+"ABBASI DAVANI, Fereidoon",
+"-0- "
+],
+[
+"15570",
+"23059",
+"aka",
+"ABBASI-DAVANI, Fereidun",
+"-0- "
+],
+[
+"15570",
+"23061",
+"aka",
+"ABBASI, Fereydoon",
+"-0- "
+],
+[
+"15570",
+"23062",
+"aka",
+"ABBASI, Fereidoun",
+"-0- "
+],
+[
+"15570",
+"23239",
+"aka",
+"ABBASI DAVANI, Fereydoon",
+"-0- "
+],
+[
+"16235",
+"24449",
+"aka",
+"HASSAN, Bassam",
+"-0- "
+],
+[
+"16235",
+"24450",
+"aka",
+"HASAN, Bassam",
+"-0- "
+],
+[
+"16235",
+"24451",
+"aka",
+"HASAN, Basam",
+"-0- "
+],
+[
+"16418",
+"24742",
+"aka",
+"QODS RESEARCH CENTER",
+"-0- "
+],
+[
+"16418",
+"24799",
+"aka",
+"GHODS AVIATION INDUSTRIES",
+"-0- "
+],
+[
+"16418",
+"62829",
+"aka",
+"LIGHT AIRPLANES DESIGN AND MANUFACTURING INDUSTRIES",
+"-0- "
+],
+[
+"18135",
+"28003",
+"aka",
+"SHAMMOUT, Muhammad Isam Muhammad Anwar Nur",
+"-0- "
+],
+[
+"29076",
+"45725",
+"aka",
+"AL-AHMAD, Manal",
+"-0- "
+],
+[
+"29076",
+"45726",
+"aka",
+"JAADAN, Manal",
+"-0- "
+],
+[
+"29076",
+"45727",
+"aka",
+"AL-AKHRAZ, Manal",
+"-0- "
+],
+[
+"39257",
+"61289",
+"aka",
+"ABNOOSH, Salar",
+"-0- "
+],
+[
+"39437",
+"61509",
+"aka",
+"ZAREPOUR, Isa",
+"-0- "
+],
+[
+"39437",
+"61510",
+"aka",
+"ZAREPOUR, Issa",
+"-0- "
+],
+[
+"40078",
+"62297",
+"aka",
+"MUSANNA, Maulana",
+"-0- "
+],
+[
+"40078",
+"62298",
+"aka",
+"UBAIDULLAH, Maulana",
+"-0- "
+],
+[
+"40299",
+"62675",
+"aka",
+"MO'IN, Moslem",
+"-0- "
+],
+[
+"40301",
+"62679",
+"aka",
+"HASSANZADEH, Hasan",
+"-0- "
+],
+[
+"58414",
+"90379",
+"aka",
+"ZULQADER, Mohammad Baqer",
+"-0- "
+],
+[
+"58414",
+"90380",
+"aka",
+"ZOLGHADR, Mohammad Bagher",
+"-0- "
+]
+]
+}

@@ -47,6 +47,7 @@ ROOT = os.path.dirname(REPO)
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
+from core import arabic_names as _ar  # noqa: E402
 from core.screen_sanctions import (  # noqa: E402
     _EU_CSV_URL, _UK_CSV_URL, _eu_parse, _uk_parse, _normalize_name,
 )
@@ -169,10 +170,21 @@ def _rows_for(records: list[dict], list_code: str, stamp: str) -> list[dict]:
     seen: set[str] = set()
     out = []
     for rec in records:
-        toks = _normalize_name(rec["name"]).split()
+        if _ar.has_arabic_script(rec["name"]):
+            # AN ARABIC-SCRIPT ALIAS THE PUBLISHER PRINTED. It used to normalise
+            # to no tokens and was skipped, so every Arabic and Persian
+            # spelling (on the 2026-10-03 copies, 768 in the EU list and 735 in
+            # the UK list; OFAC prints none) never reached the index. Stored
+            # the same way a Latin name is - sorted unique tokens
+            # as the key, the tokens as an array - but in Arabic letters, so no
+            # Latin query can ever collide with one. arabic_names defines how
+            # the tokens are made; the query side calls the same function.
+            key, toks = _ar.arabic_name_key(rec["name"])
+        else:
+            toks = _normalize_name(rec["name"]).split()
+            key = " ".join(sorted(toks))
         if not toks:
             continue
-        key = " ".join(sorted(toks))
         if key in seen:
             continue
         seen.add(key)

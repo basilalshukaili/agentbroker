@@ -254,6 +254,19 @@ _PASSTHROUGH_OPS = frozenset({
 })
 
 
+class RawFilter(str):
+    """A PostgREST filter value that TRUSTED CODE built and wants sent exactly as
+    written: an operator outside the closed list above (`imatch.` - a POSIX
+    regular expression, PostgREST >= 10), or a logic tree for the key `and` / `or`
+    (`(name_key.imatch."a",name_key.imatch."b")`).
+
+    A type rather than two more entries in _PASSTHROUGH_OPS, because that list is
+    consulted for EVERY value, including ones that came from a caller's input: a
+    plain string that merely starts with `imatch.` must keep meaning that
+    literal text. Only a value that was wrapped on purpose is passed through."""
+    __slots__ = ()
+
+
 class SupabaseUnavailable(RuntimeError):
     """The query did not run. NOT the same as "the query returned nothing"."""
 
@@ -405,6 +418,9 @@ def _select_params(filters=None, limit: int = 1000, order=None, gte=None,
     if filters:
         for col, val in filters.items():
             sval = str(val)
+            if isinstance(val, RawFilter):
+                params[col] = sval
+                continue
             params[col] = sval if sval.split(".", 1)[0] in _PASSTHROUGH_OPS                 else f"eq.{val}"
     return params
 
