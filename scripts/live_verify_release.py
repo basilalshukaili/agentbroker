@@ -464,19 +464,33 @@ def check_retired(ctx: dict) -> dict:
     return check(ok and ds == 200 and out["modern_discover_on_a_tombstone"]["retired_in_name"], **out)
 
 
-def payments_problems(*, descriptor: dict, x402_status: int, tools_text: str, auth_text: str, keys_text: str,
+# The three premium data tools: answered free before any billing branch while DATA_METERING_ENABLED is off.
+_PREMIUM_DATA_TOOLS = ("screen_sanctions", "verify_company_record", "map_trade_restriction")
+# A cost tag in a tool description that quotes a price: "[$0.05/per_call...]", "[from $0.02/call...]",
+# "[free in quota, then $0.02/call...]".
+_PRICE_TAG = re.compile(r"\[(?:\$|from \$|free in quota, then \$)[^\]]*\]")
+
+
+def payments_problems(*, descriptor: dict, x402_status: int, tools_status: int, tool_descriptions: dict,
+                      auth_text: str, keys_status: int, keys_text: str,
                       screen_sanctions_cost_usd: Optional[float], expect_rails: Optional[list] = None) -> list:
     """Do the server's claims about how to pay tell ONE story? Pure, so it is tested without a network.
 
     The switches (CREDITS_ENABLED, DATA_METERING_ENABLED, X402_ENABLED) cannot be read from outside, but every
-    surface that mentions them can: the descriptor's rails and status, /.well-known/x402, the tool descriptions,
+    surface that mentions them can: the descriptor's rails and status, /.well-known/x402, each tool description,
     the auth_required text, /keys/request, and preview_cost for a premium data tool. If the descriptor says no
-    rail is on, nothing else may offer one; if it says a rail is on, the rest must offer it.
+    rail is on, nothing else may offer one; if it says a rail is on, the rest must offer it; if it says the daily
+    quota is not enforced, no tool may promise one; and while no rail is on no price may be quoted as a charge.
+
+    EVIDENCE THAT CANNOT BE READ IS A PROBLEM, NEVER A PASS. Every argument is required and keyword-only: a
+    surface that answered 500, an empty tools/list, an unreadable preview_cost all used to become "" or None and
+    match "nothing offers a rail" (review of feat/x402-honesty-20261004, F6).
 
     Agreement is not truth: every surface can agree on a rail that is off (credits were advertised everywhere
     while CREDITS_ENABLED was off). `expect_rails`, when the operator passes it (--expect-rails), is the intended
     state taken from what was staged for the container; the descriptor must name exactly those rails.
     """
+    from billing.switches import NOT_CHARGED
     status, rails = descriptor.get("status"), descriptor.get("rails")
     if not status or not isinstance(rails, list):
         return ["payments.status / payments.rails are missing from /.well-known/mcp.json"]
@@ -490,8 +504,21 @@ def payments_problems(*, descriptor: dict, x402_status: int, tools_text: str, au
         problems.append("payments.premium_data_quota_enforced is missing or not a boolean")
     credits_on, x402_on = "credits" in rails, "x402" in rails
 
+    # ---- the evidence has to be there before it can agree with anything
+    descs = tool_descriptions if (tools_status == 200 and isinstance(tool_descriptions, dict)) else {}
+    if not descs:
+        problems.append(f"tools/list did not return a tool list (HTTP {tools_status}), so the tool descriptions "
+                        "could not be judged")
+    if keys_status != 200 or not (keys_text or "").strip():
+        problems.append(f"/keys/request did not answer 200 with guidance (HTTP {keys_status}), so its text could "
+                        "not be judged")
+    if "Option 1" not in (auth_text or ""):
+        problems.append("the auth_required text carries no option list (an anonymous send_message was not refused "
+                        "for identity), so the offered options could not be read")
+    tools_text = " ".join(str(d) for d in descs.values())
+
     def says_x402(text: str) -> bool:
-        return "x402" in text.lower()
+        return "x402" in (text or "").lower()
 
     surfaces = (("a tool description", tools_text), ("the auth_required text", auth_text),
                 ("/keys/request", keys_text))
@@ -502,25 +529,74 @@ def payments_problems(*, descriptor: dict, x402_status: int, tools_text: str, au
             if not says_x402(text):
                 problems.append(f"x402 is a listed rail but {label} never offers it")
     else:
-        if x402_status == 200:
-            problems.append("/.well-known/x402 is served while x402 is not a listed rail")
+        if x402_status != 404:
+            problems.append(f"/.well-known/x402 answered {x402_status} while x402 is not a listed rail "
+                            "(a rail that is off must answer 404)")
         for label, text in surfaces:
             if says_x402(text):
                 problems.append(f"{label} offers x402 while x402 is not a listed rail")
 
-    offers_credits = "(credits)" in auth_text or "credit package" in auth_text.lower()
+    offers_credits = "(credits)" in (auth_text or "") or "credit package" in (auth_text or "").lower()
     if credits_on and not offers_credits:
         problems.append("credits is a listed rail but the auth_required text never offers credits")
     if not credits_on and offers_credits:
         problems.append("the auth_required text offers credits while credits is not a listed rail")
 
+    # ---- the premium data tools: the quota, and the x402 mention, per tool
     cost = screen_sanctions_cost_usd
-    if isinstance(quota, bool) and cost is not None:
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        problems.append("preview_cost for screen_sanctions could not be read, so the quota claim was not "
+                        "cross-checked")
+    elif isinstance(quota, bool):
         if quota and not cost > 0:
             problems.append("the premium-data quota is reported as enforced but preview_cost says screen_sanctions is free")
         if not quota and cost > 0:
             problems.append("the premium-data quota is reported as not enforced but preview_cost prices screen_sanctions")
+    if descs and isinstance(quota, bool):
+        for name in _PREMIUM_DATA_TOOLS:
+            d = descs.get(name)
+            if d is None:
+                problems.append(f"tools/list has no {name}, so its quota claim could not be judged")
+                continue
+            tagged = "free in quota" in d
+            if quota and not tagged:
+                problems.append(f"{name}: the quota is reported as enforced but tools/list does not tag it "
+                                "'free in quota'")
+            if not quota and tagged:
+                problems.append(f"{name}: tools/list promises a quota ('free in quota') while "
+                                "premium_data_quota_enforced is false")
+            if x402_on and not quota and says_x402(d):
+                problems.append(f"{name}: tools/list offers x402, but while the quota is not enforced this tool is "
+                                "answered free before any payment is read")
+            if x402_on and quota and not says_x402(d):
+                problems.append(f"{name}: x402 is a listed rail and the quota is enforced, but tools/list does not "
+                                "offer x402 on it")
+
+    # ---- a quoted price is a charge only while a rail can charge it
+    for name, d in sorted(descs.items()):
+        tag = _PRICE_TAG.search(d)
+        if not rails and tag and NOT_CHARGED not in tag.group(0):
+            problems.append(f"{name}: quoted as charged ({tag.group(0)}) while no payment rail is on")
+        if rails and NOT_CHARGED in d:
+            problems.append(f"{name}: says it is not charged while {rails} is a live rail")
     return problems
+
+
+def edge_snapshot_payments_in_step(descriptor: dict) -> Optional[bool]:
+    """Does the committed edge snapshot (edge/src/snapshots/mcp.json) say what the live descriptor says about
+    status, rails and the quota flag? None when the snapshot cannot be read.
+
+    Informational, not a gate: the edge worker serves that file only when it has no fresh KV overlay, and it is
+    not in the live path today (neither api.hatchloop.dev nor hatchloop.dev answers with x-edge-source). But a
+    switch flipped without regenerating it leaves a block that contradicts the origin the moment the worker is
+    deployed, so the receipt says so (review F9). Refresh with `python scripts/refresh_edge_snapshots.py
+    --local-routes mcp.json` (no --check rewrites it) after flipping any switch.
+    """
+    try:
+        snap = json.loads((ROOT / "edge" / "src" / "snapshots" / "mcp.json").read_text(encoding="utf-8"))["payments"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return all(snap.get(k) == descriptor.get(k) for k in ("status", "rails", "premium_data_quota_enforced"))
 
 
 def check_payments(ctx: dict) -> dict:
@@ -528,17 +604,22 @@ def check_payments(ctx: dict) -> dict:
     send_message call carries no arguments and is refused for identity before anything could be sent."""
     base = ctx["base"]
     ds, _, dtext = http("GET", base + "/.well-known/mcp.json")
-    descriptor = (json.loads(dtext).get("payments") or {}) if ds == 200 else {}
+    try:
+        descriptor = (json.loads(dtext).get("payments") or {}) if ds == 200 else {}
+    except (ValueError, AttributeError):
+        descriptor = {}
     xs, _, _ = http("GET", base + "/.well-known/x402")
-    _, _, tl = rpc(base + "/mcp", "tools/list")
-    tools_text = " ".join(str(t.get("description", "")) for t in (((tl or {}).get("result") or {}).get("tools") or []))
+    ts, _, tl = rpc(base + "/mcp", "tools/list")
+    listed = (((tl or {}).get("result") or {}).get("tools") or []) if isinstance(tl, dict) else []
+    tool_descriptions = {str(t.get("name")): str(t.get("description", "")) for t in listed if isinstance(t, dict)}
     _, _, auth = rpc(base + "/mcp", "tools/call", {"name": "send_message", "arguments": {}})
     auth_body = tool_body(auth)
     auth_text = json.dumps({"human_message": auth_body.get("human_message"), "how_to_resolve": auth_body.get("how_to_resolve")})
     ks, _, keys_text = http("GET", base + "/keys/request")
     _, _, pc = rpc(base + "/mcp", "tools/call", {"name": "preview_cost", "arguments": {"operation": "screen_sanctions"}})
     cost = tool_body(pc).get("estimated_cost_usd")
-    problems = payments_problems(descriptor=descriptor, x402_status=xs, tools_text=tools_text, auth_text=auth_text,
+    problems = payments_problems(descriptor=descriptor, x402_status=xs, tools_status=ts,
+                                 tool_descriptions=tool_descriptions, auth_text=auth_text, keys_status=ks,
                                  keys_text=keys_text if ks == 200 else "", screen_sanctions_cost_usd=cost,
                                  expect_rails=ctx.get("expect_rails"))
     if auth_body.get("error_code") != "auth_required":
@@ -546,6 +627,8 @@ def check_payments(ctx: dict) -> dict:
                         "so the offered options could not be read")
     return check(ds == 200 and not problems, status=descriptor.get("status"), rails=descriptor.get("rails"),
                  premium_data_quota_enforced=descriptor.get("premium_data_quota_enforced"), x402_discovery_status=xs,
+                 tools_listed=len(tool_descriptions), keys_request_status=ks,
+                 edge_snapshot_payments_in_step=edge_snapshot_payments_in_step(descriptor),
                  screen_sanctions_preview_usd=cost, problems=problems)
 
 
