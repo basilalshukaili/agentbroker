@@ -61,35 +61,17 @@ from core.models import (
     OutcomeReceipt,
 )
 from compliance.jev_advisory import get_restricted_category_advisory
+from compliance.jurisdiction_rules import describe_rule_set
+from compliance.number_jurisdiction import jurisdiction_label, resolve_jurisdiction
+from compliance.remediation import remediation_for as _remediation_for_shared
 
 _VALID_CHANNELS = ("sms", "email", "voice")
 
-# Human remediation copy, keyed by the rule identifier pre_check raises. Mirrors
-# main._remediation_for (the public HTTP /compliance/check surface). Kept local
-# so this read-only tool layer does not import the web app; the rule names are
-# stable contract identifiers, so drift risk is low.
-_REMEDIATION = {
-    "restricted_content": "Reword the message to remove the restricted category, or seek explicit licensing for the regulated content.",
-    "recipient_opted_out": "Honor the opt-out — the recipient has unsubscribed. Do not send. Add to suppression list.",
-    "TCPA_marketing_consent": "Obtain prior express written consent (TCPA) before sending marketing SMS to US numbers, and pass its consent_record_id.",
-    "GDPR_marketing_consent": "Obtain GDPR Article 6/7 consent before marketing email to EU/UK residents.",
-    "CASL_marketing_consent": "Obtain explicit CASL consent before commercial electronic messages to Canadian recipients.",
-    "10DLC_campaign_not_registered": "Register a 10DLC campaign with The Campaign Registry (TCR) before sending US A2P SMS. Required by US carriers since 2023.",
-    "restricted_content_jev_advisory": (
-        "The deterministic gate found nothing, but the additional jev "
-        "restricted-category read flagged this content (jev catches "
-        "Arabic/Cyrillic/obfuscated restricted-category phrasing the regex "
-        "classifier measurably misses). Re-word to remove any restricted "
-        "category, in any language or script, then re-run check_compliance. "
-        "This signal is advisory, not authoritative — see result.jev_advisory."
-    ),
-}
-
-
+# Human remediation copy, keyed by the rule identifier pre_check raises. The table lives in
+# compliance/remediation.py and is shared with the public HTTP /compliance/check, which used to carry its own
+# drifting copy: the rule names are stable contract identifiers and both surfaces must say the same thing.
 def _remediation_for(rule: str) -> str:
-    return _REMEDIATION.get(
-        rule, "Review the cited rule in the jurisdiction reference at /compliance/jurisdictions."
-    )
+    return _remediation_for_shared(rule)
 
 
 # ---------------------------------------------------------------------------
@@ -176,8 +158,13 @@ _DOES_NOT_ASSERT = [
     "at dispatch, and an opt-out or consent change between the two produces a "
     "different answer.",
     "It does not assert where the recipient actually is. The jurisdiction "
-    "recorded here was supplied by the caller or defaulted when none was "
-    "given; we did not verify the recipient's location.",
+    "recorded here was supplied by the caller or read from the recipient "
+    "number's country calling code (which names the numbering plan, not "
+    "where the person is), and is unknown when neither was available; we "
+    "did not verify the recipient's location.",
+    "When the rule set's basis is 'conservative_default', no statute of the "
+    "named country was applied: the decision is this service's own opt-in "
+    "policy and is not a determination of that country's law.",
     "It does not assert that the recipient identifier belongs to the person "
     "the caller believes it belongs to.",
     "It does not cover two-party voice RECORDING consent, which is decided at "
@@ -202,7 +189,7 @@ _ASSERTS = (
 )
 
 
-def _ruleset_evidence(country_code, state_code) -> dict:
+def _ruleset_evidence(country_code, state_code, resolution=None) -> dict:
     """Which rules decided, identified by content rather than by a label.
 
     THERE IS NO RULESET VERSION NUMBER TO QUOTE, so this does not invent one.
@@ -222,13 +209,24 @@ def _ruleset_evidence(country_code, state_code) -> dict:
     import compliance.jurisdiction_rules as _jr
     import compliance.pre_check as _pc
 
-    rules = _jr.infer_jurisdiction(country_code, state_code)
+    applied = resolution.country if resolution is not None else country_code
+    rules = _jr.infer_jurisdiction(applied, state_code)
+    described = _jr.describe_rule_set(applied, state_code)
     return {
         "gate": "compliance.pre_check (preview mode: decision only, no send, "
                 "no audit-log write)",
         "gate_source_sha256": source_fingerprint(_pc),
         "jurisdiction_rules_source_sha256": source_fingerprint(_jr),
         "jurisdiction_applied": rules.jurisdiction_code,
+        # Which country the rules were selected for, and how that was decided: the caller's country_code, the
+        # recipient number's country calling code, or neither.
+        "country_applied": applied,
+        "jurisdiction_source": resolution.source if resolution is not None else
+                               ("caller" if country_code else "unknown"),
+        "jurisdiction_conflict": resolution.conflict if resolution is not None else None,
+        # What the rule set is based on. "conservative_default" means no statute of that country was applied.
+        "rule_basis": described["basis"],
+        "statutes_modeled": described["statutes_modeled"],
         # An unknown jurisdiction is NOT the same fact as a stated one, and the
         # gate treats them differently (a marketing send with no country_code
         # is refused outright). The receipt has to record which of the two
@@ -240,7 +238,7 @@ def _ruleset_evidence(country_code, state_code) -> dict:
 
 
 def _attach(result: dict, operation_id: str, subject: dict, inputs: dict,
-            country_code, state_code, channel: str, decision: dict) -> None:
+            country_code, state_code, channel: str, decision: dict, resolution=None) -> None:
     """Put the evidence record into `result`. Never raises, never charges.
 
     Called on both decision branches and on NEITHER failure branch: a
@@ -260,23 +258,42 @@ def _attach(result: dict, operation_id: str, subject: dict, inputs: dict,
         evidence={
             "mode": "preview",
             "decision": decision,
-            "ruleset": _ruleset_evidence(country_code, state_code),
+            "ruleset": _ruleset_evidence(country_code, state_code, resolution),
             "content_digest_note": (
                 "subject.content_sha256 is sha256 over the raw UTF-8 bytes of "
                 "the message body. The body itself is not reproduced here; "
                 "hash the copy you kept to prove it is the text that was "
                 "checked."),
-            "scope": (
-                "Outbound-messaging gate only: restricted content, opt-out, "
-                "marketing consent, quiet hours and 10DLC campaign "
-                "registration. Two-party voice RECORDING consent is decided "
-                "at call time in the voice adapter and is NOT covered."
-                if channel == "voice" else
-                "Outbound-messaging gate only: restricted content, opt-out, "
-                "marketing consent, quiet hours and 10DLC campaign "
-                "registration."),
+            "scope": _scope_sentence(channel, resolution),
         },
     )
+
+
+def _scope_sentence(channel: str, resolution) -> str:
+    """What this preview covers. 10DLC carrier registration is a US SMS requirement, so it is named only for an
+    SMS whose country is the US or unknown (where the gate assumes it): naming it on an Omani answer would put a
+    US rule in the record of a send it was never applied to."""
+    rules = "restricted content, opt-out, marketing consent and quiet hours"
+    if channel == "sms" and (resolution is None or resolution.country in (None, "US")):
+        rules = "restricted content, opt-out, marketing consent, quiet hours and 10DLC campaign registration"
+    sentence = f"Outbound-messaging gate only: {rules}."
+    if channel == "voice":
+        sentence += (" Two-party voice RECORDING consent is decided at call time in the voice adapter and is "
+                     "NOT covered.")
+    return sentence
+
+
+def _permitted_sentence(result: dict, rule_set: dict, resolution, message_type: str, channel: str) -> str:
+    """The sentence for a PERMITTED send. Where a statute is modeled it says so; where only the service's
+    conservative default applied it says that instead, and that it is not a determination of the country's law."""
+    tail = ("The gate runs again at send time, so honor any opt-out that lands between now and the send.")
+    if rule_set["basis"] == "statute":
+        return (f"Send is permitted under the {result['jurisdiction']} rule set for a "
+                f"{message_type} {channel} message. {tail}")
+    where = result["jurisdiction"] if result["jurisdiction"] != "unknown" else "a recipient whose country is unknown"
+    whose = f"{resolution.country} law" if resolution.country else "any country's law"
+    return (f"Send is permitted by this gate's conservative default for {where}, which is not a determination "
+            f"of {whose}. {rule_set['note']} {tail}")
 
 
 async def handle_check_compliance(
@@ -330,12 +347,18 @@ async def handle_check_compliance(
     # --- run the identical gate, in preview mode (no send, no audit write) --
     from compliance.pre_check import pre_check
 
+    # WHICH RULES, AND WHY (Door Reliability Run D2): the recipient's number decides when it names one country,
+    # then the caller's country_code, else the jurisdiction is unknown - and an unknown one is reported as
+    # "unknown", not as "US".
+    resolution = resolve_jurisdiction(recipient_id, country_code)
+    rule_set = describe_rule_set(resolution.country, state_code)
+
     base_result = {
         "channel": channel,
         "message_type": message_type,
-        "jurisdiction": (
-            f"{country_code}-{state_code}" if state_code else (country_code or "US")
-        ),
+        "jurisdiction": jurisdiction_label(resolution.country, state_code),
+        "jurisdiction_source": resolution.source,
+        "rule_set": rule_set,
         "recording_consent_note": (
             "This is the outbound-messaging gate only. Two-party voice recording "
             "consent is evaluated separately at call time."
@@ -343,6 +366,8 @@ async def handle_check_compliance(
         ),
         "checked_live": False,
     }
+    if resolution.conflict:
+        base_result["jurisdiction_conflict"] = resolution.conflict
 
     # The subject and inputs the evidence record will name. `content` is
     # DIGESTED, NOT COPIED: the caller already holds the message body, the
@@ -396,7 +421,8 @@ async def handle_check_compliance(
                 country_code, state_code, channel,
                 decision={"permitted": False,
                           "rule": cve.rule,
-                          "jurisdiction": cve.jurisdiction})
+                          "jurisdiction": cve.jurisdiction},
+                resolution=resolution)
         return OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.SUCCESS,        # a truthful "no" is a successful check
@@ -453,7 +479,8 @@ async def handle_check_compliance(
                 country_code, state_code, channel,
                 decision={"permitted": False,
                           "rule": "restricted_content_jev_advisory",
-                          "jurisdiction": result["jurisdiction"]})
+                          "jurisdiction": result["jurisdiction"]},
+                resolution=resolution)
         return OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.SUCCESS,   # a truthful "no" is a successful check
@@ -480,16 +507,13 @@ async def handle_check_compliance(
             country_code, state_code, channel,
             decision={"permitted": True,
                       "rule": None,
-                      "jurisdiction": result["jurisdiction"]})
+                      "jurisdiction": result["jurisdiction"]},
+            resolution=resolution)
     return OutcomeReceipt(
         operation_id=operation_id,
         status=OperationStatus.SUCCESS,
         reason_code="compliant",
-        human_message=(
-            f"Send is permitted under the {result['jurisdiction']} rule set for a "
-            f"{message_type} {channel} message. The gate runs again at send time, "
-            "so honor any opt-out that lands between now and the send."
-        ),
+        human_message=_permitted_sentence(result, rule_set, resolution, message_type, channel),
         result=result,
         cost=CostRecord(amount=0.0, currency="USD", basis="free"),
         latency_ms=int((time.monotonic() - t0) * 1000),

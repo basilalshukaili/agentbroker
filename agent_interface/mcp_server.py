@@ -51,6 +51,8 @@ from core.tool_auth import WRITE_TOOLS_REQUIRING_AUTH, requires_key
 # MCP protocol revision 2026-07-28, served alongside the legacy handshake. A pure module: era resolution,
 # header validation, the discover result and the modern result shape. See its docstring.
 from agent_interface import mcp_2026 as _m2026
+# The type of every declared argument, checked once before anything is held, charged or run.
+from agent_interface import argument_types as _argtypes
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +601,13 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
     method = payload.get("method")
     params = payload.get("params", {}) or {}
     raw_params = payload.get("params")          # the caller's own, before `_profile` is injected below
+    # `params` must be a JSON object (MCP passes everything by name). A number, string or array used to reach
+    # `{**params, "_profile": ...}` on a door - an unhandled TypeError, so an HTTP 500 - or `params.get(...)`
+    # in a handler: "Internal error: 'int' object has no attribute 'get'". It is refused further down, after
+    # it is known the message is a request: a notification must never be answered, whatever its params are.
+    params_not_object = not isinstance(params, dict)
+    if params_not_object:
+        params = {}
     if profile is not None:
         # Which door this request came through. Never taken from the
         # payload - a caller must not be able to widen its own profile
@@ -665,6 +674,26 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
             id=rpc_id,
             error=_error(ERR_INVALID_REQUEST,
                          "Request must be a JSON object" if not_an_object else "Missing 'method' field"),
+        ).to_dict()
+
+    if params_not_object:
+        obs.outcome, obs.error_code = "rpc_error", "invalid_argument"
+        _got = _argtypes.json_type(raw_params)
+        return JsonRpcResponse(
+            id=rpc_id,
+            error=_error(
+                ERR_INVALID_PARAMS,
+                f"'params' must be a JSON object, got {_argtypes.type_phrase(raw_params)}. Pass the method's "
+                f"parameters as named fields, for example {{\"name\": \"screen_sanctions\", "
+                f"\"arguments\": {{...}}}} for tools/call. Nothing was run or charged.",
+                data={"error_code": "invalid_argument",
+                      "retriable": False,
+                      "invalid_fields": [f"params (expected object, got {_got})"],
+                      "expected_types": {"params": "object"},
+                      "how_to_resolve": {
+                          "call": "tools/list",
+                          "hint": "send params as a JSON object; retrying unchanged will fail identically",
+                      }}),
         ).to_dict()
 
     # WHICH ERA IS THIS REQUEST IN? (MCP 2026-07-28, agent_interface/mcp_2026.py.) A request whose `_meta`
@@ -744,15 +773,22 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
             obs.requested_name = safe_requested_name(pe.tool_name)
         else:
             obs.error_code = "invalid_argument"
+        _data = {"error_code": "invalid_argument",
+                 "retriable": False,
+                 "how_to_resolve": {
+                     "call": "tools/list",
+                     "hint": "check the tool name and inputSchema; argument names are exact",
+                 }}
+        if isinstance(pe, _ArgumentTypeError):
+            # Name the argument and the type it must have, in a shape a program can read as well as a
+            # model (same keys the ValidationError branch below uses for its own field list).
+            _data["invalid_fields"], _data["expected_types"] = _argtypes.as_data(pe.problems)
+            _data["how_to_resolve"]["hint"] = (
+                "send each named argument as its declared JSON type; retrying unchanged will fail "
+                "identically, and this refusal cost nothing")
         return JsonRpcResponse(
             id=rpc_id,
-            error=_error(ERR_INVALID_PARAMS, str(pe),
-                         data={"error_code": "invalid_argument",
-                               "retriable": False,
-                               "how_to_resolve": {
-                                   "call": "tools/list",
-                                   "hint": "check the tool name and inputSchema; argument names are exact",
-                               }}),
+            error=_error(ERR_INVALID_PARAMS, str(pe), data=_data),
         ).to_dict()
     except KeyError as ke:
         # A missing required argument is the caller's problem to fix, not an
@@ -826,6 +862,18 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
 
 class _ParamError(ValueError):
     pass
+
+
+class _ArgumentTypeError(_ParamError):
+    """tools/call carried an argument whose JSON type is not the one the tool's inputSchema declares.
+
+    A _ParamError (same -32602 / invalid_argument contract as every other caller-fixable argument error),
+    carrying the problems so the response can name each argument and the type it must have."""
+
+    def __init__(self, message: str, tool: str, problems: list) -> None:
+        super().__init__(message)
+        self.tool = tool
+        self.problems = problems
 
 
 class _UnknownToolError(_ParamError):
@@ -1309,6 +1357,19 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
         hint = f" Did you mean: {', '.join(close)}?" if close else ""
         raise _UnknownToolError(f"Unknown tool: '{name}'.{hint} Call tools/list "
                                 f"for the full catalog.", tool_name=name)
+
+    # THE TYPE OF EVERY ARGUMENT, BEFORE ANYTHING IS HELD, CHARGED OR RUN (Door Reliability Run, D1).
+    #
+    # `screen_sanctions {"name": 12345}` used to reach `name.strip()` and come back as
+    # `-32603 Internal error: 'int' object has no attribute 'strip'`; twelve tools did the same for some
+    # argument. The contract is the inputSchema every agent was shown by tools/list, checked here once so the
+    # answer is a typed, guided -32602 naming the argument and the type it must have, costs nothing, and a
+    # new tool is covered the day it enters the manifest. See agent_interface/argument_types.py for what is
+    # and is not checked (types only) and for the two deliberate exceptions. An explicit null for an optional
+    # argument is "not given" and is removed here, so the handler's own default applies.
+    arguments, _type_problems = _argtypes.check(name, op.get("input_schema"), arguments)
+    if _type_problems:
+        raise _ArgumentTypeError(_argtypes.explain(name, _type_problems), name, _type_problems)
 
     # CHANNEL HONESTY, BEFORE ANYTHING IS HELD OR CHARGED (key-holder audit fix 7).
     #
@@ -2058,7 +2119,7 @@ async def _dispatch_operation(
         # validated by the model, used by the handler, and never delivered.
         req = ScheduleAppointmentRequest(
             smb_id=args["smb_id"],
-            action=AppointmentAction(args.get("action", "book")),
+            action=_as_enum(AppointmentAction, args.get("action", "book"), "action"),
             service=args.get("service"),
             existing_appointment_id=args.get("existing_appointment_id"),
             customer=args.get("customer"),
@@ -2487,7 +2548,7 @@ async def _h_resources_list(params: dict) -> dict:
             {
                 "uri": "agent-broker://compliance/jurisdictions",
                 "name": "Jurisdiction Rules",
-                "description": "Compliance rules by country/state — TCPA, GDPR, CASL, recording consent. 26 jurisdictions + INTERNATIONAL fallback.",
+                "description": "Compliance rules by country/state — TCPA, GDPR, CASL, recording consent. 26 jurisdictions + INTERNATIONAL fallback. Each entry's `statutes` lists the statutes it models; empty means the service's own conservative default applies, not a country-specific law.",
                 "mimeType": "application/json",
             },
             {

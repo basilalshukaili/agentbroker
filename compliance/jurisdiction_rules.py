@@ -4,6 +4,7 @@ Determines what consent + channel rules apply to a given recipient based on coun
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -26,7 +27,15 @@ class JurisdictionRules:
     data_residency_region: str = "us"
     pii_retention_days: int = 365
     tcpa_dnc_check_required: bool = False
+    # The statutes this jurisdiction's rules are MODELED ON. EMPTY MEANS NONE IS: the rules are then the
+    # service's own conservative default (recorded opt-in for marketing, an 08:00-21:00 local solicitation
+    # window), and every answer that applies them must say so rather than cite a law that was not applied.
+    # This field is what stopped being implicit on 2026-10-04: the defaults above are US-shaped, so a rule set
+    # with no statute named here used to be reported as "TCPA" because that was the only name the gate knew.
+    statutes: tuple = ()
 
+
+_GDPR = ("GDPR",)
 
 # Two-party (all-party) recording consent states
 _TWO_PARTY_STATES = {"CA", "FL", "IL", "MD", "MA", "MT", "NV", "NH", "PA", "WA"}
@@ -34,6 +43,7 @@ _TWO_PARTY_STATES = {"CA", "FL", "IL", "MD", "MA", "MT", "NV", "NH", "PA", "WA"}
 _RULES: dict[str, JurisdictionRules] = {
     "US": JurisdictionRules(
         jurisdiction_code="US",
+        statutes=("TCPA", "CAN-SPAM", "10DLC"),
         sms_marketing_requires_prior_express_written_consent=True,
         voice_autodialed_requires_prior_express_consent=True,
         recording_consent_type=RecordingConsentType.ONE_PARTY,
@@ -44,6 +54,7 @@ _RULES: dict[str, JurisdictionRules] = {
     ),
     "EU": JurisdictionRules(
         jurisdiction_code="EU",
+        statutes=_GDPR,
         sms_marketing_requires_prior_express_written_consent=True,
         voice_autodialed_requires_prior_express_consent=True,
         recording_consent_type=RecordingConsentType.TWO_PARTY,
@@ -54,6 +65,7 @@ _RULES: dict[str, JurisdictionRules] = {
     ),
     "GB": JurisdictionRules(
         jurisdiction_code="GB",
+        statutes=_GDPR,
         gdpr_applies=True,
         email_requires_unsubscribe=True,
         data_residency_region="eu",
@@ -61,6 +73,7 @@ _RULES: dict[str, JurisdictionRules] = {
     ),
     "CA": JurisdictionRules(
         jurisdiction_code="CA",
+        statutes=("CASL",),
         casl_applies=True,
         email_requires_unsubscribe=True,
         pii_retention_days=180,
@@ -101,15 +114,15 @@ _RULES: dict[str, JurisdictionRules] = {
     "NZ": JurisdictionRules(jurisdiction_code="NZ", email_requires_unsubscribe=True, pii_retention_days=180),    # New Zealand
     "BR": JurisdictionRules(jurisdiction_code="BR", email_requires_unsubscribe=True, pii_retention_days=180),    # Brazil LGPD
     "MX": JurisdictionRules(jurisdiction_code="MX", email_requires_unsubscribe=True, pii_retention_days=180),    # Mexico
-    "FR": JurisdictionRules(jurisdiction_code="FR", gdpr_applies=True, email_requires_unsubscribe=True,
+    "FR": JurisdictionRules(jurisdiction_code="FR", statutes=_GDPR, gdpr_applies=True, email_requires_unsubscribe=True,
                              data_residency_region="eu", pii_retention_days=90),                                 # France
-    "DE": JurisdictionRules(jurisdiction_code="DE", gdpr_applies=True, email_requires_unsubscribe=True,
+    "DE": JurisdictionRules(jurisdiction_code="DE", statutes=_GDPR, gdpr_applies=True, email_requires_unsubscribe=True,
                              data_residency_region="eu", pii_retention_days=90),                                 # Germany
-    "IT": JurisdictionRules(jurisdiction_code="IT", gdpr_applies=True, email_requires_unsubscribe=True,
+    "IT": JurisdictionRules(jurisdiction_code="IT", statutes=_GDPR, gdpr_applies=True, email_requires_unsubscribe=True,
                              data_residency_region="eu", pii_retention_days=90),                                 # Italy
-    "ES": JurisdictionRules(jurisdiction_code="ES", gdpr_applies=True, email_requires_unsubscribe=True,
+    "ES": JurisdictionRules(jurisdiction_code="ES", statutes=_GDPR, gdpr_applies=True, email_requires_unsubscribe=True,
                              data_residency_region="eu", pii_retention_days=90),                                 # Spain
-    "NL": JurisdictionRules(jurisdiction_code="NL", gdpr_applies=True, email_requires_unsubscribe=True,
+    "NL": JurisdictionRules(jurisdiction_code="NL", statutes=_GDPR, gdpr_applies=True, email_requires_unsubscribe=True,
                              data_residency_region="eu", pii_retention_days=90),                                 # Netherlands
 }
 
@@ -119,6 +132,7 @@ for _state in _TWO_PARTY_STATES:
     _base = _RULES["US"]
     _RULES[_key] = JurisdictionRules(
         jurisdiction_code=_key,
+        statutes=_base.statutes,
         sms_marketing_requires_prior_express_written_consent=_base.sms_marketing_requires_prior_express_written_consent,
         voice_autodialed_requires_prior_express_consent=_base.voice_autodialed_requires_prior_express_consent,
         recording_consent_type=RecordingConsentType.TWO_PARTY,
@@ -154,3 +168,78 @@ def infer_jurisdiction(country_code: str | None, state_code: str | None = None) 
 def list_supported_jurisdictions() -> list[str]:
     """Returns all explicitly-supported country codes (excluding US-state subkeys)."""
     return sorted([k for k in _RULES.keys() if "-" not in k])
+
+
+# ---------------------------------------------------------------------------
+# Saying what a rule set IS, honestly
+# ---------------------------------------------------------------------------
+
+_DEFAULT_POLICY = ("recorded opt-in consent for marketing, and a 08:00-21:00 local solicitation window")
+_SAFE_COUNTRY = re.compile(r"^[A-Z0-9-]{2,8}$")
+
+
+def _clean_country(country_code) -> str | None:
+    """The country as it may appear in OUR sentences: a plain code, or None. Never caller prose."""
+    if not isinstance(country_code, str):
+        return None
+    cc = country_code.strip().upper()
+    return cc if _SAFE_COUNTRY.match(cc) else (None if not cc else "?")
+
+
+def _has_own_entry(cc: str | None) -> bool:
+    return bool(cc) and cc in _RULES and cc != "INTERNATIONAL"
+
+
+def consent_basis_sentence(country_code) -> str:
+    """Why a marketing SMS to this country needs recorded opt-in, in words that do not name a law that was not
+    applied. For a jurisdiction with a modeled statute the statute's own rule id says it, so this is only used
+    where none is."""
+    cc = _clean_country(country_code)
+    tail = ("recorded opt-in consent is required for marketing SMS. This is the service's own policy, not a "
+            "citation of {law} law.")
+    if cc is None:
+        return ("No country was supplied and none could be read from the recipient, so the INTERNATIONAL "
+                "conservative default applies: " + tail.replace("{law}", "any country's"))
+    shown = cc if cc != "?" else "the supplied country_code"
+    if _has_own_entry(cc):
+        return (f"No {cc}-specific consent statute is implemented in this gate, so the service's conservative "
+                f"default applies: " + tail.replace("{law}", cc))
+    return (f"No rule set is implemented for {shown}, so the INTERNATIONAL conservative default applies: "
+            + tail.replace("{law}", shown))
+
+
+def describe_rule_set(country_code, state_code: str | None = None) -> dict:
+    """{code, basis, statutes_modeled, note} for the rule set a send to this country is judged under.
+
+    basis is "statute" when the rule set models a named statute and "conservative_default" when it does not -
+    which is the honest description of every jurisdiction other than the US, the EU/UK states and Canada."""
+    cc = _clean_country(country_code)
+    rules = infer_jurisdiction(cc if cc != "?" else "ZZ", state_code)
+    if rules.statutes:
+        return {"code": rules.jurisdiction_code, "basis": "statute",
+                "statutes_modeled": list(rules.statutes),
+                "note": f"Modeled: {', '.join(rules.statutes)}."}
+    if cc is None:
+        note = ("No country was supplied and none could be read from the recipient, so the INTERNATIONAL "
+                f"conservative default applies ({_DEFAULT_POLICY}). It is the service's own policy, not a "
+                "citation of any country's law.")
+    elif _has_own_entry(cc):
+        note = (f"No {cc}-specific consent statute is implemented in this gate; the service's conservative "
+                f"default applies ({_DEFAULT_POLICY}). It is the service's own policy, not a citation of {cc} law.")
+    else:
+        shown = cc if cc != "?" else "the supplied country_code"
+        note = (f"No rule set is implemented for {shown}, so the INTERNATIONAL conservative default applies "
+                f"({_DEFAULT_POLICY}). It is the service's own policy, not a citation of {shown} law.")
+    return {"code": rules.jurisdiction_code, "basis": "conservative_default",
+            "statutes_modeled": [], "note": note}
+
+
+def rule_sets_listing() -> list[dict]:
+    """One entry per supported code: what its rule set is based on. Used by the public jurisdiction list."""
+    out = []
+    for code in list_supported_jurisdictions():
+        rules = _RULES[code]
+        out.append({"code": code,
+                    "basis": "statute" if rules.statutes else "conservative_default",
+                    "statutes_modeled": list(rules.statutes)})
+    return out

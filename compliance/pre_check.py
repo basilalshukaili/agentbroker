@@ -15,7 +15,8 @@ from typing import Optional
 from core.models import ComplianceViolationError
 from compliance.consent_store import get_consent_store
 from compliance.content_classifier import classify_content
-from compliance.jurisdiction_rules import get_rules, infer_jurisdiction
+from compliance.jurisdiction_rules import get_rules, infer_jurisdiction, consent_basis_sentence
+from compliance.number_jurisdiction import resolve_jurisdiction, jurisdiction_label
 from compliance.campaign_registry import get_campaign_registry, UseCaseType
 from compliance.audit_log import AuditEventType, get_audit_log
 
@@ -50,9 +51,18 @@ def pre_check(
     nor inflate violation counts for a send that was never attempted. Real
     dispatch paths call with preview=False (the default) and are unchanged.
     """
+    # THE RULES FOLLOW THE RECIPIENT, NOT ONLY WHAT THE CALLER TYPED (Door Reliability Run D2, 2026-10-03).
+    # An Omani number with country_code "OM" was refused "under the TCPA"; a number sent with no country_code
+    # was assumed American. From here on `country_code` is the country the send is judged under: the one the
+    # recipient's number names when it names exactly one (the number wins over a contradicting country_code),
+    # otherwise the caller's, otherwise None - and None is "unknown", never "US". See
+    # compliance/number_jurisdiction.py for the rules and for why a +1 or +7 number needs the caller to say.
+    resolution = resolve_jurisdiction(recipient_id, country_code)
+    country_code = resolution.country
     rules = infer_jurisdiction(country_code, state_code)
     consent_store = get_consent_store()
-    jurisdiction = f"{country_code}-{state_code}" if state_code else (country_code or "US")
+    jurisdiction = jurisdiction_label(country_code, state_code)
+    is_us = rules.jurisdiction_code == "US" or rules.jurisdiction_code.startswith("US-")
 
     # 1. Content classification
     classification = classify_content(content)
@@ -181,26 +191,51 @@ def pre_check(
                 recipient_id=recipient_id,
                 channel=channel,
                 jurisdiction="unknown",
-                message=("Marketing messages need country_code so the correct "
+                message=("Marketing messages need a known country so the correct "
                          "consent rules apply - opt-in regimes (GDPR, CASL, "
                          "PDPL) and opt-out regimes (CAN-SPAM) reach opposite "
                          "conclusions on the same message. Pass the recipient's "
-                         "two-letter country code."),
+                         "two-letter country_code, or an E.164 recipient number "
+                         "whose country calling code names it."
+                         + (" " + resolution.conflict if resolution.conflict else "")),
             )
-        if channel == "sms" and rules.sms_marketing_requires_prior_express_written_consent:
+        # THE RULE'S NAME IS THE LAW THAT WAS APPLIED. This branch used to raise "TCPA_marketing_consent" for
+        # every jurisdiction whose rule set asks for opt-in - which is all of them, because the field defaults
+        # to True - so an Omani, a German or a Canadian marketing SMS was refused "under a US statute".
+        # Now: the US keeps the TCPA; a GDPR or CASL jurisdiction is refused by its own correctly named rule
+        # just below (it checks consent for the same channel, so skipping here loses nothing); anywhere else
+        # the service's own conservative default applies and the answer says exactly that.
+        if (channel == "sms" and rules.sms_marketing_requires_prior_express_written_consent
+                and not (rules.gdpr_applies or rules.casl_applies)):
             if not consent_store.has_valid_consent(recipient_id, "sms", "marketing"):
+                if is_us:
+                    _audit_violation(
+                        "TCPA_marketing_consent",
+                        recipient_id, channel, jurisdiction, agent_id, trace_id,
+                        reason="No TCPA prior express written consent on file",
+                        preview=preview,
+                    )
+                    raise ComplianceViolationError(
+                        rule="TCPA_marketing_consent",
+                        recipient_id=recipient_id,
+                        channel="sms",
+                        jurisdiction=jurisdiction,
+                        message=f"Recipient {recipient_id} has not opted in to marketing SMS. TCPA prior express written consent is required.",
+                    )
                 _audit_violation(
-                    "TCPA_marketing_consent",
+                    "sms_marketing_consent",
                     recipient_id, channel, jurisdiction, agent_id, trace_id,
-                    reason="No TCPA prior express written consent on file",
+                    reason="No opt-in consent for marketing SMS on file (conservative default; "
+                           "no jurisdiction-specific statute applied)",
                     preview=preview,
                 )
                 raise ComplianceViolationError(
-                    rule="TCPA_marketing_consent",
+                    rule="sms_marketing_consent",
                     recipient_id=recipient_id,
                     channel="sms",
                     jurisdiction=jurisdiction,
-                    message=f"Recipient {recipient_id} has not opted in to marketing SMS. TCPA prior express written consent is required.",
+                    message=(f"Recipient {recipient_id} has not opted in to marketing SMS. "
+                             f"{consent_basis_sentence(country_code)}"),
                 )
 
         if rules.gdpr_applies and not consent_store.has_valid_consent(recipient_id, channel, "marketing"):
@@ -362,27 +397,40 @@ def pre_check(
                      "your message."),
         )
     if _qh is not None and not _qh.allowed:
+        # The calling-hours rule is the TCPA's only where the TCPA applies. Anywhere else the window is
+        # either one the service models (CA, GB, EU) or its own default, and the answer says which.
+        _qh_rule = "TCPA_quiet_hours" if is_us else "quiet_hours"
         _audit_violation(
-            "TCPA_quiet_hours",
+            _qh_rule,
             recipient_id, channel, jurisdiction, agent_id, trace_id,
             reason=f"{_qh.reason}; local {_qh.local_time}; window {_qh.window}",
             preview=preview,
         )
-        raise ComplianceViolationError(
-            rule="TCPA_quiet_hours",
-            recipient_id=recipient_id,
-            channel=channel,
-            jurisdiction=jurisdiction,
-            message=(
+        if _qh.reason == "outside_permitted_hours":
+            from compliance.quiet_hours import window_is_modeled as _window_is_modeled
+            if is_us or _window_is_modeled(country_code, state_code):
+                _window_basis = ""
+            else:
+                _window_basis = (f" No {country_code or 'country'}-specific hours are implemented; this is the "
+                                 f"service's default window, not a citation of {country_code or 'any'} law.")
+            _qh_message = (
                 f"Solicitation is not permitted at this hour for {jurisdiction}. "
                 f"Recipient local time {_qh.local_time or 'unknown'}; permitted "
-                f"window {_qh.window}. Retry in ~{(_qh.retry_after_s or 3600)//60} "
+                f"window {_qh.window}.{_window_basis} Retry in ~{(_qh.retry_after_s or 3600)//60} "
                 f"minutes. Transactional messages are unaffected."
-                if _qh.reason == "outside_permitted_hours" else
+            )
+        else:
+            _qh_message = (
                 f"Cannot determine the recipient's local time, so a marketing "
                 f"send is held rather than risk an unlawful hour. Supply "
                 f"country_code (and state_code for US) to enable it."
-            ),
+            )
+        raise ComplianceViolationError(
+            rule=_qh_rule,
+            recipient_id=recipient_id,
+            channel=channel,
+            jurisdiction=jurisdiction,
+            message=_qh_message,
         )
 
     # 4. 10DLC campaign check for US SMS

@@ -2395,6 +2395,25 @@
           "jurisdiction": {
             "type": "string"
           },
+          "jurisdiction_source": {
+            "type": "string",
+            "enum": ["caller", "recipient_number", "unknown"],
+            "description": "How the jurisdiction was decided: the caller's country_code, the recipient number's country calling code (which wins over a contradicting country_code), or unknown."
+          },
+          "jurisdiction_conflict": {
+            "type": "string",
+            "description": "Present only when country_code contradicted the recipient number or could not be used; says which jurisdiction was applied instead."
+          },
+          "rule_set": {
+            "type": "object",
+            "description": "What the rules applied are based on. basis is 'statute' where a named statute is modeled (US, EU/UK states modeled, Canada) and 'conservative_default' everywhere else, which means no statute of that country was applied - the service's own opt-in policy was.",
+            "properties": {
+              "code": {"type": "string"},
+              "basis": {"type": "string", "enum": ["statute", "conservative_default"]},
+              "statutes_modeled": {"type": "array", "items": {"type": "string"}},
+              "note": {"type": "string"}
+            }
+          },
           "rule": {
             "type": "string",
             "description": "The rule that blocked the send (null when legal=true)."
