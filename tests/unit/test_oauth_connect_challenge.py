@@ -44,7 +44,9 @@ def _env(monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(main.app, base_url=BASE, raise_server_exceptions=False)
+    # This file pins the CLAUDE contract (a 401 on a refused call), so its caller is a connector that is known to
+    # start sign-in from one. Every other caller is in test_oauth_connect_gate_fixes.py.
+    return TestClient(main.app, base_url=BASE, raise_server_exceptions=False, headers={"user-agent": "Claude-User"})
 
 
 def rpc(method, params=None, rid=1):

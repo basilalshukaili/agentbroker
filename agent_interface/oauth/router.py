@@ -38,6 +38,7 @@ work (an email, a registration, an outbound fetch) has its own ceiling in agent_
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import logging
 import re
@@ -50,7 +51,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from agent_interface.oauth import emailer, limits, pages, resources, settings, tokens
 from agent_interface.oauth.clients import (
-    ClientError, ClientInfo, check_redirect_uri, redirect_host, redirect_matches, resolve_client,
+    ClientError, ClientInfo, FetchRefused, check_redirect_uri, redirect_host, redirect_matches, resolve_client,
     validate_registration,
 )
 from agent_interface.oauth.store import StoreUnavailable, get_store
@@ -59,7 +60,7 @@ log = logging.getLogger("smb_broker.oauth")
 
 router = APIRouter(tags=["OAuth"])
 
-COOKIE = "hl_oauth"
+COOKIE = "hl_oauth"          # prefix: one cookie PER SIGN-IN, named hl_oauth_<request id>
 _ID = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 # ASCII local part only: a look-alike (full-width, Cyrillic...) address is a different mailbox that merely
 # LOOKS like another, and internationalised addresses are not something we can promise to route.
@@ -91,7 +92,33 @@ def _ip(request: Request) -> str:
 
 
 def _ipkey(request: Request) -> str:
-    return hashlib.sha256(_ip(request).encode()).hexdigest()[:24]
+    ip = _ip(request)
+    if ":" in ip:
+        # An IPv6 customer holds a whole /64; counting each address separately would let one machine mint
+        # a new "caller" for every request.
+        try:
+            ip = str(ipaddress.ip_network(f"{ip}/64", strict=False).network_address)
+        except ValueError:
+            pass
+    return hashlib.sha256(ip.encode()).hexdigest()[:24]
+
+
+def _cross_site(request: Request) -> bool:
+    """True when the browser says this request was sent by a page of another origin. Fetch Metadata first
+    (`Sec-Fetch-Site` is set by the browser and cannot be forged by a page); `Origin` as the second witness.
+    `Origin: null` is NOT cross-site: our pages are served with `Referrer-Policy: no-referrer`, and a browser
+    then sends `Origin: null` on the pages' own form posts. The originator cookie is the authoritative check;
+    this is the cheap refusal in front of it."""
+    site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if site and site not in ("same-origin", "none"):
+        return True
+    origin = (request.headers.get("origin") or "").strip().lower()
+    return bool(origin and origin != "null" and origin != settings.issuer_origin())
+
+
+def _forbidden() -> HTMLResponse:
+    return _message("Request refused", "This request did not come from the sign-in page. Go back to the app "
+                    "and choose Connect again.", 403, error=True)
 
 
 def _json(content: dict, status: int = 200, extra: Optional[dict] = None, cors: bool = True) -> JSONResponse:
@@ -291,12 +318,18 @@ async def authorize(request: Request):
     # --- 1. establish the client and the return address. Failures here are PAGES, never redirects. ---
     if not limits.check("signin_start_ip", ipk):
         return _message("Too many attempts", "Please wait a little while and try again from the app.", 429, error=True)
+    host = ""
     if isinstance(client_id, str) and client_id.startswith("https://"):
         host = (urlsplit(client_id).hostname or "").lower()
-        if not (limits.check("metadata_fetch_ip", ipk) and limits.check("metadata_fetch_host", host or "?")):
-            return _message("Too many attempts", "Please wait a little while and try again from the app.", 429, error=True)
+
+    def may_fetch() -> bool:
+        # Asked only when a request would really leave this box. A sign-in answered from the cache costs the
+        # vendor's budget nothing, so Claude's thousandth sign-in this hour is as welcome as its first.
+        return limits.check("metadata_fetch_ip", ipk) and limits.check("metadata_fetch_host", host or "?")
     try:
-        client = await resolve_client(store, client_id)
+        client = await resolve_client(store, client_id, may_fetch=may_fetch)
+    except FetchRefused:
+        return _message("Too many attempts", "Please wait a little while and try again from the app.", 429, error=True)
     except ClientError as exc:
         return _message("Cannot connect this app", exc.message + " Go back to the app and try again.", 400, error=True)
     except StoreUnavailable:
@@ -335,27 +368,49 @@ async def authorize(request: Request):
     n = pages.new_nonce()
     # The poll secret is minted with the sign-in and rides in the page's own form, so a retry after a
     # mistyped address binds the SAME secret the waiting page will later use - and no other browser has it.
-    return _page(pages.start_page(client, redirect_uri, rid, n, poll_secret=tokens.new_secret(24)), n)
+    #
+    # THE ORIGINATOR COOKIE IS SET HERE, on the response to the navigation that LOADED this page, and nowhere
+    # else. "This browser started the sign-in" is a fact about which browser loaded the page; it must never be
+    # something a form post can assert. (The first version set the cookie in the reply to the email form, from a
+    # poll secret the form supplied, so a cross-site post could plant it in a victim's browser and the victim's
+    # own mailed link then skipped the match code - the 2026-10-03 review's account-takeover finding.)
+    poll_secret = tokens.new_secret(24)
+    resp = _page(pages.start_page(client, redirect_uri, rid, n, poll_secret=poll_secret), n)
+    _set_originator_cookie(resp, rid, poll_secret)
+    return resp
 
 
 # ---------------------------------------------------------------------------
 # authorize: mail the link, and wait
 # ---------------------------------------------------------------------------
 
-def _cookie_value(request: Request) -> Optional[tuple]:
-    raw = request.cookies.get(COOKIE) or ""
-    rid, _, poll = raw.partition(".")
-    return (rid, poll) if _ID.match(rid) and _ID.match(poll) else None
+def cookie_name(rid: str) -> str:
+    """One cookie per sign-in, so two sign-ins started in one browser (two tabs, two assistants) do not
+    overwrite each other's proof."""
+    return f"{COOKIE}_{rid}"
 
 
-async def _started_here(store, cookie: Optional[tuple], request_id: Optional[str]) -> bool:
-    """True only when the cookie PROVES this is the browser that started the sign-in: the poll secret in it
-    hashes to the one the sign-in holds. A request id in a cookie proves nothing - a browser can be made to
-    send any cookie - so the id alone must never be what skips the match code (found by the second adversarial
-    review round)."""
-    if not (cookie and request_id and cookie[0] == request_id):
+def _set_originator_cookie(resp: Response, rid: str, poll_secret: str) -> None:
+    resp.set_cookie(cookie_name(rid), poll_secret, max_age=settings.SIGNIN_TTL_S, path="/oauth",
+                    httponly=True, secure=settings.is_https(), samesite="lax")
+
+
+def _cookie_poll(request: Request, rid: Optional[str]) -> Optional[str]:
+    """The poll secret this browser was given when it LOADED the sign-in page for `rid`, or None."""
+    if not rid or not _ID.match(rid):
+        return None
+    v = request.cookies.get(cookie_name(rid)) or ""
+    return v if _ID.match(v) else None
+
+
+async def _started_here(store, request: Request, request_id: Optional[str]) -> bool:
+    """True only when this browser holds the poll secret the sign-in holds: the secret in its cookie hashes to
+    the one recorded with the sign-in. A cookie NAME proves nothing - a browser can be made to send any cookie
+    - so only a secret that matches what the sign-in recorded may ever skip the match code."""
+    poll = _cookie_poll(request, request_id)
+    if not poll:
         return False
-    return await store.request_poll(request_id, tokens.sha256_hex(cookie[1])) != "unknown"
+    return await store.request_poll(request_id, tokens.sha256_hex(poll)) != "unknown"
 
 
 async def _client_for_request(store, req: dict) -> Optional[ClientInfo]:
@@ -369,6 +424,8 @@ async def _client_for_request(store, req: dict) -> Optional[ClientInfo]:
 async def authorize_email(request: Request):
     if (r := _off()) is not None:
         return r
+    if _cross_site(request):
+        return _forbidden()
     store = get_store()
     try:
         form = await _form(request)
@@ -379,6 +436,16 @@ async def authorize_email(request: Request):
     given_poll = str(form.get("poll_secret") or "")
     if not _ID.match(rid) or (given_poll and not _ID.match(given_poll)):
         return _message("Invalid request", "Please go back to the app and try again.", 400, error=True)
+    # Only the browser that LOADED the sign-in page holds the cookie that page set. A form can name any request
+    # id and any poll secret; the cookie it cannot forge is the proof that this browser is the starter.
+    poll_secret = _cookie_poll(request, rid)
+    if poll_secret is None:
+        return _message("This browser did not keep the sign-in",
+                        "Signing in needs this browser to accept a cookie from api.hatchloop.dev. Allow it, then "
+                        "go back to the app and choose Connect again.", 400, error=True)
+    if given_poll and given_poll != poll_secret:
+        return _message("Invalid request", "This page does not belong to that sign-in. Go back to the app "
+                        "and choose Connect again.", 400, error=True)
     ipk = _ipkey(request)
     if not (limits.check("email_ip", ipk) and limits.check("email_global", "all")):
         return _message("Too many attempts", "Please wait a little while and try again.", 429, error=True)
@@ -393,8 +460,6 @@ async def authorize_email(request: Request):
     client = await _client_for_request(store, req)
     if client is None:
         return _message("Cannot connect this app", "Go back to the app and try again.", 400, error=True)
-
-    poll_secret = given_poll or tokens.new_secret(24)
 
     def _retry(msg: str, status: int = 400) -> HTMLResponse:
         n = pages.new_nonce()
@@ -432,7 +497,7 @@ async def authorize_email(request: Request):
         return _message("This sign-in expired", "Go back to the app and choose Connect again.", 400, error=True)
 
     link = f"{settings.issuer()}/oauth/verify?t={magic}"
-    outcome = await emailer.send_signin_link(email, link, client.label, redirect_host(req["redirect_uri"]))
+    outcome = await emailer.send_signin_link(email, link, client.email_label, redirect_host(req["redirect_uri"]))
     if outcome == emailer.REJECTED:
         return _retry("That address was not accepted. Please check it and try again.")
     if outcome != emailer.SENT:
@@ -440,11 +505,9 @@ async def authorize_email(request: Request):
 
     log.info("oauth_signin_email_sent client=%s kind=%s", client.host or client.client_id[:12], client.kind)
     n = pages.new_nonce()
-    resp = _page(pages.wait_page(rid, poll_secret, tokens.mask_email(email), n, max_s=settings.SIGNIN_TTL_S,
+    # No cookie is set here: the browser already holds the one the sign-in page gave it.
+    return _page(pages.wait_page(rid, poll_secret, tokens.mask_email(email), n, max_s=settings.SIGNIN_TTL_S,
                                  match_code=tokens.match_code(rid)), n)
-    resp.set_cookie(COOKIE, f"{rid}.{poll_secret}", max_age=settings.SIGNIN_TTL_S, path="/oauth",
-                    httponly=True, secure=settings.is_https(), samesite="lax")
-    return resp
 
 
 async def _deliver(store, rid: str, poll_secret: str) -> dict:
@@ -474,6 +537,10 @@ async def _deliver(store, rid: str, poll_secret: str) -> dict:
 async def authorize_poll(request: Request):
     if (r := _off()) is not None:
         return r
+    # The per-ADDRESS ceiling comes first and is the one a stranger cannot dodge by inventing request ids: the
+    # per-sign-in key below is chosen by the caller, with no proof the sign-in exists.
+    if not limits.check("poll_ip", _ipkey(request)):
+        return JSONResponse({"status": "pending"}, status_code=429, headers={"Cache-Control": "no-store", "Retry-After": "10"})
     try:
         data = json.loads((await _read(request)).decode("utf-8") or "null")
     except (ValueError, UnicodeDecodeError):
@@ -518,7 +585,7 @@ async def verify_page(request: Request):
         return _message("This link was already used", "If you just confirmed it, go back to the app - it "
                         "finishes connecting by itself.")
     try:
-        started_here = await _started_here(store, _cookie_value(request), info["request_id"])
+        started_here = await _started_here(store, request, info["request_id"])
     except StoreUnavailable:
         started_here = False                    # when in doubt, ask for the code
     return await _confirm_page(store, info, t, ask_code=not started_here)
@@ -536,6 +603,8 @@ async def _confirm_page(store, info: dict, t: str, *, ask_code: bool, error: str
 async def verify_decide(request: Request):
     if (r := _off()) is not None:
         return r
+    if _cross_site(request):
+        return _forbidden()
     try:
         form = await _form(request)
     except (ValueError, UnicodeDecodeError):
@@ -547,11 +616,10 @@ async def verify_decide(request: Request):
     if not limits.check("verify_ip", _ipkey(request)):
         return _message("Too many attempts", "Please wait a little while and try again.", 429, error=True)
     store = get_store()
-    cookie = _cookie_value(request)
     try:
         info = await store.request_lookup_magic(tokens.sha256_hex(t))
         if (info and decision == "approve" and info["status"] == "email_sent"
-                and not await _started_here(store, cookie, info["request_id"])):
+                and not await _started_here(store, request, info["request_id"])):
             # Not the browser that started this sign-in: the person must prove they can see the page that did.
             if not limits.check("match_attempt", tokens.sha256_hex(t)[:32]):
                 return _message("Too many attempts", "That code was entered wrongly too many times. Go back to the "
@@ -569,9 +637,10 @@ async def verify_decide(request: Request):
 
     # Same browser as the one that started the sign-in? Then finish the hand-back right here.
     rid = res.get("request_id")
-    if cookie and rid and cookie[0] == rid:
+    poll = _cookie_poll(request, rid)
+    if poll:
         try:
-            out = await _deliver(store, rid, cookie[1])
+            out = await _deliver(store, rid, poll)
         except StoreUnavailable:
             out = {"status": "pending"}
         if out.get("status") == "redirect":

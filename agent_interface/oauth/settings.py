@@ -76,15 +76,34 @@ def is_https() -> bool:
 def challenge_style() -> str:
     """How a refused call to a key-requiring tool is signalled to an OAuth-capable client.
 
-      auto        (default) HTTP 401 + WWW-Authenticate, which is what Claude and the MCP specification
-                  require - except for ChatGPT, whose documented protocol is a normal tool result carrying
-                  `_meta["mcp/www_authenticate"]` and which does not re-trigger sign-in from a 401.
+      auto        (default) HTTP 401 + WWW-Authenticate for a caller known to start sign-in from one (see
+                  `connector_agents`) or one that already sent a bearer token; a normal tool result carrying
+                  `_meta["mcp/www_authenticate"]` for everyone else. ChatGPT's documented protocol IS that
+                  result and it does not re-trigger sign-in from a 401, and an agent with no OAuth support
+                  (most SDK clients) raises on a 401 before it reads the body that tells it how to get a key,
+                  buy credits or pay per call.
       http401     always the 401.
       tool_result always the 200 tool result with `_meta` (what every client had before, plus the hint).
-      off         never signal: the previous behaviour, byte for byte.
+      off         never signal and never annotate: the previous behaviour, byte for byte.
     """
     v = os.getenv("OAUTH_CHALLENGE_STYLE", "auto").strip().lower()
     return v if v in {"auto", "http401", "tool_result", "off"} else "auto"
+
+
+# User-Agent substrings of the clients known to open a sign-in from an HTTP 401. Measured, not guessed: these are
+# the names that real assistants' back ends and CLIs presented to this server (docs/reviews/2026-10-03-mcp-
+# demand-evidence.md). "claude-ai" covers the web connector's documented name. Deliberately NOT a bare "claude"
+# or "anthropic": scanners put those words in their own repository URLs. Extend without a deploy with
+# OAUTH_CHALLENGE_401_CLIENTS (comma-separated, case-insensitive substrings) once an assistant has been walked
+# through live.
+DEFAULT_CONNECTOR_AGENTS = ("claude-user", "claude-code", "claude-ai")
+
+
+def connector_agents() -> tuple:
+    # A literal, non-empty default on purpose (scripts/check_deploy_env.py): "none" means "no extra names".
+    extra = os.getenv("OAUTH_CHALLENGE_401_CLIENTS", "none")
+    more = tuple(p.strip().lower() for p in extra.split(",") if p.strip() and p.strip().lower() != "none")
+    return DEFAULT_CONNECTOR_AGENTS + more
 
 
 def state_secret() -> str:

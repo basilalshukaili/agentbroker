@@ -34,6 +34,7 @@ import main
 from agent_interface.identity import validate_token
 from agent_interface.oauth import clients as oclients
 from agent_interface.oauth import emailer, limits, settings, tokens
+from agent_interface.oauth import router as orouter
 from agent_interface.oauth.link import link_purchase
 from agent_interface.oauth.store import MemoryStore, SpineStore, StoreUnavailable, set_store
 from tests import oauth_pg
@@ -690,8 +691,9 @@ def test_registration_accepts_loopback_and_native_redirects_and_refuses_the_rest
 
 
 def test_registration_is_rate_limited(env, browser):
-    codes = [browser.post("/oauth/register", json={"redirect_uris": [DCR_REDIRECT]}).status_code for _ in range(22)]
-    assert codes[:20] == [201] * 20 and set(codes[20:]) == {429}
+    ceiling = limits.POLICY["register_ip"][0]
+    codes = [browser.post("/oauth/register", json={"redirect_uris": [DCR_REDIRECT]}).status_code for _ in range(ceiling + 2)]
+    assert codes[:ceiling] == [201] * ceiling and set(codes[ceiling:]) == {429}
 
 
 # ---------------------------------------------------------------------------
@@ -835,8 +837,8 @@ def test_a_forged_cookie_naming_the_right_signin_does_not_skip_the_match_code(en
     attacker, victim = other_device(), other_device()
     client_id = register(attacker, ["https://attacker.example.net/cb"])
     s = start_signin(attacker, mailbox, client_id, "https://attacker.example.net/cb", pkce()[1], unique_email("v"))
-    forged = f"{s['rid']}.{'x' * 32}"                          # right sign-in id, wrong poll secret
-    victim.cookies.set("hl_oauth", forged, domain="api.hatchloop.dev", path="/oauth")
+                                                                   # right sign-in id, wrong poll secret
+    victim.cookies.set(orouter.cookie_name(s["rid"]), "x" * 32, domain="api.hatchloop.dev", path="/oauth")
 
     assert 'name="code"' in victim.get(f"/oauth/verify?t={s['magic']}").text           # still asked for the code
     r = press(victim, s["magic"])

@@ -32,9 +32,16 @@ offer only "no authentication" or OAuth) and verdict item A3 in `2026-10-03-mcp-
 
 Claude starts sign-in **only** on an HTTP 401 with `WWW-Authenticate: Bearer ... resource_metadata`; ChatGPT starts it
 from a normal tool result carrying `_meta["mcp/www_authenticate"]` and does not re-trigger from a 401. Both are
-implemented (`agent_interface/oauth/challenge.py`), chosen per client (`OAUTH_CHALLENGE_STYLE`, default `auto`: ChatGPT
-by user-agent / `X-Openai-*` header, everything else 401):
+implemented (`agent_interface/oauth/challenge.py`), chosen per client (`OAUTH_CHALLENGE_STYLE`, default `auto`):
 
+* **`auto` sends the 401 only to callers known to open a sign-in from one**: a caller whose User-Agent contains
+  `claude-user`, `claude-code` or `claude-ai` (measured in real traffic; extend with `OAUTH_CHALLENGE_401_CLIENTS`,
+  comma-separated, once an assistant has been walked through live), and any caller that already sent a bearer token
+  (it speaks OAuth, and an expired token must get the 401 so it refreshes). ChatGPT gets the normal result with `_meta`.
+  **Everyone else gets the same normal result plus the `_meta` hint**, because an agent with no OAuth support raises on an
+  HTTP 401 before it reads the body that tells it how to get a key, buy credits or pay per call (the official Python SDK
+  without an auth provider does exactly that - measured by the review). An OAuth-capable client that is not on the list can
+  still connect through the discovery documents; it is just not prompted.
 * The 401 **keeps the previous JSON-RPC body**, so a caller that reads bodies sees what it always saw.
 * A call is challenged only when the dispatcher itself refused it for lack of an account (`auth_required` for the write
   tools, `identity_required` for `get_conversation`) **and** the request carried no valid credential, or a Bearer token
@@ -46,7 +53,7 @@ by user-agent / `X-Openai-*` header, everything else 401):
   `core/tool_auth.py`, at request time and only when the sign-in can complete.
 * If the spine cannot answer a readiness probe (migration not applied, database down) **nothing changes**: no 401, no
   `securitySchemes`. `OAUTH_CONNECT_ENABLED=0` switches the whole feature off (404 on every route, previous behaviour
-  byte for byte); `OAUTH_CHALLENGE_STYLE=off` keeps the endpoints but never signals.
+  byte for byte); `OAUTH_CHALLENGE_STYLE=off` keeps the endpoints but never signals and never adds `securitySchemes`.
 
 ## Who the key belongs to
 
@@ -66,8 +73,15 @@ every key issued before - are untouched), and carries no email.
 
 * **Public clients only, PKCE S256 mandatory.** A client that cannot do PKCE cannot connect. `private_key_jwt` clients
   (ChatGPT's metadata document declares it) are served as public clients; the intersection both sides support is `none`.
-* **The code goes to the browser that started the sign-in**, proved by a poll secret held only by that page (and a
-  cookie). The mailed link can be opened on any device and hands nothing to whoever presses Confirm.
+* **The code goes to the browser that started the sign-in**, proved by a poll secret held only by that page and by an
+  `HttpOnly` cookie (`hl_oauth_<request id>`, one per sign-in) that is set **by the response that loads the sign-in page
+  and nowhere else**. The email form must present that cookie, and its `poll_secret` field must equal it; the form can name
+  any request id, so it is never allowed to assert "this browser started it". (The first version set the cookie in the
+  reply to the email form from a form-supplied secret: a cross-site post could plant it in a victim's browser, the victim's
+  own link then skipped the match code, and one press of Confirm handed the code to the attacker - the review's
+  account-takeover finding, now pinned by `test_oauth_connect_gate_fixes.py`.) `Sec-Fetch-Site`/`Origin` from another
+  site is refused in front of that (`Origin: null` is allowed: the pages are `no-referrer`). A browser that refuses the
+  cookie is told so; sign-in needs it. The mailed link can be opened on any device and hands nothing to whoever presses Confirm.
 * **Match code (consent phishing).** Anyone can start a sign-in with *your* address and *their* client; you receive a
   genuine email. A link opened outside the starting browser therefore asks for a 4-digit code only the starting page
   shows. Found by the adversarial review; pinned by tests and by a mutation check. *Residual:* a person talked into
@@ -79,12 +93,26 @@ every key issued before - are untouched), and carries no email.
   another client presenting a token is refused without burning it. *Residual:* a client that submits the same refresh
   token twice concurrently loses its session (RFC 6749 section 10.4 trade-off).
 * **Client metadata documents** are fetched with an SSRF guard (https/443 + name only, every resolved address must be
-  globally routable, the connection goes to the address that was checked, no redirects, 64 KiB, 4 s, per-caller and
-  per-host limits). Redirect URIs match exactly; loopback ports are ignored (RFC 8252); private-use schemes are allowed
+  globally routable, the connection goes to the address that was checked, no redirects, an uncompressed body of at most
+  64 KiB, and a TOTAL deadline of 6 s for resolve-to-last-byte - a per-read timeout alone is satisfied by a host that
+  sends a byte every 3 s). The per-caller and per-host fetch ceilings are spent only by fetches that really leave the box,
+  never by a sign-in answered from the cache, and simultaneous first requests for one client share one fetch. A document
+  that was good is still used for up to an hour past its freshness when a refresh is refused or fails for a reason that is
+  not about the document, so spending a vendor's host budget with junk paths cannot lock the real vendor out.
+  Redirect URIs match exactly; loopback ports are ignored (RFC 8252); private-use schemes are allowed
   for dynamic registration only and are labelled on the consent page. The page names the **host** of the client_id,
   never the self-chosen name alone.
-* **Mail abuse.** Per source address, per recipient digest, global, and - inside the database where it cannot be raced -
-  a resend gap and a ceiling per sign-in. A mailbox only ever receives mail for an address someone typed.
+* **Mail abuse.** Per source address (an IPv6 caller counts by its /64), per recipient digest, global, and - inside the
+  database where it cannot be raced - a resend gap and a ceiling per sign-in. A mailbox only ever receives mail for an
+  address someone typed. **The email names the app only by the host of a metadata-document client_id; a self-chosen name
+  (a registered client's) never appears in it** ("An app that registered itself", plus where it will return to), so we are
+  not the courier of a stranger's sentence under our own domain.
+* **Rate limits are in memory, one table per limiter.** A limiter that overflows drops its own least-recently-used keys;
+  it can never clear another limiter's counters (the first version kept one shared table and cleared it at 20,000 keys, and
+  the poll endpoint counted a key per made-up request id, so a stranger could post 20,000 ids and switch every ceiling
+  off). The poll endpoint has a per-address ceiling checked before any key the caller chose. The token and registration
+  endpoints are called by vendors from shared egress addresses, so their per-address ceilings are abuse-only (3,000 and 120
+  per hour). *Residual:* the counters reset when the container restarts; the per-sign-in send ceiling in the database does not.
 * **Pages** are served with a nonce'd CSP, `frame-ancestors 'none'`, `no-store`, `no-referrer`; ASCII-only addresses.
 * *Residual:* free accounts multiply by plus-addressing (`a+1@`, `a+2@`), exactly as they already do through `/keys/request`.
   *Residual:* the `oauth_*` functions are executable by `anon`, which is safe only while the database anon credential is
@@ -161,6 +189,19 @@ store itself rejects a wrong poll secret). jev scored the consent text, the emai
 questions; the email scored 0.69 for "a stranger can safely ignore it" and was rewritten (0.93). 25 safeguards were
 removed one at a time and a test failed each time. The official MCP SDK's OAuth client completes the flow against a live
 server, and the OAuth tests also pass on the production-pinned stack (FastAPI 0.111.0, Starlette 0.37.2, httpx 0.27.0).
+
+## Third review round (2026-10-03) and what it changed
+
+A DeepSeek + jev pass, an independent reviewer who ran every claim, and the integration gate (which re-ran the repros)
+found one P1 and five P2s; all are fixed and pinned by `tests/unit/test_oauth_connect_gate_fixes.py`, each of which
+failed on the reviewed commit:
+cross-site originator-cookie fixation (P1, account takeover: above); one flooded limiter clearing all of them; the
+metadata fetch with no total deadline; cache hits spending the per-vendor fetch budget (two throwaway addresses could lock
+every Claude user out); a bare 401 for agents with no OAuth support (they lost the free-key / credits / pay-per-call answer);
+and a self-chosen app name printed in our email. Also fixed: `OAUTH_CHALLENGE_STYLE=off` now really adds nothing, and the
+vendor-sized ceilings. *Not fixed, by decision:* the paid-account link is first-writer-wins from the buyer's unverified
+checkout email, so someone who pays with another person's address claims that address's paid link (needs a real paid
+order; fixing it means a pending state in the spine, left for the next migration).
 
 ## Tests
 

@@ -588,7 +588,8 @@ def test_the_package_reads_only_variables_a_deploy_already_provides_or_that_defa
     every NEW name carries a non-empty literal default and every other name is one the service already reads."""
     import ast
     existing = {"PUBLIC_BASE_URL", "KEY_VERIFY_SECRET", "JWT_SIGNING_SECRET", "RESEND_API_KEY"}
-    new_with_default = {"OAUTH_CONNECT_ENABLED", "OAUTH_CHALLENGE_STYLE", "OAUTH_ISSUER", "OAUTH_SITE_HOST"}
+    new_with_default = {"OAUTH_CONNECT_ENABLED", "OAUTH_CHALLENGE_STYLE", "OAUTH_CHALLENGE_401_CLIENTS", "OAUTH_ISSUER",
+                        "OAUTH_SITE_HOST"}
     seen = set()
     for path in (ROOT / "agent_interface" / "oauth").glob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):

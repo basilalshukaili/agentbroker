@@ -17,8 +17,16 @@ THE SSRF GUARD. Fetching a URL a stranger chose is the one outbound request on t
 not ours. The fetch therefore: accepts only https on port 443 with a host name (no IP literals, no localhost,
 no internal suffixes); resolves the name ITSELF and refuses unless EVERY address is globally routable; then
 connects to the address it checked (a name that resolves differently a millisecond later cannot redirect the
-request - DNS rebinding), presenting the original name for TLS; follows no redirects; caps the body at 64 KiB
-and the time at 4 s; and is rate-limited per caller and per target host (agent_interface/oauth/limits.py).
+request - DNS rebinding), presenting the original name for TLS; follows no redirects; asks for an uncompressed body and
+refuses a compressed one; caps the body at 64 KiB and the WHOLE fetch - resolve, connect, headers, every byte -
+at FETCH_TOTAL_S (a per-read timeout alone is satisfied by a host that sends one byte every three seconds, and
+the first version had only that); and is rate-limited per caller and per target host, counting only fetches
+that really leave the box (agent_interface/oauth/limits.py).
+
+A document that was good a moment ago is still used when a refresh is refused by the ceiling or fails for a
+reason that is not about the document (network, timeout, a 5xx), for up to STALE_GRACE_S past its freshness.
+Without that, anyone able to spend the per-host budget with junk paths on a vendor's host would lock the real
+vendor out of connecting.
 """
 from __future__ import annotations
 
@@ -39,7 +47,9 @@ log = logging.getLogger("smb_broker.oauth.clients")
 
 MAX_REDIRECT_URIS = 10
 MAX_DOC_BYTES = 64 * 1024
-FETCH_TIMEOUT_S = 4.0
+FETCH_TIMEOUT_S = 4.0          # one network operation (resolve, connect, a read)
+FETCH_TOTAL_S = 6.0            # the whole fetch, start to last byte
+STALE_GRACE_S = 3600.0
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _BAD_SCHEMES = {"javascript", "data", "file", "vbscript", "about", "blob", "ftp", "ws", "wss", "chrome",
@@ -58,6 +68,17 @@ class ClientError(Exception):
         self.code, self.message = code, message
 
 
+class FetchRefused(ClientError):
+    """A fetch that would leave the box was not allowed because a ceiling is spent. Not about the client."""
+
+    def __init__(self) -> None:
+        super().__init__("temporarily_unavailable", "Too many apps are connecting right now.")
+
+
+class _Transient(ClientError):
+    """The fetch failed for a reason that says nothing about the document (network, timeout, a 5xx)."""
+
+
 @dataclass(frozen=True)
 class ClientInfo:
     client_id: str
@@ -69,6 +90,13 @@ class ClientInfo:
     @property
     def label(self) -> str:
         return self.host if self.kind == "cimd" and self.host else (self.name or "an app")
+
+    @property
+    def email_label(self) -> str:
+        """What OUR email calls the app. Only the host of a metadata-document client_id is a fact about the app;
+        a self-chosen name (a registered client's, or a document's `client_name`) is text a stranger wrote, and
+        printing it in a genuine message from our domain would make us the courier of their sentence."""
+        return self.host if self.kind == "cimd" and self.host else "An app that registered itself"
 
 
 # ---------------------------------------------------------------------------
@@ -245,40 +273,85 @@ class MetadataFetcher:
         self._transport = transport
         self._clock = clock
         self._cache: dict = {}
+        self._inflight: dict = {}
 
     def clear(self) -> None:
         self._cache.clear()
+        self._inflight.clear()
 
-    async def get(self, url: str) -> dict:
+    async def get(self, url: str, *, may_fetch: Optional[Callable[[], bool]] = None) -> dict:
+        """The validated document for `url`. `may_fetch` is asked only when a request would really leave the box
+        (not for a fresh cached copy, and not when another caller's fetch of the same URL is already under
+        way); when it says no, a document that was good recently is returned, else FetchRefused."""
         p = _check_client_id_url(url)
-        hit = self._cache.get(url)
         now = self._clock()
+        hit = self._cache.get(url)
         if hit and hit[0] > now:
             if isinstance(hit[1], ClientError):
                 raise hit[1]
             return hit[1]
+        stale = hit[1] if hit and isinstance(hit[1], dict) and hit[2] > now else None
+        loop = asyncio.get_running_loop()
+        running = self._inflight.get(url)
+        if running is not None and running[0] is loop and not running[1].done():
+            task = running[1]
+        else:
+            if may_fetch is not None and not may_fetch():
+                if stale is not None:
+                    return stale
+                raise FetchRefused()
+            task = asyncio.ensure_future(self._fetch_and_cache(url, p))
+            self._inflight[url] = (loop, task)
+            task.add_done_callback(lambda t, u=url: self._finished(u, t))
         try:
-            doc, ttl = await self._fetch(url, p)
+            return await asyncio.shield(task)
+        except _Transient:
+            if stale is not None:
+                return stale
+            raise
+
+    def _finished(self, url: str, task) -> None:
+        current = self._inflight.get(url)
+        if current is not None and current[1] is task:
+            self._inflight.pop(url, None)
+        if not task.cancelled():
+            task.exception()          # retrieved, so a failure nobody is still waiting for is not logged as lost
+
+    async def _fetch_and_cache(self, url: str, p) -> dict:
+        now = self._clock()
+        try:
+            doc, ttl = await asyncio.wait_for(self._fetch(url, p), timeout=FETCH_TOTAL_S)
+        except asyncio.TimeoutError:
+            exc: ClientError = _Transient("invalid_client", "The client metadata document took too long to fetch.")
+            self._remember_failure(url, exc, now)
+            raise exc
         except ClientError as exc:
-            self._remember(url, exc, now + 30.0)
+            self._remember_failure(url, exc, now)
             raise
         self._remember(url, doc, now + ttl)
         return doc
+
+    def _remember_failure(self, url: str, exc: ClientError, now: float) -> None:
+        hit = self._cache.get(url)
+        if isinstance(exc, _Transient) and hit and isinstance(hit[1], dict) and hit[2] > now:
+            return                    # keep the good copy; the next caller may try again
+        self._remember(url, exc, now + (15.0 if isinstance(exc, _Transient) else 30.0))
 
     def _remember(self, url, value, until) -> None:
         if len(self._cache) >= 1000:
             for k in sorted(self._cache, key=lambda k: self._cache[k][0])[:200]:
                 self._cache.pop(k, None)
-        self._cache[url] = (until, value)
+        stale_until = until + STALE_GRACE_S if isinstance(value, dict) else until
+        self._cache[url] = (until, value, stale_until)
 
     async def _fetch(self, url: str, p) -> tuple:
         host = p.hostname.lower()
         try:
             addrs = await asyncio.wait_for(self._resolve(host), timeout=FETCH_TIMEOUT_S)
         except Exception:  # noqa: BLE001
-            raise ClientError("invalid_client", "The client_id host could not be resolved.")
+            raise _Transient("invalid_client", "The client_id host could not be resolved.")
         if not addrs:
-            raise ClientError("invalid_client", "The client_id host could not be resolved.")
+            raise _Transient("invalid_client", "The client_id host could not be resolved.")
         for a in addrs:
             try:
                 ip = ipaddress.ip_address(a)
@@ -295,10 +368,15 @@ class MetadataFetcher:
                                          follow_redirects=False, trust_env=False) as client:
                 async with client.stream(
                         "GET", target,
-                        headers={"Host": host, "Accept": "application/json", "User-Agent": "HatchLoop-OAuth/1"},
+                        headers={"Host": host, "Accept": "application/json", "Accept-Encoding": "identity",
+                                 "User-Agent": "HatchLoop-OAuth/1"},
                         extensions={"sni_hostname": host}) as resp:
                     if resp.status_code != 200:
-                        raise ClientError("invalid_client", f"The client metadata URL answered {resp.status_code}.")
+                        kind = _Transient if resp.status_code >= 500 or resp.status_code == 429 else ClientError
+                        raise kind("invalid_client", f"The client metadata URL answered {resp.status_code}.")
+                    encoding = (resp.headers.get("content-encoding") or "identity").strip().lower()
+                    if encoding not in ("", "identity"):
+                        raise ClientError("invalid_client", "The client metadata document must not be compressed.")
                     ctype = (resp.headers.get("content-type") or "").lower()
                     if "json" not in ctype:
                         raise ClientError("invalid_client", "The client metadata URL did not return JSON.")
@@ -310,9 +388,11 @@ class MetadataFetcher:
                     ttl = _parse_cache_ttl(resp.headers)
         except ClientError:
             raise
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001
             log.info("oauth_cimd_fetch_failed host=%s err=%s", host, type(exc).__name__)
-            raise ClientError("invalid_client", "The client metadata document could not be fetched.")
+            raise _Transient("invalid_client", "The client metadata document could not be fetched.")
         try:
             doc = json.loads(body.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -346,12 +426,14 @@ class MetadataFetcher:
 FETCHER = MetadataFetcher()
 
 
-async def resolve_client(store, client_id: object, fetcher: Optional[MetadataFetcher] = None) -> ClientInfo:
-    """The client a /authorize request is from, or a ClientError. Never raises anything else for a bad id."""
+async def resolve_client(store, client_id: object, fetcher: Optional[MetadataFetcher] = None,
+                         may_fetch: Optional[Callable[[], bool]] = None) -> ClientInfo:
+    """The client a /authorize request is from, or a ClientError (FetchRefused when a ceiling stopped a fetch
+    that was needed). Never raises anything else for a bad id."""
     if not isinstance(client_id, str) or not client_id or len(client_id) > 2048:
         raise ClientError("invalid_client", "client_id is missing.")
     if client_id.startswith("https://"):
-        doc = await (fetcher or FETCHER).get(client_id)
+        doc = await (fetcher or FETCHER).get(client_id, may_fetch=may_fetch)
         host = (urlsplit(client_id).hostname or "").lower()
         return ClientInfo(client_id=client_id, kind="cimd", name=doc["client_name"], host=host,
                           redirect_uris=tuple(doc["redirect_uris"]))

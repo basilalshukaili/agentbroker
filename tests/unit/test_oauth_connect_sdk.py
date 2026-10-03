@@ -48,6 +48,11 @@ from tests.oauth_support import (  # noqa: E402
 )
 
 
+# The 401 that starts sign-in goes to callers known to act on it (see OAUTH_CHALLENGE_401_CLIENTS); this stands in for
+# Claude Code, the SDK-based client that does.
+CONNECTOR_HEADERS = {"User-Agent": "claude-code/1.0"}
+
+
 class Storage:
     def __init__(self):
         self.tokens: OAuthToken | None = None
@@ -133,7 +138,7 @@ def test_the_official_sdk_discovers_registers_signs_in_and_retries_the_same_call
     provider = OAuthClientProvider(f"{server}/mcp", _metadata(), storage, person.redirect_handler, person.callback_handler)
 
     async def scenario():
-        async with streamablehttp_client(f"{server}/mcp", auth=provider) as (read, write, _):
+        async with streamablehttp_client(f"{server}/mcp", auth=provider, headers=CONNECTOR_HEADERS) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = (await session.list_tools()).tools
@@ -167,7 +172,7 @@ def test_the_sdk_refreshes_an_expired_token_and_the_spent_refresh_token_is_dead(
     first = {}
 
     async def scenario():
-        async with streamablehttp_client(f"{server}/mcp", auth=provider) as (read, write, _):
+        async with streamablehttp_client(f"{server}/mcp", auth=provider, headers=CONNECTOR_HEADERS) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool("get_conversation", args)
@@ -199,7 +204,7 @@ def test_the_sdk_identifies_itself_by_metadata_document_when_the_server_advertis
                                    person.callback_handler, client_metadata_url=CLAUDE_CIMD)
 
     async def scenario():
-        async with streamablehttp_client(f"{server}/mcp", auth=provider) as (read, write, _):
+        async with streamablehttp_client(f"{server}/mcp", auth=provider, headers=CONNECTOR_HEADERS) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("get_conversation", {"reference": "1234", "business_number": "+15550001111"})
