@@ -23,7 +23,7 @@ from core.models import OutcomeReceipt, OperationStatus, ErrorCode
 # ---------------------------------------------------------------------------
 
 _LATENCY_SLO_SECONDS: dict[str, float] = {
-    "find_business": 25.0,    # live OpenStreetMap lookup; the handler's own deadline / manifest p95
+    "find_business": 5.5,     # live OpenStreetMap lookup; the call's 5 s budget plus overhead / manifest p95
     "verify_business": 2.0,
     "send_message": 5.0,
     "capture_lead": 2.0,

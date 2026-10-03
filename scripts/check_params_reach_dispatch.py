@@ -71,6 +71,18 @@ DECLARED_NOT_FORWARDED: dict[tuple[str, str], str] = {
     # (tool, param): why
 }
 
+# A branch may hand `args` WHOLE to a reader that lives in another module, instead of reading keys one by one.
+# find_business does (core/find_business_input.prepare: it must read a place from a string, an object, or a
+# top-level city/region, and a kind of business from five spellings - not something a flat run of
+# `args.get("x")` can express). The scan cannot follow into a second module, so the module declares the
+# names it reads (a constant), and this credits the branch with them ONLY IF the branch really imports and
+# calls that reader on `args`. The declaration is checked against the manifest below, so an advertised
+# parameter the reader does not know still fails here; whether each one really arrives is the other half
+# (tests/unit/test_every_param_actually_arrives.py).
+DELEGATED_READERS: dict[str, tuple[str, str, str]] = {
+    "find_business": ("core.find_business_input", "prepare", "ARGUMENTS_READ"),
+}
+
 
 def _advertised() -> dict[str, list[str]]:
     with open(MANIFEST, encoding="utf-8") as fh:
@@ -178,6 +190,26 @@ def _forwarded(branch: ast.AST, helpers: dict[str, ast.AST] | None = None,
     return keys, splat
 
 
+def _delegated_keys(tool: str, branch: ast.AST) -> set[str]:
+    """The names a delegated reader declares, if (and only if) the branch imports and calls it on `args`."""
+    spec = DELEGATED_READERS.get(tool)
+    if not spec:
+        return set()
+    module, fn, attr = spec
+    imported = {a.asname or a.name
+                for n in ast.walk(branch) if isinstance(n, ast.ImportFrom) and n.module == module
+                for a in n.names if a.name == fn}
+    called = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in imported
+                 and n.args and isinstance(n.args[0], ast.Name) and n.args[0].id == "args"
+                 for n in ast.walk(branch))
+    if not (imported and called):
+        return set()
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    import importlib
+    return set(getattr(importlib.import_module(module), attr))
+
+
 def main() -> int:
     advertised = _advertised()
     branches = _dispatch_branches()
@@ -199,6 +231,7 @@ def main() -> int:
                 f"calling it returns method-not-found")
             continue
         keys, splat = _forwarded(branch, helpers)
+        keys |= _delegated_keys(tool, branch)
         if splat:
             splatted += 1
             continue

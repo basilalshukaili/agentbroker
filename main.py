@@ -35,6 +35,7 @@ from agent_interface.identity import (
 from agent_interface.self_test import run_self_test
 from agent_interface.mcp_server import handle_mcp_request
 from agent_interface import profiles
+from agent_interface import retired_doors
 from agent_interface.well_known import (
     get_ai_plugin_manifest, get_openai_tools, get_anthropic_tools,
     get_agents_json, get_agent_card, get_mcp_descriptor, get_llms_txt, get_llms_full_txt,
@@ -136,14 +137,23 @@ async def lifespan(app: FastAPI):
     # loop, requests queued after that inbound would never reach the business
     # inside the only period we are permitted to send.
     _sweeper = asyncio.create_task(_digest_sweep_loop())
+    # Keep the likeliest find_business lookups warm (production only; FIND_BUSINESS_PREWARM=0 turns it
+    # off). It waits two minutes after boot before its first request, goes through the polite OSM
+    # client one lookup at a time, and stops the moment the upstream says stop. See
+    # core/find_business_prewarm.py.
+    from core import find_business_prewarm
+    _prewarm = find_business_prewarm.start()
     try:
         yield
     finally:
-        _sweeper.cancel()
-        try:
-            await _sweeper
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
+        for _task in (_sweeper, _prewarm):
+            if _task is None:
+                continue
+            _task.cancel()
+            try:
+                await _task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
 
 
 async def _digest_sweep_loop(interval_s: int = 900) -> None:
@@ -207,6 +217,10 @@ async def _telemetry_counter_middleware(request: Request, call_next):
     # and if it were not counted here the doors would quietly become a way to
     # use us without appearing in our own telemetry.
     is_op = path.startswith("/ops/") or path == "/mcp" or path.startswith("/mcp/")
+    if retired_doors.path_is_retired(path):
+        # A retired door answers with a tombstone. Directory scorers probe these ~440 times a day; counting
+        # them would inflate "agent requests" and "operations completed" with traffic that did no work.
+        is_op = False
     if is_op:
         from telemetry.metrics import record_agent_request
         record_agent_request()
@@ -728,6 +742,8 @@ async def mcp_profile_endpoint(profile: str, request: Request):
     could name its own profile could widen its door, which would make the
     narrowing a suggestion rather than a boundary.
     """
+    if retired_doors.is_retired(profile):
+        return await _retired_door_post(profile, request)
     payload = await request.json()
     try:
         profiles.tools_for(profile)          # raises on an unknown door
@@ -748,6 +764,46 @@ async def mcp_profile_endpoint(profile: str, request: Request):
     if response is None:
         return Response(status_code=202)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Retired MCP doors: a tombstone a client can read (agent_interface/retired_doors.py)
+# ---------------------------------------------------------------------------
+# hatchloop.dev answered these from the Next.js site with a 410 whose body is not a JSON-RPC message, and
+# directory scorers kept probing them (about 440 requests a day). They are answered here, in MCP, when the
+# reverse proxy routes them to this origin (deploy/caddy/mcp_retired.py); GET and HEAD stay 410 Gone.
+
+async def _retired_door_post(slug: str, request: Request):
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 - not JSON: say so in JSON-RPC terms, never a 500
+        return JSONResponse(
+            status_code=400,
+            content={"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+    reply = retired_doors.handle(slug, payload)
+    if reply is None:
+        return Response(status_code=202)
+    return JSONResponse(content=reply, headers={"Cache-Control": "no-store"})
+
+
+@app.api_route("/mcp/{door}", methods=["GET", "HEAD"], include_in_schema=False)
+async def mcp_door_get(door: str):
+    """A person or crawler asking for a retired server: 410 Gone, with the live server named. For any door
+    that is not retired this is exactly what it was before this route existed: 405, POST only."""
+    if retired_doors.is_retired(door):
+        return JSONResponse(status_code=410, content=retired_doors.body(door), headers=retired_doors.GONE_HEADERS)
+    raise HTTPException(status_code=405, detail="Method Not Allowed", headers={"Allow": "POST"})
+
+
+@app.api_route("/mcp/{door}/mcp", methods=["GET", "HEAD", "POST"], include_in_schema=False)
+async def mcp_door_child(door: str, request: Request):
+    """The older `/mcp/<server>/mcp` spelling of a retired server (the site tombstones it too). Nothing
+    else lives at this depth, so anything that is not a retired door is a plain 404."""
+    if not retired_doors.is_retired(door):
+        raise HTTPException(status_code=404, detail="Not Found")
+    if request.method == "POST":
+        return await _retired_door_post(door, request)
+    return JSONResponse(status_code=410, content=retired_doors.body(door), headers=retired_doors.GONE_HEADERS)
 
 
 # ---------------------------------------------------------------------------

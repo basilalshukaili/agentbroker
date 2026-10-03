@@ -22,6 +22,14 @@ unavailable", retriable) and returns only what the supply network itself
 holds. It never substitutes sample rows, and it never reports an empty list
 as though it meant "no such businesses exist".
 
+THE WHOLE CALL HAS A BUDGET (CALL_BUDGET_S, 5 s). Measured live on 2026-10-03,
+a successful lookup took 16-25 s because the public Overpass server is slow and
+busy. At the budget the call returns what is ready - the resolved place, any
+supply-network rows, or a search that has already come back - and says it is
+`search_in_progress` (status partial, not an error). The lookup is NOT
+cancelled: it carries on in the background, fills the cache, and an identical
+repeat call is answered from it. Callers are told to repeat, and when.
+
 "NEAREST" IS ONLY TRUE WHEN THE SEARCH WAS COMPLETE. Overpass cannot order by
 distance: it returns at most CANDIDATE_LIMIT features in its own order, and we
 sort that sample. In a dense city at the default 5 km radius the sample is
@@ -37,6 +45,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import os
 import re
 import time
 import uuid
@@ -62,6 +71,20 @@ _log = logging.getLogger("smb_broker.find_business")
 _METERS_PER_MILE = 1609.344
 _MIN_RADIUS_M = 200
 
+
+def _budget_from_env() -> float:
+    """FIND_BUSINESS_BUDGET_S, clamped to 1-25 s; 5 when unset or unreadable.
+
+    The default is the literal "5", not an empty string, on purpose: scripts/check_deploy_env.py (in the
+    HatchLoop tree) derives the variables a deploy must supply from the code and counts an empty-string
+    default as "required and unset" - which would have blocked the next deploy over a tuning knob."""
+    try:
+        v = float(os.getenv("FIND_BUSINESS_BUDGET_S", "5"))
+    except ValueError:
+        v = 5.0
+    return max(1.0, min(25.0, v))
+
+
 # A capped answer is retried in a circle this fraction of the size. 0.4 (area
 # x0.16) is chosen so a circle that was just over the cap still holds roughly
 # 24 of the 150 candidates, i.e. at least the 20 rows we can return.
@@ -69,10 +92,30 @@ NARROW_FACTOR = 0.4
 MAX_NARROW_STEPS = 2
 # Do not START another lookup to narrow once this much time has gone: an
 # answer that says "not guaranteed nearest" beats one that arrives too late.
-NARROW_ONLY_BEFORE_S = 15.0
-# Hard ceiling on the whole OpenStreetMap phase (geocode + search + narrowing).
-# Without it the worst case was ~64 s. What is already in hand is returned.
-OSM_PHASE_DEADLINE_S = 25.0
+NARROW_ONLY_BEFORE_S = 2.0
+
+# THE BUDGET FOR THE WHOLE CALL (geocode + search + narrowing): what a caller waits at most.
+#
+# It was 25 s, and measured live on 2026-10-03 a successful lookup took 16-25 s (p50 16.2 s over 8 ok
+# calls, five of them 16-25 s) because the public Overpass server is slow and busy, and narrowing a
+# dense area added up to two more sequential queries. A caller that waits 25 s for a free lookup has
+# usually gone. 5 s is what an agent will tolerate in a tool call.
+#
+# THE LOOKUP IS NOT ABANDONED AT THE BUDGET. It used to be cancelled (wait_for), which meant a query
+# that needs 7 s could never finish: every attempt was killed at the limit, so the cache never warmed
+# and the same slow lookup was started again, and killed again, for every caller. Now the call returns
+# what is ready at the budget and the lookup carries on in the background (bounded, see
+# MAX_BACKGROUND_PHASES), fills the cache, and an identical repeat is answered from it instantly.
+CALL_BUDGET_S = _budget_from_env()
+# How many lookups may be running past their caller's budget at once. Each already holds a slot in the
+# OSM client's own concurrency cap and spacing; this stops a burst of distinct slow queries from
+# queueing an unbounded number of tasks behind it. Over the cap, a call falls back to waiting inline and
+# is cancelled at its budget, exactly as before.
+MAX_BACKGROUND_PHASES = 12
+# What a pending answer tells the caller to wait before repeating the call.
+PENDING_RETRY_AFTER_S = 10
+
+_BACKGROUND: "set[asyncio.Task]" = set()
 
 # The documented ZIP form of this tool is US-only (its examples were 02139 and
 # 30309). Nominatim is global: "02139" alone resolves to a district of Kyiv.
@@ -114,10 +157,18 @@ def _guard_for(caller: Optional[str]):
     return _guard
 
 
-async def _osm_phase(client, plan, text: str, radius_m: int, guard, t0: float, state: dict) -> None:
+async def _osm_phase(client, plan, text: str, radius_m: int, guard, t0: float, state: dict, *,
+                     narrow_until_s: Optional[float] = None, refresh: bool = False) -> None:
     """Geocode, search, and narrow a capped search. Progress is written into
     `state` as it happens, so that if the overall deadline cuts this short the
-    caller still has whatever was already obtained."""
+    caller still has whatever was already obtained.
+
+    `narrow_until_s` is how long after `t0` a narrowing lookup may still START (default
+    NARROW_ONLY_BEFORE_S, read at call time). `refresh` re-fetches instead of reading the
+    cache. Only the scheduled pre-warm passes either: it has no caller waiting, so it narrows
+    fully and replaces entries before they expire."""
+    narrow_limit = NARROW_ONLY_BEFORE_S if narrow_until_s is None else narrow_until_s
+    extra = {"refresh": True} if refresh else {}   # an older/test client without the kwarg keeps working
     country = _country_hint(text)
     state["country_codes"] = country
     place = await client.geocode(text, guard=guard, country_codes=country)
@@ -126,7 +177,7 @@ async def _osm_phase(client, plan, text: str, radius_m: int, guard, t0: float, s
         return
     lat, lon = place["latitude"], place["longitude"]
 
-    found = await client.search(plan, lat, lon, radius_m, guard=guard)
+    found = await client.search(plan, lat, lon, radius_m, guard=guard, **extra)
     state["found"] = found
     state["radius_m"] = radius_m
 
@@ -135,11 +186,11 @@ async def _osm_phase(client, plan, text: str, radius_m: int, guard, t0: float, s
         narrower_m = max(_MIN_RADIUS_M, int(state["radius_m"] * NARROW_FACTOR))
         if narrower_m >= state["radius_m"]:
             break
-        if time.monotonic() - t0 > NARROW_ONLY_BEFORE_S:
+        if time.monotonic() - t0 > narrow_limit:
             state["narrow_stopped"] = "time_budget"
             break
         try:
-            narrower = await client.search(plan, lat, lon, narrower_m, guard=guard)
+            narrower = await client.search(plan, lat, lon, narrower_m, guard=guard, **extra)
         except CallerRateLimited:
             state["narrow_stopped"] = "caller_rate_limited"
             break
@@ -152,16 +203,60 @@ async def _osm_phase(client, plan, text: str, radius_m: int, guard, t0: float, s
         steps += 1
 
 
+def _reap(task: "asyncio.Task") -> None:
+    """Done-callback for a lookup left running past its caller's budget: forget it, and retrieve any
+    exception so asyncio does not log 'Task exception was never retrieved' for an outage we already
+    reported (or will report to the next caller) in the normal way."""
+    _BACKGROUND.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None and not isinstance(exc, (OSMUnavailable, CallerRateLimited)):
+        _log.warning("find_business background_lookup_failed %s", type(exc).__name__)
+
+
+async def _run_within_budget(coro, remaining_s: float) -> bool:
+    """Run the OpenStreetMap phase for at most `remaining_s`.
+
+    True: it finished inside the budget (its own exception, if it raised one, propagates from here, so
+    the caller's except-clauses see exactly what they saw when this was a plain await).
+    False: the budget ran out first. The phase is LEFT RUNNING in the background so that what it fetches
+    lands in the cache; whatever it had produced so far is in the caller's `state`.
+
+    Over MAX_BACKGROUND_PHASES the phase is awaited inline and cancelled at the budget instead - the
+    pre-2026-10-03 behaviour - so a burst of slow lookups cannot grow without limit."""
+    remaining = max(0.0, remaining_s)
+    if len(_BACKGROUND) >= MAX_BACKGROUND_PHASES:
+        try:
+            await asyncio.wait_for(coro, timeout=remaining)
+            return True
+        except asyncio.TimeoutError:
+            return False
+    task = asyncio.get_running_loop().create_task(coro)
+    _BACKGROUND.add(task)
+    task.add_done_callback(_reap)
+    done, _pending = await asyncio.wait({task}, timeout=remaining)
+    if task in done:
+        task.result()
+        return True
+    return False
+
+
 async def handle_find_business(
     request: FindBusinessRequest,
     agent_id: str | None = None,
     trace_id: str | None = None,
     *,
     include_osm: bool = True,
+    input_notes: Optional[dict] = None,
 ) -> OutcomeReceipt:
     """`include_osm=False` is for our own code (the /demo route) that only
     wants the supply-network half: it must not send a made-up location to the
-    public OpenStreetMap servers."""
+    public OpenStreetMap servers.
+
+    `input_notes` is what core/find_business_input.prepare() interpreted or ignored
+    ({"notes": [...], "ignored": [...], "location_normalized_from": {...}}); it is
+    echoed in the result so a caller can see what the search actually used."""
     t0 = time.monotonic()
     directory = get_directory()
 
@@ -220,21 +315,25 @@ async def handle_find_business(
     place: Optional[dict] = None
     state: dict = {}
 
+    budget_s = CALL_BUDGET_S
     if not include_osm:
         search["status"] = "not_requested"
     else:
         client = get_client()
         guard = _guard_for(CALLER_KEY.get())
         try:
-            await asyncio.wait_for(
+            finished = await _run_within_budget(
                 _osm_phase(client, plan, request.location.zip_or_city, radius_m, guard, t0, state),
-                timeout=OSM_PHASE_DEADLINE_S)
-        except asyncio.TimeoutError:
-            if state.get("found") is None:
-                problem = {"kind": "unavailable", "reason": "deadline_exceeded", "retry_after_s": 30}
-                _log.warning("find_business osm_deadline_exceeded")
-            else:
-                state["narrow_stopped"] = "deadline_exceeded"
+                budget_s - (time.monotonic() - t0))
+            if not finished:
+                if state.get("found") is None:
+                    # The budget ran out before any search came back. This is NOT a failure and NOT
+                    # "no businesses": the lookup is still running and will fill the cache.
+                    problem = {"kind": "pending", "reason": "search_in_progress",
+                               "retry_after_s": PENDING_RETRY_AFTER_S}
+                    _log.info("find_business budget_exhausted place_resolved=%s", state.get("place") is not None)
+                else:
+                    state["narrow_stopped"] = "deadline_exceeded"
         except CallerRateLimited as exc:
             problem = {"kind": "rate_limited", "reason": "caller_rate_limited",
                        "retry_after_s": exc.retry_after_s}
@@ -248,6 +347,14 @@ async def handle_find_business(
 
         place = state.get("place")
         found = state.get("found")
+        if problem is not None and problem["kind"] == "pending" and place is not None:
+            # Say WHERE the pending search is looking, so a caller can tell a right place from a wrong one
+            # before it waits.
+            search["geocoded_place"] = {
+                "display_name": place.get("display_name"),
+                "latitude": place["latitude"],
+                "longitude": place["longitude"],
+            }
         if problem is None:
             if place is None:
                 search["status"] = "location_not_found"
@@ -277,9 +384,20 @@ async def handle_find_business(
             osm_records = copy.deepcopy(found["businesses"])
 
     if problem is not None:
-        search["status"] = "rate_limited" if problem["kind"] == "rate_limited" else "unavailable"
+        search["status"] = {"rate_limited": "rate_limited", "pending": "pending"}.get(
+            problem["kind"], "unavailable")
         search["reason"] = problem["reason"]
         search["retry_after_s"] = problem["retry_after_s"]
+        if problem["kind"] == "pending":
+            # Honest about WHAT is pending and what the caller can do. Nothing here says no business
+            # exists, and nothing says OpenStreetMap is down: neither is known.
+            search["continues_in_background"] = True
+            search["repeat_this_call"] = (
+                "The lookup keeps running on our side. Repeat this exact call after retry_after_s "
+                "seconds: it is then usually answered from cache, instantly.")
+    if include_osm:
+        search["budget_s"] = budget_s
+        search["within_budget"] = problem is None or problem["kind"] != "pending"
 
     # --- 3. assemble ------------------------------------------------------
     room = max(0, request.max_results - len(network_records))
@@ -288,6 +406,10 @@ async def handle_find_business(
 
     result: dict = {
         "businesses": records,
+        # How many rows are in "businesses". Its own field so an empty answer is countable by a
+        # reader (and a log) without parsing the list: the 2026-10-03 demand review could not measure
+        # the empty-result rate because nothing recorded it.
+        "result_count": len(records),
         # Real (non-sample) rows only. This used to count the [DEMO] rows too.
         "total_in_supply_network": directory.size_real(),
         "attribution": OSM_ATTRIBUTION,
@@ -295,6 +417,15 @@ async def handle_find_business(
         "license": OSM_LICENSE,
         "search": search,
     }
+    if input_notes:
+        # What the request reader interpreted and ignored (core/find_business_input.py). A search
+        # that quietly used something other than what was typed is the failure this exists to expose.
+        if input_notes.get("notes"):
+            result["input_notes"] = list(input_notes["notes"])[:8]
+        if input_notes.get("ignored"):
+            result["ignored_arguments"] = list(input_notes["ignored"])[:10]
+        if input_notes.get("location_normalized_from"):
+            result["location_normalized_from"] = dict(input_notes["location_normalized_from"])
     # A FILTER THAT DOES NOT FILTER MUST SAY SO.
     #
     # availability_window is advertised as an object with start_iso/end_iso and
@@ -337,7 +468,11 @@ async def handle_find_business(
         result["supply_coverage_note"] = _coverage_note(request, search, problem, empty)
 
     next_actions: list[str] = []
-    if problem is not None:
+    if problem is not None and problem["kind"] == "pending":
+        next_actions.append(
+            f"Repeat this exact call in about {problem['retry_after_s']} seconds: the lookup is still "
+            "running and the repeat is answered from cache")
+    elif problem is not None:
         next_actions.append(f"Retry in about {problem['retry_after_s']} seconds")
     elif empty:
         next_actions += [
@@ -357,7 +492,14 @@ async def handle_find_business(
     if records:
         increment_businesses_found(len(records))
 
-    if problem is not None:
+    if problem is not None and problem["kind"] == "pending":
+        # Not a failure: nothing went wrong, the answer is not ready yet. PARTIAL keeps `isError` false
+        # on the MCP result, so a client does not treat "still working" as a broken tool.
+        status = OperationStatus.PARTIAL
+        reason_code = "search_in_progress"
+        message = _pending_message(problem, len(records), place, budget_s)
+        retriable = True
+    elif problem is not None:
         status = OperationStatus.PARTIAL if records else OperationStatus.FAILURE
         reason_code = ("rate_limited" if problem["kind"] == "rate_limited"
                        else "osm_temporarily_unavailable")
@@ -454,6 +596,18 @@ def _ok_message(n_network: int, n_osm: int, search: dict, place: Optional[dict],
             "date. Data © OpenStreetMap contributors (ODbL).")
 
 
+def _pending_message(problem: dict, n_records: int, place: Optional[dict], budget_s: float) -> str:
+    where = (f" Resolved the place as {_fence(place['display_name'])}." if place and place.get("display_name")
+             else " The place has not been resolved yet.")
+    have = (f" Returning {n_records} supply-network row(s) found so far." if n_records
+            else " No businesses are returned yet.")
+    return (f"STILL SEARCHING OpenStreetMap after {budget_s:g} s (the public map servers are slow for this "
+            f"place right now).{where}{have} This is NOT evidence that no matching businesses exist, and "
+            "OpenStreetMap is not known to be down. The lookup keeps running on our side: repeat this exact "
+            f"call in about {problem['retry_after_s']} seconds and it is usually answered from cache. "
+            "Data © OpenStreetMap contributors.")
+
+
 def _problem_message(problem: dict, n_records: int) -> str:
     if problem["kind"] == "rate_limited":
         head = ("OpenStreetMap lookup NOT performed: you have made too many fresh "
@@ -472,6 +626,10 @@ def _problem_message(problem: dict, n_records: int) -> str:
 def _coverage_note(request: FindBusinessRequest, search: dict, problem: Optional[dict],
                    empty: bool) -> str:
     where = request.location.zip_or_city[:80]
+    if problem is not None and problem["kind"] == "pending":
+        return ("The OpenStreetMap half of this search had not finished when the time budget ran out "
+                "(see search.status = pending). The list above is incomplete; repeat the call shortly "
+                f"before concluding anything about {where}.")
     if problem is not None:
         return ("The OpenStreetMap half of this search did not run (see search.reason). "
                 "The list above is incomplete; retry before concluding anything about "

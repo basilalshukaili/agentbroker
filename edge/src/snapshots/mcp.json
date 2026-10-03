@@ -31,12 +31,9 @@
       "capture_lead",
       "escalate_to_human",
       "handle_inbound",
-      "map_trade_restriction",
       "schedule_appointment",
-      "screen_sanctions",
       "send_message",
-      "send_transactional_confirmation",
-      "verify_company_record"
+      "send_transactional_confirmation"
     ],
     "unit": "credits (1 credit = 1 US cent)",
     "rails": [
@@ -47,9 +44,31 @@
       "screen_sanctions",
       "verify_company_record"
     ],
-    "note": "THREE NUMBERS, because 'free' means three things here. 11 tools are callable with NO key and NO credits. 3 more are callable with no key up to a daily quota, then cost credits. That is 14 usable without signing up. The remaining 9 need a free key, and 10 spend credits once past any quota. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing"
+    "spends_credits_once_past_quota": [
+      "call_business",
+      "capture_lead",
+      "escalate_to_human",
+      "handle_inbound",
+      "map_trade_restriction",
+      "schedule_appointment",
+      "screen_sanctions",
+      "send_message",
+      "send_transactional_confirmation",
+      "verify_company_record"
+    ],
+    "note": "THREE NUMBERS, because 'free' means three things here. 11 tools are callable with NO key and NO credits. 3 more are callable with no key up to a daily quota, then cost credits. That is 14 usable without signing up. The remaining 9 need a free key, and 10 spend credits once past any quota (the quota-free ones only past it). Every tool is in exactly one of free_tools, quota_free_tools, free_with_key_tools, paid_tools. Call preview_cost (free) for the exact price of any operation before committing. Pricing: https://hatchloop.dev/pricing"
   },
   "description": "MCP server for HatchLoop AgentBroker. Exposes 23 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_quota, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation, mint_key, lookup_us_contracts.",
+  "tool_readiness": {
+    "find_business": "beta",
+    "verify_business": "limited",
+    "capture_lead": "beta",
+    "schedule_appointment": "limited",
+    "handle_inbound": "beta",
+    "escalate_to_human": "beta",
+    "import_booking_url": "limited",
+    "mint_key": "limited"
+  },
   "auth": {
     "header": "X-Agent-Identity",
     "scheme": "bearer"

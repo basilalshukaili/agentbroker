@@ -389,7 +389,12 @@ class AvailabilityWindow(BaseModel):
 
 
 class FindBusinessRequest(BaseModel):
-    vertical: Vertical
+    # Optional since 2026-10-03. It was required, and the strict three-value enum refused the real
+    # kinds of business agents send in this slot ("restaurants", "cafe", "clinic") - 10 of the 15 external
+    # calls that named a place and a vertical in the 47 hours to 2026-10-03. A kind we know is mapped to
+    # its family; a word we do not know is searched by name (see core/find_business_input.py). None means
+    # "no family was given or implied": the supply network is then not filtered by vertical.
+    vertical: Optional[Vertical] = None
     location: LocationFilter
     capability: Optional[str] = None
     price_band: Optional[PriceBand] = None
@@ -418,12 +423,27 @@ class FindBusinessRequest(BaseModel):
             return data
         raw = data.get("vertical")
         if isinstance(raw, str):
-            macro, cap_hint = alias_vertical(raw)
+            # Lazy import: core.find_business_input imports this module for alias_vertical.
+            from core.find_business_input import interpret_vertical
+            macro, cap_hint, recognised = interpret_vertical(raw)
             data["vertical"] = macro
             data["vertical_term"] = raw.strip()[:60] or None
             if cap_hint and not data.get("capability"):
                 data["capability"] = cap_hint
+            if not recognised and not data.get("capability") and data["vertical_term"]:
+                # A word that is neither a vertical nor a kind we map: search for it by name.
+                data["capability"] = data["vertical_term"]
         return data
+
+    @model_validator(mode="after")
+    def _something_to_search_for(self) -> "FindBusinessRequest":
+        # Without a vertical there must be a kind of business, or the OpenStreetMap query would have
+        # no category at all. (The MCP path refuses this earlier, with an example; this is the REST
+        # path's net.)
+        if self.vertical is None and not self.capability and not self.vertical_term:
+            raise ValueError("find_business needs a kind of business: send `capability` (for example "
+                             "'dentist' or 'restaurant') or a `vertical`")
+        return self
 
 
 class SMBRecord(BaseModel):

@@ -19,7 +19,7 @@ review lane.
   Ed25519-signed compliance receipt, verifiable offline (no callback) against
   the public key at hatchloop.dev/agents.md. Also does live lookups against
   official sources: OFAC/EU/UK sanctions lists, GLEIF, SEC EDGAR, and
-  USASpending federal contract awards. 23 tools, 15 usable with no key at all.
+  USASpending federal contract awards. 23 tools, 14 usable with no key at all.
   MIT licensed.
 ```
 
@@ -46,15 +46,15 @@ What makes it different from other business/scheduling MCP servers:
 2. Real data from official sources, no key required. `screen_sanctions`
    (OFAC SDN + EU Consolidated list + UK Sanctions List), `verify_company_record`
    (GLEIF LEI + SEC EDGAR), and `lookup_us_contracts` (USASpending.gov federal
-   award data) are 3 of the 15 (out of 23) tools usable with no authentication at all (the
-   other 12 are always-free and unmetered).
+   award data) are 3 of the 14 (out of 23) tools usable with no authentication at all (the
+   other 11 are always-free and unmetered).
 
 It also finds, verifies, messages, and schedules with small/mid-sized
 businesses (Cal.com direct booking + 11 further platforms recognised via
 `import_booking_url`), with every outbound message routed through the same
 non-bypassable compliance gate (TCPA/GDPR/CASL/PDPL across 26 jurisdictions).
 
-- 23 tools total. 15 need no key (12 always-free + 3 free within a daily
+- 23 tools total. 14 need no key (11 always-free + 3 free within a daily
   quota of 100/day anonymous, 500/day with a free key). The 8 write tools
   (send_message, schedule_appointment, etc.) need a free email-verified key,
   100 write ops/day, or credits/x402 for volume.

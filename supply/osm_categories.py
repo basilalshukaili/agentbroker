@@ -51,65 +51,74 @@ def _s(key: str, values: str) -> Selector:
 # Normalised term (lowercase, single spaces) -> selectors. OR across the tuple.
 CATEGORY_TABLE: dict[str, tuple[Selector, ...]] = {}
 
+# Normalised term -> the macro vertical (find_business's three-value `vertical`) it belongs under.
+# It exists so that a caller who sends a REAL kind of business in the `vertical` slot ("restaurants",
+# "cafe", "clinic") is understood instead of refused: the term is known, so its family is too. It is
+# filled by the same _add calls as the tags, so a term cannot have tags and no family.
+TERM_FAMILY: dict[str, str] = {}
 
-def _add(terms: str, *selectors: Selector) -> None:
+
+def _add(terms: str, *selectors: Selector, family: str) -> None:
     for term in terms.split(","):
         CATEGORY_TABLE[term.strip()] = tuple(selectors)
+        TERM_FAMILY[term.strip()] = family
 
 
 # --- personal services ------------------------------------------------------
+_PS, _HS, _PRO = "personal_services", "home_services", "professional_services"
+
 _add("hairdresser,haircut,hair,barber,barbershop,barber shop,hair salon,salon",
-     _s("shop", "hairdresser|barber"))
+     _s("shop", "hairdresser|barber"), family=_PS)
 _add("beauty,beauty salon,nail,nails,nail salon,manicure,pedicure,lash,lashes,"
      "lash extensions,makeup,waxing",
-     _s("shop", "beauty"))
-_add("massage,swedish massage", _s("shop", "massage"))
-_add("spa", _s("shop", "massage"), _s("amenity", "spa"), _s("leisure", "spa"))
-_add("yoga,yoga class,pilates", _s("sport", "yoga|pilates"))
+     _s("shop", "beauty"), family=_PS)
+_add("massage,swedish massage", _s("shop", "massage"), family=_PS)
+_add("spa", _s("shop", "massage"), _s("amenity", "spa"), _s("leisure", "spa"), family=_PS)
+_add("yoga,yoga class,pilates", _s("sport", "yoga|pilates"), family=_PS)
 _add("fitness,gym,personal training,personal trainer,crossfit",
-     _s("leisure", "fitness_centre"), _s("amenity", "gym"))
-_add("restaurant,restaurants,dining", _s("amenity", "restaurant"))
-_add("food", _s("amenity", "restaurant|fast_food|cafe"))
-_add("cafe,coffee,coffee shop", _s("amenity", "cafe"))
-_add("bakery", _s("shop", "bakery"))
-_add("pharmacy", _s("amenity", "pharmacy"))
-_add("laundry,dry cleaning", _s("shop", "laundry|dry_cleaning"))
-_add("florist", _s("shop", "florist"))
-_add("tailor,tailoring", _s("craft", "tailor"), _s("shop", "tailor"))
+     _s("leisure", "fitness_centre"), _s("amenity", "gym"), family=_PS)
+_add("restaurant,restaurants,dining", _s("amenity", "restaurant"), family=_PS)
+_add("food", _s("amenity", "restaurant|fast_food|cafe"), family=_PS)
+_add("cafe,coffee,coffee shop", _s("amenity", "cafe"), family=_PS)
+_add("bakery", _s("shop", "bakery"), family=_PS)
+_add("pharmacy", _s("amenity", "pharmacy"), family=_PS)
+_add("laundry,dry cleaning", _s("shop", "laundry|dry_cleaning"), family=_PS)
+_add("florist", _s("shop", "florist"), family=_PS)
+_add("tailor,tailoring", _s("craft", "tailor"), _s("shop", "tailor"), family=_PS)
 
 # --- home services ----------------------------------------------------------
-_add("plumber,plumbing", _s("craft", "plumber"))
-_add("electrician,electrical", _s("craft", "electrician"))
-_add("hvac,air conditioning,heating", _s("craft", "hvac"))
+_add("plumber,plumbing", _s("craft", "plumber"), family=_HS)
+_add("electrician,electrical", _s("craft", "electrician"), family=_HS)
+_add("hvac,air conditioning,heating", _s("craft", "hvac"), family=_HS)
 _add("cleaning,house cleaning,cleaner,janitorial",
-     _s("craft", "cleaning|window_cleaner"), _s("office", "cleaning"))
-_add("pest control,pest,exterminator", _s("craft", "pest_control"))
+     _s("craft", "cleaning|window_cleaner"), _s("office", "cleaning"), family=_HS)
+_add("pest control,pest,exterminator", _s("craft", "pest_control"), family=_HS)
 _add("lawn,lawn care,landscaping,landscaper,gardener,gardening",
-     _s("craft", "gardener|landscaper"))
-_add("handyman,general handyman", _s("craft", "handyman"))
-_add("carpenter,carpentry", _s("craft", "carpenter"))
-_add("painter,painting", _s("craft", "painter"))
-_add("locksmith", _s("craft", "locksmith"), _s("shop", "locksmith"))
-_add("roofing,roofer,roof", _s("craft", "roofer"))
-_add("mechanic,car repair,auto repair", _s("shop", "car_repair"))
+     _s("craft", "gardener|landscaper"), family=_HS)
+_add("handyman,general handyman", _s("craft", "handyman"), family=_HS)
+_add("carpenter,carpentry", _s("craft", "carpenter"), family=_HS)
+_add("painter,painting", _s("craft", "painter"), family=_HS)
+_add("locksmith", _s("craft", "locksmith"), _s("shop", "locksmith"), family=_HS)
+_add("roofing,roofer,roof", _s("craft", "roofer"), family=_HS)
+_add("mechanic,car repair,auto repair", _s("shop", "car_repair"), family=_HS)
 
 # --- professional services --------------------------------------------------
-_add("lawyer,attorney,legal,law,law firm,legal consultation", _s("office", "lawyer"))
-_add("notary", _s("office", "notary"))
-_add("tax,tax advisor,tax consultation", _s("office", "tax_advisor"))
+_add("lawyer,attorney,legal,law,law firm,legal consultation", _s("office", "lawyer"), family=_PRO)
+_add("notary", _s("office", "notary"), family=_PRO)
+_add("tax,tax advisor,tax consultation", _s("office", "tax_advisor"), family=_PRO)
 _add("accounting,accountant,accountants,bookkeeping,bookkeeper,business accounting",
-     _s("office", "accountant"))
+     _s("office", "accountant"), family=_PRO)
 _add("financial,financial planning,financial advisor,financial planner",
-     _s("office", "financial|financial_advisor"))
-_add("insurance", _s("office", "insurance"))
-_add("real estate,realtor,estate agent", _s("office", "estate_agent"))
-_add("architect", _s("office", "architect"))
-_add("consulting,consultant", _s("office", "consulting"))
-_add("dentist,dental", _s("amenity", "dentist"), _s("healthcare", "dentist"))
+     _s("office", "financial|financial_advisor"), family=_PRO)
+_add("insurance", _s("office", "insurance"), family=_PRO)
+_add("real estate,realtor,estate agent", _s("office", "estate_agent"), family=_PRO)
+_add("architect", _s("office", "architect"), family=_PRO)
+_add("consulting,consultant", _s("office", "consulting"), family=_PRO)
+_add("dentist,dental", _s("amenity", "dentist"), _s("healthcare", "dentist"), family=_PRO)
 _add("doctor,physician,medical,clinic,medical consultation",
-     _s("amenity", "doctors|clinic"), _s("healthcare", "doctor|clinic"))
+     _s("amenity", "doctors|clinic"), _s("healthcare", "doctor|clinic"), family=_PRO)
 _add("tutor,tutors,tutoring,math tutoring",
-     _s("office", "educational_institution"), _s("amenity", "prep_school"))
+     _s("office", "educational_institution"), _s("amenity", "prep_school"), family=_PRO)
 
 # When no usable term is given, search the broad tag set for the macro vertical.
 VERTICAL_DEFAULTS: dict[str, tuple[Selector, ...]] = {
@@ -202,6 +211,22 @@ def _lookup(term: str) -> tuple[Optional[str], tuple[Selector, ...]]:
     return None, ()
 
 
+def known_term(text: Optional[str]) -> Optional[str]:
+    """The table key a free-text term resolves to, or None if the table does not know it.
+
+    The same lookup `resolve` uses (exact, plural-stripped, then whole-word containment), exposed so
+    the input layer can tell "a kind of business we know" from "a word we would only match on names"
+    WITHOUT building a query."""
+    key, selectors = _lookup(normalise_term(text))
+    return key if selectors else None
+
+
+def family_of(text: Optional[str]) -> Optional[str]:
+    """The macro vertical a known term belongs under, or None for a term the table does not know."""
+    key = known_term(text)
+    return TERM_FAMILY.get(key) if key else None
+
+
 def resolve(vertical: str, capability: Optional[str], vertical_term: Optional[str] = None) -> CategoryPlan:
     """Turn (vertical, capability, the vertical word the caller used) into a plan.
 
@@ -237,6 +262,8 @@ def resolve(vertical: str, capability: Optional[str], vertical_term: Optional[st
 
 
 def _validate_table() -> None:
+    assert set(TERM_FAMILY) == set(CATEGORY_TABLE), "every term needs a family and every family a term"
+    assert set(TERM_FAMILY.values()) <= {"personal_services", "home_services", "professional_services"}
     for term, sels in CATEGORY_TABLE.items():
         assert term == normalise_term(term), term
         for sel in sels:

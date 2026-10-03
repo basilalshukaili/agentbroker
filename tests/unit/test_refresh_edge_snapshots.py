@@ -110,3 +110,27 @@ def test_local_check_reports_drift_and_write_repairs_it(monkeypatch, tmp_path):
 
     assert refresh.main(["--local-tools"]) == 0
     assert json.loads(path.read_text(encoding="utf-8")) == expected
+
+
+def test_local_routes_rebuild_the_mcp_descriptor_without_the_origin(monkeypatch):
+    """`--local-routes mcp.json` answers /.well-known/mcp.json in process. It exists because that snapshot had
+    to change with the code (paid_tools used to name the three quota-free tools as paid) and the only other
+    way to refresh it was to fetch the OLD origin, which would re-commit the contradiction."""
+    def network_was_called():
+        raise AssertionError("offline route refresh called the live fetcher")
+
+    monkeypatch.setattr(refresh, "fetch_all", network_was_called)
+    doc = refresh.build_local_route_snapshots(["mcp.json"])["mcp.json"]
+    pay = doc["payments"]
+    assert not set(pay["paid_tools"]) & set(pay["quota_free_tools"])
+    assert refresh.build_local_route_snapshots(["mcp.json"])["mcp.json"] == doc, "reproducible"
+
+
+def test_the_committed_mcp_descriptor_snapshot_is_not_stale():
+    assert refresh.main(["--local-routes", "mcp.json", "--check"]) == 0
+
+
+def test_an_unknown_snapshot_name_fails_closed():
+    import pytest
+    with pytest.raises(RuntimeError):
+        refresh.build_local_route_snapshots(["not-a-snapshot.json"])

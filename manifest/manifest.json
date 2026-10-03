@@ -12,7 +12,11 @@
   "operations": [
     {
       "name": "find_business",
-      "description": "Find real businesses near a place, sorted by distance (nearest of those examined; dense areas are narrowed, see result.search). Data: OpenStreetMap (ODbL, (c) OpenStreetMap contributors, attributed per result); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Plus supply-network rows. If OSM is down: retriable 'temporarily unavailable', never invented rows.",
+      "description": "Find real businesses near a place, sorted by distance (nearest of those examined; see result.search). Data: OpenStreetMap (ODbL, (c) OSM contributors); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Answers within about 5 s: status partial (search_in_progress) means repeat the call. If OSM is down: retriable 'temporarily unavailable', never invented rows.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Community-mapped OpenStreetMap data, unverified. A place the public servers are slow for answers partial/search_in_progress at 5 s; repeat the same call and it is usually served from cache."
+      },
       "when_to_use": "Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.",
       "when_not_to_use": "Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.",
       "execution_profile": "sync",
@@ -20,7 +24,6 @@
       "input_schema": {
         "type": "object",
         "required": [
-          "vertical",
           "location"
         ],
         "properties": {
@@ -40,7 +43,7 @@
             "properties": {
               "zip_or_city": {
                 "type": "string",
-                "description": "City, town, address or postal code, optionally with the country, e.g. 'Nizwa, Oman'. A bare 5-digit ZIP is read as a US ZIP; give any non-US postal code with its country (e.g. '10115, Germany')."
+                "description": "Town, city, address or postal code, with the country if not US: 'Nizwa, Oman'. A bare 5-digit ZIP is a US ZIP; add the country for any other postal code."
               },
               "radius_miles": {"type": "number", "minimum": 0, "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."}
             },
@@ -48,7 +51,7 @@
           },
           "capability": {
             "type": "string",
-            "description": "Kind of business, e.g. 'haircut', 'plumber', 'dentist'. Mapped to OSM tags."
+            "description": "Kind of business: 'dentist', 'cafe', 'plumber'. Use it or vertical."
           },
           "price_band": {
             "type": "object",
@@ -57,7 +60,7 @@
                 "type": "number"
               }
             },
-            "description": "Supply-network rows only; OpenStreetMap has no prices."
+            "description": "Supply-network rows only (OpenStreetMap has no prices)."
           },
           "availability_window": {
             "type": "object",
@@ -71,7 +74,7 @@
                 "format": "date-time"
               }
             },
-            "description": "Accepted but NOT APPLIED - it does not narrow results. We do not hold live calendars for the supply network. The response carries availability_window_applied: false when you send one. To book a specific slot use schedule_appointment with requested_time, which checks real availability."
+            "description": "Accepted but NOT APPLIED: it does not narrow results (no live calendars). The result says availability_window_applied: false. To book a slot use schedule_appointment requested_time."
           },
           "max_results": {
             "type": "integer",
@@ -81,11 +84,11 @@
           },
           "city": {
             "type": "string",
-            "description": "Alternative to location: a top-level city, normalised into location.zip_or_city. The receipt reports location_normalized_from."
+            "description": "Instead of location: a city, e.g. 'Muscat, Oman'."
           },
           "region": {
             "type": "string",
-            "description": "Alternative to location: a top-level state/region, normalised into location.zip_or_city with city."
+            "description": "With city: a state or region."
           }
         }
       },
@@ -156,6 +159,10 @@
               }
             }
           },
+          "result_count": {
+            "type": "integer",
+            "description": "How many rows are in businesses. 0 with search.status ok means a search that ran to the end and found none; 0 with status pending means it has not finished."
+          },
           "total_in_supply_network": {
             "type": "integer",
             "description": "Real (non-sample) supply-network rows overall"
@@ -166,14 +173,33 @@
           },
           "attribution_url": {"type": "string"},
           "license": {"type": "string"},
+          "input_notes": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Present when the request was read more loosely than the schema says: a string location, a kind of business sent as vertical, a top-level city, a clamped max_results"
+          },
+          "ignored_arguments": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Argument names that were sent and not used"
+          },
+          "location_normalized_from": {
+            "type": "object",
+            "description": "The top-level city / region / country that were assembled into location.zip_or_city"
+          },
           "search": {
             "type": "object",
-            "description": "What was actually searched: status (ok, location_not_found, unavailable, rate_limited), geocoded_place, radius_m (the radius really used; smaller than radius_requested_m when a dense area was narrowed), category_match {basis, osm_tags}, candidates_considered, candidates_capped, distance_order, cached",
+            "description": "What was actually searched: status (ok, pending, location_not_found, unavailable, rate_limited), geocoded_place, radius_m (the radius really used; smaller than radius_requested_m when a dense area was narrowed), category_match {basis, osm_tags}, candidates_considered, candidates_capped, distance_order, cached, budget_s, within_budget",
             "properties": {
               "provider": {"type": "string"},
-              "status": {"type": "string", "enum": ["ok", "location_not_found", "unavailable", "rate_limited"]},
+              "status": {"type": "string", "enum": ["ok", "pending", "location_not_found", "unavailable", "rate_limited", "not_requested"],
+                         "description": "pending = the time budget ran out before the search came back; it is still running and an identical repeat is usually answered from cache. Not an outage and not 'no businesses'."},
               "reason": {"type": "string"},
               "retry_after_s": {"type": "integer"},
+              "budget_s": {"type": "number", "description": "The time budget for this call, in seconds"},
+              "within_budget": {"type": "boolean", "description": "False when status is pending"},
+              "continues_in_background": {"type": "boolean", "description": "Present (true) when status is pending"},
+              "repeat_this_call": {"type": "string"},
               "radius_m": {"type": "integer", "description": "Radius actually searched, in metres"},
               "radius_requested_m": {"type": "integer"},
               "radius_narrowed": {"type": "boolean", "description": "True when the requested area held more than 150 matches and a smaller circle was searched so the nearest ones are not missed"},
@@ -195,8 +221,8 @@
         "notes": "No key required, unmetered."
       },
       "slo": {
-        "p50_ms": 6000,
-        "p95_ms": 25000,
+        "p50_ms": 5000,
+        "p95_ms": 5500,
         "success_rate_30d": null,
         "availability_30d": null,
         "supply_network_coverage_by_vertical": null
@@ -206,6 +232,7 @@
         "bad_input",
         "missing_capability",
         "rate_limited",
+        "search_in_progress",
         "osm_temporarily_unavailable",
         "out_of_supply_network",
         "transient",
@@ -324,7 +351,11 @@
     },
     {
       "name": "verify_business",
-      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
+      "description": "Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An osm:... id returned by find_business answers supply_unreachable. It never contacts the business."
+      },
       "when_to_use": "Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').",
       "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.",
       "execution_profile": "sync",
@@ -703,7 +734,11 @@
     },
     {
       "name": "capture_lead",
-      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
+      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an osm:... id is refused."
+      },
       "when_to_use": "Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.",
       "when_not_to_use": "Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.",
       "execution_profile": "sync_fast",
@@ -818,6 +853,10 @@
     {
       "name": "schedule_appointment",
       "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Completes only for a business whose booking link is bound to this deployment's one connected Cal.com account. Any other business fails with booking_destination_unmapped, uncharged."
+      },
       "when_to_use": "Use to book, check availability, or cancel a Cal.com appointment once the SMB is verified and its booking link is bound to our connected Cal.com account. Requires a verified smb_id.",
       "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Do not pass action=reschedule — it is not implemented; cancel the existing appointment and book a new time instead. Do not expect this to book on the SMB's own Calendly/Doctolib/Booksy/Fresha/etc. account, or on a Cal.com account other than the one this deployment holds credentials for — those calls fail honestly with no charge.",
       "execution_profile": "async_by_default",
@@ -1133,7 +1172,11 @@
     },
     {
       "name": "handle_inbound",
-      "description": "Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.",
+      "description": "Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Substring keyword rules on English text, not a language model: 'stop' or 'cancel' anywhere in a message sets the intent. A hint for your agent to check, never a decision."
+      },
       "when_to_use": "Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.",
       "when_not_to_use": "Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.",
       "execution_profile": "async_by_default",
@@ -1249,7 +1292,11 @@
     },
     {
       "name": "escalate_to_human",
-      "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.",
+      "description": "Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Writes a ticket to the operator queue and returns its id. This tool sends no notification and makes no response-time commitment."
+      },
       "when_to_use": "Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact.",
       "when_not_to_use": "Do not use as a first resort. Escalate only after automated resolution attempts.",
       "execution_profile": "async_by_default",
@@ -2000,6 +2047,10 @@
     {
       "name": "import_booking_url",
       "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Detects 12 booking platforms, but only a Cal.com link bound to our one connected account can be booked afterwards; the other 11 fail schedule_appointment honestly, uncharged. Needs a key."
+      },
       "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id works immediately with send_message and capture_lead. It only completes a booking via schedule_appointment if the URL was a Cal.com link bound to this deployment's one connected account — every other platform gets an honest, uncharged refusal there, not a booking.",
       "when_not_to_use": "Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
       "execution_profile": "sync",
@@ -3322,7 +3373,11 @@
     },
     {
       "name": "mint_key",
-      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.",
+      "description": "Mint a free-tier API key without email by signing agent_id + timestamp + nonce with the MACHINE_MINT_SECRET (HMAC-SHA256). Refused without that secret (invalid_request); not_configured if the operator has none set. No secret: use POST /keys/request.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Refused unless the caller signs with the machine-mint secret (HMAC-SHA256). Without it, get a free key from POST /keys/request (an emailed link)."
+      },
       "when_to_use": "Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).",
       "when_not_to_use": "Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.",
       "execution_profile": "sync",

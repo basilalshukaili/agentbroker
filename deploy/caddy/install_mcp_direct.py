@@ -8,6 +8,9 @@
     python deploy/caddy/install_mcp_direct.py verify            # read-only: the public-URL probes
     python deploy/caddy/install_mcp_direct.py rollback --yes    # restore the newest mcp-direct backup, reload
 
+    Add `--change retired` to plan / install / verify to work on the SECOND change instead (deploy/caddy/
+    mcp_retired.py: the retired MCP doors answered by the origin's tombstone). Deploy the origin first.
+
 Connection: --target user@host and --key PATH, or VPS_SSH_TARGET / VPS_SSH_KEY, or --env-file PATH with
 VPS_IP (or VPS_HOST) and optionally VPS_USER, plus --key. No host or credential is stored in this repo.
 
@@ -38,6 +41,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent.parent))
 
 import mcp_direct  # noqa: E402
+import mcp_retired  # noqa: E402
 
 LIVE = "/etc/caddy/Caddyfile"
 REMOTE_TMP = "/tmp/_mcp_direct"
@@ -102,31 +106,41 @@ def _sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
-def make_plan(conn: Conn) -> dict:
+def _change(args) -> tuple:
+    """(module, names) for --change: the module that transforms the Caddyfile and the doors it routes."""
+    if getattr(args, "change", "direct") == "retired":
+        from agent_interface import retired_doors
+        return mcp_retired, sorted(retired_doors.RETIRED_DOORS)
+    return mcp_direct, _doors()
+
+
+def make_plan(conn: Conn, mod=mcp_direct, names=None) -> dict:
+    names = _doors() if names is None else names
     live_bytes = conn.get_bytes(LIVE)
     live = live_bytes.decode("utf-8")
-    new = mcp_direct.apply(live, _doors())
+    new = mod.apply(live, names)
     return {
         "live_sha256": _sha(live_bytes),
         "live": live,
         "new": new,
         "new_bytes": new.encode("utf-8"),
-        "eol": "CRLF" if mcp_direct.detect_eol(live) == "\r\n" else "LF",
-        "already_applied": mcp_direct.is_applied(live),
+        "eol": "CRLF" if mod.detect_eol(live) == "\r\n" else "LF",
+        "already_applied": mod.is_applied(live),
     }
 
 
 def cmd_plan(conn: Conn, args) -> int:
-    plan = make_plan(conn)
+    mod, names = _change(args)
+    plan = make_plan(conn, mod, names)
     print(f"live Caddyfile: sha256 {plan['live_sha256'][:16]}..., line endings {plan['eol']}, "
           f"already applied: {plan['already_applied']}")
     if plan["already_applied"]:
         print("nothing to do.")
         return 0
-    print(mcp_direct.unified_diff(plan["live"], plan["new"], "Caddyfile"))
+    print(mod.unified_diff(plan["live"], plan["new"], "Caddyfile"))
     if args.write_patch:
         Path(args.write_patch).write_text(
-            mcp_direct.unified_diff(plan["live"], plan["new"], "Caddyfile", context=args.patch_context),
+            mod.unified_diff(plan["live"], plan["new"], "Caddyfile", context=args.patch_context),
             encoding="utf-8", newline="\n")
         print(f"patch written to {args.write_patch} (context lines: {args.patch_context})")
     with tempfile.TemporaryDirectory() as td:
@@ -142,11 +156,11 @@ def cmd_plan(conn: Conn, args) -> int:
         return p.returncode
 
 
-def run_probes(doors: list) -> list:
+def run_probes(doors: list, mod=mcp_direct) -> list:
     import httpx
     failures = []
     with httpx.Client(timeout=20.0, follow_redirects=False) as c:
-        for method, url, body, want_status, want_text in mcp_direct.post_checks(doors):
+        for method, url, body, want_status, want_text in mod.post_checks(doors):
             try:
                 r = c.request(method, url, json=body, headers={"user-agent": "mcp-direct-verify/1"})
                 ok = r.status_code == want_status and (not want_text or want_text in r.text)
@@ -159,8 +173,14 @@ def run_probes(doors: list) -> list:
     return failures
 
 
+def _probe(names: list, mod) -> list:
+    """run_probes for the chosen change. The first change keeps the one-argument call it always had."""
+    return run_probes(names) if mod is mcp_direct else run_probes(names, mod)
+
+
 def cmd_verify(conn: Conn, args) -> int:
-    failures = run_probes(_doors())
+    mod, names = _change(args)
+    failures = _probe(names, mod)
     print("all probes pass" if not failures else f"{len(failures)} probe(s) failed")
     return 1 if failures else 0
 
@@ -169,7 +189,8 @@ def cmd_install(conn: Conn, args) -> int:
     if not args.yes:
         print("refusing to change the live Caddyfile without --yes")
         return 2
-    plan = make_plan(conn)
+    mod, names = _change(args)
+    plan = make_plan(conn, mod, names)
     if plan["already_applied"]:
         print("already applied; nothing to do")
         return 0
@@ -191,14 +212,14 @@ def cmd_install(conn: Conn, args) -> int:
     backup = next((ln.split("=", 1)[1] for ln in p.stdout.splitlines() if ln.startswith("BACKUP=")), "")
     time.sleep(2)
     print("probing the public URLs from here:")
-    failures = run_probes(_doors())
+    failures = _probe(names, mod)
     if failures:
         print(f"{len(failures)} probe(s) failed after the reload -> restoring {backup}")
         r = conn.run(f"bash {REMOTE_TMP}/remote_install.sh restore {backup}", timeout=120, check=False)
         print(r.stdout.strip() or r.stderr.strip())
         time.sleep(2)
         print("probes after restore:")
-        run_probes(_doors())
+        _probe(names, mod)
         conn.run(f"rm -rf {REMOTE_TMP}", check=False)
         return 1
     conn.run(f"rm -rf {REMOTE_TMP}", check=False)
@@ -245,6 +266,8 @@ def main(argv=None) -> int:
     ap.add_argument("--key")
     ap.add_argument("--env-file")
     ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--change", choices=["direct", "retired"], default="direct",
+                    help="which Caddyfile change plan / install / verify work on (default: direct)")
     ap.add_argument("--apply", action="store_true", help="scrub: actually blank the values")
     ap.add_argument("--write-patch", metavar="PATH", help="plan: also write the unified diff here")
     ap.add_argument("--patch-context", type=int, default=3,

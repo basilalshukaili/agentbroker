@@ -21,6 +21,7 @@ import json
 from config import SERVICE_VERSION
 from agent_interface.manifest_server import get_full_manifest
 from agent_interface import profiles
+from core import tool_readiness
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +86,17 @@ def _payments_block() -> dict:
             quota_free = []
         free = sorted(zero - needs_key)
         free_with_key = sorted(zero & needs_key)
-        paid = sorted(n for n, c in _PRICING_CENTS.items() if c > 0)
+        # `paid_tools` USED TO INCLUDE THE THREE QUOTA-FREE TOOLS. screen_sanctions,
+        # verify_company_record and map_trade_restriction cost credits only PAST a daily quota, and an
+        # anonymous caller is served free up to it (19 of 20 keyless screen_sanctions calls succeeded
+        # in the 47 hours to 2026-10-03), yet this list - the first one an agent reads to decide what
+        # it can call - named them paid, and they were ALSO in quota_free_tools. A reader sees a tool
+        # that is both free and paid. The four lists below are now an exact partition of the tool list:
+        # a tool is in exactly one of them. `spends_credits_once_past_quota` is the other question
+        # ("what can cost me money at all") and is kept so nothing that relied on it loses it.
+        quota_free_set = set(quota_free)
+        spends_credits = sorted(n for n, c in _PRICING_CENTS.items() if c > 0)
+        paid = sorted(n for n in spends_credits if n not in quota_free_set)
     except Exception:  # noqa: BLE001
         return {"status": "see_pricing",
                 "note": "See https://hatchloop.dev/pricing for current pricing."}
@@ -124,6 +135,7 @@ def _payments_block() -> dict:
         # Cost no credits, but need a free key. Kept separate because an agent
         # planning a keyless session must not treat these as available.
         "free_with_key_tools": free_with_key,
+        # Spend credits from the FIRST call and need a key. Disjoint from quota_free_tools.
         "paid_tools": paid,
         "unit": "credits (1 credit = 1 US cent)",
         "rails": rails,
@@ -132,15 +144,18 @@ def _payments_block() -> dict:
         # different right answers, and why the site managed to publish the
         # count seven different ways.
         "quota_free_tools": quota_free,
+        "spends_credits_once_past_quota": spends_credits,
         "note": (
             f"THREE NUMBERS, because 'free' means three things here. "
             f"{len(free)} tools are callable with NO key and NO credits. "
             f"{len(quota_free)} more are callable with no key up to a daily "
             f"quota, then cost credits. That is {len(free) + len(quota_free)} "
-            f"usable without signing up. The remaining {len(paid) - len(quota_free) + len(free_with_key)} "
-            f"need a free key, and {len(paid)} spend credits once past any "
-            f"quota. Call preview_cost (free) for the exact price of any "
-            f"operation before committing. Pricing: https://hatchloop.dev/pricing"
+            f"usable without signing up. The remaining {len(paid) + len(free_with_key)} "
+            f"need a free key, and {len(spends_credits)} spend credits once past any "
+            f"quota (the quota-free ones only past it). Every tool is in exactly one of "
+            f"free_tools, quota_free_tools, free_with_key_tools, paid_tools. Call preview_cost "
+            f"(free) for the exact price of any operation before committing. "
+            f"Pricing: https://hatchloop.dev/pricing"
             + (" No account needed to pay per call: attach an x402 payment in "
                "params._meta['x402/payment'] and the server returns a signed "
                "price offer (USDC on Base) for any paid tool."
@@ -296,7 +311,7 @@ def get_agents_json() -> dict:
         skills.append({
             "id": op["name"],
             "name": op["name"].replace("_", " ").title(),
-            "description": op["description"],
+            "description": tool_readiness.labelled_description(op),
             "tags": [op.get("execution_profile", "sync"),
                      *_extract_skill_tags(op)],
             "examples": [ex.get("description", "") for ex in op.get("examples", [])][:2],
@@ -329,8 +344,9 @@ def get_agents_json() -> dict:
             # every outside caller, disabled outright when ADMIN_SECRET is
             # unset, which is production today). Free keys are self-serve via
             # the email-verified flow below; there is no machine-mintable
-            # path in production today (POST /keys/mint returns 503
-            # not_configured and is not something to build against).
+            # path in production today (POST /keys/mint is refused without the
+            # operator's unpublished machine-mint secret and is not something to
+            # build against).
             "free_key_endpoint": f"{BASE_URL}/keys/request",
             "free_key_method": "POST {\"email\": \"you@example.com\"}",
         },
@@ -365,7 +381,7 @@ def get_agent_card() -> dict:
         skills.append({
             "id": op["name"],
             "name": op["name"].replace("_", " ").title(),
-            "description": op["description"],
+            "description": tool_readiness.labelled_description(op),
             "tags": [op.get("execution_profile", "sync"), *_extract_skill_tags(op)],
             "examples": [ex.get("description", "") for ex in op.get("examples", [])][:2],
             "inputModes": ["application/json"],
@@ -438,6 +454,10 @@ def get_mcp_descriptor() -> dict:
         # Derived now, so neither can drift again.
         "payments": _payments_block(),
         "description": _mcp_description(),
+        # Tools that are not production-ready, by state - the same labels tools/list carries. A tool not
+        # listed here has none. Derived from the manifest (core/tool_readiness.py); delivery-channel
+        # availability is per deployment and is reported by tools/list itself.
+        "tool_readiness": tool_readiness.all_labelled(get_full_manifest().get("operations", [])),
         "auth": {
             "header": "X-Agent-Identity",
             "scheme": "bearer",
@@ -526,7 +546,11 @@ def get_llms_txt() -> str:
     for op in operations:
         lines.append(f"### {op['name']}")
         lines.append("")
-        lines.append(op["description"])
+        lines.append(tool_readiness.labelled_description(op))
+        _rd = tool_readiness.of(op)
+        if _rd:
+            lines.append("")
+            lines.append(f"- **Readiness: {_rd['state']}** - {_rd['summary']}")
         lines.append("")
         lines.append(f"- **When to use**: {op['when_to_use']}")
         if op.get("when_not_to_use"):
@@ -550,8 +574,8 @@ def get_llms_txt() -> str:
         f"`POST {BASE_URL}/keys/request` with `{{\"email\": \"you@example.com\"}}`, "
         "then open the link it sends you. This currently requires a human to click "
         "that link - there is no machine-mintable path in production today "
-        f"(`POST {BASE_URL}/keys/mint` returns `503 not_configured` and is not "
-        "something to build against). "
+        f"(`POST {BASE_URL}/keys/mint` is refused without the operator's machine-mint secret, "
+        "which is not published, and is not something to build against). "
         f"{free_tier_sentence()}, so check whether you need a key at all before "
         "requesting one. "
         f"(Note: `{BASE_URL}/auth/token` is an internal admin route, not a public "
@@ -670,7 +694,7 @@ def get_llms_full_txt() -> str:
 
 def _llm_optimized_description(op: dict) -> str:
     """Build a concise but complete description optimized for LLM tool selection."""
-    parts = [op["description"]]
+    parts = [tool_readiness.labelled_description(op)]
     if op.get("when_to_use"):
         parts.append(f"Use when: {op['when_to_use']}")
     if op.get("when_not_to_use"):

@@ -242,6 +242,11 @@ def annotate_tools(tools: list) -> list:
         new = dict(tool)
         meta = dict(new.get("_meta") or {})
         meta["hatchloop/availability"] = notice
+        # The same fact as a readiness state, so one field answers "can I rely on this tool?" for every
+        # tool: unavailable here, or beta because some channel it can use is not configured.
+        from core import tool_readiness
+        meta[tool_readiness.META_KEY] = tool_readiness.stronger(
+            meta.get(tool_readiness.META_KEY), tool_readiness.from_availability(notice))
         new["_meta"] = meta
         if notice["available"]:
             names = ", ".join(c.upper() if c == SMS else c.capitalize()

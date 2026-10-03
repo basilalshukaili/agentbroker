@@ -5,11 +5,10 @@
     "tools": [
       {
         "name": "find_business",
-        "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result. [free, no key]",
+        "description": "Find real businesses near a place, sorted by distance (nearest of those examined; see result.search). Data: OpenStreetMap (ODbL, (c) OSM contributors); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Answers within about 5 s: status partial (search_in_progress) means repeat the call. If OSM is down: retriable 'temporarily unavailable', never invented rows. [free, no key] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
-            "vertical",
             "location"
           ],
           "properties": {
@@ -28,19 +27,20 @@
               ],
               "properties": {
                 "zip_or_city": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Town, city, address or postal code, with the country if not US: 'Nizwa, Oman'. A bare 5-digit ZIP is a US ZIP; add the country for any other postal code."
                 },
                 "radius_miles": {
                   "type": "number",
                   "minimum": 0,
-                  "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
+                  "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."
                 }
               },
-              "description": "Where to search. Matched against the business's city, state and ZIP as text -…"
+              "description": "City/town or ZIP, optionally with country ('Nizwa, Oman'). Geocoded by OSM."
             },
             "capability": {
               "type": "string",
-              "description": "Specific service capability required, e.g. 'haircut', 'plumbing',…"
+              "description": "Kind of business: 'dentist', 'cafe', 'plumber'. Use it or vertical."
             },
             "price_band": {
               "type": "object",
@@ -48,7 +48,8 @@
                 "max_usd": {
                   "type": "number"
                 }
-              }
+              },
+              "description": "Supply-network rows only (OpenStreetMap has no prices)."
             },
             "availability_window": {
               "type": "object",
@@ -62,7 +63,7 @@
                   "format": "date-time"
                 }
               },
-              "description": "Accepted but NOT APPLIED - it does not narrow results. We do not hold live…"
+              "description": "Accepted but NOT APPLIED: it does not narrow results (no live calendars). The…"
             },
             "max_results": {
               "type": "integer",
@@ -72,12 +73,18 @@
             },
             "city": {
               "type": "string",
-              "description": "Alternative to location: a top-level city, normalised into…"
+              "description": "Instead of location: a city, e.g. 'Muscat, Oman'."
             },
             "region": {
               "type": "string",
-              "description": "Alternative to location: a top-level state/region, normalised into…"
+              "description": "With city: a state or region."
             }
+          }
+        },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "beta",
+            "summary": "Community-mapped OpenStreetMap data, unverified. A place the public servers are slow for answers partial/search_in_progress at 5 s; repeat the same call and it is usually served from cache."
           }
         },
         "annotations": {
@@ -90,7 +97,7 @@
       },
       {
         "name": "verify_business",
-        "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business. [free, no key]",
+        "description": "Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids. [free, no key] [limited]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -103,6 +110,12 @@
             "capability_to_verify": {
               "type": "string"
             }
+          }
+        },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "limited",
+            "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An osm:... id returned by find_business answers supply_unreachable. It never contacts the business."
           }
         },
         "annotations": {
@@ -217,7 +230,7 @@
       },
       {
         "name": "capture_lead",
-        "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM. [$0.05/per_call] [async→get_outcome]",
+        "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified. [$0.05/per_call] [async→get_outcome] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -267,6 +280,12 @@
             }
           }
         },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "beta",
+            "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an osm:... id is refused."
+          }
+        },
         "annotations": {
           "title": "Capture Lead",
           "readOnlyHint": false,
@@ -277,7 +296,7 @@
       },
       {
         "name": "schedule_appointment",
-        "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [from $0.15/call, variable] [async→get_outcome]",
+        "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [from $0.15/call, variable] [async→get_outcome] [limited]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -345,6 +364,12 @@
               "maxLength": 128,
               "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
+          }
+        },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "limited",
+            "summary": "Completes only for a business whose booking link is bound to this deployment's one connected Cal.com account. Any other business fails with booking_destination_unmapped, uncharged."
           }
         },
         "annotations": {
@@ -420,7 +445,7 @@
       },
       {
         "name": "handle_inbound",
-        "description": "Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool. [$0.03/per_call] [async→get_outcome]",
+        "description": "Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed. [$0.03/per_call] [async→get_outcome] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -474,6 +499,12 @@
             }
           }
         },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "beta",
+            "summary": "Substring keyword rules on English text, not a language model: 'stop' or 'cancel' anywhere in a message sets the intent. A hint for your agent to check, never a decision."
+          }
+        },
         "annotations": {
           "title": "Handle Inbound",
           "readOnlyHint": false,
@@ -484,7 +515,7 @@
       },
       {
         "name": "escalate_to_human",
-        "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step. [$0.2/per_call] [async→get_outcome]",
+        "description": "Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time. [$0.2/per_call] [async→get_outcome] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -545,6 +576,12 @@
               "maxLength": 128,
               "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
+          }
+        },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "beta",
+            "summary": "Writes a ticket to the operator queue and returns its id. This tool sends no notification and makes no response-time commitment."
           }
         },
         "annotations": {
@@ -682,7 +719,7 @@
       },
       {
         "name": "import_booking_url",
-        "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id. [free, requires key]",
+        "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id. [free, requires key] [limited]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -734,6 +771,12 @@
               "maxLength": 128,
               "description": "Retry key: a 24h replay returns the original receipt, not re-run or charged."
             }
+          }
+        },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "limited",
+            "summary": "Detects 12 booking platforms, but only a Cal.com link bound to our one connected account can be booked afterwards; the other 11 fail schedule_appointment honestly, uncharged. Needs a key."
           }
         },
         "annotations": {
@@ -990,7 +1033,7 @@
       },
       {
         "name": "mint_key",
-        "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it. [free, no key]",
+        "description": "Mint a free-tier API key without email by signing agent_id + timestamp + nonce with the MACHINE_MINT_SECRET (HMAC-SHA256). Refused without that secret (invalid_request); not_configured if the operator has none set. No secret: use POST /keys/request. [free, no key] [limited]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -1016,6 +1059,12 @@
               "type": "string",
               "description": "HMAC-SHA256(agent_id + str(timestamp) + nonce, MACHINE_MINT_SECRET) as…"
             }
+          }
+        },
+        "_meta": {
+          "hatchloop/readiness": {
+            "state": "limited",
+            "summary": "Refused unless the caller signs with the machine-mint secret (HMAC-SHA256). Without it, get a free key from POST /keys/request (an emailed link)."
           }
         },
         "annotations": {

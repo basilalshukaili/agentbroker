@@ -85,8 +85,10 @@ The route an integrator actually uses is the free, email-verified key flow:
 arrives by email. That link's confirmation page shows the key (also emailed).
 This currently requires a human to click the link — there is no
 machine-mintable path in production today; `POST /keys/mint` (HMAC self-serve,
-no email) exists in the code but returns `503 {"error": "not_configured"}` and
-is not something to build against. If email delivery itself is down,
+no email) exists in the code but is refused (`401 {"error": "invalid_request"}`,
+or `503 {"error": "not_configured"}` where no secret is set) without the
+operator's machine-mint secret, which is not published, and is not something to
+build against. If email delivery itself is down,
 `/keys/request` answers `503 {"error": "onboarding_unavailable"}` rather than
 a false `verification_sent` — treat that as "email onboarding requires an
 operator right now" and contact hello@hatchloop.dev for manual provisioning.

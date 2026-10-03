@@ -297,13 +297,15 @@ class SMBDirectory:
 
     def search(
         self,
-        vertical: Vertical,
+        vertical: Vertical | None,
         zip_or_city: str,
         capability: str | None = None,
         max_usd: float | None = None,
         max_results: int = 5,
         include_demo: bool = True,
     ) -> list[SMBEntry]:
+        # vertical=None means "no vertical was given or implied": do not filter on it. (find_business
+        # sends None when the caller named a kind of business we have no family for.)
         # include_demo=False drops sample rows BEFORE the max_results cut, so
         # sample rows with more channels cannot crowd real ones out of the
         # answer. find_business passes False; the default stays True for the
@@ -311,7 +313,7 @@ class SMBDirectory:
         results = [
             smb for smb in _DIRECTORY.values()
             if smb.active
-            and smb.vertical == vertical
+            and (vertical is None or smb.vertical == vertical)
             and (include_demo or not smb.is_demo)
             and self._location_matches(smb, zip_or_city)
         ]

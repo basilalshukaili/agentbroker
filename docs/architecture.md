@@ -260,6 +260,8 @@ Channel fallback chain is:
 | **sync_fast** | Terminal within ~5s; may return pending_async if upstream slow | send_message (text), send_transactional_confirmation, capture_lead |
 | **async_by_default** | Always returns pending_async; outcome via webhook + get_status | schedule_appointment, handle_inbound, escalate_to_human, send_message (voice) |
 
+`find_business` is `sync` with a time budget of about 5 s, because it depends on the public OpenStreetMap servers. When a place is slow it answers inside the budget with `status: partial`, `reason_code: search_in_progress` (not an error), the resolved place, and the same call repeated a few seconds later is served from cache. It never returns `pending_async` and has no `operation_id` to poll.
+
 Async job lifecycle:
 ```
 pending_async → [Celery worker picks up] → executing → success | failure | partial
