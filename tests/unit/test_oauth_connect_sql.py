@@ -616,3 +616,45 @@ def test_the_verifier_passes_a_correct_migration_fails_a_sabotaged_one_and_reads
         if "search_path" in sabotage or "security invoker" in sabotage:
             continue
     assert v.judge("after", v.catalog(fresh), None) == []
+
+
+def test_the_migration_applies_exactly_the_way_the_operators_apply_sql_tool_applies_it(db):
+    """scripts/apply_sql.py runs the whole file with psycopg2's cursor.execute(sql) inside ONE transaction. That
+    path interprets '%' when parameters are passed and splits nothing; this runs the same call, twice, and then
+    proves the functions answer."""
+    psycopg2 = pytest.importorskip("psycopg2")
+
+    async def make_fresh():
+        c = await asyncpg.connect(db)
+        try:
+            await c.execute("drop database if exists verify_apply")
+            await c.execute("create database verify_apply")
+        finally:
+            await c.close()
+        f = await asyncpg.connect(db.rsplit("/", 1)[0] + "/verify_apply")
+        try:
+            await f.execute(oauth_pg.PREPARE_SQL)
+        finally:
+            await f.close()
+        return db.rsplit("/", 1)[0] + "/verify_apply"
+    dsn = asyncio.run(make_fresh())
+    sql = oauth_pg.MIGRATION.read_text(encoding="utf-8")
+    for _ in range(2):
+        conn = psycopg2.connect(dsn, connect_timeout=20)
+        try:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute(sql)
+            conn.commit()
+        finally:
+            conn.close()
+    conn = psycopg2.connect(dsn, connect_timeout=20)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("set role anon")
+            cur.execute("select public.oauth_ready()")
+            assert cur.fetchone()[0] == {"ready": True, "schema": 1}
+            cur.execute("select public.oauth_account_for_email(%s)", ("0" * 64,))
+            assert cur.fetchone()[0] == {"found": False}
+    finally:
+        conn.close()

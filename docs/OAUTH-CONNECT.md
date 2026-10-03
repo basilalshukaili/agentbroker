@@ -7,7 +7,8 @@ offer only "no authentication" or OAuth) and verdict item A3 in `2026-10-03-mcp-
 ## What a person experiences
 
 1. In Claude, ChatGPT, Grok or Muse they add AgentBroker by its URL, or find it in a directory. The free tools
-   (11 always-free, 3 within a daily quota) work immediately with no sign-in at all.
+   (the always-free ones and those free within a daily quota; `core/tool_auth.py` is the one place that counts them)
+   work immediately with no sign-in at all.
 2. They ask for something that needs an account (send a message, book, read a conversation). The assistant shows a
    **Connect** button.
 3. A page opens on `api.hatchloop.dev` naming the app and asking for an email address. No password.
@@ -138,6 +139,28 @@ Live walk-throughs in Claude, ChatGPT, Grok and Muse (`docs/grocery-mcp/INSTALL-
 publicly before they pass - which is why `llms-install.md`, the registry manifests and the agent card are **unchanged**);
 the `/connect` page; reviewer accounts and the directory submissions (item A1); `usage_events` rows that record a
 challenge (the existing row says HTTP 200 for a response that left as 401); Arabic copy on the pages.
+
+## What was checked about the email path (2026-10-03)
+
+The brief asked to verify the existing key-request email path actually sends. Findings, none of which sent a message:
+* The live container has `RESEND_API_KEY` set (presence and length only) and the sender domain `hatchloop.dev` is
+  `verified` at Resend (read-only `GET /domains`).
+* The release smoke test's `POST /keys/request` -> 503 `onboarding_unavailable` on 2026-10-01 was **Resend refusing the
+  test address**: the container log has one `resend_send_failed status=422 ... domains like example.com`. It was not an
+  outage. The old path folds "this address was refused" into the same 503 as "we could not send"; the Connect sender
+  reports three outcomes (sent / rejected address / unavailable), so a mistyped address is a correctable error.
+* Not exercised: a real message to a real inbox. That is the one post-deploy step that sends mail (see "Operating it").
+
+## How it was reviewed
+
+Five single-file adversarial reviews by DeepSeek v4-pro (router, client fetch, challenge, tokens, migration), then a
+second round on the router after the match code was added. Real findings: consent phishing (fixed, section above) and a
+cookie that named the right sign-in but proved nothing (fixed: the poll secret must hash to the sign-in's). The rest were
+claims the code and tests refute (the database operations are atomic - ten simultaneous attempts, one winner - and the
+store itself rejects a wrong poll secret). jev scored the consent text, the email and the confirmation page on typed
+questions; the email scored 0.69 for "a stranger can safely ignore it" and was rewritten (0.93). 25 safeguards were
+removed one at a time and a test failed each time. The official MCP SDK's OAuth client completes the flow against a live
+server, and the OAuth tests also pass on the production-pinned stack (FastAPI 0.111.0, Starlette 0.37.2, httpx 0.27.0).
 
 ## Tests
 

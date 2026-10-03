@@ -56,7 +56,8 @@ def docker_unavailable_reason() -> str:
     if not exe:
         return "docker is not installed"
     try:
-        p = subprocess.run([exe, "image", "inspect", IMAGE], capture_output=True, timeout=30)
+        # generous: on a laptop shared with other sessions' containers the daemon can take a minute to answer
+        p = subprocess.run([exe, "image", "inspect", IMAGE], capture_output=True, timeout=180)
     except Exception as exc:  # noqa: BLE001
         return f"docker is not usable ({type(exc).__name__})"
     if p.returncode != 0:
