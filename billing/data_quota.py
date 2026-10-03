@@ -46,6 +46,18 @@ PREMIUM_DATA_TOOLS: frozenset[str] = frozenset({
 _FREE_KEY_URL = "https://hatchloop.dev/agent-broker"
 _UPGRADE_URL = "https://hatchloop.dev/pricing"
 
+
+def _credits_clause() -> str:
+    """", or top up credits at <url>" while the credits gate runs, otherwise "".
+
+    This quota gate runs when DATA_METERING_ENABLED is on, and the config comments call "metering on,
+    credits still off" the first flip. In that state there is no credit balance to top up, so the
+    refusal must not send the caller to buy one (billing/switches.py is the one reader of the switch).
+    """
+    from billing import switches
+    return f", or top up credits at {_UPGRADE_URL}" if switches.credits_enabled() else ""
+
+
 # ---------------------------------------------------------------------------
 # In-memory per-free-key daily counter (cleared on process restart).
 # { key_id: {"count": int, "date": "YYYY-MM-DD"} }
@@ -429,8 +441,7 @@ async def consume_data_quota(
                     "reason_code": "free_quota_exceeded",
                     "human_message": (
                         f"Free daily limit reached ({limit}/day for email-verified keys). "
-                        f"Get a free key for more daily quota at {_FREE_KEY_URL}, "
-                        f"or top up credits at {_UPGRADE_URL}."
+                        f"Get a free key for more daily quota at {_FREE_KEY_URL}" + _credits_clause() + "."
                     ),
                     "cost": {"amount": 0.0, "currency": "USD", "basis": "per_call"},
                 },
@@ -449,8 +460,7 @@ async def consume_data_quota(
                 "reason_code": "free_quota_exceeded",
                 "human_message": (
                     f"Free daily limit reached ({limit}/day for anonymous callers). "
-                    f"Get a free key for more at {_FREE_KEY_URL}, "
-                    f"or top up credits at {_UPGRADE_URL}."
+                    f"Get a free key for more at {_FREE_KEY_URL}" + _credits_clause() + "."
                 ),
                 "cost": {"amount": 0.0, "currency": "USD", "basis": "per_call"},
             },

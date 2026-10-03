@@ -287,9 +287,12 @@ _RAIL_ASSERTIONS = [
      'hardcodes the payment rails - derive them from billing.switches.live_rails()'),
     (r'\brails\s*=\s*\[\s*["\']',
      'assigns a literal list of payment rails - derive it from billing.switches.live_rails()'),
-    (r'"status"\s*:\s*"active"',
+    # Either quote style (a Python dict literal is as often single-quoted as JSON is double-quoted).
+    (r'["\']status["\']\s*:\s*["\']active["\']',
      'hardcodes payments status "active" - use billing.switches.payments_status()'),
-    (r'["\']\s*Option\s+\d\s*\((credits|pay per call)',
+    # NOT anchored to the start of a literal: the 10-03 sentence began " To get access: Option 1 (free)..."
+    # and put "Option 2 (credits)" in the middle, which an anchored rule never saw.
+    (r'\bOption\s+\d\s*\((credits|pay per call)',
      'numbers a payment option by hand - build the option list from billing.switches so '
      'the numbers close up and a switched-off rail is not offered'),
     (r'(?i)(x402|crypto)[^\n]{0,40}(is\s+not\s+offered|switched\s+off|is\s+off\b)',
@@ -312,6 +315,33 @@ _GENERATORS = [
     # public directories. This exact omission let a hardcoded "crypto is not
     # offered" survive while production advertised x402.
     "../scripts/manual_listings.py",
+    # Every other file that writes a sentence about how to pay. The free-key page, the past-quota
+    # messages and the OAuth consent page all offered credits while the credits gate was off, and none of
+    # them was policed (review of feat/x402-honesty-20261004, F5).
+    "agent_interface/key_request_logic.py",
+    "billing/data_quota.py",
+    "agent_interface/oauth/pages.py",
+    "web/pages.py",
+    "core/preview_cost.py",
+]
+
+# STATIC COPY: files that cannot import anything and are republished by registries we do not control
+# (generated from registry/servers.yaml by scripts/gen_manifests.py). A file cannot follow a switch, so
+# it may not offer credits for sale and may not promise a daily quota on the premium data tools; the live
+# descriptor (/.well-known/mcp.json, payments) is where those are stated, and it IS derived.
+_STATIC_COPY = [
+    "smithery.yaml",
+    "glama.json",
+    "server.json",
+    "registry/servers.yaml",
+]
+_STATIC_COPY_BANNED = [
+    (r'(?i)\b(buy|top[ -]?up|purchase)\s+(more\s+)?credits?\b',
+     'offers credits for sale in static copy - it cannot follow CREDITS_ENABLED; point at the live '
+     'payments descriptor instead'),
+    (r'(?i)free within a daily quota',
+     'promises a daily quota in static copy - it exists only while DATA_METERING_ENABLED is on; point at '
+     'the live payments descriptor instead'),
 ]
 
 
@@ -332,12 +362,26 @@ def check_rail_claims() -> list[str]:
     return problems
 
 
+def check_static_copy() -> list[str]:
+    problems = []
+    for rel in _STATIC_COPY:
+        path = _AGENTBROKER_DIR / rel
+        if not path.exists():
+            continue
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for n, line in enumerate(fh, 1):
+                for pat, why in _STATIC_COPY_BANNED:
+                    if re.search(pat, line):
+                        problems.append(f"{rel}:{n} {why} -> {line.strip()[:80]}")
+    return problems
+
+
 def main() -> int:
     all_hits: list[str] = []
     for fpath in _SCAN_FILES:
         all_hits.extend(_check_file(fpath))
 
-    rail_hits = check_rail_claims()
+    rail_hits = check_rail_claims() + check_static_copy()
 
     if all_hits or rail_hits:
         if all_hits:

@@ -422,6 +422,15 @@ def html_error(title: str, body_html: str) -> str:
 
 
 def html_success(token_value: str, expires_iso: str, key_id: str, paid_url: str) -> str:
+    # "Need more? Buy credits" is shown only while the credits gate runs (billing.switches). It was shown to
+    # every new free-key holder while CREDITS_ENABLED was off: a package bought then mints a key that is
+    # never credited. With the gate off there is nothing to offer, so the block is not there at all.
+    from billing import switches
+    _need_more = (
+        "<h2>Need more?</h2>"
+        "<p><a href=\"https://hatchloop.dev/pricing\">Buy credits</a> &#8212; Starter $9/1,000 ops, Growth $29/3,500, "
+        "Scale $99/13,000. No flat or unlimited subscription.</p>"
+        if switches.credits_enabled() else "")
     return (
         "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<title>Your AgentBroker Free Key</title>"
@@ -443,8 +452,7 @@ def html_success(token_value: str, expires_iso: str, key_id: str, paid_url: str)
         "<p>Add this header to every MCP call:</p>"
         f"<pre>X-Agent-Identity: {token_value}</pre>"
         "<p>Endpoint: <code>https://hatchloop.dev/mcp/agent-broker</code></p>"
-        "<h2>Need more?</h2>"
-        f"<p><a href=\"https://hatchloop.dev/pricing\">Buy credits</a> &#8212; Starter $9/1,000 ops, Growth $29/3,500, Scale $99/13,000. No flat or unlimited subscription.</p>"
+        + _need_more +
         "<p style=\"color:#999;font-size:12px;\">Your key was also sent to your email.</p>"
         "</body></html>"
     )

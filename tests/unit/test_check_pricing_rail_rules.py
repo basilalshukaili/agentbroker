@@ -33,6 +33,9 @@ HARD_CODED = [
     '            f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "',
     '            f"Option 3 (pay per call, no signup): attach an x402 payment in "',
     "        \"note\": \"All tools are currently free to call\",",
+    # review F8: the two spellings the first version of the rules let through
+    '        "To get access: Option 1 (free): get a key. Option 2 (credits): buy a package. "',
+    "        'status': 'active',",
 ]
 
 # The derived code that replaced them.
@@ -64,6 +67,52 @@ def test_the_key_request_guidance_is_a_checked_generator():
     assert "agent_interface/key_requests.py" in check_pricing._GENERATORS
     assert "agent_interface/well_known.py" in check_pricing._GENERATORS
     assert "agent_interface/mcp_server.py" in check_pricing._GENERATORS
+
+
+def test_every_file_that_writes_a_payment_sentence_is_a_checked_generator():
+    """Review F5: the free-key page, the past-quota messages and the consent page offered credits while the
+    gate was off and none of them was policed."""
+    for rel in ("agent_interface/key_request_logic.py", "billing/data_quota.py",
+                "agent_interface/oauth/pages.py", "web/pages.py", "core/preview_cost.py"):
+        assert rel in check_pricing._GENERATORS, rel
+
+
+# Static copy cannot follow a switch, so it may not offer credits or promise a quota at all.
+STATIC_BAD = [
+    "a free email-verified key gives 100 ops/day, or buy credits at https://hatchloop.dev/pricing",
+    "Top up credits at https://hatchloop.dev/pricing",
+    "14 of the 23 tools require no auth (11 always-free + 3 free within a daily quota).",
+]
+STATIC_OK = [
+    "a free email-verified key gives 100 ops/day.",
+    "Which payment rails and daily quotas are switched on right now is published live in the payments block",
+]
+
+
+def _static_hits(line: str) -> list[str]:
+    return [why for pat, why in check_pricing._STATIC_COPY_BANNED if re.search(pat, line)]
+
+
+def test_static_copy_that_sells_credits_or_promises_a_quota_is_refused():
+    for line in STATIC_BAD:
+        assert _static_hits(line), f"not caught: {line}"
+    for line in STATIC_OK:
+        assert _static_hits(line) == [], f"false positive: {line}"
+
+
+def test_the_static_registry_files_are_checked_and_clean():
+    for rel in ("smithery.yaml", "glama.json", "server.json", "registry/servers.yaml"):
+        assert rel in check_pricing._STATIC_COPY, rel
+    assert check_pricing.check_static_copy() == []
+
+
+def test_a_static_file_that_regresses_is_reported(tmp_path, monkeypatch):
+    bad = tmp_path / "smithery.yaml"
+    bad.write_text("auth: a free key, or buy credits at https://hatchloop.dev/pricing\n", encoding="utf-8")
+    monkeypatch.setattr(check_pricing, "_AGENTBROKER_DIR", tmp_path)
+    monkeypatch.setattr(check_pricing, "_STATIC_COPY", ["smithery.yaml"])
+    problems = check_pricing.check_static_copy()
+    assert problems and "smithery.yaml:1" in problems[0]
 
 
 def test_the_free_to_call_reason_does_not_assert_a_date_credits_went_live():
