@@ -1360,10 +1360,10 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     # gates never fire for data tools while metering is off.
     # When DATA_METERING_ENABLED=true, we skip this block and fall through to
     # the x402/credits gates and the data-quota gate below.
-    import os as _os_dm
-    _data_metering_on = _os_dm.getenv("DATA_METERING_ENABLED", "").lower() in (
-        "1", "true", "yes"
-    )
+    # The switch is read through billing.switches, the same function the discovery
+    # descriptor uses to say whether the quota exists (see that module).
+    from billing import switches as _switches
+    _data_metering_on = _switches.data_metering_enabled()
     if name in _PREMIUM_DATA_TOOLS and not _data_metering_on:
         _bypass_receipt = await _dispatch_and_label(name, arguments, headers or {})
         return {
@@ -1418,8 +1418,7 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     # Free keys (free_*) keep the existing free-tier daily path unchanged
     # (limit lives in FREE_TIER_DAILY_LIMIT — never restate it here).
     # Reads and zero-cost ops bypass entirely (is_credit_paid_tool guard).
-    import os as _os_credits
-    if _os_credits.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+    if _switches.credits_enabled():
         from billing import credits as _credits_mod
         if _credits_mod.is_credit_paid_tool(name):
             _cr_account = _credits_mod.resolve_account(headers or {})
@@ -1719,18 +1718,25 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                                                   microsecond=0) - _now
                      ).total_seconds() * 1000
                 )
+                # THE UPGRADE POINTER IS A CLAIM ABOUT CREDITS, so it exists only while the credits
+                # gate does (billing.switches). With CREDITS_ENABLED off, a package bought on the
+                # pricing page grants no credits, and this message used to send the caller there.
+                from billing import switches as _switches_limit
+                _credits_open = _switches_limit.credits_enabled()
                 raise _ToolError(
                     f"free_tier_daily_limit_exceeded for tool '{name}': "
                     f"your free key allows {_free_limit_msg} gated operations per day. "
-                    f"Remaining today: {remaining}; resets {_midnight}. "
-                    f"Buy credits at https://hatchloop.dev/pricing for no daily cap.",
+                    f"Remaining today: {remaining}; resets {_midnight}."
+                    + (" Buy credits at https://hatchloop.dev/pricing for no daily cap."
+                       if _credits_open else ""),
                     error_code="rate_limited",
                     retriable=True,
                     retry_after_ms=_ms_to_reset,
                     how_to_resolve={
                         "wait_until": _midnight,
-                        "upgrade": "https://hatchloop.dev/pricing",
-                        "note": "credit packages remove the daily cap",
+                        **({"upgrade": "https://hatchloop.dev/pricing",
+                            "note": "credit packages remove the daily cap"}
+                           if _credits_open else {}),
                     },
                 )
             # Free key with remaining budget — skip the full gate below
@@ -1771,23 +1777,44 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         # comment that said the rail was "built and switched off" while it was
         # on: a hardcoded claim about the rail, wrong in the other direction.
         # Derived from the gate at call time, like how_to_resolve["x402"] below.
-        _x402_option = (
-            f"Option 3 (pay per call, no signup): attach an x402 payment in "
-            f"params._meta['x402/payment'] and this call is served without "
-            f"a key - USDC on Base. This is the only option that needs no "
-            f"human. "
-        ) if _x402_live() else ""
-        how_to_buy = (
-            f" To get access: Option 1 (free): get a verified free key ({_free_limit_msg} ops/day) at "
+        #
+        # CREDITS FOLLOW THE SAME RULE. "Option 2 (credits): buy a credit package" was also a
+        # constant. With CREDITS_ENABLED off (the running container, 2026-10-04) a package bought
+        # on the pricing page mints a key but grants no credits (billing/polar_webhook.py skips
+        # the grant), so the sentence advertised a switch that is off. The options are therefore
+        # a list built from billing/switches.py and numbered as they come: Option 1 (free key) is
+        # always there; credits and x402 join it only while their gate runs, and the numbers
+        # close up so an agent is never told about an "Option 3" with no "Option 2".
+        from billing import switches as _switches_auth
+        _credits_open = _switches_auth.credits_enabled()
+        _x402_open = _x402_live()
+        _options = [
+            f"(free): get a verified free key ({_free_limit_msg} ops/day) at "
             f"{free_key_url} (just provide your email, no payment needed). "
-            f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
-            f"Scale $99/13,000) at https://hatchloop.dev/pricing. "
-            f"{_x402_option}"
-            f"Options 1 and 2 email you an X-Agent-Identity token; send it as a header on every call. "
+        ]
+        _options_that_email = [1]
+        if _credits_open:
+            _options.append(
+                f"(credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
+                f"Scale $99/13,000) at https://hatchloop.dev/pricing. ")
+            _options_that_email.append(len(_options))
+        if _x402_open:
+            _options.append(
+                f"(pay per call, no signup): attach an x402 payment in "
+                f"params._meta['x402/payment'] and this call is served without "
+                f"a key - USDC on Base. This is the only option that needs no "
+                f"human. ")
+        _options_text = "".join(f"Option {i} {text}" for i, text in enumerate(_options, 1))
+        _emailed_text = ("Option 1 emails you" if len(_options_that_email) == 1
+                         else "Options 1 and 2 email you")
+        how_to_buy = (
+            f" To get access: {_options_text}"
+            f"{_emailed_text} an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
-            f" Get a free API key at {free_key_url} ({_free_limit_msg} ops/day, email verification required). "
-            f"Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing."
+            f" Get a free API key at {free_key_url} ({_free_limit_msg} ops/day, email verification required)."
+            + (" Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing."
+               if _credits_open else "")
         )
         # A KEY WAS SENT AND IT DID NOT WORK - say that, not "no key". The 401 detail alone reads
         # "Malformed token: expected 2 parts." for a key holder whose config template never
@@ -1808,8 +1835,9 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
                                     "hint": _key_status.hint}} if _key_warning else {}),
                 "free_key": {"url": free_key_url,
                              "note": f"email-verified, {_free_limit_msg} ops/day, no payment"},
-                "credits": {"url": "https://hatchloop.dev/pricing",
-                            "note": "packages from $9/1,000 credits"},
+                **({"credits": {"url": "https://hatchloop.dev/pricing",
+                                "note": "packages from $9/1,000 credits"}}
+                   if _credits_open else {}),
                 # THE ONLY PATH AN AUTONOMOUS AGENT CAN COMPLETE ALONE, and it
                 # was the one path this error did not mention.
                 #
@@ -1849,11 +1877,8 @@ def _x402_live() -> bool:
     "everything is free" while credits were live, then said crypto was "built
     and switched off" while it was on and answering.
     """
-    try:
-        from billing import x402_gate
-        return x402_gate.enabled()
-    except Exception:  # noqa: BLE001
-        return False
+    from billing import switches
+    return switches.x402_enabled()
 
 
 def _handle_check_quota(token: str) -> dict:
@@ -1937,8 +1962,8 @@ def _handle_check_quota(token: str) -> dict:
             }
 
         # Premium data quota block — only present when DATA_METERING_ENABLED=true.
-        import os as _os_dq
-        if _os_dq.getenv("DATA_METERING_ENABLED", "").lower() in ("1", "true", "yes"):
+        from billing import switches as _switches_dq
+        if _switches_dq.data_metering_enabled():
             try:
                 from billing.data_quota import (
                     _is_free_tier_key, get_free_key_data_remaining, _get_free_limit,

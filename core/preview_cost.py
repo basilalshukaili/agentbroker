@@ -183,7 +183,7 @@ async def handle_preview_cost(
     agent_id: str | None = None,
     trace_id: str | None = None,
 ) -> PreviewCostResponse | OutcomeReceipt:
-    import os as _os_pc
+    from billing import switches as _switches
     op = request.operation
     if op not in _KNOWN_OPERATIONS:
         valid = sorted(_KNOWN_OPERATIONS)
@@ -199,9 +199,7 @@ async def handle_preview_cost(
     # Honesty invariant: preview_cost == real charge.
     # When DATA_METERING_ENABLED is off (the default), the 3 premium data tools
     # are unconditionally free (bypass gate). Show $0.00 so the preview matches.
-    _data_metering_on = _os_pc.getenv("DATA_METERING_ENABLED", "").lower() in (
-        "1", "true", "yes"
-    )
+    _data_metering_on = _switches.data_metering_enabled()
     if op in _PREMIUM_DATA_TOOLS and not _data_metering_on:
         pricing = _ZERO_PRICING
     else:

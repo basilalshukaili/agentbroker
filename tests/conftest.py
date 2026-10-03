@@ -23,6 +23,19 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _money_switches_start_off(monkeypatch):
+    """No test may depend on the operator's CREDITS_ENABLED / DATA_METERING_ENABLED.
+
+    Both are read at call time (billing/switches.py), and what the discovery descriptor says about
+    payments is a function of them, so an exported variable on a developer's shell would change the
+    committed edge snapshot comparison and every advertising test. A test that needs one on sets it
+    itself (monkeypatch.setenv runs after this fixture and wins).
+    """
+    monkeypatch.delenv("CREDITS_ENABLED", raising=False)
+    monkeypatch.delenv("DATA_METERING_ENABLED", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _offline_osm(request):
     from supply import osm_client
 

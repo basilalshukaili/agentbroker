@@ -64,11 +64,13 @@ def gate_on(monkeypatch):
 
 @pytest.fixture
 def storefront(monkeypatch):
-    """The production shape of the auth_required message: write tools need a key and the
-    Polar checkout URL is set (that is the branch that carried the hard-wired sentence)."""
+    """The shape of the auth_required message that carried the hard-wired sentence: write tools need a
+    key, the Polar checkout URL is set, and credits are on (so "Option 2" exists and x402 is "Option 3").
+    The credits-off shapes are pinned in test_payments_advertising_follows_the_switches.py."""
     import config
     monkeypatch.setattr(config, "REQUIRE_AUTH", True)
     monkeypatch.setenv("POLAR_CHECKOUT_URL", "https://polar.example/checkout")
+    monkeypatch.setenv("CREDITS_ENABLED", "true")
 
 
 def _anonymous_auth_required(tool="send_message"):

@@ -46,6 +46,11 @@ def test_free_quota_exceeded_is_rate_limited_with_retry_after(monkeypatch):
     import agent_interface.identity as ident
     import agent_interface.key_request_logic as krl
 
+    # The upgrade pointer is a claim about credits, so it exists only while the credits gate does
+    # (billing/switches.py). Without the switch the typed error still carries wait_until/retry_after_ms
+    # and no upgrade key - pinned in test_payments_advertising_follows_the_switches.py.
+    monkeypatch.setenv("CREDITS_ENABLED", "true")
+
     monkeypatch.setattr(ident, "validate_token", lambda t: SimpleNamespace(
         valid=True, identity=SimpleNamespace(agent_id="free_testquota")))
     monkeypatch.setattr(krl, "consume_free_daily", lambda k: False)

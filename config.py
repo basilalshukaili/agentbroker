@@ -249,7 +249,12 @@ DEFAULT_BUDGET_CAP_USD = _env_float("DEFAULT_BUDGET_CAP_USD", 10.0)
 # CREDITS_ENABLED=false (default) means the server behaves exactly as today.
 # Flip to true ONLY after: (a) Polar packages created with metadata.credits,
 # (b) POLAR_PACKAGES env set, (c) end-to-end credit path verified.
-CREDITS_ENABLED = _env_bool("CREDITS_ENABLED", default=False)
+#
+# NO CONSTANT HERE ON PURPOSE. This used to be `CREDITS_ENABLED = _env_bool(...)`, read by
+# nothing: the gates read os.getenv at call time and the descriptor asserted "active". Two
+# readers of one variable that can disagree is how the discovery document came to advertise a
+# rail that was switched off. The switch is read in exactly one place, billing/switches.py
+# (credits_enabled()), by the gates and by everything that describes them.
 # Courtesy grant for existing paid-key holders when CREDITS_ENABLED first flips on.
 GRANDFATHER_CREDITS = _env_int("GRANDFATHER_CREDITS", 1000)
 # Free-signup grant: credits issued to a new account with no Polar purchase.
@@ -265,7 +270,7 @@ FREE_SIGNUP_CREDITS = _env_int("FREE_SIGNUP_CREDITS", 100)
 #   Beyond quota: x402 (if payment present) -> credits (if funded account) ->
 #                 honest failure with reason_code=free_quota_exceeded (cost=0).
 # Go-live requires founder approval of quotas + $0.02 price, then flip to true.
-DATA_METERING_ENABLED = _env_bool("DATA_METERING_ENABLED", default=False)
+# Read only through billing/switches.py (data_metering_enabled()); see CREDITS_ENABLED above.
 # Daily free quota for email-verified free-key holders (in-memory, per process restart).
 FREE_DATA_QUOTA_PER_DAY = _env_int("FREE_DATA_QUOTA_PER_DAY", 500)
 # Daily free quota for anonymous callers (tracked by sha256(ip)+date in Supabase,

@@ -421,16 +421,33 @@ def render_checkout(plan: str | None) -> str:
         f"<td>{_op_cost_label(op)}</td></tr>"
         for op in _WRITE_OPS_FOR_CHECKOUT
     )
+    # THE x402 RAIL IS DESCRIBED ONLY WHILE ITS GATE RUNS (billing.switches). This page used to say
+    # "Two rails ... or pay per call in USDC on Base via x402" unconditionally, while X402_ENABLED was
+    # unset in the running container and a payment attached to a call was silently ignored. The
+    # card-and-credits half is a separate product decision and is left as it was.
+    from billing import switches as _switches
+    _x402_open = _switches.x402_enabled()
+    if _x402_open:
+        _lead = (
+            'Two rails, both metered per call &mdash; no subscription at any price. '
+            'Credits, bought by card through Polar. Or pay per call in USDC on Base '
+            'via <strong>x402</strong>, with no signup and no account: attach a signed '
+            'payment in <code class="inline">params._meta["x402/payment"]</code> on any '
+            'paid tool call and the server answers an unpaid attempt with a priced '
+            'offer first.')
+        _beyond_free = "credits or x402"
+        _meta_description = ("Credits, bought by card through Polar. Or pay per call in USDC via x402, "
+                             "with no signup.")
+    else:
+        _lead = 'No subscription at any price. Credits, bought by card through Polar.'
+        _beyond_free = "credits"
+        _meta_description = "Credits, bought by card through Polar."
+
     body = f"""
 <header class="hero">
   <h1>How you pay</h1>
   <p class="lead">
-    Two rails, both metered per call &mdash; no subscription at any price.
-    Credits, bought by card through Polar. Or pay per call in USDC on Base
-    via <strong>x402</strong>, with no signup and no account: attach a signed
-    payment in <code class="inline">params._meta["x402/payment"]</code> on any
-    paid tool call and the server answers an unpaid attempt with a priced
-    offer first.
+    {_lead}
   </p>
   <p class="lead" style="font-size:16px;">
     One balance covers every HatchLoop server. Credits are the platform's unit,
@@ -470,7 +487,7 @@ def render_checkout(plan: str | None) -> str:
     Prices below are Agent Broker's. Every server publishes its own table; the
     credits are the same credits.
     These {{n_write_tools}} tools need a free email-verified key (100 write ops/day, no
-    cost) before they spend anything; beyond that, credits or x402.
+    cost) before they spend anything; beyond that, {_beyond_free}.
     <code class="inline">preview_cost</code> returns these same numbers
     programmatically for free.
   </p>
@@ -496,7 +513,7 @@ def render_checkout(plan: str | None) -> str:
 </section>
 """
     return page("How you pay", body, active="pricing",
-                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the {{n_no_key}} free tools.")
+                description=f"{_meta_description} {BRAND} does not require human signup to use the {{n_no_key}} free tools.")
 
 
 # ---------------------------------------------------------------------------

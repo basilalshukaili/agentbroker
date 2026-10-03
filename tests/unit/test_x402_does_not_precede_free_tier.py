@@ -73,7 +73,8 @@ def test_x402_is_still_checked_before_credits_when_payment_is_offered():
     src = _dispatcher_source()
     x402_branch = src.index(
         "if x402_gate.enabled() and x402_gate.is_paid_tool(name) and _offered_payment:")
-    credits_branch = src.index('if _os_credits.getenv("CREDITS_ENABLED"')
+    # The credits branch reads its switch through billing.switches (the one reader of CREDITS_ENABLED).
+    credits_branch = src.index("if _switches.credits_enabled():")
     assert x402_branch < credits_branch, (
         "a call that already paid via x402 would also be charged credits")
 

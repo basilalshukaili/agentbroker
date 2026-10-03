@@ -501,8 +501,8 @@ async def _credits_rest_payment_gate(request: Request, call_next):
     When true: reserve MAX -> dispatch -> commit on success / release on failure.
     ONE rail: skips when x402 is enabled (x402_gate owns that rail).
     """
-    import os as _os_c
-    if not _os_c.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+    from billing import switches as _switches
+    if not _switches.credits_enabled():
         return await call_next(request)
 
     if request.method != "POST":
@@ -881,11 +881,12 @@ async def well_known_mcp():
     return get_mcp_descriptor()
 
 
-@app.get("/.well-known/x402", tags=["Discovery"])
+@app.get("/.well-known/x402", tags=["Discovery"], include_in_schema=False)
 async def well_known_x402():
-    """x402 payment discovery - USDC on Base. Derived from the gate, so it exists
-    exactly when the rail accepts payment (billing.x402_gate.enabled()) and is a
-    404 otherwise. Never a static claim: see x402_gate.discovery_document()."""
+    # include_in_schema=False: /openapi.json and /docs are static and public, and a route listed
+    # there would advertise a rail that is switched off. The document itself is the discovery
+    # surface; it exists exactly when the rail accepts payment (billing.x402_gate.enabled()) and
+    # is a 404 otherwise. Never a static claim: see x402_gate.discovery_document().
     from billing import x402_gate
     doc = x402_gate.discovery_document()
     if doc is None:
@@ -1644,8 +1645,7 @@ async def polar_webhook(request: Request):
 
     A developer prepays via Polar's hosted checkout (Polar = Merchant of Record:
     card + global tax + payout to Oman); on payment we issue a long-lived token
-    their agent sends as X-Agent-Identity to call paid tools pre-paid. Coexists
-    with the x402 crypto rail (no token → x402 402; valid token → pre-paid).
+    their agent sends as X-Agent-Identity to call paid tools pre-paid.
 
     Auth: Standard Webhooks signature (webhook-id/-timestamp/-signature headers),
     secret in POLAR_WEBHOOK_SECRET. Bad signature → 401, no grant.
