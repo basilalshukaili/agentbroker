@@ -105,3 +105,56 @@ GIVEN = COMMON + [
 PERSIAN_SUFFIXES = [
     "زاده", "زاد", "زادگان", "پور", "فر", "نيا", "نيا", "نژاد", "اباد", "ابادي",
 ]
+
+
+# Common Western given names and surnames. ONE job: a Latin-script query is searched by sound as an Arabic name
+# when it contains a known Arab given name, and several of those sound like ordinary English ones (David /
+# Dawud, Mary / Maryam, Ryan / Rayyan, Samuel, Daniel, Emily ...). A word on this list never counts as evidence
+# that a name is Arabic - only structure (an article, a patronymic, abd/abu, -din, -allah) or a given name that
+# is NOT on it does. It is a veto on a weak signal and nothing else: a query this list keeps out of the Arabic
+# layer is still screened exactly as it always was (identical spelling), and a name that is on it AND carries
+# structure ("David bin Salim") is still read as Arabic. Names that are common in the Arab world as well (Adam,
+# Sara, Karim, Sami, Omar, Amin, Ali, Hassan ...) are deliberately NOT here. Measured on 125 ordinary English
+# names: 22 were engaged without this list and 2 with it (docs/ARABIC_SANCTIONS_EVAL.md).
+WESTERN = """
+james john robert michael william david richard joseph thomas charles christopher daniel matthew anthony mark
+donald steven paul andrew joshua kenneth kevin brian george timothy ronald edward jason jeffrey ryan jacob gary
+nicholas eric jonathan stephen larry justin scott brandon benjamin samuel gregory alexander patrick frank
+raymond jack dennis jerry tyler aaron jose henry zachary douglas peter kyle noah ethan jeremy walter christian
+keith roger terry austin sean gerald carl harold dylan arthur lawrence jordan jesse bryan billy bruce gabriel joe
+logan alan juan albert willie elijah wayne randy vincent mason roy ralph bobby russell bradley philip eugene
+howard fred stanley leonard nathan norman todd curtis glen rodney lee jimmy johnny tommy ricky danny jamie
+mary patricia jennifer linda elizabeth barbara susan jessica sarah karen lisa nancy betty margaret sandra
+ashley kimberly emily donna michelle carol amanda melissa deborah stephanie rebecca sharon laura cynthia
+kathleen amy angela shirley anna brenda pamela emma nicole helen samantha katherine christine debra rachel
+carolyn janet catherine maria heather diane olivia julie joyce victoria ruth virginia lauren kelly christina
+joan evelyn judith andrea hannah megan cheryl jacqueline martha madison teresa gloria janice ann kathryn
+abigail sophia frances jean alice judy julia grace amber denise danielle marilyn beverly isabella theresa
+diana natalie brittany charlotte marie kayla alexis lori aladdin alonso alistair eleanor alison allison
+smith johnson williams brown jones garcia miller davis rodriguez martinez hernandez lopez gonzalez wilson
+anderson taylor moore jackson martin perez thompson white harris sanchez clark ramirez lewis robinson walker
+young king wright torres nguyen hill flores green adams nelson baker hall rivera campbell mitchell carter
+roberts gomez phillips evans turner diaz parker cruz edwards collins reyes stewart morris morales murphy cook
+rogers gutierrez ortiz morgan cooper peterson bailey reed howard ramos cox ward richardson watson brooks
+chavez wood bennett gray mendoza ruiz hughes price alvarez castillo sanders myers long ross foster jimenez
+powell jenkins perry sullivan bell coleman butler henderson barnes gonzales fisher vasquez simmons romero
+patterson hamilton graham reynolds griffin wallace moreno west cole hayes bryant herrera gibson ellis tran
+medina aguilar stevens murray ford castro marshall owens harrison fernandez mcdonald woods washington kennedy
+wells vargas freeman webb tucker guzman burns crawford olson simpson porter hunter gordon mendez silva shaw
+snyder dixon munoz hunt hicks holmes palmer wagner black robertson boyd rose stone salazar fox warren mills
+meyer rice schmidt garza daniels ferguson nichols stephens soto weaver gardner payne grant dunn kelley
+spencer hawkins arnold pierce vazquez hansen peters santos hart knight elliott cunningham duncan armstrong
+hudson carroll lane riley andrews alvarado ray delgado berry perkins hoffman johnston matthews pena richards
+contreras willis carpenter sandoval guerrero chapman rios estrada ortega watkins greene nunez wheeler valdez
+harper burke larson santiago maldonado morrison franklin carlson dominguez carr lawson jacobs obrien lynch
+vega bishop montgomery oliver jensen harvey williamson gilbert dean sims espinoza howell reid hanson mccoy
+garrett burton fuller weber welch rojas lucas marquez fields park little banks padilla day walsh bowman
+schultz luna fowler mejia davidson acosta brewer holland juarez newman pearson curtis cortez schneider
+barrett navarro figueroa keller avila wade molina hopkins campos barnett bates chambers caldwell beck lambert
+miranda byrd craig ayala lowe frazier powers neal carrillo sutton fleming rhodes shelton schwartz norris
+jennings watts duran walters cohen mcdaniel moran parks steele vaughn becker holt deleon barker hale
+benson haynes horton miles lyons graves bush thornton wolfe warner cabrera mckinney mann zimmerman dawson
+lara fletcher page mccarthy love robles cervantes solis erickson reeves klein salinas fuentes baldwin hardy
+higgins aguirre cummings chandler sharp barber bowen ochoa robbins ramsey francis griffith blair oconnor
+cardenas pacheco cross calderon quinn moss swanson rivas hodges mcclain mcbride hayden
+"""

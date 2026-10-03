@@ -769,3 +769,46 @@ def test_the_refresh_job_stores_arabic_rows_beside_the_latin_ones(fx):
 
 
 import re  # noqa: E402  (used above)
+
+
+# --------------------------------------------------------------------------
+# GATE P1 (2026-10-03): a Latin word beside an Arabic alias is not an alias
+# --------------------------------------------------------------------------
+
+def _exact_findings(result):
+    return [m for m in result.get("matches") or [] if m.get("match_basis") == "arabic_script_exact"]
+
+
+@pytest.mark.parametrize("eid", ["4140", "551", "3782"])
+@pytest.mark.parametrize("shape", ["{a} Smith", "Smith {a}", "{a} Acme Trading Company", "{a} Jones Consulting",
+                                    "John {a} Brown"])
+def test_a_latin_word_beside_a_published_alias_is_never_a_finding(world, eid, shape):
+    """The reviewed defect: the exact-alias test looked only at the Arabic-script units, so 'alias Smith' was
+    reported as a hit (matched, status hit) while 'Smith' was never compared with anything. It is two different
+    claims - 'this is the printed alias' and 'this is a person who has a Latin word we did not look at' - and a
+    false definitive hit on someone who is not on a list is the worst output a screen can give."""
+    e = next((x for x in world.fx["entities"] if x["id"] == eid and x["arabic"]), None)
+    if e is None:
+        pytest.skip(f"no Arabic alias for {eid} in the fixture")
+    alias = e["arabic"][0]
+    r = world.screen(shape.format(a=alias))
+    assert _exact_findings(r) == [], shape
+    assert r["matched"] is False and r["screening_status"] != "hit"
+
+
+def test_the_bare_alias_and_an_alias_with_only_generic_or_title_words_are_still_findings(world):
+    e = _ent(world.fx, "EU", "4140")
+    alias = e["arabic"][0]
+    for q in (alias, alias + " LLC", alias + " Co", "Sheikh " + alias):
+        r = world.screen(q)
+        assert _exact_findings(r), q
+        assert r["matched"] is True
+
+
+def test_a_mixed_script_query_that_is_close_to_an_alias_is_a_candidate_not_nothing(world):
+    """Declining the finding must not mean declining to look: the row is scored by sound like any other, and a
+    query that adds a name element of its own is at most a candidate."""
+    e = _ent(world.fx, "EU", "4140")
+    r = world.screen(e["arabic"][0] + " Smith")
+    assert r["screening_status"] in ("candidates", "partial")
+    assert r["screening_status"] != "clean"

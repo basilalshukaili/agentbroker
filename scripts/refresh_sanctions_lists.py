@@ -302,6 +302,43 @@ def _count_at(env: dict, list_code: str, stamp: str) -> int:
     return 0
 
 
+def _count_arabic(env: dict, list_code: str) -> int:
+    """How many Arabic-script alias rows the list already has. Their name_key is made of Arabic letters only
+    (arabic_names.arabic_name_key), so 'has no a-z' picks them out. -1 when it cannot be counted."""
+    url = (env["SUPABASE_URL"].rstrip("/")
+           + f"/rest/v1/sanctions_names?select=name_key&list_code=eq.{list_code}&name_key=not.match.%5Ba-z%5D")
+    key = env["SUPABASE_SERVICE_KEY"]
+    p = subprocess.run(["curl", "-sS", "-I", "--max-time", "60", url,
+                        "-H", f"apikey: {key}", "-H", f"Authorization: Bearer {key}",
+                        "-H", "Prefer: count=exact", "-H", "Range: 0-0"],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=90)
+    for line in (p.stdout or "").splitlines():
+        if line.lower().startswith("content-range"):
+            tail = line.split("/")[-1].strip()
+            return int(tail) if tail.isdigit() else -1
+    return -1
+
+
+# Arabic-script aliases are a small part of a list (about 750 of 24,000 on the EU copy) and they are found by a
+# column the publisher can rename. The 70% total-size guard cannot see them go: losing all 735 UK aliases
+# leaves a list that is 95% as big as before. So they get a guard of their own.
+ARABIC_SWEEP_FLOOR = 0.5
+
+
+def arabic_sweep_ok(prior: int, new: int) -> tuple:
+    """(ok, message). The sweep deletes what this run did not see; if the Arabic-script aliases this run carries
+    are fewer than half of those already indexed (or none, where there were some), the feed has probably changed
+    shape and the sweep would delete the older, good ones. `prior` is -1 when it could not be counted - then the
+    sweep is not trusted either."""
+    if prior < 0:
+        return False, "the Arabic-script alias rows already indexed could not be counted"
+    if prior > 0 and new < prior * ARABIC_SWEEP_FLOOR:
+        return False, (f"this run carries {new} Arabic-script alias row(s) against {prior} indexed - the "
+                       f"publisher's column was probably renamed or dropped")
+    return True, f"{new} Arabic-script alias row(s) against {prior} indexed"
+
+
 def _sweep_delisted(env: dict, list_code: str, stamp: str, kept: int) -> int:
     """Remove rows this refresh did NOT see - i.e. entries that were delisted.
 
@@ -417,9 +454,16 @@ def main(argv: list[str]) -> int:
             print(f"  {code}: PARSED TO NOTHING - the feed format probably "
                   f"changed. Refusing to write, so the good rows survive.")
             continue
+        new_ar = sum(1 for r in rows if _ar.has_arabic_script(r["display_name"]))
+        prior_ar = _count_arabic(env, code)
+        ar_ok, ar_msg = arabic_sweep_ok(prior_ar, new_ar)
+        print(f"  Arabic-script aliases: {ar_msg}")
         n = _upsert(env, rows)
         print(f"  upserted {n}")
-        if n == len(rows):
+        if n == len(rows) and not ar_ok:
+            print(f"  {code}: NOT sweeping - {ar_msg}. The older Arabic-script rows are kept; check the feed's "
+                  f"columns before the next run.")
+        elif n == len(rows):
             _sweep_delisted(env, code, stamp, n)
         else:
             print(f"  {code}: upsert stopped at {n}/{len(rows)} - NOT sweeping, "

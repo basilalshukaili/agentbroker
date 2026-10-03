@@ -13,16 +13,22 @@ lists), `core/screen_sanctions.py` (the wiring). Re-run the numbers with `script
 | A Latin Arabic name matched only if the spelling was identical. The lists themselves carry six spellings of one man. | Spellings of one name are matched by sound (`Mohammed al-Zawahiri` finds `Muhammad Al-Zawahri`), whatever the word order, spacing or article. |
 | Nothing to say about how sure a match was. | Every sound-based match carries `match_confidence` (`high` or `medium`), `match_basis`, `match_explanation` and `token_alignment` (which element of your query lined up with which element of the listing, and how closely). |
 
-Two rules did not change, and tests pin both:
+Three rules hold, and tests pin all of them:
 
 1. **A sound-alike is a candidate, never a finding.** It appears in `possible_matches_unverified`. The one new kind
    of finding is narrow: an Arabic-script query equal, element for element, to an Arabic-script alias the publisher
    printed (`match_basis: arabic_script_exact`). That is the same evidence as an exact Latin token-set match, in the
    other script.
 2. **An Arabic-script query is never reported clean.** Transliteration is lossy, so an empty result means "nothing
-   found by sound or spelling" and the screen reports `partial` with that sentence. English names behave exactly as
-   before: a layer that engages only on Arabic script or on positive evidence of Arabic-name structure (`al-`,
-   `bin`, `Abd al-X`, `Abu X`), and a test runs nine ordinary names through both versions and compares the answers.
+   found by sound or spelling" and the screen reports `partial` with that sentence. Ordinary English names are not
+   read as Arabic at all: the layer engages only on Arabic script, on Arabic-name STRUCTURE (`al-`, `bin`, `Abd al-X`,
+   `Abu X`, `-din`, `-allah`) or on a known Arab given name that is not also an ordinary Western one (a list of about
+   600 common Western given names and surnames vetoes that last signal and nothing else). Measured on 125 ordinary
+   English names: 0 are read as Arabic, 0 draw a sound candidate, 125 are `clean` exactly as before (the first version
+   of this layer read 22 of them as Arabic and listed unrelated parties for 5; see "The second round" below).
+3. **A Latin word beside an Arabic alias is not the alias.** The exact-alias finding is a claim about the whole
+   query, so it needs a query with no Latin NAME element beside the Arabic ones (generic words such as `LLC` and
+   titles are ignored). `<published alias> Smith` is scored by sound like any other row and is at most a candidate.
 
 ## How a name is read
 
@@ -72,11 +78,13 @@ exactly by switching the layer off.
 | | Question | Before | Now |
 |---|---|---|---|
 | **A** | An Arabic-script alias the publisher printed, as the query: is it a finding? | not screened | **100 of 100** findings |
-| **B** | An Arabic name, aliases removed: is the party surfaced? *Individuals* | 0 of 80 (not screened) | **74 of 80 = 92.5%** (57 of 80 at `high`) |
+| **B** | An Arabic name, aliases removed: is the party surfaced? *Individuals* | 0 of 80 (not screened) | **74 of 80 = 92.5%** (57 of 80 at `high`; unchanged by the second round) |
 | **B** | ... *entities and organisations* | 0 of 20 | 10 of 20 = 50% |
-| **C** | A Latin spelling that is not on the lists, for a party the lists carry under other spellings: is the party surfaced? | 9 of 100 | **56 of 100** |
+| **C** | A Latin spelling that is not on the lists, for a party the lists carry under other spellings: is the party surfaced? | 9 of 100 | **55 of 100** (56 before the second round) |
 | **D** | 45 names that are on no list (20 in Arabic script; 25 in Latin: 11 Omani personal names, 5 Gulf company names, 9 plain English): findings | 0 | 0 |
 | **D** | ... queries that draw any candidate, and candidates in total | 11, 33 | 13, 42 (the 9 added are all `medium`, none `high`, on 3 names) |
+| **N** | 245 ordinary names that are on no list (125 English, 60 Gulf in Latin script, the same 60 in Arabic script): findings | 0 | 0 |
+| **N** | ... read as Arabic / draw a sound candidate (candidates, all `medium`, none `high`) | 0 / 0 | English 0 of 125 / 0; Gulf Latin 57 of 60 / 2 (3); Gulf Arabic 60 of 60 / 5 (18) |
 | fixture | The 67 individuals in `tests/fixtures`, end to end, in the unit tests | | 65 of 67 = 97% |
 
 **The target in the 2026-10-03 verdict (A4) was recall of 90% or better with no rise in false positives on the existing
@@ -96,8 +104,10 @@ person under a spelling the check cannot tell is his.
 
 | Grade | B own / other | C own / other |
 |---|---|---|
-| `high` | 143 / 33 | 66 / 20 |
-| `medium` | 44 / 162 | 46 / 99 |
+| `high` | 143 / 33 | 66 / 19 |
+| `medium` | 44 / 102 | 43 / 90 |
+
+(Before the second round `medium` was 44 / 162 and 46 / 99: the same parties found, a third fewer wrong candidates.)
 
 Read `high` as "very probably this party, or a family member listed beside him": inspecting the `other` high candidates
 shows them to be overwhelmingly the same person under another list's spelling, or relatives the lists print together (the
@@ -110,6 +120,59 @@ at 85, 33 at 90. It has no answer at all to B, because a string matcher has noth
 with. On the 25 Latin names of D it returns 1 result at cutoff 80 and none above, because ordinary Gulf names do not
 resemble listed names as strings; the sound layer adds the 9 `medium` candidates noted above for the Gulf names it
 reads as Arabic.
+
+## The second round (2026-10-03): what the review and the gate found, and what was changed
+
+The first version was reviewed by DeepSeek and jev, by an independent reviewer who ran every claim, and by the
+integration gate, which re-ran the probes on the real lists. Two things were wrong.
+
+**P1. A mixed-script query was a definitive finding.** `<published Arabic alias> Smith` returned `matched: true`,
+`match_basis: arabic_script_exact`: the exact-alias test looked only at the Arabic-script elements and ignored the
+Latin word. 30 of 30 variants of 10 real EU and UK aliases did it. Fixed (rule 3 above) and pinned by a test that
+fails without the fix.
+
+**P2. Ordinary names were read as Arabic and drew confident-looking candidates.** On the gate's probe 23 of 50
+ordinary English names engaged the layer and 8 drew a candidate (`Mary Collins` listed `Cleanseas Coral`; `Ryan Scott`
+listed an Iranian reactor company); ordinary Omani names in Arabic script drew `high` candidates for unrelated listed
+parties. What caused each, and what was changed (every change is a constant or a rule in `core/arabic_names.py`):
+
+| Cause | Change |
+|---|---|
+| A known Arab given name counted as evidence of an Arab name on its own, and many sound like English ones (David / Dawud, Mary / Maryam, Ryan / Rayyan, Samuel, Emily ...) | The layer engages on **structure**, or on a given name that is not on `WESTERN` (about 600 common Western given names and surnames, a veto on that one weak signal). Names that are common in both worlds (Adam, Sara, Karim, Omar, Ali, Hassan) are deliberately not on it |
+| A bare `al-` / `el-` prefix on any 6-letter word was read as a glued article (Alison, Elizabeth, Eleanor, Aladdin ...) | A list of English names that begin that way is excluded from the prefix rule; `Ed` and `An` count as an assimilated article (`Ed-Din`, `An-Nasir`) only before a known Arab name element |
+| A fully covered query could be matched to a long listing that it accounted for a third of (`Adil bin Saud Al Alawi` against a six-word Spanish organisation, three two-consonant words lined up) | `FULL_MIN_L_COV = 0.4`: a fully covered query must also account for at least 40% of the listing |
+| The family name did not match and two given names did (`Nabil bin Hamad Al Salhi` against `Nabil Ali Ahmed`) | **The family name rule**: an element that carried the article on its own (`Al Salhi`, not a compound like `Abd al-Rahman`) must be matched for a candidate to be above `low` |
+| Two query words glued into one matched a common listed name (`Ali Al-Ajmi` -> `Jamil`) | **The anchor rule**: when the query has an element that identifies someone (not a known given name, not among the commonest, enough sound), one such element must match at `ANCHOR_SIM = 0.88` or better, informatively on both sides; a glued match counts only against a listed word that is itself not a given name |
+
+Each rule's marginal value, measured the way the first round was: a matcher-only run over cached candidate pairs
+(B: 100 Arabic-script queries, C: 100 Latin variants, N: the 120 Gulf names of the 245 ordinary ones; the English
+names draw nothing in any row because they are no longer read as Arabic). The figures are pair counts, not deduplicated
+by party, so they are larger than the pipeline's. An earlier draft also had a floor on how much sound a non-identical
+pair must carry; it changed nothing on any of these sets once the coverage floor was in, and was removed.
+
+| Setting | B individuals surfaced | C surfaced | B `medium` own / other | Gulf queries with a candidate (of 120) | Gulf `medium` candidates |
+|---|---|---|---|---|---|
+| none of the three rules below | 74 of 80 | 55 | 122 / 570 | 15 | 96 |
+| family rule + anchor 0.82, no coverage floor (the base of the next three rows) | 74 | 54 | 122 / 544 | 10 | 40 |
+| ... without the anchor rule | 74 | 54 | 122 / 566 | 13 | 93 |
+| ... without the family rule | 74 | 55 | 122 / 547 | 12 | 43 |
+| ... with the coverage floor 0.4 | 74 | 54 | 120 / 481 | 8 | 34 |
+| coverage 0.4, anchor 0.93 | 74 | 53 | 114 / 189 | 7 | 32 |
+| coverage 0.4, anchor 0.97 | 67 | 53 | 90 / 155 | 4 | 10 |
+| **as shipped** (family rule, coverage 0.4, anchor 0.88) | **74 of 80** | **54** | **114 / 206** | **7** | **32** |
+
+0.97 is the cliff (recall falls by 7 individuals); 0.88 keeps all of B and gives up one party in C for a three-quarters
+cut in the wrong `medium` candidates. Run through the whole pipeline (`--modes ABCDN`): B individuals 74 of 80 (57 at
+`high`), C 55 of 100, A 100 of 100, D unchanged, and N as in the headline table. How many real Arab names still engage
+the layer: of the 1,136 individuals the EU and UK print with an Arabic spelling, the longest Latin name engages it for
+85.7% (86.3% before the second round); the 14% that never engaged (`Mohsen Hojati`, `Rami Makhlouf`: no article, no
+known given name) are matched as they always were, by identical spelling.
+
+**What is still noisy, said plainly.** 5 of 60 ordinary Gulf names in Arabic script and 2 of 60 in Latin script still
+draw a `medium` candidate (21 in all, none `high`). They are real sound-alikes: `Ibrahim bin Salim Al Hosni` and
+`Ibrahim Hassan al-Asiri`, `Muhammad bin Said Al Harthi` and `HARIS, Muhammad`. A sound screen of Arab names over 40,000
+listed names will do this; the grade says "look at this one", not "this is the person". Names that are Persian
+translations rather than transliterations are still invisible (see the entities result).
 
 ## How the thresholds were chosen
 
@@ -185,9 +248,14 @@ Latin name keys, 0 mismatches.
 - **Long vowels are cheap to drop.** `w`, `y` and `h` are what romanisers add and omit, so `Zawahiri` is close to
   `Zouheir`. A weak letter the other spelling shows no trace of keeps a candidate out of `high`, but a close sound-alike
   can still reach `medium`.
-- **Three ordinary Gulf names in 45 still draw a candidate** (9 candidates, all `medium`): partly covered queries whose
-  distinctive element is a doubled-letter sound-alike ("Maamari" and "Amr"). Raising the weight below which skeletons are
-  compared by equality removes some of them and costs entity recall; it was left alone rather than tuned to one name.
+- **Ordinary Gulf names still draw a few `medium` candidates** (7 of 120 on the 245-name set, none `high`; 3 of 45 on
+  the older set). See "What is still noisy" above. Raising the weight below which skeletons are compared by equality
+  removes some of them and costs entity recall; it was left alone rather than tuned to one name.
+- **A Latin name with an Arab given name that is also on the Western list and no structure** ("David Salim") is not
+  read as Arabic. The list is a veto on a weak signal, so the miss is exactly the English-sounding name it exists for.
+- **Refresh safety.** The UK Arabic column is found by a case- and punctuation-insensitive name, a missing column is
+  logged, and `refresh_sanctions_lists.py` will not sweep a list whose Arabic-script alias rows fell below half of those
+  already indexed (it counts them first and prints both numbers).
 - **Only the Arabic script is read.** Cyrillic (3,391 UK rows) and CJK names are not screened, and still say so.
 - **The Arabic-script alias keys are computed when the list is refreshed.** If the normalisation rules change, the
   next refresh recomputes them; until then an Arabic-script alias stored under the old rules is still found by the sound
@@ -225,15 +293,15 @@ The verdict asked for a kill check before building: run the same names through O
 authorised on this machine, and the work was done without being able to ask. What stands in for it is the RapidFuzz
 baseline above, which is a different and weaker matcher. To close the check: install `nomenklatura` in a throwaway
 virtual environment, load `SDN.CSV`, the EU file and the UK file as entities, feed `gold_entities()` from
-`scripts/eval_arabic_sanctions.py` through logic-v2, and compare the B and C figures above (individuals 92.5%, and 56%
+`scripts/eval_arabic_sanctions.py` through logic-v2, and compare the B and C figures above (individuals 92.5%, and 55%
 for Latin variants). If logic-v2 is at 95% or better on B, the verdict's rule is to ship it instead.
 
 ## Reproducing everything
 
 ```
 python scripts/build_arabic_sanctions_fixture.py --lists-dir DIR --uk-report-date 02-Oct-2026 --fetched 2026-10-03
-python scripts/eval_arabic_sanctions.py --lists-dir DIR --sample 100          # A B C D (E with --modes ABCDE)
-python -m pytest tests/unit/test_arabic_names.py tests/unit/test_screen_sanctions_arabic.py
+python scripts/eval_arabic_sanctions.py --lists-dir DIR --sample 100          # A B C D (E, N with --modes ABCDEN)
+python -m pytest tests/unit/test_arabic_names.py tests/unit/test_screen_sanctions_arabic.py tests/unit/test_arabic_gate_fixes.py
 ```
 
 `DIR` holds `SDN.CSV`, `ALT.CSV`, `EU.csv` and `UK.csv` as the publishers serve them. The fixture in
@@ -254,5 +322,6 @@ UN list is still not screened.
 > **screen_sanctions reads Arabic names.** It accepts names in Arabic script and matches Arabic names across
 > romanisations, word order and spacing, against the OFAC, EU and UK lists and the Arabic-script aliases the EU and UK
 > print. A sound-alike comes back as a graded candidate (`match_confidence`, `match_explanation`, `token_alignment`),
-> never as a finding; an Arabic-script name equal to a printed Arabic alias is a finding. An Arabic-script name that
-> finds nothing is reported `partial`, never clean. English names are unchanged.
+> never as a finding; an Arabic-script name equal to a printed Arabic alias, with no Latin name element beside it, is a
+> finding. An Arabic-script name that finds nothing is reported `partial`, never clean. Ordinary English names are not
+> read as Arabic and are screened exactly as before.

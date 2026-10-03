@@ -25,6 +25,11 @@ FOUR MEASUREMENTS
                                                      zero), and how many candidates
                                                      does an ordinary name draw?
 
+  N  245 ordinary names that are on no list (tests/fixtures/sanctions_negative_names.json): 125 English, 60 Gulf
+     names in Latin script, the same 60 in Arabic script. Findings (must be zero), how many are read as Arabic
+     at all, how many draw a sound candidate and at which grade. This is the false-positive measurement the
+     review of 2026-10-03 asked for; D is the older, smaller one.
+
   E  A generic fuzzy baseline (RapidFuzz) on the C and D names, for context.
      Not OpenSanctions' logic-v2 matcher; see run_e.
 
@@ -391,6 +396,40 @@ def run_d(h: Harness, n: int) -> dict:
     return out
 
 
+def negative_groups() -> dict:
+    path = os.path.join(REPO, "tests", "fixtures", "sanctions_negative_names.json")
+    with open(path, encoding="utf-8") as fh:
+        fx = json.load(fh)
+    return {"english": [f"{a} {b}" for a, b in fx["english_pairs"]],
+            "gulf_latin": [b for a, b in fx["gulf"]],
+            "gulf_arabic": [a for a, b in fx["gulf"]]}
+
+
+def run_n(h: Harness) -> dict:
+    """Ordinary names, new matcher against the previous one: findings, engagement and candidates by grade."""
+    out = {}
+    groups = negative_groups()
+    for label in ("new", "previous"):
+        h.layer_on() if label == "new" else h.layer_off()
+        h.use_table(FakeSanctionsTable.from_records(h.data["records"], include_arabic=True))
+        out[label] = {}
+        for g, names in groups.items():
+            res = collections.Counter()
+            for q in names:
+                r = h.screen(q)
+                cands = [c for c in r.get("possible_matches_unverified") or [] if c.get("_matcher") == "name_sound_match"]
+                res["queries"] += 1
+                res["findings"] += 1 if r.get("matches") else 0
+                res["read_as_arabic"] += 1 if (r.get("arabic_matching") or {}) else 0
+                res["with_sound_candidate"] += 1 if cands else 0
+                for c in cands:
+                    res["candidates_" + str(c.get("match_confidence"))] += 1
+                res["status_" + str(r.get("screening_status"))] += 1
+            out[label][g] = dict(res)
+    h.layer_on()
+    return out
+
+
 def run_e(h: Harness, gold: list[dict], n: int, rng: random.Random) -> dict:
     """A GENERIC FUZZY BASELINE, for context. RapidFuzz token_sort_ratio (name
     order does not matter) over every Latin name on the three lists, on the same
@@ -490,6 +529,9 @@ def main(argv: list[str]) -> int:
         if "D" in a.modes:
             report["D_names_not_on_the_lists"] = run_d(h, a.sample)
             print("D", json.dumps(report["D_names_not_on_the_lists"], indent=1, ensure_ascii=False), flush=True)
+        if "N" in a.modes:
+            report["N_ordinary_names"] = run_n(h)
+            print("N", json.dumps(report["N_ordinary_names"], indent=1), flush=True)
         if "E" in a.modes:
             report["E_generic_fuzzy_baseline"] = run_e(h, gold, a.sample, rng_for("E"))
             print("E", json.dumps(report["E_generic_fuzzy_baseline"], indent=1), flush=True)

@@ -433,7 +433,11 @@ class Unit:
     optional: bool = False        # a title: matched if both sides carry it, never required
     generic: bool = False         # "company", "trading": identifies nobody
     common: bool = False          # one of the commonest Arab name elements
-    marker: bool = False          # carried Arabic-name structure (al-, abd, abu, bin ...)
+    marker: bool = False          # carried Arabic-name STRUCTURE (al-, abd, abu, bin, -din, -allah ...)
+    given: bool = False           # a known Arab given name (by spelling, or by sound for a Latin word): weak
+                                  # evidence of an Arab name on its own, and never a name that identifies someone
+    family: bool = False          # carried the article on its own ("al-Salhi"): a family or tribal name, not a
+                                  # compound given name (abd al-Rahman) - the element that identifies the person
 
 
 _TABLES: dict = {}
@@ -481,6 +485,7 @@ def _tables() -> dict:
         common=fold_set(_data.COMMON),
         given=fold_set(_data.GIVEN),
         persian_suffix=fold_set(_data.PERSIAN_SUFFIXES),
+        western=frozenset(_data.WESTERN.split()),
         generic_skels=skel_set(_data.GENERIC),
         common_skels=skel_set(_data.COMMON),
         given_skels=skel_set(_data.GIVEN),
@@ -563,6 +568,7 @@ def _arabic_units(toks: tuple[str, ...]) -> list[Unit]:
         stripped, had_art = _strip_article(tok)
         if not stripped:
             continue
+        base = stripped                       # to tell a plain "al-X" from a compound (abd al-X, abu X ...)
         marker = had_art or pending_patronymic is not None
         alts = [tok] if (had_art and tok != stripped) else []
         if pending_patronymic and not had_art:
@@ -636,7 +642,9 @@ def _arabic_units(toks: tuple[str, ...]) -> list[Unit]:
             # (as Latin ones must be) the surname Salami would join Salim, Salem
             # and Salma, and "Hossein Salami" would read as two common names.
             common=key in T["common"],
-            marker=marker))
+            marker=marker,
+            given=key in T["given"],
+            family=had_art and stripped == base))
     return out
 
 
@@ -648,6 +656,18 @@ _LA_ASSIM = {"ar": "r", "as": "s", "ash": "sh", "ad": "d", "at": "t",
              "es": "s", "esh": "sh", "ed": "d", "er": "r", "en": "n",
              "et": "t", "ush": "sh", "us": "s", "ud": "d", "ur": "r",
              "un": "n", "ut": "t", "uz": "z"}
+# Assimilated articles that are also ordinary English first names ("Ed Davis", "An Nguyen"): they count as an
+# article only before a known Arab name element, not before any word that happens to start with the right letter.
+_LA_ASSIM_AMBIGUOUS = frozenset({"ed", "an"})
+
+
+def _is_assimilated_article(tok: str, nxt: str, T: dict) -> bool:
+    if tok not in _LA_ASSIM_AMBIGUOUS:
+        return True
+    sk = latin_skeleton(nxt)
+    return len(sk) >= 3 and nxt not in T["western"] and _in_skel_set(sk, T["given_skels"])
+
+
 _LA_PATRONYMIC = frozenset({"bin", "ibn", "ben", "bint", "binti", "ould",
                             "walad", "bani", "banu", "ibnat"})
 _LA_KUNYA = frozenset({"abu", "abou", "abo", "aboo", "abi", "aba", "umm", "oum"})
@@ -667,6 +687,21 @@ _LA_PERSIAN_SUFFIX = frozenset({"zadeh", "zade", "zad", "zadegan", "pour", "pur"
                                 "poor", "far", "fard", "nia", "nejad", "nezhad",
                                 "nezad", "abadi", "abad"})
 _LA_ALLAH = frozenset({"allah", "alla", "ullah", "ulla", "llah"})
+# English (and general European) given names that begin with al/el. A glued article ("Alzawahiri", "Elsayed") is
+# real evidence of an Arabic name; "Alison", "Elizabeth" and "Eleanor" are not, and the bare-prefix rule below
+# cannot tell them apart by shape. A list, because there is no shape to test (2026-10-03 gate: 8 of 125 ordinary
+# English names were engaged by this rule alone).
+_EN_AL_EL = frozenset({
+    "alan", "alana", "alaric", "alba", "albert", "alberta", "alberto", "albion", "alden", "alder", "aldo",
+    "aldous", "aleisha", "alejandro", "alena", "alessandra", "alessandro", "alessio", "alex", "alexa", "alexander",
+    "alexandra", "alexandria", "alexei", "alexey", "alexis", "alfie", "alfred", "alfreda", "alfredo", "alfonso",
+    "algernon", "alice", "alicia", "alina", "alisa", "alisha", "alison", "alissa", "alistair", "alister",
+    "allan", "allen", "allie", "allison", "allyson", "alma", "almond", "alonso", "alonzo", "alpha", "alston",
+    "alton", "alvarez", "alvaro", "alvin", "alyce", "alyson", "alyssa", "aladdin", "alberta", "albright",
+    "elaine", "elbert", "eldon", "eldridge", "eleanor", "eleanore", "elena", "elias", "elijah", "elisa",
+    "elisabeth", "elise", "elisha", "eliza", "elizabeth", "elkin", "ella", "ellen", "ellie", "elliot", "elliott",
+    "ellis", "ellison", "elmer", "eloise", "elroy", "elsa", "elsie", "elton", "elva", "elvin", "elvira", "elvis",
+    "elwood", "elyse", "elyssa", "elton", "eldred", "elwyn", "elgin", "elliston"})
 _LA_TITLES = frozenset({
     "sheikh", "shaikh", "sheik", "shaykh", "sheyh", "shaik", "sheykh", "hajj",
     "haji", "hadji", "hajji", "doctor", "dr", "mullah", "mulla", "mawlawi",
@@ -693,20 +728,24 @@ def _latin_units(toks: tuple[str, ...]) -> list[Unit]:
         if tok in _LA_ARTICLE and i < n:
             pending_article = True
             continue
-        if tok in _LA_ASSIM and i < n and toks[i].startswith(_LA_ASSIM[tok]):
+        if tok in _LA_ASSIM and i < n and toks[i].startswith(_LA_ASSIM[tok]) \
+                and _is_assimilated_article(tok, toks[i], T):
             pending_article = True
             continue
         marker = pending_article or pending_patronymic is not None
         text = tok
         alts: list[str] = []
         had_art = pending_article
+        glued_art = False
         if pending_article:
             alts.append("al" + tok)
         elif len(tok) >= 6 and tok[:2] in ("al", "el") and tok.isalpha() \
-                and not tok.startswith(("alex", "alf", "alb", "alm", "alp", "ale")):
+                and not tok.startswith(("alex", "alf", "alb", "alm", "alp", "ale")) \
+                and tok not in _EN_AL_EL:
             alts.append(tok)
             text = tok[2:]
             marker = True
+            glued_art = True
         if pending_patronymic and not had_art:
             alts.append(pending_patronymic + tok)
 
@@ -717,7 +756,8 @@ def _latin_units(toks: tuple[str, ...]) -> list[Unit]:
                 i += 1
                 if cand in _LA_ARTICLE or (
                         cand in _LA_ASSIM and i < n
-                        and toks[i].startswith(_LA_ASSIM[cand])):
+                        and toks[i].startswith(_LA_ASSIM[cand])
+                        and _is_assimilated_article(cand, toks[i], T)):
                     continue
                 if cand in _LA_PATRONYMIC:
                     continue
@@ -756,7 +796,7 @@ def _latin_units(toks: tuple[str, ...]) -> list[Unit]:
             prev = out.pop()
             text = prev.text + "|" + tok
             alts = []
-        elif _LA_DIN_SUFFIX.search(tok) and len(tok) > 6:
+        elif _LA_DIN_SUFFIX.search(tok) and len(tok) > 6 and tok not in _EN_AL_EL:
             alts = [tok] + alts
             text = _LA_DIN_SUFFIX.sub("din", tok)
             marker = True
@@ -787,8 +827,9 @@ def _latin_units(toks: tuple[str, ...]) -> list[Unit]:
             optional=text in _LA_TITLES,
             generic=text in T["generic_latin"] or skels[0] in T["generic_skels"],
             common=_in_skel_set(skels[0], T["common_skels"]),
-            marker=marker or (len(skels[0]) >= 3
-                              and _in_skel_set(skels[0], T["given_skels"]))))
+            marker=marker,
+            given=len(skels[0]) >= 3 and _in_skel_set(skels[0], T["given_skels"]),
+            family=(had_art or glued_art) and "|" not in text and text not in _LA_TITLES))
     return out
 
 
@@ -852,10 +893,19 @@ def _analyse_uncached(name: str) -> Analysis:
         script = "latin"
     units = units[:MAX_UNITS]
     arabic_units = [u for u in units if u.script == "ar"]
-    engaged = ar or any(u.marker for u in units)
-    # NOTE a Latin query is "engaged" only on positive evidence of Arabic-name
-    # structure or vocabulary. An ordinary English name never is, which is what
-    # keeps every behaviour already pinned by the existing tests unchanged.
+    # A Latin query is "engaged" only on positive evidence that it is an Arab
+    # name: STRUCTURE (an article, a patronymic, abd/abu, -din, -allah ...) or a
+    # known Arab given name that is not also an ordinary Western one. "David",
+    # "Mary" and "Ryan" sound like Dawud, Maryam and Rayyan, and an engaged
+    # English name draws sound candidates it never drew before - measured on 125
+    # ordinary English names: 22 engaged (on one such hit, or a bare al-/el-
+    # prefix) and 5 of them listed unrelated parties (docs/ARABIC_SANCTIONS_EVAL.md).
+    # An ordinary English name is not engaged, which keeps every behaviour
+    # already pinned by the existing tests.
+    western = _tables()["western"]
+    engaged = (ar or any(u.marker for u in units)
+               or any(u.given and u.script == "la" and not u.optional and u.text not in western
+                      for u in units))
     weak = _weak_reason(units) if engaged else None
     key_all = tuple(sorted({u.text for u in arabic_units}))
     key_req = tuple(sorted({u.text for u in arabic_units
@@ -865,9 +915,21 @@ def _analyse_uncached(name: str) -> Analysis:
 
 
 @lru_cache(maxsize=4096)
-def analyse(name: str) -> Analysis:
-    """Cached analysis of one name (queries and the few list names a query reaches)."""
+def _analyse_cached(name: str) -> Analysis:
     return _analyse_uncached(name)
+
+
+def analyse(name: str) -> Analysis:
+    """Cached analysis of one name (queries and the few list names a query reaches).
+
+    The cache is keyed on the name AS CUT to MAX_NAME_CHARS. Keyed on the argument itself, a 5 MB "name" stayed
+    resident as a cache key although only its first 300 characters were ever analysed, and 4,096 of those can
+    be held by a service that has been killed for memory before."""
+    return _analyse_cached((name or "").strip()[:MAX_NAME_CHARS])
+
+
+analyse.cache_clear = _analyse_cached.cache_clear            # type: ignore[attr-defined]
+analyse.cache_info = _analyse_cached.cache_info              # type: ignore[attr-defined]
 
 
 def arabic_name_key(name: str) -> tuple[str, list[str]]:
@@ -988,6 +1050,32 @@ def _entries(units: list[Unit], allow_merge: bool) -> list[_Entry]:
     return out
 
 
+FULL_MIN_L_COV = 0.4          # a fully covered query must also account for at least this share of the listing
+ANCHOR_SIM = 0.88             # the distinctive element of a candidate must match at least this closely
+ANCHOR_MIN_INFO = 2.0         # ... and both sides must carry at least this many consonants' worth of sound
+
+
+def _anchor_capable(u: Unit) -> bool:
+    """Can this query element identify anyone? Not a known given name, not one of the commonest elements, and
+    long enough to mean something by sound."""
+    return not u.given and not u.common and skel_info(u.skels[0]) >= ANCHOR_MIN_INFO
+
+
+def _is_anchor_pair(qn: "_Entry", ln: "_Entry", s: float) -> bool:
+    """Is this matched pair evidence by itself? Close, informative on BOTH sides, and distinctive on the side
+    that is a single word. A word glued from two (Ahmadreza = Ahmad Reza) is accepted when the single word on
+    the other side is distinctive; two query words glued to ONE listed word do not count unless that listed word
+    is itself not a given name, or 'Ali Al-Ajmi' becomes 'Jamil'."""
+    if s < ANCHOR_SIM:
+        return False
+    qu, lu = qn.unit, ln.unit
+    if skel_info(qu.skels[0]) < ANCHOR_MIN_INFO or skel_info(lu.skels[0]) < ANCHOR_MIN_INFO:
+        return False
+    if len(qn.covers) > 1:
+        return not lu.given and not lu.common
+    return _anchor_capable(qu)
+
+
 def compare(q: Analysis, listed: Analysis) -> Optional[Alignment]:
     """Align the query's name elements with a listed name's, or None.
 
@@ -1078,7 +1166,7 @@ def compare(q: Analysis, listed: Analysis) -> Optional[Alignment]:
     if (full and mean_sim >= 0.90 and l_cov >= 0.60 and evidence >= HIGH_EVIDENCE
             and not unsupported):
         conf = "high"
-    elif ((full and evidence >= MEDIUM_EVIDENCE)
+    elif ((full and evidence >= MEDIUM_EVIDENCE and l_cov >= FULL_MIN_L_COV)
           or (q_cov >= 0.75 and l_cov >= 0.60 and evidence >= MEDIUM_EVIDENCE
               and distinct_sim >= PARTIAL_DISTINCT_SIM)
           # The query and the listing are the SAME set of elements, each matched
@@ -1090,6 +1178,22 @@ def compare(q: Analysis, listed: Analysis) -> Optional[Alignment]:
               and evidence >= TIGHT_EVIDENCE)):
         conf = "medium"
     else:
+        conf = "low"
+
+    # AN ANCHOR. A name made of given names and one distinctive element (a family name) is identified by the
+    # distinctive element, and by nothing else: "Nabil bin Hamad Al Salhi" shares Nabil and Hamad with
+    # thousands of people. So when the query HAS such an element, a candidate above "low" must match one of
+    # them closely and informatively. Without this, three short elements of a Gulf name lined up with the
+    # three short words of a Spanish organisation ("Adil bin Saud Al Alawi" / "Division de Asia Meridional del
+    # EIIL") graded MEDIUM on coverage alone (2026-10-03 gate). A query whose every element is a given name has
+    # no distinctive element to ask for, and keeps the evidence rules above.
+    if conf != "low" and any(_anchor_capable(u) for u in qr) \
+            and not any(_is_anchor_pair(qn, ln, s) for qn, ln, s in pairs):
+        conf = "low"
+    # THE FAMILY NAME. A name written "Nabil bin Hamad Al Salhi" is identified by Al Salhi; "Nabil" and "Hamad" are
+    # shared with thousands. If the element that carried the article found no counterpart, what matched is the
+    # given names, and that is not a candidate.
+    if conf != "low" and any(u.family and i not in used_q for i, u in enumerate(qr)):
         conf = "low"
 
     only_ar = all(qn.unit.script == "ar" and ln.unit.script == "ar"
@@ -1163,6 +1267,17 @@ def explain(basis: str, conf: str, n_query: int, n_matched: int,
     if conf == "low":
         s += " Confidence is LOW: a shared element may be coincidence."
     return s
+
+
+def is_arabic_only(q: Analysis) -> bool:
+    """Is every name element the query carries written in Arabic script?
+
+    Generic words ("LLC", "trading") and titles ("Sheikh") are ignorable: they identify nobody, and the Latin
+    path ignores them for the same reason. A Latin NAME element beside an Arabic alias is not: 'alias Smith' is
+    not the printed alias, and the exact-alias finding looks only at the Arabic units, so without this test the
+    Latin word would be silently ignored and a person who merely has an Arabic alias's words in their name would
+    be reported as a definitive hit (2026-10-03 review: 30 of 30 such variants of real EU/UK aliases)."""
+    return all(u.script == "ar" or u.optional or u.generic for u in q.units)
 
 
 def exact_alignment(q: Analysis) -> Alignment:

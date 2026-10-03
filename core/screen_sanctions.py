@@ -61,7 +61,9 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import csv
+import hashlib
 import io
+import logging
 import os
 import re
 import sys
@@ -76,6 +78,8 @@ from core import arabic_names as _ar
 from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 from core.untrusted import fence as _fence_untrusted
+
+_log = logging.getLogger("smb_broker.screen_sanctions")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -825,7 +829,15 @@ def _uk_parse(raw: str) -> list[dict]:
         # nothing of the publisher's to be compared with. Only Arabic-script
         # values are taken; Cyrillic (3,391 rows) and CJK are not screened (see
         # _is_screenable).
-        iNL = hdr.index("Name non-latin script") if "Name non-latin script" in hdr else None
+        # Looked up by a candidate list and case-insensitively, like iType above: an exact-string lookup that
+        # silently resolved to None when the FCDO renamed or re-cased the column would have dropped every UK
+        # Arabic alias with no signal at all (and the sweep would then have deleted the stored ones).
+        iNL = next((i for i, h in enumerate(hdr)
+                    if h.strip().lower().replace("_", " ").replace("-", " ") in
+                    ("name non latin script", "name non latin", "non latin script name")), None)
+        if iNL is None:
+            _log.warning("uk_parse_no_non_latin_column header_columns=%d -- UK Arabic-script aliases will NOT be "
+                         "indexed from this copy", len(hdr))
         seen: set[tuple[str, str]] = set()
         for r in rows[hdr_i + 1:]:
             if len(r) <= max(name_cols + [iUid]):
@@ -1441,7 +1453,10 @@ async def _arabic_db_matches(aq, list_code: str, list_label: str,
                 f"{list_label} (Arabic-script alias lookup unavailable on this "
                 f"call; Arabic spelling was NOT checked)")
         for r in rows:
-            if r.get("name_key") == key:
+            # The one finding this feature adds is "the query IS the printed alias". That is a claim about the
+            # WHOLE query, so it needs a query with no Latin name element beside the Arabic ones; a mixed query
+            # is scored like any other row and is at most a candidate.
+            if r.get("name_key") == key and _ar.is_arabic_only(aq):
                 consider(r, _ar.exact_alignment(aq), "arabic_script_exact")
             else:
                 consider(r, _ar.compare(aq, _ar.analyse(r.get("display_name") or "")),
@@ -1772,8 +1787,11 @@ def _build_ofac_phonetic_index(csv_text: str, alt_text: Optional[str]):
 
 async def _ofac_phonetic_matches(csv_text: str, alt_text: Optional[str], aq,
                                  ) -> list[dict]:
-    key = (len(csv_text), hash(csv_text[:4096]), hash(csv_text[-4096:]),
-           len(alt_text or ""), hash((alt_text or "")[:2048]))
+    # The version of the index is a digest of BOTH texts in full. The first version keyed on the lengths and the
+    # hash of the first and last few KB, so an in-place correction of the same length (a typo fixed in the
+    # middle of the file) left the key unchanged and the stale index kept answering until a restart.
+    key = (hashlib.blake2b(csv_text.encode("utf-8", "replace"), digest_size=16).hexdigest(),
+           hashlib.blake2b((alt_text or "").encode("utf-8", "replace"), digest_size=16).hexdigest())
     idx, info = await _sound_index(
         _ofac_phonetic_state, key,
         lambda: _build_ofac_phonetic_index(csv_text, alt_text))
@@ -2021,9 +2039,11 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
         out.append(m)
 
     # Arabic-script aliases and sound-based candidates (core/arabic_names.py).
-    # Only for a name with Arabic script or positive evidence of Arabic-name
-    # structure: an ordinary English name never reaches this, which is what
-    # keeps every behaviour pinned by the existing tests unchanged.
+    # Only for a name with Arabic script or positive evidence of an Arab name
+    # (structure, or a given name that is not also a common Western one).
+    # Measured: 0 of 125 ordinary English names reach this
+    # (docs/ARABIC_SANCTIONS_EVAL.md), which is what keeps every behaviour
+    # pinned by the existing tests unchanged.
     if aq.engaged:
         try:
             extra, notes = await _arabic_db_matches(
