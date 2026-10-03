@@ -526,6 +526,24 @@ def _mcp_result_to_jsonrpc(result: Any) -> dict:
     return out
 
 
+def _is_signed_payment_attempt(meta: Any) -> bool:
+    """True only when `_meta['x402/payment']` is a structured payment payload.
+
+    The server's own advertised quote flow tells an agent to send ANY value in
+    `_meta['x402/payment']` to receive the priced offer (the founder's
+    scripts/x402_test_payment.py sends the string "quote-request"). Treating every
+    non-empty value as "a real buyer is here" would page the founder, and bump the
+    payment-attempt counter, for each agent that merely asks the price - at most one
+    alert per tool per 15 minutes, but across ten paid tools that is a standing
+    stream of false alarms the moment the rail is advertised. A signed payment is
+    an object with a non-empty `payload`; a bare string is a price request.
+    """
+    if not isinstance(meta, dict):
+        return False
+    pay = meta.get("x402/payment")
+    return isinstance(pay, dict) and isinstance(pay.get("payload"), dict) and bool(pay["payload"])
+
+
 async def run_paid_tool(
     tool: str,
     arguments: dict,
@@ -551,7 +569,7 @@ async def run_paid_tool(
     try:
         from telemetry.metrics import record_paid_tool_attempt, record_payment_attempt
         record_paid_tool_attempt()
-        if isinstance(meta, dict) and meta.get("x402/payment"):
+        if _is_signed_payment_attempt(meta):
             record_payment_attempt()
             await _notify_buyer_intent(tool)
     except Exception as e:  # noqa: BLE001 — telemetry/alert must never block a sale

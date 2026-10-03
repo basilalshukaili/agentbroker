@@ -196,3 +196,45 @@ def test_testnet_is_listed_only_when_the_gate_accepts_it(gate_on, monkeypatch):
     monkeypatch.setattr(config, "X402_ENABLE_TESTNET", True)
     nets = [a["network"] for a in gate_on.discovery_document()["accepts"]]
     assert nets == [gate_on.MAINNET, gate_on.TESTNET]
+
+
+# -------------------------------------------------------------------- buyer-intent alert noise
+
+def test_a_price_request_is_not_a_buyer_attempt(gate_on):
+    """The advertised quote flow sends ANY value to get the priced offer. That must not page
+    the founder with 'a real buyer is here'."""
+    f = gate_on._is_signed_payment_attempt
+    assert f({"x402/payment": "quote-request"}) is False
+    assert f({"x402/payment": ""}) is False
+    assert f({"x402/payment": None}) is False
+    assert f({"x402/payment": {}}) is False
+    assert f({"x402/payment": {"payload": {}}}) is False
+    assert f({}) is False and f(None) is False
+    assert f({"x402/payment": {"x402Version": 2, "payload": {"signature": "0x01"}}}) is True
+
+
+def test_run_paid_tool_only_alerts_on_a_signed_payment(gate_on, monkeypatch):
+    """Drives the real run_paid_tool far enough to reach the alert, with the resource
+    server stubbed out so nothing touches a facilitator or the network."""
+    alerts = []
+
+    async def fake_alert(tool):
+        alerts.append(tool)
+
+    async def stop_here():
+        raise RuntimeError("stop after the telemetry block")
+
+    monkeypatch.setattr(gate_on, "_notify_buyer_intent", fake_alert)
+    monkeypatch.setattr(gate_on, "_ensure_server", lambda: stop_here())
+
+    async def dispatch():
+        return {"status": "success"}
+
+    for meta, expected in (
+        ({"x402/payment": "quote-request"}, []),
+        ({"x402/payment": {"x402Version": 2, "payload": {"signature": "0x01"}}}, ["screen_sanctions"]),
+    ):
+        alerts.clear()
+        with pytest.raises(RuntimeError):
+            _run(gate_on.run_paid_tool("screen_sanctions", {}, meta, dispatch))
+        assert alerts == expected, f"{meta!r} -> {alerts}"
