@@ -178,10 +178,7 @@ def test_the_agent_card_carries_the_same_block(monkeypatch):
     from agent_interface import well_known as wk
     for combo in ({}, {"credits": True}, {"x402": True}):
         _set(monkeypatch, **combo)
-        card = wk.get_agent_card() if hasattr(wk, "get_agent_card") else None
-        if card is None:
-            pytest.skip("no get_agent_card in this build")
-        assert card["_meta"]["payments"] == _payments()
+        assert wk.get_agent_card()["_meta"]["payments"] == _payments()
 
 
 # ---------------------------------------------------------------------------- the auth_required text

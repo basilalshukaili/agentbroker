@@ -57,10 +57,22 @@ flipped on, regenerate it (or `refresh_edge_snapshots.py --check` against the li
 1. The parent repo commit `9703a51` (branch `feat/x402-honesty-deploy-env-20261004`, `scripts/check_deploy_env.py`)
    makes the deploy stage `X402_ENABLED`, `CREDITS_ENABLED` and `DATA_METERING_ENABLED` BY NAME. Without it,
    centralising the reads in `billing/switches.py` would silently drop `CREDITS_ENABLED` and `DATA_METERING_ENABLED`
-   from the staged env file (the deriver cannot see a variable argument). Merge it first.
+   from the staged env file (the deriver cannot see a variable argument). Merge it first. The secret-drain route list
+   needs the same name (`ops` repo, branch `feat/x402-switch-route-20261004`, commit `a66fc1b`): its drift guard
+   (`tests/test_secret_drain_multi_target.py`) fails for any staged name with no route to `agentbroker.env`.
 2. `projects/hatchloop/.env` must then DEFINE `X402_ENABLED` (`false` is the correct, explicit value today); the
    deploy script stops with "no value for: X402_ENABLED" otherwise. Both other switches already have `false`.
 3. No SQL migration. No new required variable beyond that one.
+
+## Verifying after the deploy
+
+`python scripts/live_verify_release.py --expect-commit <sha> --only payments --expect-rails ""` (empty string =
+"no rail should be listed", the state while `CREDITS_ENABLED` and `X402_ENABLED` are off). The `payments` check
+reads only: it fails when any surface offers a rail the descriptor does not list (or omits one it does), when
+`/.well-known/x402` is served without the rail, when the premium-data quota flag disagrees with `preview_cost`
+for `screen_sanctions`, and, with `--expect-rails`, when the descriptor names a different set than the one that
+was staged. Run against `48e8b62` before this release it fails on the two x402 offers and the missing
+`premium_data_quota_enforced` field, and on the credits rail once `--expect-rails ""` is given.
 
 ## Not changed on purpose
 

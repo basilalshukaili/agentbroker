@@ -3,7 +3,7 @@
 
     python scripts/live_verify_release.py --expect-commit <sha> [--base https://api.hatchloop.dev]
                                            [--site https://hatchloop.dev] [--env-file PATH] [--out receipt.json]
-                                           [--only health,mcp2026,legacy,oauth,sanctions,find_business,labels,retired]
+                                           [--only health,mcp2026,legacy,oauth,sanctions,find_business,labels,retired,payments]
 
 What it checks, in this order (each is a function returning {ok, ...evidence}; nothing here prints a secret):
 
@@ -22,6 +22,9 @@ What it checks, in this order (each is a function returning {ok, ...evidence}; n
   labels         tools/list carries the [beta]/[limited] markers the readiness table says, and the keyless count is the
                  one the manifests print.
   retired        the six retired doors answer MCP with a tombstone on the site host, and GET is 410.
+  payments       the payment claims agree: the descriptor's status and rails, /.well-known/x402, the tool descriptions,
+                 the auth_required options, /keys/request and preview_cost for a premium data tool tell one story
+                 (nothing offers a rail the descriptor does not list; every listed rail is offered).
 
 Exit 0 only when every requested check passes. Calls place no paid operation and send no message to a person.
 """
@@ -461,9 +464,94 @@ def check_retired(ctx: dict) -> dict:
     return check(ok and ds == 200 and out["modern_discover_on_a_tombstone"]["retired_in_name"], **out)
 
 
+def payments_problems(*, descriptor: dict, x402_status: int, tools_text: str, auth_text: str, keys_text: str,
+                      screen_sanctions_cost_usd: Optional[float], expect_rails: Optional[list] = None) -> list:
+    """Do the server's claims about how to pay tell ONE story? Pure, so it is tested without a network.
+
+    The switches (CREDITS_ENABLED, DATA_METERING_ENABLED, X402_ENABLED) cannot be read from outside, but every
+    surface that mentions them can: the descriptor's rails and status, /.well-known/x402, the tool descriptions,
+    the auth_required text, /keys/request, and preview_cost for a premium data tool. If the descriptor says no
+    rail is on, nothing else may offer one; if it says a rail is on, the rest must offer it.
+
+    Agreement is not truth: every surface can agree on a rail that is off (credits were advertised everywhere
+    while CREDITS_ENABLED was off). `expect_rails`, when the operator passes it (--expect-rails), is the intended
+    state taken from what was staged for the container; the descriptor must name exactly those rails.
+    """
+    status, rails = descriptor.get("status"), descriptor.get("rails")
+    if not status or not isinstance(rails, list):
+        return ["payments.status / payments.rails are missing from /.well-known/mcp.json"]
+    problems: list = []
+    if expect_rails is not None and sorted(rails) != sorted(expect_rails):
+        problems.append(f"the descriptor lists rails {sorted(rails)} but {sorted(expect_rails)} were expected")
+    if (status == "active") != bool(rails):
+        problems.append(f"payments.status is {status!r} but rails is {rails}")
+    quota = descriptor.get("premium_data_quota_enforced")
+    if not isinstance(quota, bool):
+        problems.append("payments.premium_data_quota_enforced is missing or not a boolean")
+    credits_on, x402_on = "credits" in rails, "x402" in rails
+
+    def says_x402(text: str) -> bool:
+        return "x402" in text.lower()
+
+    surfaces = (("a tool description", tools_text), ("the auth_required text", auth_text),
+                ("/keys/request", keys_text))
+    if x402_on:
+        if x402_status != 200:
+            problems.append(f"x402 is a listed rail but /.well-known/x402 answered {x402_status}")
+        for label, text in surfaces:
+            if not says_x402(text):
+                problems.append(f"x402 is a listed rail but {label} never offers it")
+    else:
+        if x402_status == 200:
+            problems.append("/.well-known/x402 is served while x402 is not a listed rail")
+        for label, text in surfaces:
+            if says_x402(text):
+                problems.append(f"{label} offers x402 while x402 is not a listed rail")
+
+    offers_credits = "(credits)" in auth_text or "credit package" in auth_text.lower()
+    if credits_on and not offers_credits:
+        problems.append("credits is a listed rail but the auth_required text never offers credits")
+    if not credits_on and offers_credits:
+        problems.append("the auth_required text offers credits while credits is not a listed rail")
+
+    cost = screen_sanctions_cost_usd
+    if isinstance(quota, bool) and cost is not None:
+        if quota and not cost > 0:
+            problems.append("the premium-data quota is reported as enforced but preview_cost says screen_sanctions is free")
+        if not quota and cost > 0:
+            problems.append("the premium-data quota is reported as not enforced but preview_cost prices screen_sanctions")
+    return problems
+
+
+def check_payments(ctx: dict) -> dict:
+    """The payment claims of the DEPLOYED server agree with each other (see payments_problems). Reads only: the
+    send_message call carries no arguments and is refused for identity before anything could be sent."""
+    base = ctx["base"]
+    ds, _, dtext = http("GET", base + "/.well-known/mcp.json")
+    descriptor = (json.loads(dtext).get("payments") or {}) if ds == 200 else {}
+    xs, _, _ = http("GET", base + "/.well-known/x402")
+    _, _, tl = rpc(base + "/mcp", "tools/list")
+    tools_text = " ".join(str(t.get("description", "")) for t in (((tl or {}).get("result") or {}).get("tools") or []))
+    _, _, auth = rpc(base + "/mcp", "tools/call", {"name": "send_message", "arguments": {}})
+    auth_body = tool_body(auth)
+    auth_text = json.dumps({"human_message": auth_body.get("human_message"), "how_to_resolve": auth_body.get("how_to_resolve")})
+    ks, _, keys_text = http("GET", base + "/keys/request")
+    _, _, pc = rpc(base + "/mcp", "tools/call", {"name": "preview_cost", "arguments": {"operation": "screen_sanctions"}})
+    cost = tool_body(pc).get("estimated_cost_usd")
+    problems = payments_problems(descriptor=descriptor, x402_status=xs, tools_text=tools_text, auth_text=auth_text,
+                                 keys_text=keys_text if ks == 200 else "", screen_sanctions_cost_usd=cost,
+                                 expect_rails=ctx.get("expect_rails"))
+    if auth_body.get("error_code") != "auth_required":
+        problems.append(f"an anonymous send_message was not refused for identity (error_code {auth_body.get('error_code')!r}), "
+                        "so the offered options could not be read")
+    return check(ds == 200 and not problems, status=descriptor.get("status"), rails=descriptor.get("rails"),
+                 premium_data_quota_enforced=descriptor.get("premium_data_quota_enforced"), x402_discovery_status=xs,
+                 screen_sanctions_preview_usd=cost, problems=problems)
+
+
 CHECKS: dict = {"health": check_health, "mcp2026": check_mcp2026, "legacy": check_legacy, "oauth": check_oauth,
                 "sanctions": check_sanctions, "find_business": check_find_business, "labels": check_labels,
-                "retired": check_retired}
+                "retired": check_retired, "payments": check_payments}
 
 
 def main(argv: list) -> int:
@@ -476,9 +564,13 @@ def main(argv: list) -> int:
     ap.add_argument("--only", default=",".join(CHECKS))
     ap.add_argument("--skip-email", action="store_true", help="oauth: discovery and the challenge only; send nothing")
     ap.add_argument("--pace", type=float, default=0.0, help="find_business: seconds to wait before each call")
+    ap.add_argument("--expect-rails", default=None,
+                    help="payments: the rails that should be listed, comma separated; an empty string means none "
+                         "(CREDITS_ENABLED and X402_ENABLED off). Omit to check only that the claims agree.")
     a = ap.parse_args(argv)
+    expect_rails = None if a.expect_rails is None else [r.strip() for r in a.expect_rails.split(",") if r.strip()]
     ctx = {"base": a.base.rstrip("/"), "site": a.site.rstrip("/"), "expect": a.expect_commit, "env_file": a.env_file,
-           "skip_email": a.skip_email, "pace": a.pace}
+           "skip_email": a.skip_email, "pace": a.pace, "expect_rails": expect_rails}
     report: dict = {"checked_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "expect_commit": a.expect_commit, "results": {}}
     failed = []
     for name in [n.strip() for n in a.only.split(",") if n.strip()]:
