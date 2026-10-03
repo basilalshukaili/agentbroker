@@ -881,6 +881,18 @@ async def well_known_mcp():
     return get_mcp_descriptor()
 
 
+@app.get("/.well-known/x402", tags=["Discovery"])
+async def well_known_x402():
+    """x402 payment discovery - USDC on Base. Derived from the gate, so it exists
+    exactly when the rail accepts payment (billing.x402_gate.enabled()) and is a
+    404 otherwise. Never a static claim: see x402_gate.discovery_document()."""
+    from billing import x402_gate
+    doc = x402_gate.discovery_document()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="x402 is not enabled on this host")
+    return doc
+
+
 @app.get("/llms.txt", response_class=PlainTextResponse, tags=["Discovery"])
 async def llms_txt():
     """LLM-readable site map (https://llmstxt.org/)."""

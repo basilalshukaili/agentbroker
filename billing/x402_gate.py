@@ -213,6 +213,62 @@ def price_usd(name: str) -> Optional[str]:
     return _PRICING_USD.get(name)
 
 
+USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"          # Circle USDC, Base mainnet
+USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  # Circle test USDC, Base Sepolia
+
+
+def discovery_document() -> Optional[dict]:
+    """The /.well-known/x402 document, or None when this host does not take x402 payment.
+
+    DERIVED FROM THE GATE, never asserted. Every field comes from the same config the
+    gate quotes from (receiver, facilitator, network, public endpoint, per-tool prices
+    from billing/pricing.py), so the published document cannot name a different
+    address or price than the 402 offer an agent actually receives. Measured
+    2026-10-03: a static hatchloop.dev/.well-known/x402 named a payTo that differed
+    from the one the live container would have quoted, and described a rail whose
+    switch (X402_ENABLED) was off. When enabled() is False this returns None and
+    the route answers 404, so a document can never outlive the rail it describes.
+
+    There is no ratified core-spec format for this path. Indexers read
+    {"version": 1, "resources": [url, ...]} (the x402scan convention); an individual
+    IETF draft (draft-hawkins-x402-dns-discovery) names the manifest fields
+    x402Version / kind / resources. Both are carried, plus the two top-level fields
+    (payTo, network) the earlier static document used. Unknown fields are ignored
+    by both conventions.
+    """
+    if not enabled():
+        return None
+    accepts = [{
+        "scheme": "exact",
+        "network": MAINNET,
+        "asset": USDC_BASE,
+        "payTo": config.X402_RECEIVER_ADDRESS,
+    }]
+    if config.X402_ENABLE_TESTNET:
+        accepts.append({
+            "scheme": "exact",
+            "network": TESTNET,
+            "asset": USDC_BASE_SEPOLIA,
+            "payTo": config.X402_RECEIVER_ADDRESS,
+        })
+    return {
+        "version": 1,
+        "x402Version": 2,
+        "kind": "resource-server",
+        "name": "HatchLoop AgentBroker",
+        "description": ("Pay per tool call with USDC on Base, no account. Attach the signed "
+                        "payment as params._meta['x402/payment'] on a tools/call; send any "
+                        "value there first to receive the priced offer."),
+        "resources": [config.X402_PUBLIC_MCP_URL],
+        "accepts": accepts,
+        "facilitatorUrl": config.X402_FACILITATOR_URL,
+        "pricesUsd": dict(sorted(_PRICING_USD.items())),
+        "pricing": "https://hatchloop.dev/pricing",
+        "payTo": config.X402_RECEIVER_ADDRESS,
+        "network": MAINNET,
+    }
+
+
 # ---------------------------------------------------------------------------
 # CDP facilitator auth — EdDSA JWT per endpoint
 # ---------------------------------------------------------------------------

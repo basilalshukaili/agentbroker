@@ -173,7 +173,7 @@ def _build_tool_list() -> list[dict]:
         input_schema = _trim_schema_props(input_schema)
         tool = {
             "name": op["name"],
-            "description": _format_description_for_llm(op),
+            "description": _format_description_for_llm(op) + _x402_tag(op["name"]),
             "inputSchema": input_schema,
         }
         # A tool that is not production-ready says so where an agent chooses tools: a bracketed state
@@ -227,6 +227,25 @@ def _build_tool_list() -> list[dict]:
 
 _MAX_DESC_CHARS = 450
 _MAX_PROP_DESC_CHARS = 80
+
+# One line, appended to a paid tool's description ONLY while the x402 gate is live.
+_X402_TOOL_TAG = " [or pay per call: x402, USDC on Base]"
+
+
+def _x402_tag(tool_name: str) -> str:
+    """The pay-per-call mention for one tool, or "" when the rail is not live.
+
+    Derived from the gate at call time, like the discovery descriptor's rails list
+    and the auth_required `x402` hint, so the tool surface cannot advertise a rail
+    that is switched off. Only tools the gate will actually take payment for get it.
+    """
+    try:
+        from billing import x402_gate
+        if x402_gate.enabled() and x402_gate.is_paid_tool(tool_name):
+            return _X402_TOOL_TAG
+    except Exception:  # noqa: BLE001 - a description must never fail tools/list
+        pass
+    return ""
 
 
 def _format_description_for_llm(op: dict) -> str:
@@ -1733,31 +1752,37 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         # points at the edge worker which doesn't serve /keys/ endpoints.
         base_url = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
         free_key_url = f"{base_url}/keys/request"
-        how_to_buy = (
-            f" To get access: Option 1 (free): get a verified free key ({_free_limit_msg} ops/day) at "
-            f"{free_key_url} (just provide your email, no payment needed). "
-            f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
-            # THE CRYPTO RAIL BELONGS HERE, and its absence was the defect.
-            #
-            # This is what a live agent is told at the exact moment it hits a
-            # quota and is deciding how to pay - the most consequential payment
-            # surface we have. x402 is the ONLY option on this list an
-            # autonomous agent can complete without a human: the other two need
-            # someone to read an email or type a card.
-            #
-            # The comment that used to sit here said the rail was "switched
-            # off" for a legal reason. The founder lifted that restriction on
-            # 2026-08-29 and the rail is enabled on this service (all four
-            # x402 variables are set, and mcp_server dispatches through
-            # x402_gate.run_paid_tool for any call that attaches payment). The
-            # discovery document has advertised it since. This message did not,
-            # so the one self-serve path was hidden at the only moment it
-            # mattered.
-            f"Scale $99/13,000) at https://hatchloop.dev/pricing. "
+        # THE CRYPTO RAIL BELONGS HERE WHEN IT IS LIVE, AND ONLY THEN.
+        #
+        # This is what a live agent is told at the exact moment it hits a quota
+        # and is deciding how to pay - the most consequential payment surface we
+        # have. x402 is the ONLY option on this list an autonomous agent can
+        # complete without a human: the other two need someone to read an email
+        # or type a card. The founder lifted the legal block on advertising it
+        # on 2026-08-29.
+        #
+        # But the sentence used to be hard-wired into the `if checkout` branch,
+        # so it was served whether or not the rail was on. Measured 2026-10-03:
+        # on the VPS the container holds the receiver address and both CDP
+        # credentials but NOT X402_ENABLED, so billing.x402_gate.enabled() is
+        # False and a payment attached here is silently ignored - yet every
+        # anonymous caller of a key-required tool was told "this call is served
+        # without a key - USDC on Base". Same defect, same file, as the older
+        # comment that said the rail was "built and switched off" while it was
+        # on: a hardcoded claim about the rail, wrong in the other direction.
+        # Derived from the gate at call time, like how_to_resolve["x402"] below.
+        _x402_option = (
             f"Option 3 (pay per call, no signup): attach an x402 payment in "
             f"params._meta['x402/payment'] and this call is served without "
             f"a key - USDC on Base. This is the only option that needs no "
             f"human. "
+        ) if _x402_live() else ""
+        how_to_buy = (
+            f" To get access: Option 1 (free): get a verified free key ({_free_limit_msg} ops/day) at "
+            f"{free_key_url} (just provide your email, no payment needed). "
+            f"Option 2 (credits): buy a credit package (Starter $9/1,000 credits, Growth $29/3,500, "
+            f"Scale $99/13,000) at https://hatchloop.dev/pricing. "
+            f"{_x402_option}"
             f"Options 1 and 2 email you an X-Agent-Identity token; send it as a header on every call. "
             f"Read-only tools (find_business, verify_business, preview_cost, get_status) stay free."
             if checkout else
