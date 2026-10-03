@@ -217,6 +217,11 @@ async def handle_preview_cost(
     # range, and saying so beats quoting a tolerance we never check.
     is_exact = pricing["min"] == pricing["max"]
     accuracy = "exact" if is_exact else "range: see cost_range (min/max)"
+    # The figures above are the price schedule. While no payment rail is on nothing is charged, and
+    # "exact" with no qualifier read as "this call will cost $0.05". The numbers do not move (the receipts
+    # and the x402 gate read the same schedule); the basis says what they mean right now.
+    if pricing["max"] > 0 and _switches.not_charged_note():
+        accuracy += f" ({_switches.NOT_CHARGED})"
 
     _succ, _succ_basis = _success_estimate(op)
     _lat, _lat_basis = _latency_estimate(op, latency)

@@ -100,3 +100,24 @@ def live_rails() -> list[str]:
 def payments_status() -> str:
     """"active" when at least one rail is on, otherwise "not_enabled"."""
     return "active" if live_rails() else "not_enabled"
+
+
+# What a price means while nothing can charge it. One sentence, one place: the tool tags, the cost
+# sentences in llms.txt / openai-tools / anthropic-tools and preview_cost all use it, so they cannot
+# word it three ways. It is only ever added to a price that is not zero.
+NOT_CHARGED = "not charged while no payment rail is on"
+
+
+def charging_active() -> bool:
+    """Can ANY call be charged right now? True when at least one payment rail is on.
+
+    Off: every price on every surface is a schedule, not a charge. The dollar figures stay (they are
+    what applies once a rail is switched on, and several tests and the x402 gate read them); what
+    changes is that nothing says they are being charged.
+    """
+    return bool(live_rails())
+
+
+def not_charged_note() -> str:
+    """NOT_CHARGED while no rail is on, otherwise "". Safe to splice into any price sentence."""
+    return "" if charging_active() else NOT_CHARGED

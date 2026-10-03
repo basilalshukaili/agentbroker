@@ -205,19 +205,28 @@ def describe_cost(cost: dict) -> str:
     """
     if not cost:
         return ""
+    from billing import switches
     basis = cost.get("basis")
     amount = cost.get("unit_price_usd", cost.get("amount_usd"))
+    # The daily quota on the premium data tools exists only while DATA_METERING_ENABLED is on. Off, those
+    # tools run free and unmetered (the descriptor says premium_data_quota_enforced=false), so the quota
+    # sentence is not true and the tool is simply free.
+    if basis == "freemium_daily_quota" and not switches.data_metering_enabled():
+        basis = "free"
     if basis == "free" or amount in (0, 0.0):
         return "Cost: free (no key required)."
     if basis == "freemium_daily_quota":
-        return f"Cost: free within the daily quota, then ${amount} per call."
+        return (f"Cost: free within the daily quota, then ${amount} per call"
+                + (f" ({switches.NOT_CHARGED})." if not switches.charging_active() else "."))
     if amount is None:
         return "Cost: see preview_cost."
+    # While no payment rail is on, a price is a schedule: nothing is charged. The figure stays.
+    nc = switches.not_charged_note()
     max_usd = cost.get("max_price_usd")
     if max_usd and max_usd != amount:
         return (f"Cost: from ${amount} per call, up to ${max_usd} "
-                f"(call preview_cost for the exact price).")
-    return f"Cost: ${amount} per call."
+                f"(call preview_cost for the exact price" + (f"; {nc}" if nc else "") + ").")
+    return f"Cost: ${amount} per call" + (f" ({nc})." if nc else ".")
 
 
 # ---------------------------------------------------------------------------

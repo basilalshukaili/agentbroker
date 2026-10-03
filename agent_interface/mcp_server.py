@@ -240,8 +240,14 @@ def _x402_tag(tool_name: str) -> str:
     that is switched off. Only tools the gate will actually take payment for get it.
     """
     try:
-        from billing import x402_gate
+        from billing import switches as _sw, x402_gate
         if x402_gate.enabled() and x402_gate.is_paid_tool(tool_name):
+            # The three premium data tools are answered free BEFORE the x402 branch while
+            # DATA_METERING_ENABLED is off (the bypass in _h_tools_call_impl), so a payment attached to
+            # one is never read. Inviting one in exactly the state the operator reaches by switching
+            # x402 on first would be a tag for a path that does not exist.
+            if tool_name in _PREMIUM_DATA_TOOLS and not _sw.data_metering_enabled():
+                return ""
             return _X402_TOOL_TAG
     except Exception:  # noqa: BLE001 - a description must never fail tools/list
         pass
@@ -261,15 +267,24 @@ def _format_description_for_llm(op: dict) -> str:
     cost = op.get("cost_model", {})
     cost_tag = ""
     if cost:
+        from billing import switches as _sw
         cost_basis = cost.get("basis", "per_call")
         cost_amount = cost.get("unit_price_usd", cost.get("amount_usd"))
+        # A quota that is not enforced is not a quota: with DATA_METERING_ENABLED off the three premium
+        # data tools run free and unmetered, which is exactly what the discovery descriptor says
+        # (premium_data_quota_enforced=false). Tagging them "free in quota, then $0.02" contradicted it.
+        if cost_basis == "freemium_daily_quota" and not _sw.data_metering_enabled():
+            cost_basis = "free"
+        # While no rail is on, a price is a schedule and nothing is charged; say so, once, in the tag.
+        _nc = _sw.not_charged_note()
+        _nc_tag = f", {_nc}" if _nc else ""
         has_variable = (
             cost_basis == "per_call_variable"
             or any(k in cost for k in ("voice_premium_usd", "success_bonus_usd",
                                        "tiers", "max_price_usd"))
         )
         if cost_basis == "freemium_daily_quota":
-            cost_tag = f" [free in quota, then ${cost_amount}/call]"
+            cost_tag = f" [free in quota, then ${cost_amount}/call{_nc_tag}]"
         elif cost_basis == "free":
             # `requires_key`, NOT the write set. get_conversation costs nothing
             # and is not a write, so the narrower test tagged it "[free, no
@@ -281,9 +296,9 @@ def _format_description_for_llm(op: dict) -> str:
             else:
                 cost_tag = " [free, no key]"
         elif cost_amount is not None and not has_variable:
-            cost_tag = f" [${cost_amount}/{cost_basis}]"
+            cost_tag = f" [${cost_amount}/{cost_basis}{_nc_tag}]"
         elif cost_amount is not None and has_variable:
-            cost_tag = f" [from ${cost_amount}/call, variable]"
+            cost_tag = f" [from ${cost_amount}/call, variable{_nc_tag}]"
         else:
             cost_tag = " [see preview_cost]"
 
@@ -1391,9 +1406,11 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     # Smithery listing. Every agent using us for free would have got a payment
     # demand instead, with no code change and no announcement.
     #
-    # Checked against PRODUCTION rather than the defaults, which made it worse:
-    # DATA_METERING_ENABLED is true in prod, so the bypass above does not fire
-    # and even the three data tools were exposed.
+    # Checked against PRODUCTION rather than the defaults, which made it worse: on 2026-08
+    # DATA_METERING_ENABLED was on in prod, so the bypass above did not fire and even the three data
+    # tools were exposed. (Measured 2026-10-04 it is OFF in the running container, so the bypass above
+    # DOES fire there; the rule holds in either state - x402 must never precede the free tier. The
+    # live value is in /.well-known/mcp.json payments.premium_data_quota_enforced.)
     #
     # x402 is what the storefront message already calls it - an ESCAPE PATH for
     # agents that have run out of free quota or would rather pay per call. So:
@@ -1461,7 +1478,9 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
                 # Settlement is decided correctly inside run_metered_tool via
                 # _receipt_is_error, so the customer WAS charged - and then
                 # told the call failed. An agent retrying that is billed twice.
-                # Live: CREDITS_ENABLED is true on this service.
+                # (True on this service when that was fixed; measured 2026-10-04 CREDITS_ENABLED is OFF in
+                # the running container, so this branch is not reached there. The live value is
+                # /.well-known/mcp.json payments.rails.)
                 #
                 # The clause was also redundant: the insufficient-credits
                 # envelope sets status="failure" as well. This now matches the

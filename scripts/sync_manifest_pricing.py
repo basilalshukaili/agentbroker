@@ -69,10 +69,16 @@ def build_cost_model(op_name: str) -> dict:
             # available to point at, so advertising crypto acceptance is the
             # specific thing we decided not to do until a lawyer says how.
             # Turn the rail on and verify a real payment BEFORE saying so here.
+            # STATIC, SO TRUE IN EVERY STATE OF THE SWITCHES. It used to say "Free up to the daily quota
+            # ... Beyond the quota, billed per call via credits" flatly, while DATA_METERING_ENABLED and
+            # CREDITS_ENABLED were both off: no quota existed and nothing was billed. This file cannot follow
+            # a switch, so it states the rule conditionally and points at the live descriptor, which can.
             "free_quota_note": (
-                "Free up to the daily quota (500/day with a free email-verified "
-                "key, 100/day anonymous). Beyond the quota, billed per call via "
-                "credits."
+                "The daily free quota (500/day with a free email-verified key, "
+                "100/day anonymous) exists only while DATA_METERING_ENABLED is on; "
+                "payments.premium_data_quota_enforced in /.well-known/mcp.json says "
+                "whether it is. Beyond it a call is billed via credits only while a "
+                "payment rail is on."
             ),
         }
 
