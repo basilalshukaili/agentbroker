@@ -154,6 +154,9 @@ def _one(slug: str, msg: Any) -> Optional[dict]:
     return _err(rid, -32601, f"Method '{method}' not found")
 
 
+MAX_BATCH = 16          # the live handler's limit (agent_interface/mcp_server.py MAX_BATCH); a test keeps them equal
+
+
 def handle(slug: str, payload: Any) -> Any:
     """The JSON-RPC answer for a POST to a retired door: a dict, a list (a batch), or None (202, no body)."""
     if not is_retired(slug):
@@ -161,6 +164,10 @@ def handle(slug: str, payload: Any) -> Any:
     if isinstance(payload, list):
         if not payload:
             return _err(None, -32600, "Empty batch")
-        replies = [r for r in (_one(slug, m) for m in payload[:16]) if r is not None]
+        if len(payload) > MAX_BATCH:
+            # Refused whole, like the live handler: JSON-RPC answers every request in a batch, and answering
+            # the first sixteen in silence would drop the rest without a word.
+            return _err(None, -32600, f"Batch too large (max {MAX_BATCH} messages)")
+        replies = [r for r in (_one(slug, m) for m in payload) if r is not None]
         return replies or None
     return _one(slug, payload)

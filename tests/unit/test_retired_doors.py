@@ -223,3 +223,15 @@ def test_retired_traffic_does_not_inflate_the_public_counters(client):
     rpc(client, "sanctions-screening", "tools/list")             # a live door still counts
     assert metrics._metrics.total_agents_requested == 1
     metrics.reset_metrics()
+
+
+def test_an_oversize_batch_is_refused_whole_like_the_live_door_not_cut_off_without_a_word(client):
+    """JSON-RPC 2.0: every request in a batch is answered. The tombstone answered the first 16 and dropped the
+    rest silently; the live handler refuses an oversize batch with -32600 'Batch too large'. Same here."""
+    from agent_interface import mcp_server
+    over = [{"jsonrpc": "2.0", "id": i, "method": "ping"} for i in range(mcp_server.MAX_BATCH + 1)]
+    r = client.post("/mcp/data-enrichment", json=over)
+    assert r.status_code == 200 and r.json()["error"]["code"] == -32600
+    assert "too large" in r.json()["error"]["message"].lower()
+    ok = [{"jsonrpc": "2.0", "id": i, "method": "ping"} for i in range(mcp_server.MAX_BATCH)]
+    assert len(client.post("/mcp/data-enrichment", json=ok).json()) == mcp_server.MAX_BATCH

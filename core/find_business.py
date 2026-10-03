@@ -397,7 +397,17 @@ async def handle_find_business(
                 "seconds: it is then usually answered from cache, instantly.")
     if include_osm:
         search["budget_s"] = budget_s
-        search["within_budget"] = problem is None or problem["kind"] != "pending"
+        cut_short = state.get("narrow_stopped") == "deadline_exceeded"
+        search["within_budget"] = (problem is None or problem["kind"] != "pending") and not cut_short
+        if cut_short and problem is None:
+            # The budget ran out WHILE narrowing: the rows are the nearest of a larger sample, the lookup
+            # keeps running, and a repeat is then usually answered from cache with the narrower result.
+            search["continues_in_background"] = True
+            search["repeat_this_call"] = (
+                "The search was still narrowing when the time budget ran out, so these are the nearest of a "
+                "larger sample. Repeat this exact call after retry_after_s seconds for the narrower answer, "
+                "usually from cache.")
+            search["retry_after_s"] = PENDING_RETRY_AFTER_S
 
     # --- 3. assemble ------------------------------------------------------
     room = max(0, request.max_results - len(network_records))

@@ -240,6 +240,10 @@ def _read_location(args: dict, prepared: Prepared) -> Optional[str]:
         prepared.location_normalized_from = normalized
         if "radius_miles" in loc and loc["radius_miles"] is not None:
             radius_miles = _number(loc["radius_miles"], "location.radius_miles", args, minimum=0.0)
+            if loc.get("radius_km") is not None:
+                prepared.ignored.append("location.radius_km")
+                prepared.notes.append("both location.radius_miles and location.radius_km were sent; "
+                                      "radius_miles was used and radius_km was not")
         elif "radius_km" in loc and loc["radius_km"] is not None:
             km = _number(loc["radius_km"], "location.radius_km", args, minimum=0.0)
             radius_miles = round(km / _KM_PER_MILE, 3)
@@ -252,19 +256,39 @@ def _read_location(args: dict, prepared: Prepared) -> Optional[str]:
         place = _text(loc)
         if place:
             prepared.notes.append("`location` was a plain string; it was read as location.zip_or_city")
+            if isinstance(loc, int) and loc < 10000:
+                prepared.notes.append(f"`location` was the number {loc}; a JSON number cannot keep a leading "
+                                      "zero, so a ZIP such as 02139 must be sent as a string (\"02139\")")
     elif loc is not None:
         raise _error("invalid_argument",
                      f"`location` must be a place name (string) or an object with `zip_or_city`, "
                      f"got {type(loc).__name__}.", args)
 
     if not place:
-        # Top-level parts, e.g. {"city": "Muscat", "country": "Oman"} - advertised by the schema.
-        if loc is None or (isinstance(loc, (dict, str)) and not loc):
-            place, notes, normalized = _place_from(args, inner=False)
-            prepared.notes += notes
-            prepared.location_normalized_from = normalized
+        # Top-level parts, e.g. {"city": "Muscat", "country": "Oman"} - advertised by the schema. Tried
+        # whenever `location` gave no place (empty, or an object that only carried a radius), so the refusal
+        # below can never say "no city was sent" about a request that sent one.
+        place, notes, normalized = _place_from(args, inner=False)
+        prepared.notes += notes
+        prepared.location_normalized_from = normalized
     else:
-        extra = [k for k in (_PLACE_KEYS + _REGION_KEYS + _COUNTRY_KEYS) if k in args and k != "zip_or_city"]
+        # A region or country beside a `location` that names neither is the caller's own disambiguation
+        # (Birmingham + US); geocoding the bare name would throw it away. A city-like top-level key is a
+        # second, competing place and stays ignored. Parts the location object carries itself win.
+        used_top: list = []
+        inner_has_parts = isinstance(loc, dict) and any(k in loc for k in _REGION_KEYS + _COUNTRY_KEYS)
+        if not inner_has_parts:
+            rk, region = _first(args, _REGION_KEYS)
+            ck, country = _first(args, _COUNTRY_KEYS)
+            composed = _compose(place, region, country)
+            if composed != place:
+                prepared.notes.append(
+                    f"the top-level {' and '.join(f'`{_echo(k, 40)}`' for k in (rk, ck) if k)} "
+                    f"{'was' if (bool(rk) + bool(ck)) == 1 else 'were'} added to `location`: '{_echo(composed, 120)}'")
+                place = composed
+                used_top = [k for k in (rk, ck) if k]
+        extra = [k for k in (_PLACE_KEYS + _REGION_KEYS + _COUNTRY_KEYS)
+                 if k in args and k != "zip_or_city" and k not in used_top]
         if extra:
             prepared.ignored += [_echo(k, 40) for k in extra]
             prepared.notes.append("`location` was used; the top-level place argument(s) "
@@ -388,10 +412,18 @@ def prepare(arguments: Any) -> Prepared:
             raise _error("invalid_argument", f"`max_results` must be a whole number from 1 to 20, got "
                          f"{type(mr).__name__}.", args, place=place, kind=_kind_hint(args))
         try:
-            n = int(float(mr))
-        except ValueError:
+            as_float = float(mr)
+            # float() accepts "inf", "1e999" and "nan"; int() of the first two raises OverflowError, which
+            # nothing used to catch (the caller saw JSON-RPC -32603 "Internal error"), and none of the three
+            # is a number of rows.
+            if as_float != as_float or as_float in (float("inf"), float("-inf")):
+                raise ValueError("not a finite number")
+            n = int(as_float)
+        except (ValueError, OverflowError):
             raise _error("invalid_argument", f"`max_results` must be a whole number from 1 to 20, got "
                          f"'{_echo(mr)}'.", args, place=place, kind=_kind_hint(args)) from None
+        if as_float != n and abs(as_float) < 1e15:
+            prepared.notes.append(f"max_results {_echo(mr)} is not a whole number; {n} was used")
         clamped = max(1, min(20, n))
         if clamped != n:
             prepared.notes.append(f"max_results {n} is outside 1-20; {clamped} was used")

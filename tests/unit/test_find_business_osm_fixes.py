@@ -476,3 +476,27 @@ def test_openapi_does_not_declare_a_maximum_the_server_does_not_enforce():
                                  location={"zip_or_city": "Atlanta", "radius_miles": 500}))
     assert r.result["search"]["radius_m"] <= osm_client.RADIUS_MAX_M
     assert r.result["search"]["radius_capped_at_miles"] == 25
+
+
+def test_a_deadline_during_narrowing_does_not_claim_the_call_was_within_budget(install, monkeypatch):
+    """within_budget said True while narrowing_stopped_because said deadline_exceeded, and nothing told the
+    caller a repeat would return a better (narrower) answer. Gate finding 2026-10-03."""
+    monkeypatch.setattr(FB, "CALL_BUDGET_S", 0.2)
+    data = restaurant_line(500)
+    seen = {"n": 0}
+
+    async def second_call_hangs(request):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            q = dict(httpx.QueryParams(request.content.decode()))["data"]
+            return httpx.Response(200, json=osm_fakes.overpass_answer(q, data))
+        await asyncio.sleep(30)
+        return httpx.Response(200, json={"elements": []})
+
+    install(dataset=data, overpass_override=second_call_hangs)
+    r = call(restaurants_request())
+    s = r.result["search"]
+    assert r.status.value == "success" and len(r.result["businesses"]) == 5
+    assert s["narrowing_stopped_because"] == "deadline_exceeded"
+    assert s["within_budget"] is False
+    assert s["continues_in_background"] is True and "Repeat this exact call" in s["repeat_this_call"]

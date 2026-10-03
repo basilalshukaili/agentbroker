@@ -323,3 +323,90 @@ def test_the_rest_route_without_anything_to_search_for_says_what_to_send():
     bad = c.post("/ops/find_business", json={"location": {"zip_or_city": "Atlanta"}})
     assert bad.status_code == 422
     assert "needs a kind of business" in bad.text
+
+
+# ---------------------------------------------------------------------------
+# gate findings, 2026-10-03: extreme numbers, and places that were half-read
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("given", [float("inf"), float("-inf"), float("nan"), 1e999, "inf", "-inf", "1e999",
+                                    "-1e999", "Infinity", "nan"])
+def test_an_extreme_max_results_is_refused_with_the_guided_message_not_an_internal_error(given):
+    """int(float('inf')) raises OverflowError, which nothing caught: the caller got JSON-RPC -32603 'Internal
+    error' where the previous build gave a clean validation error. Directory scorers send numbers like this."""
+    with pytest.raises(fbi.FindBusinessInputError) as ei:
+        fbi.prepare({"location": "Atlanta", "capability": "barber", "max_results": given})
+    assert ei.value.error_code == "invalid_argument" and "whole number from 1 to 20" in str(ei.value)
+
+
+@pytest.mark.parametrize("given", [float("inf"), 1e999, "1e999", "inf"])
+def test_an_extreme_max_results_through_the_real_dispatcher_is_a_guided_refusal(given):
+    resp = tool({"location": "Atlanta", "capability": "barber", "max_results": given})
+    assert "error" not in resp, resp                    # a tool error the model can read, not JSON-RPC -32603
+    assert resp["result"]["isError"] is True
+    out = body(resp)
+    assert out["error_code"] == "invalid_argument" and "whole number from 1 to 20" in out["human_message"]
+    assert out["how_to_resolve"]["example_arguments"]
+
+
+def test_a_huge_but_finite_max_results_is_clamped_like_any_other_big_number():
+    p = fbi.prepare({"location": "Atlanta", "capability": "barber", "max_results": 1e300})
+    assert p.kwargs["max_results"] == 20
+
+
+def test_a_fractional_max_results_is_truncated_and_says_so():
+    p = fbi.prepare({"location": "Atlanta", "capability": "barber", "max_results": 5.7})
+    assert p.kwargs["max_results"] == 5
+    assert any("5.7" in n and "whole number" in n for n in p.notes), p.notes
+    q = fbi.prepare({"location": "Atlanta", "capability": "barber", "max_results": "6"})
+    assert q.kwargs["max_results"] == 6 and not any("whole number" in n for n in q.notes)
+
+
+def test_a_top_level_city_is_used_when_the_location_object_named_no_place():
+    """{'location': {'radius_miles': 5}, 'city': 'Muscat'} was refused with 'no city was sent either' - a false
+    sentence: the city was sent, one level up."""
+    p = fbi.prepare({"location": {"radius_miles": 5}, "city": "Muscat", "capability": "dentist"})
+    assert p.kwargs["location"] == {"zip_or_city": "Muscat", "radius_miles": 5.0}
+    r = fbi.prepare({"location": {}, "city": "Muscat", "country": "Oman", "capability": "dentist"})
+    assert r.kwargs["location"]["zip_or_city"] == "Muscat, Oman"
+
+
+def test_a_refusal_for_a_missing_place_never_says_a_city_was_not_sent_when_it_was():
+    with pytest.raises(fbi.FindBusinessInputError) as ei:
+        fbi.prepare({"location": {"radius_miles": 5}, "capability": "dentist"})
+    assert "no `city` was sent" in str(ei.value)
+    with pytest.raises(fbi.FindBusinessInputError) as ei2:
+        fbi.prepare({"location": {"radius_miles": 5}, "country": "Oman", "capability": "dentist"})
+    assert "no `city` was sent" not in str(ei2.value) and "country or region alone" in str(ei2.value)
+
+
+def test_a_country_or_region_beside_a_location_string_disambiguates_it_instead_of_being_dropped():
+    """{'location': 'Birmingham', 'country': 'US'} geocoded the bare name and threw the caller's own
+    disambiguation away, which cuts against 'never guess WHERE'."""
+    p = fbi.prepare({"location": "Birmingham", "country": "US", "capability": "dentist"})
+    assert p.kwargs["location"]["zip_or_city"] == "Birmingham, US"
+    assert "country" not in p.ignored and any("country" in n for n in p.notes)
+    q = fbi.prepare({"location": {"zip_or_city": "Birmingham"}, "region": "Alabama", "country": "US",
+                     "capability": "dentist"})
+    assert q.kwargs["location"]["zip_or_city"] == "Birmingham, Alabama, US"
+    # a part the place already contains is not repeated, and one the location object itself carries wins
+    r = fbi.prepare({"location": "Birmingham, US", "country": "US", "capability": "dentist"})
+    assert r.kwargs["location"]["zip_or_city"] == "Birmingham, US"
+    s = fbi.prepare({"location": {"zip_or_city": "Birmingham", "country": "UK"}, "country": "US", "capability": "dentist"})
+    assert s.kwargs["location"]["zip_or_city"] == "Birmingham, UK"
+
+
+def test_both_radius_units_are_never_silently_resolved():
+    p = fbi.prepare({"location": {"zip_or_city": "Muscat", "radius_miles": 2, "radius_km": 50}, "capability": "dentist"})
+    assert p.kwargs["location"]["radius_miles"] == 2.0
+    assert "location.radius_km" in p.ignored
+    assert any("radius_km" in n and "radius_miles" in n for n in p.notes), p.notes
+
+
+def test_a_zip_typed_as_a_number_that_lost_its_leading_zero_is_flagged():
+    """02139 is not valid JSON as a number; 2139 is, and is a different place. Say so rather than search it."""
+    p = fbi.prepare({"location": 2139, "capability": "dentist"})
+    assert p.kwargs["location"]["zip_or_city"] == "2139"
+    assert any("leading zero" in n for n in p.notes), p.notes
+    q = fbi.prepare({"location": 30309, "capability": "dentist"})          # five digits: nothing lost
+    assert not any("leading zero" in n for n in q.notes)
