@@ -1,0 +1,66 @@
+{
+  "provenance": {
+    "kind": "CONSTRUCTED, not captured",
+    "source": "Request bodies and headers copied from the wire examples in the MCP 2026-07-28 specification (basic/index _meta table, server/discover, basic/transports/streamable-http 'Request Metadata', basic/versioning 'Protocol Version Negotiation') and from the sequence the official TypeScript SDK v2 documents for its 'auto' version-negotiation mode (probe with server/discover, then ordinary requests carrying the _meta envelope plus MCP-Protocol-Version, Mcp-Method and Mcp-Name headers).",
+    "why_not_captured": "No 2026-07-28 client SDK was available on the build machine (the installed official Python SDK, mcp 1.26.0, speaks up to 2025-11-25), and installing one from a registry was not authorised. The legacy fixture next to this one IS a real capture. Replace this file with a capture from the TypeScript SDK v2 client the first time one is available: node + `npm install @modelcontextprotocol/client`, then record with the same HTTP-layer hook as scripts/record_mcp_handshake.py.",
+    "constructed_utc": "2026-10-03"
+  },
+  "exchanges": [
+    {
+      "label": "1. auto-mode probe: server/discover with the full _meta envelope",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "server/discover"},
+      "json": {"jsonrpc": "2.0", "id": "discover-1", "method": "server/discover", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": {"name": "ExampleClient", "version": "1.0.0"}, "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "supportedVersions", "capabilities", "ttlMs", "cacheScope", "_meta", "instructions"], "resultType": "complete", "cacheScope": "public", "supported_versions_start_with": "2026-07-28"}
+    },
+    {
+      "label": "2. tools/list with the envelope and Mcp-Method",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list"},
+      "json": {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": {"name": "ExampleClient", "version": "1.0.0"}, "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "tools", "ttlMs", "cacheScope", "_meta"], "resultType": "complete", "cacheScope": "public", "min_tools": 20}
+    },
+    {
+      "label": "3. tools/call with Mcp-Name mirroring params.name",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/call", "mcp-name": "preview_cost"},
+      "json": {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "preview_cost", "arguments": {"operation": "send_message", "params": {}}, "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": {"name": "ExampleClient", "version": "1.0.0"}, "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "content", "isError", "_meta"], "resultType": "complete", "result_keys_exclude": ["ttlMs", "cacheScope"]}
+    },
+    {
+      "label": "4. a client that asks for a version we do not speak is told what we do, with HTTP 400",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2027-01-01", "mcp-method": "tools/list"},
+      "json": {"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2027-01-01", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 400, "error_code": -32022, "data_supported_includes": ["2026-07-28", "2025-11-25"], "data_requested": "2027-01-01"}
+    },
+    {
+      "label": "5. ... and retries with a mutually supported version from the 'supported' list: success",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list"},
+      "json": {"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "tools"], "resultType": "complete"}
+    },
+    {
+      "label": "6. the same flow on a capability door (compliance-check)",
+      "method": "POST", "path": "/mcp/compliance-check",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "server/discover"},
+      "json": {"jsonrpc": "2.0", "id": "discover-2", "method": "server/discover", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "supportedVersions", "capabilities", "_meta"], "serverInfo_name": "compliance-check"}
+    },
+    {
+      "label": "7. resources/read with Mcp-Name mirroring params.uri",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "resources/read", "mcp-name": "agent-broker://cookbook"},
+      "json": {"jsonrpc": "2.0", "id": 5, "method": "resources/read", "params": {"uri": "agent-broker://cookbook", "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "contents", "ttlMs", "cacheScope"], "resultType": "complete"}
+    },
+    {
+      "label": "8. a header that disagrees with the body is refused with HeaderMismatch (-32020), HTTP 400",
+      "method": "POST", "path": "/mcp",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/call", "mcp-name": "screen_sanctions"},
+      "json": {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "preview_cost", "arguments": {}, "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "expect": {"status": 400, "error_code": -32020}
+    }
+  ]
+}

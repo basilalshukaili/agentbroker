@@ -191,6 +191,33 @@ const SUPPORTED_PROTOCOL_VERSIONS = [
   "2024-11-05",
 ];
 
+// MCP protocol revision 2026-07-28 removes `initialize`: version and identity travel on EVERY request, in
+// `params._meta` and the MCP-Protocol-Version header. Mirrors MODERN_PROTOCOL_VERSIONS in
+// agent_interface/mcp_2026.py (a test compares them). Deliberately NOT in the list above - that one is what
+// `initialize` negotiates, and this worker must never answer `initialize` with a modern version.
+const MODERN_PROTOCOL_VERSIONS = ["2026-07-28"];
+const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
+
+/**
+ * Is this a 2026-07-28 request? Such a request must NOT be answered from the snapshots below.
+ *
+ * `tools/list` is served from a snapshot taken in the legacy shape, which lacks the `resultType`, `ttlMs`
+ * and `cacheScope` the revision requires of a result, so a modern client would be handed a document its own
+ * SDK rejects ("an absent resultType is a spec violation"). The origin owns the modern shapes and the
+ * request-metadata validation, so a modern request is proxied there untouched. `server/discover` is not in
+ * the snapshot set at all, so it already proxies; it is listed for clarity. `initialize` is never modern.
+ */
+function isModernRequest(
+  method: string,
+  headerVersion: string | null,
+  params: { _meta?: Record<string, unknown> } | undefined,
+): boolean {
+  if (method === "initialize") return false;
+  if (method === "server/discover") return true;
+  if (params?._meta && META_PROTOCOL_VERSION in params._meta) return true;
+  return headerVersion !== null && MODERN_PROTOCOL_VERSIONS.includes(headerVersion.trim());
+}
+
 export async function handleMcpRequest(
   request: Request,
   originUrl: string,
@@ -205,7 +232,8 @@ export async function handleMcpRequest(
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "POST, OPTIONS",
         "access-control-allow-headers":
-          "content-type, authorization, x-agent-identity, x-payment-proof, x-payment-nonce",
+          "content-type, authorization, x-agent-identity, x-payment-proof, x-payment-nonce, " +
+          "mcp-protocol-version, mcp-method, mcp-name",
       },
     });
   }
@@ -220,7 +248,12 @@ export async function handleMcpRequest(
     jsonrpc?: string;
     method?: string;
     id?: unknown;
-    params?: { name?: string; arguments?: unknown; protocolVersion?: unknown };
+    params?: {
+      name?: string;
+      arguments?: unknown;
+      protocolVersion?: unknown;
+      _meta?: Record<string, unknown>;
+    };
   } = {};
   try {
     body = JSON.parse(bodyText);
@@ -231,7 +264,9 @@ export async function handleMcpRequest(
   const method = String(body.method ?? "");
   const id = body.id;
 
-  if (!EDGE_MCP_METHODS.has(method)) {
+  const modern = isModernRequest(method, request.headers.get("mcp-protocol-version"), body.params);
+
+  if (!EDGE_MCP_METHODS.has(method) || modern) {
     // tools/call: apply freemium rate-limit then optional x402 gate.
     if (method === "tools/call") {
       const ip = clientIp(request);

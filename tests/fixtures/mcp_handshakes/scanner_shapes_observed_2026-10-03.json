@@ -1,0 +1,73 @@
+{
+  "provenance": {
+    "kind": "OBSERVED HEADER SHAPES, reconstructed bodies",
+    "source": "A read-only aggregate of the Caddy access logs on the production host for 2026-09-29 .. 2026-10-03 (55,154 POSTs to the MCP doors; counts only, no address and no key header read). Caddy logs request HEADERS but not bodies, so every body below is the minimum a caller sending those headers must have sent for the method named in Mcp-Method, not a capture.",
+    "what_was_seen": [
+      "scanner-A: server/discover three times per door, with MCP-Protocol-Version 2026-07-28, with no version header, and with 1999-01-01 (294 each over the window)",
+      "scanner-B, scanner-C, scanner-D, scanner-E: tools/list with MCP-Protocol-Version 2026-07-28 and an Mcp-Method header (the body's _meta is unknown)",
+      "scanner-F, scanner-G, scanner-H: MCP-Protocol-Version 2026-07-28 with NO Mcp-Method header (the method is unknown; initialize is the likely one)",
+      "scanner-I: MCP-Protocol-Version 2025-06-18 WITH an Mcp-Method header, for initialize, tools/list and notifications/initialized: a legacy client that sends the new header (it is almost all of the 11,244 POSTs in the window that carry Mcp-Method without a 2026-07-28 version)",
+      "about 20 other distinct user agents: server/discover with 2026-07-28 and Mcp-Method; no caller sent Mcp-Name on any request"
+    ],
+    "observed_utc": "2026-10-03",
+    "purpose": "These are the callers that are asking for this revision today. Each of them must be served; none may be broken by header validation that only the revision's own clients should meet."
+  },
+  "exchanges": [
+    {
+      "label": "scanner-A 1/3: discover, correct version header",
+      "method": "POST", "path": "/mcp/sanctions-screening",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "server/discover"},
+      "json": {"jsonrpc": "2.0", "id": 1, "method": "server/discover"},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "supportedVersions", "capabilities"], "serverInfo_name": "sanctions-screening"}
+    },
+    {
+      "label": "scanner-A 2/3: discover, NO version header",
+      "method": "POST", "path": "/mcp/sanctions-screening",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-method": "server/discover"},
+      "json": {"jsonrpc": "2.0", "id": 2, "method": "server/discover"},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "supportedVersions", "capabilities"]}
+    },
+    {
+      "label": "scanner-A 3/3: discover, bogus version header 1999-01-01 -> the revision's own error",
+      "method": "POST", "path": "/mcp/sanctions-screening",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "1999-01-01", "mcp-method": "server/discover"},
+      "json": {"jsonrpc": "2.0", "id": 3, "method": "server/discover"},
+      "expect": {"status": 400, "error_code": -32022, "data_supported_includes": ["2026-07-28"], "data_requested": "1999-01-01"}
+    },
+    {
+      "label": "scanner-B: header-only 2026-07-28 tools/list (no _meta envelope): still served, in the new shape",
+      "method": "POST", "path": "/mcp/appointment-booking",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list"},
+      "json": {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+      "expect": {"status": 200, "result_keys_include": ["resultType", "tools", "ttlMs", "cacheScope"], "resultType": "complete"}
+    },
+    {
+      "label": "scanner-F: 2026-07-28 header, no Mcp-Method, initialize -> the legacy handshake, never a modern error",
+      "method": "POST", "path": "/mcp/agent-broker",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28"},
+      "json": {"jsonrpc": "2.0", "id": 5, "method": "initialize", "params": {"protocolVersion": "2026-07-28", "capabilities": {}, "clientInfo": {"name": "scanner-F", "version": "1"}}},
+      "expect": {"status": 200, "result_keys_include": ["protocolVersion", "serverInfo", "capabilities"], "protocolVersion": "2025-11-25", "result_keys_exclude": ["resultType", "ttlMs"]}
+    },
+    {
+      "label": "scanner-I 1/3: 2025-06-18 initialize WITH an Mcp-Method header",
+      "method": "POST", "path": "/mcp/compliance-check",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18", "mcp-method": "initialize"},
+      "json": {"jsonrpc": "2.0", "id": 6, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "scanner-I", "version": "1"}}},
+      "expect": {"status": 200, "result_keys_include": ["protocolVersion", "serverInfo"], "protocolVersion": "2025-06-18", "result_keys_exclude": ["resultType"]}
+    },
+    {
+      "label": "scanner-I 2/3: legacy notifications/initialized with the extra header -> 202",
+      "method": "POST", "path": "/mcp/compliance-check",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18", "mcp-method": "notifications/initialized"},
+      "json": {"jsonrpc": "2.0", "method": "notifications/initialized"},
+      "expect": {"status": 202, "body": "empty"}
+    },
+    {
+      "label": "scanner-I 3/3: legacy tools/list whose Mcp-Method header is WRONG: legacy requests are not validated",
+      "method": "POST", "path": "/mcp/compliance-check",
+      "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18", "mcp-method": "something/else"},
+      "json": {"jsonrpc": "2.0", "id": 7, "method": "tools/list"},
+      "expect": {"status": 200, "result_keys_include": ["tools"], "result_keys_exclude": ["resultType", "ttlMs", "cacheScope"]}
+    }
+  ]
+}
