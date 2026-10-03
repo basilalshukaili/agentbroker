@@ -105,7 +105,7 @@ person under a spelling the check cannot tell is his.
 | Grade | B own / other | C own / other |
 |---|---|---|
 | `high` | 143 / 33 | 66 / 19 |
-| `medium` | 44 / 102 | 43 / 90 |
+| `medium` | 44 / 103 | 43 / 90 |
 
 (Before the second round `medium` was 44 / 162 and 46 / 99: the same parties found, a third fewer wrong candidates.)
 
