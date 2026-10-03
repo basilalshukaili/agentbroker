@@ -827,3 +827,23 @@ def test_the_store_itself_refuses_a_wrong_poll_secret_even_if_an_endpoint_forgot
         again = await store.request_complete(rid, tokens.sha256_hex(poll), tokens.sha256_hex("d" * 40), 120)
         assert again == {"ok": False, "reason": "completed"}
     asyncio.run(scenario())
+
+
+def test_a_forged_cookie_naming_the_right_signin_does_not_skip_the_match_code(env, mailbox):
+    """The cookie's request id is a CLAIM: a browser can be made to send any cookie. Only a poll secret that
+    hashes to the one the sign-in holds proves this is the starting browser (second adversarial-review round)."""
+    attacker, victim = other_device(), other_device()
+    client_id = register(attacker, ["https://attacker.example.net/cb"])
+    s = start_signin(attacker, mailbox, client_id, "https://attacker.example.net/cb", pkce()[1], unique_email("v"))
+    forged = f"{s['rid']}.{'x' * 32}"                          # right sign-in id, wrong poll secret
+    victim.cookies.set("hl_oauth", forged, domain="api.hatchloop.dev", path="/oauth")
+
+    assert 'name="code"' in victim.get(f"/oauth/verify?t={s['magic']}").text           # still asked for the code
+    r = press(victim, s["magic"])
+    assert r.status_code == 400 and "does not match" in r.text and "location" not in r.headers
+    assert poll(attacker, s["rid"], s["poll_secret"]).json()["status"] == "pending"
+    # even WITH the code, the forged cookie delivers nothing to the pressing browser
+    ok = press(victim, s["magic"], code=s["code"])
+    assert ok.status_code == 200 and "location" not in ok.headers
+    got = poll(attacker, s["rid"], s["poll_secret"]).json()                               # the rightful starter still gets it
+    assert got["status"] == "redirect" and "code=" in got["location"]

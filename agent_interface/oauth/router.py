@@ -347,6 +347,16 @@ def _cookie_value(request: Request) -> Optional[tuple]:
     return (rid, poll) if _ID.match(rid) and _ID.match(poll) else None
 
 
+async def _started_here(store, cookie: Optional[tuple], request_id: Optional[str]) -> bool:
+    """True only when the cookie PROVES this is the browser that started the sign-in: the poll secret in it
+    hashes to the one the sign-in holds. A request id in a cookie proves nothing - a browser can be made to
+    send any cookie - so the id alone must never be what skips the match code (found by the second adversarial
+    review round)."""
+    if not (cookie and request_id and cookie[0] == request_id):
+        return False
+    return await store.request_poll(request_id, tokens.sha256_hex(cookie[1])) != "unknown"
+
+
 async def _client_for_request(store, req: dict) -> Optional[ClientInfo]:
     try:
         return await resolve_client(store, req["client_id"])
@@ -506,8 +516,10 @@ async def verify_page(request: Request):
     if info["status"] != "email_sent":
         return _message("This link was already used", "If you just confirmed it, go back to the app - it "
                         "finishes connecting by itself.")
-    cookie = _cookie_value(request)
-    started_here = bool(cookie and cookie[0] == info["request_id"])
+    try:
+        started_here = await _started_here(store, _cookie_value(request), info["request_id"])
+    except StoreUnavailable:
+        started_here = False                    # when in doubt, ask for the code
     return await _confirm_page(store, info, t, ask_code=not started_here)
 
 
@@ -537,7 +549,8 @@ async def verify_decide(request: Request):
     cookie = _cookie_value(request)
     try:
         info = await store.request_lookup_magic(tokens.sha256_hex(t))
-        if info and decision == "approve" and info["status"] == "email_sent" and not (cookie and cookie[0] == info["request_id"]):
+        if (info and decision == "approve" and info["status"] == "email_sent"
+                and not await _started_here(store, cookie, info["request_id"])):
             # Not the browser that started this sign-in: the person must prove they can see the page that did.
             if not limits.check("match_attempt", tokens.sha256_hex(t)[:32]):
                 return _message("Too many attempts", "That code was entered wrongly too many times. Go back to the "

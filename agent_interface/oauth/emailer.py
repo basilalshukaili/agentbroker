@@ -60,15 +60,17 @@ def compose(link: str, app_label: str, return_host: str, minutes: int = 15) -> t
         'font-weight:700;font-size:15px;padding:12px 28px;border-radius:9999px;text-decoration:none;">Review and confirm</a></p>'
         f'<p style="font-size:13px;line-height:1.5;color:#52525b;margin:0 0 8px;">The link works once and expires in {minutes} minutes. '
         'Opening it shows what you are approving; nothing happens until you press the button on that page.</p>'
-        '<p style="font-size:13px;line-height:1.5;color:#52525b;margin:0;">If you did not start this, ignore this email - '
-        'no one can sign in without pressing the button.</p>'
+        '<p style="font-size:13px;line-height:1.5;color:#52525b;margin:0;"><strong>If you did not start this, do nothing:</strong> '
+        'ignore or delete this email. Nothing is connected, and it cannot be unless someone presses Confirm and enters '
+        'a code that only the person who started the sign-in can see.</p>'
         '</div></body></html>')
     body_text = (
         f"{app_label} is asking to use HatchLoop AgentBroker as you.\n"
         f"It will be sent back to {return_host}.\n\n"
         f"Review and confirm (works once, expires in {minutes} minutes):\n{link}\n\n"
         "Opening the link shows what you are approving; nothing happens until you press the button on that page.\n"
-        "If you did not start this, ignore this email.\n")
+        "If you did not start this, do nothing: ignore or delete this email. Nothing is connected, and it cannot be\n"
+        "unless someone presses Confirm and enters a code that only the person who started the sign-in can see.\n")
     return subject, body_html, body_text
 
 
