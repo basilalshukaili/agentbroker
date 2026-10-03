@@ -527,7 +527,7 @@ def _mcp_result_to_jsonrpc(result: Any) -> dict:
 
 
 def _is_signed_payment_attempt(meta: Any) -> bool:
-    """True only when `_meta['x402/payment']` is a structured payment payload.
+    """True only when `_meta['x402/payment']` is a payment the x402 SDK itself would parse.
 
     The server's own advertised quote flow tells an agent to send ANY value in
     `_meta['x402/payment']` to receive the priced offer (the founder's
@@ -535,13 +535,23 @@ def _is_signed_payment_attempt(meta: Any) -> bool:
     non-empty value as "a real buyer is here" would page the founder, and bump the
     payment-attempt counter, for each agent that merely asks the price - at most one
     alert per tool per 15 minutes, but across ten paid tools that is a standing
-    stream of false alarms the moment the rail is advertised. A signed payment is
-    an object with a non-empty `payload`; a bare string is a price request.
+    stream of false alarms the moment the rail is advertised.
+
+    THE QUESTION IS "WOULD THE SDK TREAT THIS AS A PAYMENT?", SO THE SDK ANSWERS IT. A hand-written
+    shape test ("a dict with a non-empty `payload`") disagreed with the SDK in BOTH directions
+    (review of feat/x402-honesty-20261004, F4): it rejected a complete, valid payment sent as a JSON
+    string (which extract_payment_from_meta accepts and the wrapper then verifies and settles - a
+    real buyer who was never counted or announced), and it accepted `{"payload": {"a": 1}}`, which
+    the SDK parses to None (no `accepted`), so one anonymous request with that meta paged the founder
+    "a real buyer is here". Calling extract_payment_from_meta makes the two unable to differ.
     """
     if not isinstance(meta, dict):
         return False
-    pay = meta.get("x402/payment")
-    return isinstance(pay, dict) and isinstance(pay.get("payload"), dict) and bool(pay["payload"])
+    try:
+        from x402.mcp.utils import extract_payment_from_meta
+        return extract_payment_from_meta({"_meta": meta}) is not None
+    except Exception:  # noqa: BLE001 - a funnel counter must never raise into a sale
+        return False
 
 
 async def run_paid_tool(

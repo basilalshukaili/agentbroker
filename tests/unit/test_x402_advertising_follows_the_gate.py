@@ -119,7 +119,11 @@ def test_rail_off_no_tool_description_mentions_x402(gate_off):
     assert offenders == [], f"descriptions advertise a rail that is off: {offenders}"
 
 
-def test_rail_on_exactly_the_paid_tools_carry_the_mention(gate_on):
+def test_rail_on_exactly_the_paid_tools_carry_the_mention(gate_on, monkeypatch):
+    """With metering on every tool the gate prices is tagged. With metering off the three premium data
+    tools are answered free before the x402 branch, so they are paid tools the gate NEVER takes payment
+    for in that state and must not be tagged (test_cost_claims_follow_the_switches.py pins that side)."""
+    monkeypatch.setenv("DATA_METERING_ENABLED", "true")
     descs = _tool_descriptions()
     tagged = {n for n, d in descs.items() if "x402" in d}
     paid = {n for n in descs if gate_on.is_paid_tool(n)}
@@ -202,6 +206,15 @@ def test_testnet_is_listed_only_when_the_gate_accepts_it(gate_on, monkeypatch):
 
 # -------------------------------------------------------------------- buyer-intent alert noise
 
+# A payment payload in the shape the SDK accepts (x402.schemas.PaymentPayload requires `payload` AND `accepted`).
+SIGNED = {
+    "x402Version": 2,
+    "payload": {"signature": "0x01", "authorization": {}},
+    "accepted": {"scheme": "exact", "network": "eip155:8453", "asset": "0x" + "cd" * 20,
+                 "amount": "20000", "payTo": RECEIVER, "maxTimeoutSeconds": 60},
+}
+
+
 def test_a_price_request_is_not_a_buyer_attempt(gate_on):
     """The advertised quote flow sends ANY value to get the priced offer. That must not page
     the founder with 'a real buyer is here'."""
@@ -212,7 +225,41 @@ def test_a_price_request_is_not_a_buyer_attempt(gate_on):
     assert f({"x402/payment": {}}) is False
     assert f({"x402/payment": {"payload": {}}}) is False
     assert f({}) is False and f(None) is False
-    assert f({"x402/payment": {"x402Version": 2, "payload": {"signature": "0x01"}}}) is True
+    assert f({"x402/payment": SIGNED}) is True
+
+
+def test_a_payload_the_sdk_cannot_parse_is_not_a_buyer_attempt(gate_on):
+    """Review finding F4(b): {'payload': {'a': 1}} used to count (non-empty dict payload), although the SDK
+    parses it to None. An anonymous call with arguments {} reaches run_paid_tool before identity validation,
+    so one request with this meta paged the founder 'a real buyer is here' (cooldown 900 s per tool, ten
+    paid tools) and inflated the funnel counter."""
+    f = gate_on._is_signed_payment_attempt
+    assert f({"x402/payment": {"payload": {"a": 1}}}) is False
+    assert f({"x402/payment": {"x402Version": 2, "payload": {"signature": "0x01"}}}) is False, "no `accepted`"
+    assert f({"x402/payment": {k: v for k, v in SIGNED.items() if k != "accepted"}}) is False
+
+
+def test_a_json_string_payment_counts_because_the_sdk_accepts_it(gate_on):
+    """Review finding F4(a): the SDK's extract_payment_from_meta also accepts the payment as a JSON STRING.
+    A fully valid signed payment sent that way was accepted by the SDK (and settled) but returned False
+    here, so no attempt was recorded and the founder was never told a buyer had come - a regression, since
+    the code before this branch counted any truthy value."""
+    f = gate_on._is_signed_payment_attempt
+    assert f({"x402/payment": json.dumps(SIGNED)}) is True
+    assert f({"x402/payment": "{not json"}) is False
+    assert f({"x402/payment": "[1]"}) is False
+    assert f({"x402/payment": json.dumps({"payload": {"a": 1}})}) is False
+
+
+def test_the_predicate_is_the_sdks_own_parse_not_a_copy_of_it(gate_on):
+    """The two cannot disagree in either direction because the predicate IS the SDK call: for every shape,
+    it equals 'the SDK found a payment'."""
+    from x402.mcp.utils import extract_payment_from_meta
+    shapes = [SIGNED, json.dumps(SIGNED), "quote-request", "", None, {}, {"payload": {}}, {"payload": {"a": 1}},
+              {"x402Version": 2, "payload": {"signature": "0x01"}}, "{}", "[1]", 7, [SIGNED], True]
+    for pay in shapes:
+        meta = {"x402/payment": pay}
+        assert gate_on._is_signed_payment_attempt(meta) is (extract_payment_from_meta({"_meta": meta}) is not None), pay
 
 
 def test_run_paid_tool_only_alerts_on_a_signed_payment(gate_on, monkeypatch):
@@ -234,7 +281,9 @@ def test_run_paid_tool_only_alerts_on_a_signed_payment(gate_on, monkeypatch):
 
     for meta, expected in (
         ({"x402/payment": "quote-request"}, []),
-        ({"x402/payment": {"x402Version": 2, "payload": {"signature": "0x01"}}}, ["screen_sanctions"]),
+        ({"x402/payment": {"payload": {"a": 1}}}, []),
+        ({"x402/payment": SIGNED}, ["screen_sanctions"]),
+        ({"x402/payment": json.dumps(SIGNED)}, ["screen_sanctions"]),
     ):
         alerts.clear()
         with pytest.raises(RuntimeError):
