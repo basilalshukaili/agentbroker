@@ -63,13 +63,18 @@ is that no caller waits 25 s, and that the repeat is a cache read. The 11 no-arg
 (there is no place to search); they now get a refusal that works as a lesson, so 57.7% is the ceiling for this sample
 and the 100% row is the fair one for calls that said what they wanted. The pre-warm is not in these numbers.
 
-**Live runs** (public servers, from the development laptop, 2026-10-03): the "before" run is the first column of the
-table in the first live row (usable 15.4%; lookups p50 10.8 s / p95 20.1 s over 21 attempts; 8 of 20 cold lookups
-completed because the public Overpass server answered 504 to the rest). The "after" runs happened while
-`overpass-api.de` had stopped answering from that host at all (HTTP status request timed out after 21 s), so they
-prove the budget (every call returned inside 5.0-5.8 s while the upstream hung or failed, the first four as
-`partial` with the place resolved) and cannot measure success. **No live "after" success rate exists yet**; take it
-from `usage_events` after deploy (below).
+**Live runs** (the public servers, from the development laptop, 2026-10-03; reports in
+`docs/measurements/find-business-20261003/`). The live "before" run is the same 26-call outcome sample as above:
+usable 15.4% (the same four), 2 `wrong_place`; on the 20-lookup sample 8 completed and 12 were refused after the public
+Overpass server answered 5xx / timed out and the circuit breaker that follows four failures took over; lookups that
+reached the upstream took p50 10.8 s / p95 20.1 s (21 attempts). The live "after" runs happened while
+`overpass-api.de` was not answering from that host at all (a plain request to its status page timed out after 21 s and
+had still not answered 45 minutes later; the cause is unknown, and the host had sent about 35 Overpass requests in the
+previous quarter hour, so a per-IP limit is possible and unconfirmed). They therefore prove the budget - the first four
+lookups returned `partial` at 5.0-5.8 s with the place resolved while the upstream hung, and every later call returned
+at once - and **cannot measure success. No live "after" success rate exists yet**; take it from `usage_events` after
+deploy (below). Do not read the unavailable rows in that report as a regression: the same host could not reach the
+upstream at all.
 
 ## Order of operations
 
