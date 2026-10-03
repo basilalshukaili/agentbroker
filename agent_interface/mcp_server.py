@@ -1047,6 +1047,14 @@ async def _h_tools_list(params: dict) -> dict:
         tools = annotate_tools(tools)
     except Exception:  # noqa: BLE001 - never break discovery over a status annotation
         pass
+    # ChatGPT's per-tool `securitySchemes` (noauth / oauth2): which tools work without an account and which
+    # need the Connect sign-in. Request-time and response-only, like the annotation above; absent unless the
+    # sign-in can complete right now.
+    try:
+        from agent_interface.oauth.challenge import annotate_tools as _oauth_annotate
+        tools = await _oauth_annotate(tools)
+    except Exception:  # noqa: BLE001 - never break discovery over an annotation
+        pass
     return {"tools": tools}
 
 

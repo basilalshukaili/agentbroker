@@ -193,6 +193,12 @@ app.include_router(unsubscribe_router)
 from agent_interface.whatsapp_webhook import router as whatsapp_webhook_router
 app.include_router(whatsapp_webhook_router)
 
+# OAuth "Connect" sign-in for consumer assistants (/oauth/*, /.well-known/oauth-*). Switch off with
+# OAUTH_CONNECT_ENABLED=0; see agent_interface/oauth/settings.py and docs/OAUTH-CONNECT.md.
+from agent_interface.oauth.router import router as oauth_router
+from agent_interface.oauth import challenge as oauth_challenge
+app.include_router(oauth_router)
+
 
 # ---------------------------------------------------------------------------
 # Telemetry middleware — single source of truth for request/op counters.
@@ -704,7 +710,9 @@ async def mcp_endpoint(request: Request):
     if response is None:
         # Only notifications/responses were sent: accepted, nothing to say (MCP Streamable HTTP).
         return Response(status_code=202)
-    return response
+    # A refused call to a key-requiring tool becomes the signal an assistant's Connect button listens for
+    # (HTTP 401 + WWW-Authenticate, or ChatGPT's _meta form). Everything else passes through untouched.
+    return await oauth_challenge.apply(response, request)
 
 
 @app.post("/mcp/{profile}", tags=["MCP"])
@@ -747,7 +755,7 @@ async def mcp_profile_endpoint(profile: str, request: Request):
         payload, headers=dict(request.headers), profile=profile)
     if response is None:
         return Response(status_code=202)
-    return response
+    return await oauth_challenge.apply(response, request)
 
 
 # ---------------------------------------------------------------------------
