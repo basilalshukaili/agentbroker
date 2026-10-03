@@ -8,10 +8,12 @@ the standard `tools/list` and `tools/call` JSON-RPC methods.
 Spec: https://spec.modelcontextprotocol.io/
 
 This module exposes a JSON-RPC 2.0 endpoint at /mcp that handles:
-  - initialize           → handshake + server capabilities
+  - server/discover      → MCP 2026-07-28: supported versions, capabilities, identity (agent_interface/mcp_2026.py)
+  - initialize           → handshake + server capabilities (the legacy era, 2024-11-05 .. 2025-11-25)
   - tools/list           → returns all operations as MCP tools
   - tools/call           → invokes an operation
   - resources/list       → exposes the manifest as a resource
+  - resources/templates/list → no URI templates (empty list)
   - resources/read       → returns manifest content
   - prompts/list         → suggested prompts for common workflows
 
@@ -46,6 +48,9 @@ from agent_interface.manifest_server import get_full_manifest, get_operation
 from core import tool_auth
 from core import tool_readiness
 from core.tool_auth import WRITE_TOOLS_REQUIRING_AUTH, requires_key
+# MCP protocol revision 2026-07-28, served alongside the legacy handshake. A pure module: era resolution,
+# header validation, the discover result and the modern result shape. See its docstring.
+from agent_interface import mcp_2026 as _m2026
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +83,11 @@ SUPPORTED_PROTOCOL_VERSIONS = (
     "2024-11-05",
 )
 PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
+# Every version this endpoint speaks: the modern revision(s) first, then the legacy ones above. This is what
+# `server/discover` and UnsupportedProtocolVersion advertise. It is deliberately NOT what `initialize`
+# negotiates: that stays SUPPORTED_PROTOCOL_VERSIONS, because an `initialize` that answered "2026-07-28"
+# would announce a handshake that revision removed.
+ALL_PROTOCOL_VERSIONS = tuple(_m2026.all_versions(SUPPORTED_PROTOCOL_VERSIONS))
 
 
 def negotiate_protocol_version(params: dict | None) -> str:
@@ -320,7 +330,8 @@ class _Observed:
     forget one - which is exactly how the old success-only logging came to exist. So each exit sets
     a field here and ONE place, `_finish_request`, reads it."""
 
-    __slots__ = ("outcome", "error_code", "requested_name", "headers", "log_method")
+    __slots__ = ("outcome", "error_code", "requested_name", "headers", "log_method",
+                 "http_status", "client_info", "era_version")
 
     def __init__(self) -> None:
         self.outcome = "ok"
@@ -330,6 +341,13 @@ class _Observed:
         # What to record as the method when it is not simply payload["method"] (a client's response
         # has none; an unrecognised notification name is attacker-controlled text).
         self.log_method: Optional[str] = None
+        # MCP 2026-07-28: the HTTP status we answered with when it is not the default (400 for a
+        # refused envelope, 404 for an unknown method), the `_meta` clientInfo object the request
+        # carried (identity travels on every request now, no handshake has to come first), and the
+        # modern protocol version the request was served under (None for the legacy era).
+        self.http_status: Optional[int] = None
+        self.client_info: Optional[dict] = None
+        self.era_version: Optional[str] = None
 
 
 async def handle_mcp_request(payload: Any, headers: Optional[dict] = None,
@@ -359,10 +377,11 @@ async def handle_mcp_request(payload: Any, headers: Optional[dict] = None,
     return await _handle_one(payload, headers, profile)
 
 
-async def _handle_one(payload: Any, headers: Optional[dict], profile: Optional[str]) -> Optional[dict]:
+async def _handle_one(payload: Any, headers: Optional[dict], profile: Optional[str],
+                      single: bool = True) -> Optional[dict]:
     started = time.monotonic()
     obs = _Observed()
-    response = await _handle_mcp_request_core(payload, headers, profile, obs)
+    response = await _handle_mcp_request_core(payload, headers, profile, obs, single)
     _finish_request(payload, response, obs, started, profile=profile)
     return response
 
@@ -382,9 +401,23 @@ async def _handle_batch(batch: list, headers: Optional[dict], profile: Optional[
         )).to_dict()
         _finish_request(batch, response, obs, started, profile=profile)
         return response
+    if _m2026.batch_declares_modern(batch):
+        # The 2026-07-28 transport carries ONE request per POST. A batch cannot honour its header rules, so
+        # an array of modern requests is refused whole instead of being served with the checks skipped.
+        started = time.monotonic()
+        obs = _Observed()
+        obs.outcome, obs.error_code, obs.http_status = "rpc_error", "invalid_request", _m2026.HTTP_BAD_REQUEST
+        obs.headers = _normalize_headers(headers)
+        response = _m2026.with_status(JsonRpcResponse(id=None, error=_error(
+            ERR_INVALID_REQUEST,
+            "Protocol 2026-07-28 carries one request per POST; send each request on its own")).to_dict(),
+            _m2026.HTTP_BAD_REQUEST)
+        _finish_request(batch, response, obs, started, profile=profile)
+        return response
     replies = []
     for member in batch:
-        reply = await _handle_one(member, headers, profile)
+        # single=False: one HTTP request carries one set of headers, so they cannot mirror several bodies.
+        reply = await _handle_one(member, headers, profile, single=False)
         if reply is not None:
             replies.append(reply)
     return replies or None
@@ -440,6 +473,9 @@ def _attach_auth_warning(response: dict, method: Optional[str], warning: dict) -
             result.get("instructions") or "")
     elif method == "tools/list":
         result["auth_warning"] = warning
+        # 2026-07-28 results are cacheable by default and tools/list is "public". This one now names the
+        # caller's own failing key, so a shared cache must never hand it to anyone else.
+        _m2026.make_private(result)
 
 
 def _finish_request(payload: Any, response: dict, obs: "_Observed", started: float,
@@ -479,8 +515,14 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
                 requested_name = _ro.safe_requested_name(raw_name)
 
         fingerprint = _ro.client_fingerprint(ip, ua)
+        envelope_name, envelope_version = _ro.safe_client_info({"clientInfo": obs.client_info})
         if method == "initialize" and not is_notification:
             client_name, client_version = _ro.safe_client_info(params)
+            _ro.CLIENTS.remember(fingerprint, client_name, client_version)
+        elif envelope_name or envelope_version:
+            # MCP 2026-07-28 sends clientInfo on EVERY request, so the caller is named without any
+            # earlier `initialize` having been seen (the old route recalled it by address + user agent).
+            client_name, client_version = envelope_name, envelope_version
             _ro.CLIENTS.remember(fingerprint, client_name, client_version)
         else:
             client_name, client_version = _ro.CLIENTS.recall(fingerprint)
@@ -496,20 +538,37 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
             principal_type=status.principal_type,
             outcome=obs.outcome,
             error_code=obs.error_code,
-            http_status=202 if is_notification else 200,
+            http_status=obs.http_status or (202 if is_notification else 200),
             latency_ms=int((time.monotonic() - started) * 1000),
             client_name=client_name,
             client_version=client_version,
             key_state=status.state,
             arg_names=arg_names,
             requested_name=requested_name,
-            detail=f"door={profile}"[:64] if profile else None,
+            detail=_event_detail(profile, obs),
         ))
         box = REQUEST_OBSERVATION.get()
         if box is not None:
             box.logged = True
     except Exception:  # noqa: BLE001 - telemetry must never break the response
         pass
+
+
+def _event_detail(profile: Optional[str], obs: "_Observed") -> Optional[str]:
+    """usage_events.detail: which door, and (modern requests only) which protocol version it was served under.
+    Legacy rows keep exactly the old text, so nothing that reads `door=<name>` changes. The version is only
+    ever one of OUR supported strings, never caller text."""
+    parts = []
+    if profile:
+        parts.append(f"door={profile}")
+    if obs.era_version:
+        parts.append(f"pv={obs.era_version}")
+    return " ".join(parts)[:64] or None
+
+
+def _server_info(profile: Optional[str]) -> dict:
+    """Who is answering: a capability door introduces itself as itself, exactly as `initialize` does."""
+    return _m2026.server_info(profile or SERVER_NAME, SERVER_VERSION)
 
 
 def _normalize_headers(headers: Optional[dict]) -> dict:
@@ -529,7 +588,8 @@ def _normalize_headers(headers: Optional[dict]) -> dict:
 
 
 async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
-                                   profile: Optional[str], obs: "_Observed") -> Optional[dict]:
+                                   profile: Optional[str], obs: "_Observed",
+                                   single: bool = True) -> Optional[dict]:
     """The dispatcher proper. Sets `obs` at every exit; see _Observed. Returns None for a
     notification or a client response (nothing may be sent back)."""
     not_an_object = not isinstance(payload, dict)
@@ -538,6 +598,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
     rpc_id = payload.get("id")
     method = payload.get("method")
     params = payload.get("params", {}) or {}
+    raw_params = payload.get("params")          # the caller's own, before `_profile` is injected below
     if profile is not None:
         # Which door this request came through. Never taken from the
         # payload - a caller must not be able to widen its own profile
@@ -606,13 +667,37 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
                          "Request must be a JSON object" if not_an_object else "Missing 'method' field"),
         ).to_dict()
 
+    # WHICH ERA IS THIS REQUEST IN? (MCP 2026-07-28, agent_interface/mcp_2026.py.) A request whose `_meta`
+    # declares a modern version is served statelessly under that revision and held to its rules (version
+    # supported, headers mirror the body, required `_meta` present); `initialize` and anything without the
+    # envelope is served exactly as it always was. A refusal carries the HTTP status the revision assigns.
+    era = _m2026.resolve_era(method, raw_params, norm_headers, SUPPORTED_PROTOCOL_VERSIONS,
+                             check_headers=single)
+    if isinstance(era, _m2026.Rejection):
+        obs.outcome, obs.error_code = "rpc_error", era.error_code
+        obs.http_status, obs.client_info = era.http_status, era.client_info
+        return _m2026.with_status(
+            JsonRpcResponse(id=rpc_id, error=_error(era.code, era.message, era.data)).to_dict(),
+            era.http_status)
+    obs.client_info = era.client_info
+    if era.modern:
+        obs.era_version = era.version
+
     handler = _METHOD_HANDLERS.get(method)
+    if era.modern and era.envelope and method in _m2026.REMOVED_METHODS:
+        handler = None      # the revision removed it; a request in the revision's own envelope is told so
     if not handler:
         obs.outcome, obs.error_code = "rpc_error", "method_not_found"
-        return JsonRpcResponse(
+        not_found = JsonRpcResponse(
             id=rpc_id,
             error=_error(ERR_METHOD_NOT_FOUND, f"Method '{method}' not found"),
         ).to_dict()
+        if era.modern:
+            # Streamable HTTP, 2026-07-28: an unimplemented method is 404 + -32601 (the JSON-RPC body is
+            # what tells a client this is a modern server answering, not a legacy HTTP+SSE 404).
+            obs.http_status = _m2026.HTTP_NOT_FOUND
+            return _m2026.with_status(not_found, _m2026.HTTP_NOT_FOUND)
+        return not_found
 
     try:
         # Only `tools/call` needs to see headers (for the per-tool auth gate);
@@ -629,6 +714,8 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
 
         # Usage telemetry for this request is written by _finish_request (the wrapper
         # around this function), which sees the failures as well as the successes.
+        if era.modern:
+            result = _m2026.decorate_result(method, result, _server_info(profile))
         return JsonRpcResponse(id=rpc_id, result=result).to_dict()
     except _ToolError as te:
         # Tool-execution failure -> isError RESULT (the model sees it and can
@@ -636,7 +723,10 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
         # For non-tools/call methods fall back to a typed protocol error.
         obs.outcome, obs.error_code = "tool_error", te.error_code
         if method == "tools/call":
-            return JsonRpcResponse(id=rpc_id, result=te.to_result()).to_dict()
+            tool_result = te.to_result()
+            if era.modern:
+                tool_result = _m2026.decorate_result(method, tool_result, _server_info(profile))
+            return JsonRpcResponse(id=rpc_id, result=tool_result).to_dict()
         return JsonRpcResponse(
             id=rpc_id,
             error=_error(ERR_INVALID_PARAMS, str(te),
@@ -2626,16 +2716,47 @@ async def _h_ping(params: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Method: server/discover (MCP 2026-07-28)
+# ---------------------------------------------------------------------------
+
+async def _h_discover(params: dict) -> dict:
+    """What this endpoint speaks, who it is, and how to use it - the call a 2026-07-28 client makes in place
+    of `initialize`. The revision makes it a server MUST; before this existed it was answered -32601 (652
+    times in 47 hours from 20 callers, 2026-10-03).
+
+    IDENTITY AND INSTRUCTIONS COME FROM `_h_initialize`, not from a second copy of the same text. A capability
+    door must introduce itself as itself here too (its own name, its own tool count, no channel notice for
+    channels it does not serve); building both from one function is what keeps the two handshakes from
+    drifting into contradicting each other.
+
+    The result is the same for every caller, so it is public and cacheable (agent_interface/mcp_2026.py)."""
+    profile = params.get("_profile") if isinstance(params, dict) else None
+    intro = await _h_initialize({"_profile": profile} if profile else {})
+    return _m2026.build_discover_result(
+        intro["serverInfo"], intro.get("instructions"), SUPPORTED_PROTOCOL_VERSIONS)
+
+
+async def _h_resources_templates_list(params: dict) -> dict:
+    """We declare the `resources` capability, which means this method has to exist. None of our resources
+    is a URI template (they are the five fixed `agent-broker://` URIs in resources/list), so the honest
+    answer is an empty list - not -32601, which callers hit 151 times in 47 hours (Glama's inspector,
+    mcp2-research and mcpscore among them), each time reading it as a missing feature."""
+    return {"resourceTemplates": []}
+
+
+# ---------------------------------------------------------------------------
 # Method dispatch table
 # ---------------------------------------------------------------------------
 
 _METHOD_HANDLERS = {
     "initialize": _h_initialize,
+    "server/discover": _h_discover,
     "ping": _h_ping,
     "tools/list": _h_tools_list,
     "tools/call": _h_tools_call,
     "prompts/get": _h_prompts_get,
     "resources/list": _h_resources_list,
     "resources/read": _h_resources_read,
+    "resources/templates/list": _h_resources_templates_list,
     "prompts/list": _h_prompts_list,
 }

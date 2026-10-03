@@ -1,0 +1,152 @@
+{
+  "provenance": {
+    "client": "mcp (official Python SDK) 1.26.0",
+    "recorded_utc": "2026-10-03T16:15Z",
+    "how": "real client driven in-process over an ASGI transport; requests captured at the HTTP layer",
+    "era": "legacy (initialize handshake, protocol versions up to 2025-11-25)",
+    "server_commit_recorded": "1f85885 (git archive of the commit before the 2026-07-28 work)"
+  },
+  "exchanges": [
+    {
+      "method": "POST",
+      "path": "/mcp",
+      "headers": {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json"
+      },
+      "json": {
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-11-25",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "mcp",
+            "version": "0.1.0"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 0
+      },
+      "recorded_response": {
+        "status": 200,
+        "result_keys": [
+          "capabilities",
+          "instructions",
+          "protocolVersion",
+          "serverInfo"
+        ],
+        "protocolVersion": "2025-11-25",
+        "serverInfo_name": "agent-broker"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/mcp",
+      "headers": {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25"
+      },
+      "json": {
+        "method": "notifications/initialized",
+        "jsonrpc": "2.0"
+      },
+      "recorded_response": {
+        "status": 202,
+        "body": "empty"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/mcp",
+      "headers": {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25"
+      },
+      "json": {
+        "method": "tools/list",
+        "jsonrpc": "2.0",
+        "id": 1
+      },
+      "recorded_response": {
+        "status": 200,
+        "result_keys": [
+          "tools"
+        ],
+        "tool_names": [
+          "find_business",
+          "verify_business",
+          "send_message",
+          "capture_lead",
+          "schedule_appointment",
+          "send_transactional_confirmation",
+          "handle_inbound",
+          "escalate_to_human",
+          "get_status",
+          "get_outcome",
+          "preview_cost",
+          "self_test",
+          "check_quota",
+          "check_booking_link",
+          "import_booking_url",
+          "call_business",
+          "check_compliance",
+          "verify_company_record",
+          "screen_sanctions",
+          "map_trade_restriction",
+          "get_conversation",
+          "mint_key",
+          "lookup_us_contracts"
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/mcp",
+      "headers": {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25"
+      },
+      "json": {
+        "method": "tools/call",
+        "params": {
+          "name": "preview_cost",
+          "arguments": {
+            "operation": "send_message",
+            "params": {}
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 2
+      },
+      "recorded_response": {
+        "status": 200,
+        "result_keys": [
+          "content",
+          "isError"
+        ],
+        "isError": false
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/mcp",
+      "headers": {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25"
+      },
+      "json": {
+        "method": "ping",
+        "jsonrpc": "2.0",
+        "id": 3
+      },
+      "recorded_response": {
+        "status": 200,
+        "result_keys": []
+      }
+    }
+  ]
+}

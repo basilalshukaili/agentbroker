@@ -34,6 +34,7 @@ from agent_interface.identity import (
 )
 from agent_interface.self_test import run_self_test
 from agent_interface.mcp_server import handle_mcp_request
+from agent_interface.mcp_2026 import status_of as _mcp_status_of
 from agent_interface import profiles
 from agent_interface import retired_doors
 from agent_interface.well_known import (
@@ -708,6 +709,21 @@ async def health_external():
 # MCP server — JSON-RPC 2.0 endpoint
 # ---------------------------------------------------------------------------
 
+def _mcp_http_response(response):
+    """The HTTP shape of a dispatcher result (MCP Streamable HTTP).
+
+    None -> 202, no body: only notifications/responses were sent. A reply that the MCP 2026-07-28 revision
+    assigns a status (400 for an unsupported version, a header that disagrees with the body or a missing
+    required `_meta` field; 404 for an unknown method) -> that status with the JSON-RPC error as the body.
+    Everything else, which is every legacy-era reply, is returned exactly as before."""
+    if response is None:
+        return Response(status_code=202)
+    status = _mcp_status_of(response)
+    if status != 200:
+        return JSONResponse(content=dict(response), status_code=status)
+    return response
+
+
 @app.post("/mcp", tags=["MCP"])
 async def mcp_endpoint(request: Request):
     """Model Context Protocol JSON-RPC 2.0 endpoint."""
@@ -715,10 +731,7 @@ async def mcp_endpoint(request: Request):
     # Pass headers down so the per-tool auth gate inside `tools/call` can
     # read x-agent-identity and enforce the same scope rules /ops/* enforces.
     response = await handle_mcp_request(payload, headers=dict(request.headers))
-    if response is None:
-        # Only notifications/responses were sent: accepted, nothing to say (MCP Streamable HTTP).
-        return Response(status_code=202)
-    return response
+    return _mcp_http_response(response)
 
 
 @app.post("/mcp/{profile}", tags=["MCP"])
@@ -761,9 +774,7 @@ async def mcp_profile_endpoint(profile: str, request: Request):
         )
     response = await handle_mcp_request(
         payload, headers=dict(request.headers), profile=profile)
-    if response is None:
-        return Response(status_code=202)
-    return response
+    return _mcp_http_response(response)
 
 
 # ---------------------------------------------------------------------------

@@ -130,8 +130,10 @@ _CRAWLER_UA_FRAGMENTS: frozenset[str] = frozenset({
 # Methods that on their own never indicate a real agent doing work.
 _NON_WORK_METHODS: frozenset[str] = frozenset({
     "initialize",
+    "server/discover",         # MCP 2026-07-28's replacement for the initialize handshake
     "tools/list",
     "resources/list",
+    "resources/templates/list",
     "prompts/list",
     "ping",
 })
