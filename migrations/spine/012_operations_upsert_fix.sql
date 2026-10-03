@@ -14,8 +14,9 @@
 --
 -- THE FIX, deliberately small:
 --   * add the column the repo always declared (idempotent; the table has 61 rows, the default fills them);
---   * cast the text to jsonb inside the function, treating '' as NULL (a blank result is "no result", not a
---     parse error), so the caller needs NO change: same name, same parameter names and types, same grants.
+--   * cast the text to jsonb inside the function, treating a blank result - NULL, '' or only JSON whitespace
+--     (space, tab, CR, LF) - as NULL ("no result", not a parse error), so the caller needs NO change: same name,
+--     same parameter names and types, same grants.
 --
 -- ORDER: apply this BEFORE or AFTER any code release - it changes no signature, so the image already live and
 -- every in-flight branch keep working. Until it is applied, behaviour is exactly what it is today.
@@ -49,8 +50,11 @@ begin
     if p_operation_id is null or btrim(p_operation_id) = '' then
         raise exception 'operations_upsert: operation_id is required' using errcode = '22023';
     end if;
-    -- '' and NULL both mean "no result"; anything else must be valid JSON (22P02 otherwise, loudly).
-    v_json := nullif(btrim(p_result_json), '')::jsonb;
+    -- NULL, '' and anything made only of JSON whitespace mean "no result"; anything else must be valid JSON
+    -- (22P02 otherwise, loudly). btrim() with no argument strips spaces only, so a lone newline or tab would
+    -- have reached the parser and been refused as "input string ended unexpectedly" (found by the
+    -- real-database test, tests/unit/test_spine_012_operations_upsert_pg.py).
+    v_json := nullif(btrim(p_result_json, E' \t\r\n'), '')::jsonb;
 
     insert into operations (
         operation_id, ts, tool, status, reason_code, appointment_id,
