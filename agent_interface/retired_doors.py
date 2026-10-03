@@ -118,7 +118,43 @@ def _text_result(slug: str, is_error: bool) -> dict:
     return {"content": [{"type": "text", "text": json.dumps(body(slug), indent=2)}], "isError": is_error}
 
 
-def _one(slug: str, msg: Any) -> Optional[dict]:
+def _info(slug: str) -> dict:
+    return {"name": f"dev.hatchloop/{slug} (RETIRED)", "version": "retired"}
+
+
+def _one(slug: str, msg: Any, headers: Optional[dict] = None) -> Any:
+    """One JSON-RPC message to a retired door, in the shape the CALLER speaks.
+
+    A request that declares MCP 2026-07-28 (the _meta envelope, or the MCP-Protocol-Version header) gets the
+    revision's shapes - `resultType`, serverInfo in _meta, 404 for a method that does not exist, 400 / -32022 for
+    a version we do not speak - and `server/discover` is answered for everybody, as on the live doors. Every
+    other request is answered exactly as before."""
+    from agent_interface import mcp_2026 as m26
+    from agent_interface.mcp_server import SUPPORTED_PROTOCOL_VERSIONS
+
+    if not isinstance(msg, dict) or "id" not in msg or not isinstance(msg.get("method"), str):
+        return _answer(slug, msg)
+    method, rid = msg["method"], msg["id"]
+    era = m26.resolve_era(method, msg.get("params"), {str(k).lower(): v for k, v in (headers or {}).items()},
+                          SUPPORTED_PROTOCOL_VERSIONS, check_headers=False)
+    if isinstance(era, m26.Rejection):
+        reply = _err(rid, era.code, era.message)
+        if era.data:
+            reply["error"]["data"] = era.data
+        return m26.with_status(reply, era.http_status)
+    if method == "server/discover":
+        return _ok(rid, m26.build_discover_result(_info(slug), human_message(slug), SUPPORTED_PROTOCOL_VERSIONS))
+    reply = _answer(slug, msg)
+    if not era.modern or not isinstance(reply, dict):
+        return reply
+    if "result" in reply:
+        return {**reply, "result": m26.decorate_result(method, reply["result"], _info(slug))}
+    if isinstance(reply.get("error"), dict) and reply["error"].get("code") == -32601:
+        return m26.with_status(reply, m26.HTTP_NOT_FOUND)
+    return reply
+
+
+def _answer(slug: str, msg: Any) -> Optional[dict]:
     from agent_interface.mcp_server import negotiate_protocol_version
 
     if not isinstance(msg, dict):
@@ -134,7 +170,7 @@ def _one(slug: str, msg: Any) -> Optional[dict]:
         return _ok(rid, {
             "protocolVersion": negotiate_protocol_version(params),
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": f"dev.hatchloop/{slug} (RETIRED)", "version": "retired"},
+            "serverInfo": _info(slug),
             "instructions": human_message(slug),
         })
     if method == "tools/list":
@@ -157,7 +193,7 @@ def _one(slug: str, msg: Any) -> Optional[dict]:
 MAX_BATCH = 16          # the live handler's limit (agent_interface/mcp_server.py MAX_BATCH); a test keeps them equal
 
 
-def handle(slug: str, payload: Any) -> Any:
+def handle(slug: str, payload: Any, headers: Optional[dict] = None) -> Any:
     """The JSON-RPC answer for a POST to a retired door: a dict, a list (a batch), or None (202, no body)."""
     if not is_retired(slug):
         raise KeyError(slug)
@@ -168,6 +204,6 @@ def handle(slug: str, payload: Any) -> Any:
             # Refused whole, like the live handler: JSON-RPC answers every request in a batch, and answering
             # the first sixteen in silence would drop the rest without a word.
             return _err(None, -32600, f"Batch too large (max {MAX_BATCH} messages)")
-        replies = [r for r in (_one(slug, m) for m in payload) if r is not None]
+        replies = [r for r in (_one(slug, m, headers) for m in payload) if r is not None]
         return replies or None
-    return _one(slug, payload)
+    return _one(slug, payload, headers)

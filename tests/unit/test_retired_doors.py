@@ -235,3 +235,62 @@ def test_an_oversize_batch_is_refused_whole_like_the_live_door_not_cut_off_witho
     assert "too large" in r.json()["error"]["message"].lower()
     ok = [{"jsonrpc": "2.0", "id": i, "method": "ping"} for i in range(mcp_server.MAX_BATCH)]
     assert len(client.post("/mcp/data-enrichment", json=ok).json()) == mcp_server.MAX_BATCH
+
+
+# ---------------------------------------------------------------------------
+# a retired door under MCP 2026-07-28 (integration gate finding, 2026-10-03)
+# ---------------------------------------------------------------------------
+
+_M = "io.modelcontextprotocol/"
+_ENVELOPE = {_M + "protocolVersion": "2026-07-28", _M + "clientCapabilities": {},
+             _M + "clientInfo": {"name": "pytest", "version": "1"}}
+
+
+def _modern(client, door, method, params=None, **headers):
+    h = {"MCP-Protocol-Version": "2026-07-28", "Mcp-Method": method}
+    h.update(headers)
+    return client.post(f"/mcp/{door}", headers=h, json={"jsonrpc": "2.0", "id": 7, "method": method,
+                                                         "params": {**(params or {}), "_meta": dict(_ENVELOPE)}})
+
+
+def test_a_retired_door_answers_server_discover_and_says_retired(client):
+    for door in SIX:
+        r = client.post(f"/mcp/{door}", json={"jsonrpc": "2.0", "id": 1, "method": "server/discover"})
+        assert r.status_code == 200, door
+        res = r.json()["result"]
+        assert res["resultType"] == "complete" and "2026-07-28" in res["supportedVersions"]
+        assert "RETIRED" in res["_meta"][_M + "serverInfo"]["name"]
+        assert "retired" in res["instructions"].lower() or "no longer" in res["instructions"].lower()
+
+
+def test_a_modern_request_to_a_retired_door_gets_the_revisions_result_shape(client):
+    r = _modern(client, "email-sending", "tools/list")
+    assert r.status_code == 200
+    res = r.json()["result"]
+    assert res["resultType"] == "complete" and res["tools"][0]["name"] == "server_retired"
+    assert "RETIRED" in res["_meta"][_M + "serverInfo"]["name"]
+    legacy = client.post("/mcp/email-sending", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).json()["result"]
+    assert "resultType" not in legacy, "a legacy client's answer is unchanged"
+
+
+def test_a_modern_unknown_method_on_a_retired_door_is_404_like_everywhere_else_a_legacy_one_stays_200(client):
+    r = _modern(client, "driftwatch", "no/such/method")
+    assert r.status_code == 404 and r.json()["error"]["code"] == -32601
+    old = client.post("/mcp/driftwatch", json={"jsonrpc": "2.0", "id": 1, "method": "no/such/method"})
+    assert old.status_code == 200 and old.json()["error"]["code"] == -32601
+
+
+def test_a_modern_request_for_a_version_we_do_not_speak_is_refused_on_a_retired_door_too(client):
+    r = client.post("/mcp/pdf-generator", headers={"MCP-Protocol-Version": "1999-01-01"},
+                    json={"jsonrpc": "2.0", "id": 1, "method": "server/discover"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == -32022
+    assert "2026-07-28" in r.json()["error"]["data"]["supported"]
+
+
+def test_a_retired_door_still_never_counts_as_traffic_under_the_new_shapes(client):
+    metrics.reset_metrics()
+    _modern(client, "url-shortener", "server/discover")
+    _modern(client, "url-shortener", "tools/list")
+    _modern(client, "url-shortener", "tools/call", {"name": "server_retired", "arguments": {}})
+    assert metrics._metrics.total_agents_requested == 0 and metrics._metrics.total_operations_completed == 0
+    metrics.reset_metrics()

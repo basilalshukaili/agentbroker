@@ -809,10 +809,10 @@ async def _retired_door_post(slug: str, request: Request):
         return JSONResponse(
             status_code=400,
             content={"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
-    reply = retired_doors.handle(slug, payload)
+    reply = retired_doors.handle(slug, payload, dict(request.headers))
     if reply is None:
         return Response(status_code=202)
-    return JSONResponse(content=reply, headers={"Cache-Control": "no-store"})
+    return JSONResponse(content=reply, status_code=_mcp_status_of(reply), headers={"Cache-Control": "no-store"})
 
 
 @app.api_route("/mcp/{door}", methods=["GET", "HEAD"], include_in_schema=False)
