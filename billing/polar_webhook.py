@@ -383,6 +383,18 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
     except Exception as e:  # noqa: BLE001
         logger.exception("polar_token_issue_failed err=%s", e)
 
+    # --- Tell the OAuth "Connect" sign-in which account this email bought ---
+    # The webhook is the only place that sees the buyer's email next to the customer id the credits go to
+    # (sub_{customer_id}). Writing the link lets an assistant the buyer connected with that email spend what
+    # they bought, from its next token refresh. Best-effort and first-writer-wins in the database: a failure
+    # here can never fail a paid order, and a redelivered webhook is harmless.
+    if email:
+        try:
+            from agent_interface.oauth.link import link_purchase
+            await link_purchase(email, f"sub_{customer_id}", customer_id, plan)
+        except Exception as _le:  # noqa: BLE001
+            logger.warning("oauth_account_link_failed customer=%s err=%s", customer_id, _le)
+
     # --- SLICE 4: Credit grant on purchase ---
     # Maps the purchased Polar product -> credits and grants them to the
     # sub_{customer_id} credit account. Idempotent: keyed on order_id so a

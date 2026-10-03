@@ -204,6 +204,12 @@ app.include_router(unsubscribe_router)
 from agent_interface.whatsapp_webhook import router as whatsapp_webhook_router
 app.include_router(whatsapp_webhook_router)
 
+# OAuth "Connect" sign-in for consumer assistants (/oauth/*, /.well-known/oauth-*). Switch off with
+# OAUTH_CONNECT_ENABLED=0; see agent_interface/oauth/settings.py and docs/OAUTH-CONNECT.md.
+from agent_interface.oauth.router import router as oauth_router
+from agent_interface.oauth import challenge as oauth_challenge
+app.include_router(oauth_router)
+
 
 # ---------------------------------------------------------------------------
 # Telemetry middleware — single source of truth for request/op counters.
@@ -724,6 +730,18 @@ def _mcp_http_response(response):
     return response
 
 
+async def _mcp_respond(response, request):
+    """The HTTP answer for a dispatcher result on /mcp and /mcp/<door>.
+
+    A reply the dispatcher shaped for the wire (202 for notifications, 400 / 404 for the 2026-07-28 revision's
+    refusals) goes out as it is. Anything else may be a refused call to a key-requiring tool, which becomes the
+    signal an assistant's Connect button listens for (HTTP 401 + WWW-Authenticate, or ChatGPT's _meta form) -
+    see agent_interface/oauth/challenge.py; every other reply passes through untouched."""
+    if response is None or _mcp_status_of(response) != 200:
+        return _mcp_http_response(response)
+    return await oauth_challenge.apply(response, request)
+
+
 @app.post("/mcp", tags=["MCP"])
 async def mcp_endpoint(request: Request):
     """Model Context Protocol JSON-RPC 2.0 endpoint."""
@@ -731,7 +749,7 @@ async def mcp_endpoint(request: Request):
     # Pass headers down so the per-tool auth gate inside `tools/call` can
     # read x-agent-identity and enforce the same scope rules /ops/* enforces.
     response = await handle_mcp_request(payload, headers=dict(request.headers))
-    return _mcp_http_response(response)
+    return await _mcp_respond(response, request)
 
 
 @app.post("/mcp/{profile}", tags=["MCP"])
@@ -774,7 +792,7 @@ async def mcp_profile_endpoint(profile: str, request: Request):
         )
     response = await handle_mcp_request(
         payload, headers=dict(request.headers), profile=profile)
-    return _mcp_http_response(response)
+    return await _mcp_respond(response, request)
 
 
 # ---------------------------------------------------------------------------

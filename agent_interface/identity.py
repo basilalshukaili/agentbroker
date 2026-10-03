@@ -86,6 +86,9 @@ class TokenRequest:
     budget_cap_usd: float = 10.0
     allowed_verticals: list[str] = field(default_factory=lambda: ["*"])
     ttl_seconds: int = _DEFAULT_TTL_SECONDS
+    # Additional signed claims (the OAuth sign-in adds `aud` - the resource the token was issued for - and
+    # the client/grant it belongs to). Never allowed to replace a claim this module sets itself.
+    extra_claims: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -115,6 +118,9 @@ def issue_token(req: TokenRequest) -> TokenResponse:
         "iat": now,
         "exp": now + req.ttl_seconds,
     }
+    for _k, _v in (req.extra_claims or {}).items():
+        if _k not in claims:
+            claims[_k] = _v
     token = _sign(claims)
     return TokenResponse(
         token=token,
@@ -560,6 +566,15 @@ def validate_token(token: str) -> ValidationResult:
         claims = _verify(token)
     except ValueError as e:
         return ValidationResult(valid=False, error=str(e))
+
+    # AUDIENCE (MCP authorization: "MCP servers MUST validate that access tokens were issued specifically
+    # for them as the intended audience"). Tokens minted by the OAuth sign-in carry `aud`; every other token
+    # this service has ever issued has none and is unaffected. A token bound to a resource that is not one of
+    # ours is refused, so a token this service signed for another purpose can never be replayed here.
+    if "aud" in claims:
+        from agent_interface.oauth.resources import is_our_resource
+        if not is_our_resource(claims.get("aud")):
+            return ValidationResult(valid=False, error="Token audience is not this server.")
 
     # Check revocation (durable: is_jti_revoked() hydrates from Supabase on
     # top of the in-memory set, so a jti revoked on another process, or
