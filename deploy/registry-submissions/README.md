@@ -24,8 +24,8 @@ booking/messaging layer, a flat "100 ops/month" quota, `$1.00` per confirmed
 booking, and (for the official-registry file) a submission mechanism that no
 longer exists. All four are rewritten to lead with the two differentiators
 that are actually true today — Ed25519-signed, offline-verifiable compliance
-receipts, and 15 no-key tools backed by real official-source data (OFAC/EU/UK
+receipts, and 14 no-key tools backed by real official-source data (OFAC/EU/UK
 sanctions lists, GLEIF, SEC EDGAR, USASpending) — and to use only numbers that
-match the code: 23 tools total, 15 usable with no key (12 always-free + 3
+match the code: 23 tools total, 14 usable with no key (11 always-free + 3
 free within a daily quota), 8 write tools gated behind a free key (100 write
 ops/day), MIT license, canonical endpoint `https://hatchloop.dev/mcp/agent-broker`.

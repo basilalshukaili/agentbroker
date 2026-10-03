@@ -143,10 +143,14 @@ components:
 
     FindBusinessRequest:
       type: object
-      required: [vertical, location]
+      required: [location]
       properties:
         vertical:
           type: string
+          description: >-
+            Optional broad family. A real kind of business ("restaurants", "cafe",
+            "clinic") is accepted here too and read as that kind; a word we do not map
+            is matched against business names. Send `capability` or `vertical`.
           enum: [personal_services, home_services, professional_services]
         location:
           type: object
@@ -169,6 +173,9 @@ components:
                 by city/state/ZIP text.
         capability:
           type: string
+          description: >-
+            The kind of business ("dentist", "cafe", "plumber"). Required unless
+            `vertical` names a kind of business.
         price_band:
           type: object
           properties:

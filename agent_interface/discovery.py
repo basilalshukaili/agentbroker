@@ -53,8 +53,8 @@ def get_discovery_card(agent_id: Optional[str] = None) -> dict:
             # route an integrator can actually use is the email-verified free
             # key flow below. It currently requires a human to open the
             # verification email; there is no machine-mintable path in
-            # production (POST /keys/mint returns 503 not_configured and is
-            # not something to build against).
+            # production (POST /keys/mint is refused without the operator's
+            # unpublished machine-mint secret and is not something to build against).
             "free_key_url": "/keys/request",
             "free_key_method": "POST {\"email\": \"you@example.com\"}",
             "token_format": "HS256 signed claims",

@@ -1,0 +1,559 @@
+{
+ "label": "before-sim",
+ "simulated_upstream": true,
+ "started_utc": "2026-10-03T16:36:16Z",
+ "passes": [
+  {
+   "pass": 1,
+   "rows": [
+    {
+     "sample": "outcome",
+     "name": "canonical:muscat-dentist",
+     "reconstructed": false,
+     "seconds": 18.047,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Muscat, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:nizwa-plumber",
+     "reconstructed": false,
+     "seconds": 25.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:atlanta-restaurant",
+     "reconstructed": false,
+     "seconds": 23.719,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Atlanta, Georgia, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:london-pharmacy",
+     "reconstructed": false,
+     "seconds": 6.578,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]London, United Kingdom, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:dubai-hairdresser",
+     "reconstructed": false,
+     "seconds": 7.187,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 3,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Dubai, United Arab Emirates, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:muscat-restaurant",
+     "reconstructed": true,
+     "seconds": 0.063,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: location (Input should be a valid dictionary or instance of LocationFilter). Call tools/list and use the inputSchema for this tool - names, t"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:salalah-dentist",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: location (Input should be a valid dictionary or instance of LocationFilter). Call tools/list and use the inputSchema for this tool - names, t"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:sohar-plumber",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: location (Input should be a valid dictionary or instance of LocationFilter). Call tools/list and use the inputSchema for this tool - names, t"
+    },
+    {
+     "sample": "outcome",
+     "name": "plural-vertical:abudhabi-restaurants",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: vertical (Input should be 'personal_services', 'home_services' or 'professional_services'). Call tools/list and use the inputSchema for this "
+    },
+    {
+     "sample": "outcome",
+     "name": "plural-vertical:boston-lawyers",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: vertical (Input should be 'personal_services', 'home_services' or 'professional_services'). Call tools/list and use the inputSchema for this "
+    },
+    {
+     "sample": "outcome",
+     "name": "unlisted-vertical:austin-cafe",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: vertical (Input should be 'personal_services', 'home_services' or 'professional_services'). Call tools/list and use the inputSchema for this "
+    },
+    {
+     "sample": "outcome",
+     "name": "unlisted-vertical:berlin-clinic",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: vertical (Input should be 'personal_services', 'home_services' or 'professional_services'). Call tools/list and use the inputSchema for this "
+    },
+    {
+     "sample": "outcome",
+     "name": "top-level-city:muscat-pharmacy",
+     "reconstructed": true,
+     "seconds": 1.359,
+     "class": "wrong_place",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Atlanta, Simland[/UNTRUSTED]",
+     "wanted_place": "muscat"
+    },
+    {
+     "sample": "outcome",
+     "name": "top-level-city:nizwa-hairdresser",
+     "reconstructed": true,
+     "seconds": 1.016,
+     "class": "wrong_place",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 8,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Atlanta, Simland[/UNTRUSTED]",
+     "wanted_place": "nizwa"
+    },
+    {
+     "sample": "outcome",
+     "name": "kind-only-in-vertical:dubai-bakery",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "invalid arguments: vertical (Input should be 'personal_services', 'home_services' or 'professional_services'); location (Input should be a valid dictionary or i"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:1",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:2",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:3",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:4",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:5",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:6",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:7",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:8",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:9",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:10",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:11",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "bare_error",
+     "rpc_code": -32602,
+     "message": "missing required argument 'vertical'. Call tools/list and use the inputSchema for this tool - argument names are exact."
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:muscat-hairdresser",
+     "reconstructed": false,
+     "seconds": 17.64,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Muscat, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:muscat-plumber",
+     "reconstructed": false,
+     "seconds": 15.625,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Muscat, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:nizwa-dentist",
+     "reconstructed": false,
+     "seconds": 25.032,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Nizwa, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:nizwa-restaurant",
+     "reconstructed": false,
+     "seconds": 18.937,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Nizwa, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:salalah-lawyer",
+     "reconstructed": false,
+     "seconds": 25.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:salalah-hairdresser",
+     "reconstructed": false,
+     "seconds": 2.328,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Salalah, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:sohar-plumber",
+     "reconstructed": false,
+     "seconds": 5.985,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Sohar, Oman, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:sohar-dentist",
+     "reconstructed": false,
+     "seconds": 25.015,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:dubai-restaurant",
+     "reconstructed": false,
+     "seconds": 23.328,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Dubai, United Arab Emirates, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:dubai-lawyer",
+     "reconstructed": false,
+     "seconds": 12.813,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Dubai, United Arab Emirates, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:abu-dhabi-hairdresser",
+     "reconstructed": false,
+     "seconds": 17.875,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Abu Dhabi, United Arab Emirates, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:abu-dhabi-plumber",
+     "reconstructed": false,
+     "seconds": 25.015,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:atlanta-dentist",
+     "reconstructed": false,
+     "seconds": 25.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:atlanta-restaurant",
+     "reconstructed": false,
+     "seconds": 15.609,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Atlanta, Georgia, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:boston-lawyer",
+     "reconstructed": false,
+     "seconds": 19.688,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Boston, Massachusetts, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:boston-hairdresser",
+     "reconstructed": false,
+     "seconds": 25.031,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Boston, Massachusetts, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:london-plumber",
+     "reconstructed": false,
+     "seconds": 3.313,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]London, United Kingdom, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:london-dentist",
+     "reconstructed": false,
+     "seconds": 25.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:berlin-restaurant",
+     "reconstructed": false,
+     "seconds": 17.687,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Berlin, Germany, Simland[/UNTRUSTED]"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:berlin-lawyer",
+     "reconstructed": false,
+     "seconds": 9.531,
+     "class": "complete",
+     "status": "success",
+     "reason": "businesses_found",
+     "search_status": "ok",
+     "search_reason": null,
+     "n": 5,
+     "cached": false,
+     "searched_near": "[UNTRUSTED]Berlin, Germany, Simland[/UNTRUSTED]"
+    }
+   ],
+   "summary": {
+    "outcome_n": 26,
+    "outcome_class_counts": {
+     "complete": 4,
+     "unavailable": 1,
+     "bare_error": 19,
+     "wrong_place": 2
+    },
+    "usable_rate_all_26": 0.154,
+    "usable_rate_calls_with_place_and_kind": 0.267,
+    "n_with_place_and_kind": 15,
+    "guided_or_usable_rate_all_26": 0.154,
+    "complete_rate_latency_sample": 0.75,
+    "usable_rate_latency_sample": 0.75,
+    "latency_n": 20,
+    "latency_s": {
+     "p50": 17.875,
+     "p95": 25.031,
+     "max": 25.032
+    },
+    "lookup_latency_s_all_samples": {
+     "p50": 18.047,
+     "p95": 25.031,
+     "n": 25
+    }
+   }
+  }
+ ],
+ "commit": "1f858853967c1757aaa7b5d72913201b967bea90",
+ "upstream_calls": {
+  "nominatim": 11,
+  "overpass": 40
+ },
+ "notes": "SIMULATED upstream (--simulate): deterministic Overpass latencies and a 25% failure rate taken from the live sample, identical for both versions. Code = the live commit. Read together with sim-after."
+}

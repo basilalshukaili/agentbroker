@@ -1,0 +1,857 @@
+{
+ "label": "after",
+ "started_utc": "2026-10-03T16:32:43Z",
+ "passes": [
+  {
+   "pass": 1,
+   "rows": [
+    {
+     "sample": "outcome",
+     "name": "canonical:muscat-dentist",
+     "reconstructed": false,
+     "seconds": 5.781,
+     "class": "partial",
+     "status": "partial",
+     "reason": "search_in_progress",
+     "search_status": "pending",
+     "search_reason": "search_in_progress",
+     "n": 0,
+     "cached": null,
+     "searched_near": "[UNTRUSTED]Muscat, Muscat Province, Muscat Governorate, Oman[/UNTRUSTED]",
+     "settled_after_s": 2.91
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:nizwa-plumber",
+     "reconstructed": false,
+     "seconds": 5.015,
+     "class": "partial",
+     "status": "partial",
+     "reason": "search_in_progress",
+     "search_status": "pending",
+     "search_reason": "search_in_progress",
+     "n": 0,
+     "cached": null,
+     "searched_near": "[UNTRUSTED]Nizwa Province, Ad Dakhiliyah Governorate, 611, Oman[/UNTRUSTED]",
+     "settled_after_s": 1.92
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:atlanta-restaurant",
+     "reconstructed": false,
+     "seconds": 5.016,
+     "class": "partial",
+     "status": "partial",
+     "reason": "search_in_progress",
+     "search_status": "pending",
+     "search_reason": "search_in_progress",
+     "n": 0,
+     "cached": null,
+     "searched_near": "[UNTRUSTED]Atlanta, Fulton County, Georgia, United States[/UNTRUSTED]",
+     "settled_after_s": 2.28
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:london-pharmacy",
+     "reconstructed": false,
+     "seconds": 5.016,
+     "class": "partial",
+     "status": "partial",
+     "reason": "search_in_progress",
+     "search_status": "pending",
+     "search_reason": "search_in_progress",
+     "n": 0,
+     "cached": null,
+     "searched_near": "[UNTRUSTED]Greater London, England, United Kingdom[/UNTRUSTED]",
+     "settled_after_s": 1.89
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:dubai-hairdresser",
+     "reconstructed": false,
+     "seconds": 1.141,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:muscat-restaurant",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:salalah-dentist",
+     "reconstructed": true,
+     "seconds": 2.469,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:sohar-plumber",
+     "reconstructed": true,
+     "seconds": 1.187,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "plural-vertical:abudhabi-restaurants",
+     "reconstructed": true,
+     "seconds": 1.266,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "plural-vertical:boston-lawyers",
+     "reconstructed": true,
+     "seconds": 1.062,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "unlisted-vertical:austin-cafe",
+     "reconstructed": true,
+     "seconds": 1.078,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "unlisted-vertical:berlin-clinic",
+     "reconstructed": true,
+     "seconds": 1.266,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "top-level-city:muscat-pharmacy",
+     "reconstructed": true,
+     "seconds": 1.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "top-level-city:nizwa-hairdresser",
+     "reconstructed": true,
+     "seconds": 1.219,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "kind-only-in-vertical:dubai-bakery",
+     "reconstructed": true,
+     "seconds": 1.203,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:1",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:2",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:3",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:4",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:5",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:6",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:7",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:8",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:9",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:10",
+     "reconstructed": false,
+     "seconds": 0.015,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:11",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:muscat-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:muscat-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:nizwa-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:nizwa-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:salalah-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:salalah-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:sohar-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:sohar-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:dubai-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:dubai-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:abu-dhabi-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:abu-dhabi-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:atlanta-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:atlanta-restaurant",
+     "reconstructed": false,
+     "seconds": 0.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:boston-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:boston-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:london-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:london-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:berlin-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:berlin-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    }
+   ],
+   "summary": {
+    "outcome_n": 26,
+    "outcome_class_counts": {
+     "partial": 4,
+     "unavailable": 11,
+     "guided_error": 11
+    },
+    "usable_rate_all_26": 0.154,
+    "usable_rate_calls_with_place_and_kind": 0.267,
+    "n_with_place_and_kind": 15,
+    "guided_or_usable_rate_all_26": 0.577,
+    "complete_rate_latency_sample": 0.0,
+    "usable_rate_latency_sample": 0.0,
+    "latency_n": 20,
+    "latency_s": {
+     "p50": 0.0,
+     "p95": 0.016,
+     "max": 0.016
+    },
+    "lookup_latency_s_all_samples": {
+     "p50": 1.219,
+     "p95": 5.781,
+     "n": 14
+    }
+   }
+  },
+  {
+   "pass": 2,
+   "rows": [
+    {
+     "sample": "outcome",
+     "name": "canonical:muscat-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:nizwa-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:atlanta-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:london-pharmacy",
+     "reconstructed": false,
+     "seconds": 0.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "canonical:dubai-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:muscat-restaurant",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:salalah-dentist",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "string-location:sohar-plumber",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "plural-vertical:abudhabi-restaurants",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "plural-vertical:boston-lawyers",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "unlisted-vertical:austin-cafe",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "unlisted-vertical:berlin-clinic",
+     "reconstructed": true,
+     "seconds": 0.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "top-level-city:muscat-pharmacy",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "top-level-city:nizwa-hairdresser",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "kind-only-in-vertical:dubai-bakery",
+     "reconstructed": true,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:1",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:2",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:3",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:4",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:5",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:6",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:7",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:8",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:9",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:10",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "outcome",
+     "name": "no-args:11",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "guided_error",
+     "reason": "missing_argument",
+     "message": "find_business did not run: `location` is missing, and no `city` was sent either. (There is no default city: guessing one would answer for the wrong place.) Exam"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:muscat-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:muscat-plumber",
+     "reconstructed": false,
+     "seconds": 0.015,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:nizwa-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:nizwa-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:salalah-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:salalah-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:sohar-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:sohar-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:dubai-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:dubai-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:abu-dhabi-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:abu-dhabi-plumber",
+     "reconstructed": false,
+     "seconds": 0.016,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:atlanta-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:atlanta-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:boston-lawyer",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:boston-hairdresser",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:london-plumber",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:london-dentist",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:berlin-restaurant",
+     "reconstructed": false,
+     "seconds": 0.0,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    },
+    {
+     "sample": "latency",
+     "name": "lookup:berlin-lawyer",
+     "reconstructed": false,
+     "seconds": 0.015,
+     "class": "unavailable",
+     "reason": "osm_temporarily_unavailable"
+    }
+   ],
+   "summary": {
+    "outcome_n": 26,
+    "outcome_class_counts": {
+     "unavailable": 15,
+     "guided_error": 11
+    },
+    "usable_rate_all_26": 0.0,
+    "usable_rate_calls_with_place_and_kind": 0.0,
+    "n_with_place_and_kind": 15,
+    "guided_or_usable_rate_all_26": 0.423,
+    "complete_rate_latency_sample": 0.0,
+    "usable_rate_latency_sample": 0.0,
+    "latency_n": 20,
+    "latency_s": {
+     "p50": 0.0,
+     "p95": 0.015,
+     "max": 0.016
+    },
+    "lookup_latency_s_all_samples": {
+     "p50": null,
+     "p95": null,
+     "n": 0
+    }
+   }
+  }
+ ],
+ "commit": "1f858853967c1757aaa7b5d72913201b967bea90",
+ "upstream_calls": {
+  "nominatim": 14,
+  "overpass": 4
+ },
+ "notes": "LIVE public servers, code = the branch (see started_utc, 2026-10-03), while overpass-api.de did not answer from the development host at all (a plain HTTP request to its status page timed out after 21 s, and had still not answered half an hour later; the cause is unknown - the host had sent about 35 Overpass requests in the previous quarter hour, so a per-IP limit is possible and unconfirmed). It proves the 5 s budget (the first calls returned `partial` at 5.0-5.8 s with the place resolved while the upstream hung or failed) and CANNOT measure success. Do not read its unavailable rows as a regression: the same host could not reach the upstream at all."
+}

@@ -189,10 +189,15 @@ def test_tools_list_marks_the_channel_tools_that_cannot_deliver():
 
 
 def test_tools_list_leaves_every_other_tool_untouched():
+    """No availability notice on a tool that depends on no delivery channel. (Since 2026-10-03 a tool
+    may carry a STATIC readiness label - find_business is beta - but never a channel notice, and the
+    production-ready ones carry nothing at all.)"""
     tools = _tools()
     for name in ("find_business", "screen_sanctions", "check_quota", "preview_cost", "get_status"):
-        assert "_meta" not in tools[name], name
+        assert "hatchloop/availability" not in tools[name].get("_meta", {}), name
         assert "UNAVAILABLE" not in tools[name]["description"]
+    for name in ("screen_sanctions", "check_quota", "preview_cost", "get_status"):
+        assert "_meta" not in tools[name], f"{name} is production-ready and must carry no label"
 
 
 def test_a_partly_available_tool_stays_available_and_says_what_is_missing(monkeypatch):

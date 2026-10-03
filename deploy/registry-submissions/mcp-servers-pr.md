@@ -65,7 +65,7 @@ awards. Also finds, verifies, messages, and schedules with small/mid-sized
 businesses, gated by a non-bypassable TCPA/GDPR/CASL/PDPL compliance check
 across 26 jurisdictions.
 
-23 tools. 15 need no key (12 always-free + 3 free within a daily quota). The
+23 tools. 14 need no key (11 always-free + 3 free within a daily quota). The
 8 write tools need a free email-verified key (100 write ops/day) or credits/x402.
 License: MIT.
 

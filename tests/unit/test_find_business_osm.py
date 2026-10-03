@@ -798,7 +798,8 @@ def test_the_advertised_description_keeps_its_caveats_under_the_length_cap():
     from agent_interface.mcp_server import _build_tool_list
     tool = next(t for t in _build_tool_list() if t["name"] == "find_business")
     d = tool["description"]
-    assert d.endswith("[free, no key]") and chr(8230) not in d, "the description was truncated"
+    # [beta] is the readiness label (core/tool_readiness.py), appended AFTER the cost tag and the length cap.
+    assert d.endswith("[free, no key] [beta]") and chr(8230) not in d, "the description was truncated"
     for needle in ("OpenStreetMap", "ODbL", "NOT verified by us", "cannot be booked",
                    "Coverage varies", "temporarily unavailable", "never invented"):
         assert needle in d, needle

@@ -115,13 +115,19 @@ class TestUnreachableSMB:
 
 
 class TestMalformedInput:
-    def test_invalid_vertical_raises_validation_error(self):
+    def test_an_unmapped_vertical_is_searched_by_name_and_nothing_to_search_for_is_refused(self):
+        """"underwater_basket_weaving" used to raise. It no longer does: a word that is not a vertical and not
+        a kind we map is matched against business names (core/find_business_input.py) - refusing it failed 10
+        of the 15 external calls that named a place and a vertical. What is still refused is a request with
+        NOTHING to search for."""
         from pydantic import ValidationError
+        req = FindBusinessRequest(
+            vertical="underwater_basket_weaving",
+            location=LocationFilter(zip_or_city="30309"),
+        )
+        assert req.vertical is None and req.capability == "underwater_basket_weaving"
         with pytest.raises(ValidationError):
-            FindBusinessRequest(
-                vertical="underwater_basket_weaving",
-                location=LocationFilter(zip_or_city="30309"),
-            )
+            FindBusinessRequest(location=LocationFilter(zip_or_city="30309"))
 
     def test_cancel_without_appointment_id_returns_bad_input(self):
         req = ScheduleAppointmentRequest(

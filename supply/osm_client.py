@@ -436,22 +436,28 @@ class OSMClient:
     # ------------------------------------------------------------------ search
 
     async def search(self, plan: CategoryPlan, lat: float, lon: float, radius_m: int,
-                     *, guard: Optional[Callable[[], None]] = None) -> dict:
+                     *, guard: Optional[Callable[[], None]] = None, refresh: bool = False) -> dict:
         """Nearest-first businesses for `plan` around a point.
 
         Returns {"businesses": [...], "candidates_considered": int,
         "results_capped": bool, "cached": bool}; raises OSMUnavailable.
+
+        `refresh=True` skips the cache read and fetches again, replacing the entry. It exists for the
+        scheduled pre-warm (core/find_business_prewarm.py), which keeps popular lookups warm BEFORE
+        they expire; no request path uses it.
         """
         ql = build_query(plan, lat, lon, radius_m, server_timeout_s=OVERPASS_SERVER_TIMEOUT_S)
         key = "ovp:" + hashlib.sha256(ql.encode("utf-8")).hexdigest()
-        hit, value = self.cache.get(key)
-        if hit:
-            return dict(value, cached=True)
+        if not refresh:
+            hit, value = self.cache.get(key)
+            if hit:
+                return dict(value, cached=True)
 
         async def _fetch() -> dict:
-            hit2, value2 = self.cache.get(key)
-            if hit2:
-                return dict(value2, cached=True)
+            if not refresh:
+                hit2, value2 = self.cache.get(key)
+                if hit2:
+                    return dict(value2, cached=True)
             data = await self._overpass(ql, guard)
             elements = data["elements"]
             result = {

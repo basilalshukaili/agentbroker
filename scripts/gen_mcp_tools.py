@@ -28,6 +28,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+from core import tool_readiness  # noqa: E402  (the label tools/list carries; one definition)
 SRC = os.path.join(REPO, "manifest", "manifest.json")
 OUT = os.path.join(REPO, "manifest", "mcp_tools.json")
 
@@ -39,10 +42,15 @@ def _build() -> list:
     for op in ops:
         entry = {
             "name": op["name"],
-            "description": op.get("description", ""),
+            # Same bracketed state tools/list appends, so a registry built from this file does not
+            # present a limited or beta tool as an ordinary one.
+            "description": tool_readiness.labelled_description(op),
             "inputSchema": op.get("input_schema")
                            or {"type": "object", "properties": {}},
         }
+        rd = tool_readiness.of(op)
+        if rd:
+            entry["_meta"] = {tool_readiness.META_KEY: rd}
         ann = op.get("annotations")
         if ann:
             entry["annotations"] = ann

@@ -208,6 +208,33 @@ def build_local_tools_snapshot() -> dict:
     return {"jsonrpc": "2.0", "id": 1, "result": {"tools": tools}}
 
 
+def build_local_route_snapshots(names: list) -> dict:
+    """Build named GET snapshots (e.g. ``mcp.json``) by asking THIS checkout's app for the same route the
+    origin serves, in process (no network, no deployed origin).
+
+    Added 2026-10-03 because ``mcp.json`` had to change with the code (its ``paid_tools`` list named the
+    three quota-free tools as paid) and the only way to refresh it was to fetch the OLD origin, which
+    would have re-committed the contradiction. Routes that depend on deployment configuration (health,
+    supply platforms) are not what this is for; the descriptors that derive from the manifest are.
+    """
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from fastapi.testclient import TestClient
+    import main as app_main
+
+    out: dict = {}
+    client = TestClient(app_main.app)
+    for fname in names:
+        route = GET_ROUTES.get(fname)
+        if route is None:
+            raise RuntimeError(f"{fname} is not a GET snapshot this script knows")
+        resp = client.get(route)
+        if resp.status_code != 200:
+            raise RuntimeError(f"{route} answered {resp.status_code} locally; refusing to replace {fname}")
+        out[fname] = resp.text if fname in TEXT_SNAPSHOTS else resp.json()
+    return out
+
+
 def _summarize(fname: str, doc: dict) -> str:
     """A short fingerprint of the things that actually drift."""
     if fname == "manifest.json":
@@ -237,10 +264,19 @@ def main(argv: list[str] | None = None) -> int:
         help=("offline: compare or rewrite only mcp-tools-list.json from the "
               "checked-out tools/list implementation"),
     )
+    ap.add_argument(
+        "--local-routes",
+        nargs="+",
+        metavar="SNAPSHOT",
+        help=("offline: compare or rewrite only these GET snapshots (e.g. mcp.json) from the checked-out "
+              "app, answering each route in process"),
+    )
     args = ap.parse_args(argv)
 
     if args.local_tools:
         print("source: local agent_interface.mcp_server._build_tool_list (offline)")
+    elif args.local_routes:
+        print("source: local app routes, answered in process (offline)")
     else:
         print(f"origin: {ORIGIN}")
 
@@ -255,14 +291,18 @@ def main(argv: list[str] | None = None) -> int:
               "no longer serves it.")
         return 2
 
-    if args.local_tools:
+    if args.local_tools or args.local_routes:
         try:
-            fresh = {"mcp-tools-list.json": build_local_tools_snapshot()}
+            fresh = {}
+            if args.local_tools:
+                fresh["mcp-tools-list.json"] = build_local_tools_snapshot()
+            if args.local_routes:
+                fresh.update(build_local_route_snapshots(args.local_routes))
         except Exception as exc:  # noqa: BLE001 - command must fail closed
-            print(f"refresh_edge_snapshots: FAILED - local tools/list: {exc}")
+            print(f"refresh_edge_snapshots: FAILED - local snapshot: {exc}")
             return 2
         fetch_failures = []
-        source_label = "local tools/list source"
+        source_label = "local source"
     else:
         fresh = fetch_all()
         fetch_failures = fresh.pop("__fetch_failures__", [])
@@ -294,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
                   f"(encoding bug upstream of here) - snapshot left untouched")
             continue
         stale.append(fname)
-        comparison_source = "local" if args.local_tools else "origin"
+        comparison_source = "local" if (args.local_tools or args.local_routes) else "origin"
         print(f"  STALE {fname}: edge[{_summarize(fname, old or {})}] "
               f"!= {comparison_source}[{_summarize(fname, doc)}]")
         if not args.check:
@@ -318,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
               f"({len(fresh)} snapshot(s) compared)")
         return 0
     if args.check:
-        if args.local_tools:
+        if args.local_tools or args.local_routes:
             print(f"refresh_edge_snapshots: {len(stale)} snapshot(s) STALE "
                   "against local code - the committed edge bundle would serve "
                   "old tool definitions")
@@ -326,7 +366,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"refresh_edge_snapshots: {len(stale)} snapshot(s) STALE "
                   f"- the canonical host is serving old answers")
         return 1
-    if args.local_tools:
+    if args.local_tools or args.local_routes:
         print(f"refresh_edge_snapshots: rewrote {len(stale)} snapshot(s) from "
               "local code. Deployment remains a separate release step.")
     else:

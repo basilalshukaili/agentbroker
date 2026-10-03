@@ -22,7 +22,7 @@ query time, and most business-data tools are actually screen-scrapes with no
 citable source.
 
 What's there:
-- 23 MCP tools. 15 work with no key at all (12 always-free + 3 free within a
+- 23 MCP tools. 14 work with no key at all (11 always-free + 3 free within a
   daily quota — 100/day anonymous, 500/day with a free key). The 8 write
   tools (send a message, book an appointment, etc.) need a free
   email-verified key, 100 write ops/day.

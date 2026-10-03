@@ -187,8 +187,15 @@ class TestFailureModesReproducible:
     def test_bad_input_is_triggerable(self):
         from pydantic import ValidationError
         from core.models import FindBusinessRequest, LocationFilter
+        # "invalid_vertical" used to be the bad input here. It no longer is: a word that is not a vertical
+        # and not a kind we map is searched by NAME (core/find_business_input.py), because refusing it
+        # failed 10 of the 15 external calls that named a place and a vertical. Genuinely bad input is
+        # still refused: an out-of-range count, or nothing to search for at all.
         with pytest.raises(ValidationError):
-            FindBusinessRequest(vertical="invalid_vertical", location=LocationFilter(zip_or_city="30309"))
+            FindBusinessRequest(vertical="personal_services", location=LocationFilter(zip_or_city="30309"),
+                                max_results=0)
+        with pytest.raises(ValidationError):
+            FindBusinessRequest(location=LocationFilter(zip_or_city="30309"))
 
     def test_compliance_violation_is_triggerable(self):
         from core.models import ComplianceViolationError

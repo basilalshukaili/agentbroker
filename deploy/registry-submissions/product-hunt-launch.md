@@ -9,7 +9,7 @@ Compliance receipts and real business data, for AI agents
 
 ## Description (260 chars max — this is 238)
 ```
-Agent Broker gives AI agents Ed25519-signed compliance receipts (verify offline, no callback) plus live OFAC/EU/UK sanctions, GLEIF, SEC EDGAR and USASpending lookups. 23 MCP tools, 15 usable with no key. MIT licensed, free tier included.
+Agent Broker gives AI agents Ed25519-signed compliance receipts (verify offline, no callback) plus live OFAC/EU/UK sanctions, GLEIF, SEC EDGAR and USASpending lookups. 23 MCP tools, 14 usable with no key. MIT licensed, free tier included.
 ```
 
 ## Topics
@@ -44,7 +44,7 @@ small/mid-sized businesses, gated by the same non-bypassable TCPA/GDPR/CASL/PDPL
 compliance check across 26 jurisdictions, with channel fallback across
 WhatsApp/SMS/email/voice.
 
-• 23 tools total. 15 work with no key — 12 always-free, 3 free within a
+• 23 tools total. 14 work with no key — 11 always-free, 3 free within a
   daily quota (100/day anonymous, 500/day with a free key)
 • 8 write tools need a free email-verified key: 100 write ops/day, no card
 • Beyond the free tier: credits by card from $9/1,000, or pay-per-call in

@@ -12,17 +12,23 @@ minimum. Credits do not expire.
 
 ## What is free
 
-**12 utility tools — free and unmetered; 11 of them need no key.**
+**13 tools are free and unmetered; 11 of them need no key.**
 
-`find_business`, `verify_business`, `check_booking_link`, `check_compliance`,
-`preview_cost`, `get_status`, `get_outcome`, `self_test`, `get_conversation`,
-`check_quota`, `mint_key`, `lookup_us_contracts`
+The 11 that need no key: `find_business`, `verify_business`,
+`check_booking_link`, `check_compliance`, `preview_cost`, `get_status`,
+`get_outcome`, `self_test`, `check_quota`, `mint_key`, `lookup_us_contracts`.
+(`mint_key` takes no key but refuses anyone who cannot sign with the
+machine-mint secret; the way to a free key without it is `POST /keys/request`.)
+
+The other two, `get_conversation` and `import_booking_url`, cost nothing and
+need a free key. With the three premium data tools below (free within a daily
+quota, no key), that makes 14 tools usable without signing up.
 
 An agent can discover businesses, pre-check a booking link, preview what an
 action would cost, check its quota, and read the outcome of its own operations
 without ever authenticating or spending anything.
 
-**`get_conversation` is the one exception, and it is free but not keyless.** A
+**`get_conversation` is free but not keyless.** A
 thread is readable only by the agent identity that opened it, so a call with no
 key is refused rather than answered: a request reference is four digits and a
 business number is public, which is not a secret worth treating as one. Send

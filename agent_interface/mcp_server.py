@@ -44,6 +44,7 @@ from agent_interface.manifest_server import get_full_manifest, get_operation
 # follows from it. Six surfaces used to work this out independently and all
 # six went stale on the day the rule changed - see core/tool_auth.py.
 from core import tool_auth
+from core import tool_readiness
 from core.tool_auth import WRITE_TOOLS_REQUIRING_AUTH, requires_key
 
 
@@ -165,6 +166,13 @@ def _build_tool_list() -> list[dict]:
             "description": _format_description_for_llm(op),
             "inputSchema": input_schema,
         }
+        # A tool that is not production-ready says so where an agent chooses tools: a bracketed state
+        # after the description (the model reads it) and the one-sentence reason in _meta (it costs the
+        # model nothing). The facts live in manifest.json; see core/tool_readiness.py.
+        _rd = tool_readiness.of(op)
+        if _rd:
+            tool["description"] += tool_readiness.tag(_rd["state"])
+            tool["_meta"] = {tool_readiness.META_KEY: _rd}
         # MCP annotations help client UIs render tools better. idempotentHint
         # must be tool-specific — retrying a non-idempotent write tool would
         # double-bill via x402 AND duplicate the side effect (e.g. two SMS
@@ -1890,22 +1898,34 @@ async def _dispatch_operation(
     """Route an operation call to the underlying handler. Returns dict, not OutcomeReceipt."""
     if name == "find_business":
         from core.find_business import handle_find_business
+        from core.find_business_input import (
+            FindBusinessInputError, explain_validation_error, prepare as _prepare_find_business)
         from core.models import FindBusinessRequest
-        # Pass the raw vertical string through to FindBusinessRequest so its
-        # model_validator(mode="before") can alias natural terms (plumbing,
-        # dentist, haircut, ...) into the three macro buckets before enum
-        # coercion happens. The previous code called Vertical(args[...])
-        # directly, which 500'd on every fine-grained input the validator was
-        # designed to fix.
-        req = FindBusinessRequest(
-            vertical=args["vertical"],
-            location=args.get("location", {"zip_or_city": "Atlanta"}),
-            capability=args.get("capability"),
-            max_results=args.get("max_results", 5),
-            price_band=args.get("price_band"),
-            availability_window=args.get("availability_window"),
-        )
-        receipt = await handle_find_business(req)
+        from pydantic import ValidationError as _FBValidationError
+        # THE REQUEST IS READ BY core/find_business_input.py, not rebuilt field by field here.
+        #
+        # This branch used to be `args["vertical"]` (a KeyError for any call without it) and
+        # `args.get("location", {"zip_or_city": "Atlanta"})`: a call that omitted `location`, or sent the
+        # top-level `city` the published schema advertises, was silently answered for ATLANTA. Of the 26
+        # external calls in the 47 hours to 2026-10-03, 21 died here (11 with no arguments, 10 with a
+        # `location` string or a `vertical` the strict enum refused), as a bare -32602 naming a field.
+        #
+        # Now: the ways callers really write the request are read; what was interpreted or ignored is
+        # reported back; and what cannot be searched is a TOOL error (isError result, which the model
+        # sees - MCP's guidance for input validation) naming what was wrong with a working example.
+        try:
+            prepared = _prepare_find_business(args)
+            req = FindBusinessRequest(**prepared.kwargs)
+        except FindBusinessInputError as bad:
+            raise _ToolError(str(bad), error_code=bad.error_code, retriable=False,
+                             how_to_resolve=bad.how_to_resolve)
+        except _FBValidationError as ve:
+            bad = explain_validation_error(ve, args)
+            raise _ToolError(str(bad), error_code=bad.error_code, retriable=False,
+                             how_to_resolve=bad.how_to_resolve)
+        receipt = await handle_find_business(req, input_notes={
+            "notes": prepared.notes, "ignored": prepared.ignored,
+            "location_normalized_from": prepared.location_normalized_from})
 
     elif name == "verify_business":
         from core.verify_business import handle_verify_business

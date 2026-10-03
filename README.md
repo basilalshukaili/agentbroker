@@ -51,7 +51,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 
 | # | Tool | What it does | Auth |
 |---|---|---|---|
-| 1 | `find_business` | Find real businesses near a place by vertical or capability (OpenStreetMap, (c) OpenStreetMap contributors, ODbL; plus the supply network) | **free** |
+| 1 | `find_business` | Find real businesses near a place by vertical or capability (OpenStreetMap, (c) OpenStreetMap contributors, ODbL; plus the supply network). Answers within about 5 s; a slow place returns `partial` / `search_in_progress` and the same call, repeated, is then served from cache. **Beta** | **free** |
 | 2 | `verify_business` | Confirm an SMB is real, operating, and capable of the requested service | **free** |
 | 3 | `get_status` | Poll the current state of an async operation | **free** |
 | 4 | `get_outcome` | Retrieve the final `OutcomeReceipt` (with cost and reason codes) | **free** |
@@ -73,9 +73,21 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 20 | `escalate_to_human` | Hand off a stuck or ambiguous task to a human operator with full context | key |
 | 21 | `import_booking_url` | Turn a URL from any of 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity) into an SMB record usable with send_message / capture_lead immediately - schedule_appointment only completes for Cal.com bound to our one connected account, the other 11 fail it honestly | key |
 | 22 | `call_business` | Place a conversational voice-AI phone call to a business on behalf of a consumer | key |
-| 23 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email required, no human in the loop | **free** |
+| 23 | `mint_key` | Issue a free-tier agent identity key via HMAC proof - no email, but only for a caller holding the operator's unpublished machine-mint secret (see [below](#machine-mintable-keys-disabled)). **Limited** | **free** |
 
 Free key (100 write ops/day + 500 premium data calls/day): https://hatchloop.dev/agent-broker  -  Credits from $9/1,000 ops: https://hatchloop.dev/pricing  -  Premium data beyond quota: $0.02/call
+
+### Which tools are production-ready
+
+Not all of them. `tools/list` marks every tool that is not, in its description (`[beta]`, `[limited]`, or `[UNAVAILABLE on this deployment: ...]`) and in `_meta["hatchloop/readiness"]`. The facts live in `manifest/manifest.json` (`readiness` on the operation) and every surface reads them from there; a test fails if one disagrees. A tool with no label is production-ready.
+
+| State | What it means | Tools |
+|---|---|---|
+| `beta` | Works against real data or a real store, with a limit you must plan around | `find_business`, `capture_lead`, `handle_inbound`, `escalate_to_human` |
+| `limited` | Works for a narrow subset of inputs; for everything else it fails honestly, uncharged | `verify_business`, `schedule_appointment`, `import_booking_url`, `mint_key` |
+| `unavailable` here | Cannot run on this deployment right now; `tools/list` says which channels are missing | `call_business`, and `send_message` / `send_transactional_confirmation` for any channel not configured |
+
+What each limit is: `find_business` is community-mapped, unverified, and answers `partial` when the public map servers are slow. `capture_lead` writes to AgentBroker's own lead funnel and does not notify the business. `handle_inbound` is English keyword rules, so its intent is a hint. `escalate_to_human` writes a ticket to the operator queue and sends no notification. `verify_business` only knows supply-network ids (not the `osm:...` ids `find_business` returns). `schedule_appointment` and `import_booking_url` complete a booking only for Cal.com bound to our one connected account. `mint_key` needs the machine-mint secret.
 
 ---
 
@@ -287,12 +299,14 @@ curl -X POST https://hatchloop.dev/ops/find_business \
 
 ## Machine-mintable keys (disabled)
 
-The code has an HMAC-signed, no-email key-mint path (`POST /keys/mint`) for agents
-that cannot receive email. **It is turned off in production and is not documented
-as a usable integration path.** No `MACHINE_MINT_SECRET` is configured on the
-deployed server, so every call returns `503 {"error": "not_configured"}` - do not
+The code has an HMAC-signed, no-email key-mint path (`POST /keys/mint`, and the
+`mint_key` tool) for agents that cannot receive email. **It is not a public
+integration path.** A call is accepted only when it is signed with the operator's
+`MACHINE_MINT_SECRET`, which is not published: without a valid signature the
+deployed server answers `401 {"error": "invalid_request"}` (and
+`503 {"error": "not_configured"}` on a deployment that has no secret set) - do not
 build against it, and do not wait for it to start working without an explicit
-announcement.
+announcement. The tool is labelled `limited` in `tools/list` for this reason.
 
 If you cannot receive email either, the supported options are: many tools need no
 key at all (see the tool list above), or email hello@hatchloop.dev for manual key

@@ -407,8 +407,11 @@ def test_a_cancelled_leader_does_not_abort_the_requests_sharing_its_lookup(insta
     assert not isinstance(follower_out, asyncio.CancelledError)
 
 
-def test_the_whole_osm_phase_has_a_deadline_and_reports_an_outage_not_a_hang(install, monkeypatch):
-    monkeypatch.setattr(FB, "OSM_PHASE_DEADLINE_S", 0.05)
+def test_the_whole_osm_phase_has_a_budget_and_reports_pending_not_a_hang_or_an_outage(install, monkeypatch):
+    """Before 2026-10-03 this was a 25 s deadline reported as "osm_temporarily_unavailable". A call that
+    runs out of budget with nothing back is not an outage - nothing is known to be down - and not "no
+    businesses": it is still searching. The reason says so and the status is PARTIAL (not an error)."""
+    monkeypatch.setattr(FB, "CALL_BUDGET_S", 0.05)
 
     async def never(request):
         await asyncio.sleep(30)
@@ -416,13 +419,16 @@ def test_the_whole_osm_phase_has_a_deadline_and_reports_an_outage_not_a_hang(ins
 
     install(nominatim_override=never)
     r = call(restaurants_request())
-    assert r.reason_code == "osm_temporarily_unavailable" and r.retriable is True
-    assert r.result["search"]["reason"] == "deadline_exceeded"
+    assert r.reason_code == "search_in_progress" and r.retriable is True
+    assert r.status.value == "partial"
+    assert r.result["search"]["status"] == "pending" and r.result["search"]["reason"] == "search_in_progress"
+    assert r.result["search"]["within_budget"] is False and r.result["search"]["budget_s"] == 0.05
     assert r.result["businesses"] == [] and r.result["attribution"]
+    assert "NOT evidence that no matching businesses exist" in r.human_message
 
 
 def test_a_deadline_during_narrowing_keeps_the_capped_answer_already_in_hand(install, monkeypatch):
-    monkeypatch.setattr(FB, "OSM_PHASE_DEADLINE_S", 0.2)
+    monkeypatch.setattr(FB, "CALL_BUDGET_S", 0.2)
     data = restaurant_line(500)
     seen = {"n": 0}
 
@@ -470,3 +476,27 @@ def test_openapi_does_not_declare_a_maximum_the_server_does_not_enforce():
                                  location={"zip_or_city": "Atlanta", "radius_miles": 500}))
     assert r.result["search"]["radius_m"] <= osm_client.RADIUS_MAX_M
     assert r.result["search"]["radius_capped_at_miles"] == 25
+
+
+def test_a_deadline_during_narrowing_does_not_claim_the_call_was_within_budget(install, monkeypatch):
+    """within_budget said True while narrowing_stopped_because said deadline_exceeded, and nothing told the
+    caller a repeat would return a better (narrower) answer. Gate finding 2026-10-03."""
+    monkeypatch.setattr(FB, "CALL_BUDGET_S", 0.2)
+    data = restaurant_line(500)
+    seen = {"n": 0}
+
+    async def second_call_hangs(request):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            q = dict(httpx.QueryParams(request.content.decode()))["data"]
+            return httpx.Response(200, json=osm_fakes.overpass_answer(q, data))
+        await asyncio.sleep(30)
+        return httpx.Response(200, json={"elements": []})
+
+    install(dataset=data, overpass_override=second_call_hangs)
+    r = call(restaurants_request())
+    s = r.result["search"]
+    assert r.status.value == "success" and len(r.result["businesses"]) == 5
+    assert s["narrowing_stopped_because"] == "deadline_exceeded"
+    assert s["within_budget"] is False
+    assert s["continues_in_background"] is True and "Repeat this exact call" in s["repeat_this_call"]
