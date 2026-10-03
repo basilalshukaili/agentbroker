@@ -22,7 +22,14 @@ writes failed AND failures were at least FAILURE_RATIO of the attempts. So:
     MIN_FAILURES attempts, however little traffic there is;
   * a rail that lost a burst during an outage is unhealthy WHILE the burst is in the window
     and for no longer than WINDOW_S after it, then recovers by itself -- no restart;
-  * a stray failure among thousands of successes never flips it.
+  * a stray failure among thousands of successes never flips it;
+  * a rail that has RECOVERED is healthy at once, whatever the ratio still says (2026-10-04).
+    A transient failure is one that something succeeded after, so when the most recent
+    MIN_FAILURES writes all succeeded the verdict is healthy. The ratio alone cannot tell the
+    two apart after a burst that follows a quiet spell (50 calls fail inside a 15 second stall:
+    50 of 50 attempts, red until 50 more writes succeed or ten minutes pass, long after the pool
+    is back). A rail that is still down, or only now and then up, has a failure among its most
+    recent writes and keeps its verdict.
 
 Cumulative counters (`failed`, `succeeded`, `last_failure_reason`) are untouched and still
 exposed by get_usage_logger_health() / get_durable_meter_health(); this only changes WHICH
@@ -74,11 +81,26 @@ class RollingOutcomes:
         return {"attempts": attempts, "failed": failed, "succeeded": attempts - failed,
                 "window_s": self.window_s}
 
+    def _recovered(self) -> bool:
+        """True when the most recent `min_failures` writes all succeeded: the same number it takes
+        to call a rail dead, now needed to call it back. Fewer writes than that on record, or any
+        failure among them, is not recovery."""
+        n = self.min_failures
+        with self._lock:
+            if n <= 0 or len(self._events) < n:
+                return False
+            return all(self._events[i][1] for i in range(-n, 0))
+
     def assess(self, now: Optional[float] = None) -> tuple:
-        """(healthy, reason). `reason` is None when healthy."""
+        """(healthy, reason). `reason` is None when healthy.
+
+        Unhealthy needs both: a sustained share of failures in the window, and no recovery since
+        (see the module docstring)."""
         snap = self.snapshot(now)
         attempts, failed = snap["attempts"], snap["failed"]
         if failed >= self.min_failures and attempts and failed / attempts >= self.failure_ratio:
+            if self._recovered():
+                return True, None
             return False, (f"{failed} of the last {attempts} writes in the past "
                            f"{int(self.window_s // 60)} min failed")
         return True, None

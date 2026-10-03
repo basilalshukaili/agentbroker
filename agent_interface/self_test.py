@@ -247,8 +247,10 @@ async def _check_metering_pipeline() -> TestCheck:
     pool starved for 10-25 seconds and usage_events writes failed (13 of the last 24 hours'
     15,283); the public self_test said `healthy: false` from the first stall until the
     container was restarted at 18:39 on 2026-10-03, about 30 hours. A dead rail (every write
-    rejected) still trips it after three writes; a stall clears itself ten minutes after it
-    ends.
+    rejected) still trips it after three writes. A failure that something succeeded after is
+    transient, not an outage: once a rail's last three writes have all succeeded it reads healthy
+    at once, and a burst that was never followed by a success clears by itself ten minutes
+    after it ends (billing/pipeline_health.py).
     A clean process that has logged nothing yet is healthy by default.
     """
     start = time.time()
