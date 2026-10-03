@@ -200,7 +200,8 @@ def protected_resource_metadata(resource: str) -> dict:
 
 
 def _discovery(doc: dict) -> JSONResponse:
-    return JSONResponse(doc, headers={**_CORS, "Cache-Control": "public, max-age=300"})
+    # The protected-resource document depends on the Host it was asked on, so a shared cache must key on it.
+    return JSONResponse(doc, headers={**_CORS, "Cache-Control": "public, max-age=300", "Vary": "Host"})
 
 
 @router.get("/.well-known/oauth-protected-resource")

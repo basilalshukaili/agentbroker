@@ -123,6 +123,7 @@ def test_discovery_is_served_for_every_door_and_nothing_else():
         assert c.get(f"/.well-known/oauth-protected-resource/{nothing}").status_code == 404, nothing
     r = c.get("/.well-known/oauth-protected-resource", headers={"Origin": "https://inspector.example"})
     assert r.headers["access-control-allow-origin"] == "*"              # browser-based inspectors read it
+    assert "host" in r.headers["vary"].lower() and "max-age=300" in r.headers["cache-control"]
 
 
 def test_the_host_parameter_is_honoured_only_for_our_own_hosts():
