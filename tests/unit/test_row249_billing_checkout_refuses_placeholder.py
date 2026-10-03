@@ -39,6 +39,15 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
+@pytest.fixture(autouse=True)
+def _credits_are_on(monkeypatch):
+    """The route mints a checkout session only while the credits gate is on (billing/switches.py), because a
+    purchase made while it is off mints a key that is never credited. Every route test below is about WHICH
+    provider that session names, so it runs in the state in which a session is minted at all. The off state is
+    pinned in test_checkout_follows_the_switches.py."""
+    monkeypatch.setenv("CREDITS_ENABLED", "true")
+
+
 def run(coro):
     loop = asyncio.new_event_loop()
     try:

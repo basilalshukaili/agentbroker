@@ -1800,6 +1800,12 @@ async def billing_checkout():
     """
     import os as _os
     import html as _html
+    from billing import switches as _switches
+    # NO CHECKOUT SESSION WHILE CREDITS ARE OFF. A purchase made then mints a key but is never credited:
+    # billing/polar_webhook.py skips the grant while this same switch is off, and the grant is idempotent
+    # on the order id, so the buyer would have paid for nothing. /checkout explains the state in words.
+    if not _switches.credits_enabled():
+        return RedirectResponse(url="/checkout", status_code=303)
     from billing.providers import get_billing_provider
     base = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
     try:

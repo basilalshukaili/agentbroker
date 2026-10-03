@@ -343,10 +343,16 @@ def test_checkout_page_names_x402_only_when_the_rail_is_on(monkeypatch):
     low = off.text.lower()
     assert "x402" not in low and "usdc" not in low
     assert "Two rails" not in off.text, "one rail is not two"
-    assert "Credit packages" in off.text, "the card checkout is untouched"
-    _set(monkeypatch, x402=True)
+    # the card half is the CREDITS gate's, not the x402 gate's: with credits off it is not offered
+    # either (pinned both ways in test_checkout_follows_the_switches.py)
+    assert "Credit packages" not in off.text
+    _set(monkeypatch, credits=True, x402=True)
     on = _client().get("/checkout").text
-    assert "x402" in on and "USDC on Base" in on and "Two rails" in on
+    assert "x402" in on and "USDC on Base" in on and "Two rails" in on and "Credit packages" in on
+    monkeypatch.delenv("CREDITS_ENABLED")
+    _set(monkeypatch, x402=True)
+    one = _client().get("/checkout").text
+    assert "x402" in one and "USDC on Base" in one and "Two rails" not in one
 
 
 # ---------------------------------------------------------------------------- the crawl
