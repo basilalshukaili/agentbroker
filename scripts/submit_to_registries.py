@@ -103,7 +103,7 @@ async def submit_smithery(dry_run: bool = False) -> dict:
             "to find, verify, message, and book appointments with small businesses "
             "worldwide. Agents pay per call in USDC on Base via x402 — no signup, no "
             "API key (reads free, writes paid). Built-in compliance gate "
-            "(TCPA / GDPR / CASL / PDPL across 22 jurisdictions)."
+            "(TCPA / GDPR / CASL where modeled, the service's own opt-in default elsewhere)."
         ),
     }
     release_payload_json = json.dumps({

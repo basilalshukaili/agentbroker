@@ -96,7 +96,8 @@ def render_home() -> str:
     any MCP client) actually <strong>do business</strong> with the long tail of small
     and mid-sized businesses worldwide &mdash; finding them, verifying them, booking
     appointments, sending messages, escalating to a human when stuck &mdash; with full
-    TCPA / GDPR / CASL / PDPL compliance enforced at runtime by a non-bypassable gate.
+    TCPA / GDPR / CASL compliance, and our own opt-in default for every other country, enforced at runtime
+    by a non-bypassable gate.
   </p>
   <div class="cta">
     <a class="btn btn-primary" href="/docs">Browse the live API &rarr;</a>
@@ -138,9 +139,11 @@ def render_home() -> str:
     <div class="card">
       <h3>How enforcement works</h3>
       <p><a href="__ORIGIN__/compliance/check">/compliance/check</a> runs before every outbound
-         channel call. TCPA, GDPR, CASL, PDPL rules across 26 jurisdictions, including
-         GCC (UAE, SA, OM, QA, KW, BH). A request that violates returns a structured
-         receipt and never reaches a carrier.</p>
+         channel call. A rule set for each of 26 jurisdictions: TCPA, CAN-SPAM and 10DLC for
+         the US, GDPR for the EU/UK states modeled, CASL for Canada, and our own opt-in
+         default for every other country, the Gulf states (UAE, SA, OM, QA, KW, BH)
+         included; the answer says which applied. A request that violates returns a
+         structured receipt and never reaches a carrier.</p>
     </div>
   </div>
 </section>
@@ -484,9 +487,9 @@ def render_checkout(plan: str | None) -> str:
   <h2>Your rights either way</h2>
   <ul style="color:var(--text-muted);">
     <li><strong>Compliance gate.</strong> Every outbound message routes through
-        <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
-        PDPL across 26 jurisdictions. Marketing without a verified consent_record_id
-        is rejected at runtime regardless of how you paid.</li>
+        <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR and CASL
+        where those statutes apply, and our own opt-in default everywhere else. Marketing
+        without a verified consent_record_id is rejected at runtime regardless of how you paid.</li>
     <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.</li>
     <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
         See <a href="/privacy">Privacy Policy</a>.</li>
@@ -582,7 +585,8 @@ def render_terms() -> str:
   commercial redistribution, and screen_sanctions says so in its own
   output.</p>
   <p>Every outbound communication routes through a non-bypassable compliance
-  gate that enforces TCPA / GDPR / CASL / PDPL rules across 26 jurisdictions.
+  gate that enforces TCPA, GDPR and CASL rules where those statutes apply and our own
+  opt-in default everywhere else (26 jurisdictions in all).
   Marketing messages require a verified opt-in <code>consent_record_id</code>
   at send time &mdash; without one, the gate rejects the send with a
   structured <code>compliance_violation</code> receipt that never reaches a
@@ -725,8 +729,8 @@ def render_privacy() -> str:
     <li>To bill you accurately. Every operation returns an itemised receipt
         showing what was charged and why; call <code>preview_cost</code>
         (free) to see the price before you commit.</li>
-    <li>To prove compliance with TCPA, GDPR, CASL, PDPL, and equivalents on
-        request from a regulator or recipient.</li>
+    <li>To show a regulator or recipient, on request, what the compliance gate
+        decided and why.</li>
     <li>To detect abuse and enforce the Terms of Service.</li>
   </ul>
 

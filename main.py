@@ -939,10 +939,13 @@ async def compliance_check_public(req: _ComplianceCheckRequest):
     Free forever. Rate-limited to ~60 req/min per IP.
     """
     from compliance.pre_check import pre_check
-    from compliance.jurisdiction_rules import describe_rule_set
+    from compliance.jurisdiction_rules import describe_resolved
     from compliance.number_jurisdiction import resolve_jurisdiction
     from core.models import ComplianceViolationError
-    resolution = resolve_jurisdiction(req.recipient_id, req.country_code)
+    resolution = resolve_jurisdiction(req.recipient_id, req.country_code, req.message_type)
+    # What the answer was decided under: the statutes modeled, or the service's own default, or - for a
+    # solicitation whose number and country_code contradict each other - nothing. Returned on BOTH branches.
+    described = describe_resolved(resolution, req.state_code)
     try:
         pre_check(
             recipient_id=req.recipient_id,
@@ -952,7 +955,6 @@ async def compliance_check_public(req: _ComplianceCheckRequest):
             country_code=req.country_code,
             state_code=req.state_code,
         )
-        described = describe_rule_set(resolution.country, req.state_code)
         if described["basis"] == "statute":
             notes = "Pre-check passed. Send is permitted under the supplied jurisdiction."
         else:
@@ -961,6 +963,7 @@ async def compliance_check_public(req: _ComplianceCheckRequest):
         payload = {
             "legal": True,
             "rule_set": resolution.country or "international",
+            "rule_basis": described,
             "jurisdiction_source": resolution.source,
             "channel": req.channel,
             "message_type": req.message_type,
@@ -974,6 +977,7 @@ async def compliance_check_public(req: _ComplianceCheckRequest):
             "legal": False,
             "rule": cve.rule,
             "rule_set": cve.jurisdiction,
+            "rule_basis": described,
             "jurisdiction_source": resolution.source,
             "channel": cve.channel,
             "message": cve.message,

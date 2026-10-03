@@ -16,7 +16,7 @@ from core.models import ComplianceViolationError
 from compliance.consent_store import get_consent_store
 from compliance.content_classifier import classify_content
 from compliance.jurisdiction_rules import get_rules, infer_jurisdiction, consent_basis_sentence
-from compliance.number_jurisdiction import resolve_jurisdiction, jurisdiction_label
+from compliance.number_jurisdiction import resolve_jurisdiction, jurisdiction_label, could_be_us
 from compliance.campaign_registry import get_campaign_registry, UseCaseType
 from compliance.audit_log import AuditEventType, get_audit_log
 
@@ -54,10 +54,11 @@ def pre_check(
     # THE RULES FOLLOW THE RECIPIENT, NOT ONLY WHAT THE CALLER TYPED (Door Reliability Run D2, 2026-10-03).
     # An Omani number with country_code "OM" was refused "under the TCPA"; a number sent with no country_code
     # was assumed American. From here on `country_code` is the country the send is judged under: the one the
-    # recipient's number names when it names exactly one (the number wins over a contradicting country_code),
-    # otherwise the caller's, otherwise None - and None is "unknown", never "US". See
-    # compliance/number_jurisdiction.py for the rules and for why a +1 or +7 number needs the caller to say.
-    resolution = resolve_jurisdiction(recipient_id, country_code)
+    # recipient's number names when it names exactly one (the number wins over a contradicting country_code,
+    # EXCEPT for a solicitation, where a contradiction is refused below), otherwise the caller's, otherwise
+    # None - and None is "unknown", never "US". See compliance/number_jurisdiction.py for the rules and for
+    # why a +1 or +7 number needs the caller to say.
+    resolution = resolve_jurisdiction(recipient_id, country_code, message_type)
     country_code = resolution.country
     rules = infer_jurisdiction(country_code, state_code)
     consent_store = get_consent_store()
@@ -162,6 +163,30 @@ def pre_check(
             message=f"Recipient {recipient_id} has opted out of {channel} communications. Honor opt-out per regulatory requirement.",
         )
 
+    # 2b. A CONTRADICTION THE GATE WILL NOT RESOLVE FOR A SOLICITATION.
+    #
+    # The recipient's number names one country and the caller's country_code names another. For a marketing or
+    # follow-up message the answer is not "the number wins": calling hours and carrier rules follow where the
+    # PERSON is, and a roaming or expatriate recipient is exactly the case where the two differ. Letting the
+    # number override the caller's stated country turned 2,914 refusals into allows in the 2026-10-04 review
+    # (1,154 of them US calling-hours blocks, ten of them 10DLC). So the gate says it cannot tell and stops;
+    # the caller removes the contradiction. Any other message type is judged by the number's country and the
+    # answer reports the override (resolve_jurisdiction leaves country None only in this case).
+    if resolution.contradicts and resolution.country is None:
+        _audit_violation(
+            "jurisdiction_conflict",
+            recipient_id, channel, "unknown", agent_id, trace_id,
+            reason="the recipient number and country_code name different countries for a solicitation",
+            preview=preview,
+        )
+        raise ComplianceViolationError(
+            rule="jurisdiction_conflict",
+            recipient_id=recipient_id,
+            channel=channel,
+            jurisdiction="unknown",
+            message=resolution.conflict or "The recipient number and country_code name different countries.",
+        )
+
     # 3. Consent check for marketing messages
     if message_type == "marketing":
         # AN UNKNOWN JURISDICTION IS NOT "US".
@@ -192,8 +217,8 @@ def pre_check(
                 channel=channel,
                 jurisdiction="unknown",
                 message=("Marketing messages need a known country so the correct "
-                         "consent rules apply - opt-in regimes (GDPR, CASL, "
-                         "PDPL) and opt-out regimes (CAN-SPAM) reach opposite "
+                         "consent rules apply - opt-in regimes (GDPR, CASL) "
+                         "and opt-out regimes (CAN-SPAM) reach opposite "
                          "conclusions on the same message. Pass the recipient's "
                          "two-letter country_code, or an E.164 recipient number "
                          "whose country calling code names it."
@@ -285,7 +310,8 @@ def pre_check(
         #   * MARKETING EMAIL outside the GDPR/CASL blocs had no gate either,
         #     so every GCC, Asian and Latin American recipient could be
         #     marketed to with no opt-in - including Oman, the founder's home
-        #     market, whose PDPL we advertise on three public pages. The
+        #     market. (No Omani statute is modeled here; this is the service's
+        #     own opt-in default, and the answers say so.) The
         #     INTERNATIONAL default's own docstring promises "opt-in required
         #     for marketing" and nothing enforced it off the SMS path.
         #
@@ -308,7 +334,8 @@ def pre_check(
                     jurisdiction=jurisdiction,
                     message=(f"Recipient {recipient_id} has not opted in to marketing "
                              f"calls. Prior express consent is required for autodialed "
-                             f"or prerecorded marketing voice in {jurisdiction}."),
+                             f"or prerecorded marketing voice in {jurisdiction}."
+                             + _default_policy_note(rules, country_code, "marketing calls")),
                 )
 
         # CAN-SPAM IS AN OPT-OUT REGIME, and getting that wrong would have been
@@ -324,8 +351,10 @@ def pre_check(
         # still sends.
         #
         # So the opt-in bar applies to the regimes that actually require opt-in
-        # - GCC/PDPL, and the international default whose own docstring
-        # promises it - and CAN-SPAM jurisdictions keep their opt-out rule.
+        # - the Gulf and every other country with no statute modeled here (the
+        # service's own opt-in default), including the international default
+        # whose own docstring promises it - and CAN-SPAM jurisdictions keep
+        # their opt-out rule.
         if (channel == "email"
                 and not (rules.gdpr_applies or rules.casl_applies
                          or rules.can_spam_applies)):
@@ -343,7 +372,40 @@ def pre_check(
                     jurisdiction=jurisdiction,
                     message=(f"Recipient {recipient_id} has not opted in to marketing "
                              f"email. Opt-in is required for commercial email in "
-                             f"{jurisdiction}."),
+                             f"{jurisdiction}."
+                             + _default_policy_note(rules, country_code, "marketing email")),
+                )
+
+        # 3a'. EVERY OTHER CHANNEL - WhatsApp, and any channel added later.
+        #
+        # The branches above are SMS, voice and email, plus every channel inside the GDPR and CASL blocs. A
+        # marketing message on WhatsApp outside those blocs had no consent branch at all: before the country was
+        # read from the number it was refused only for want of a country (jurisdiction_required), and once the
+        # number named Oman that was the only barrier gone - the review of 2026-10-04 sent one to an Omani
+        # number with an empty consent store and the gate allowed it. The service's own policy is recorded
+        # opt-in for marketing, ON THE CHANNEL THE MESSAGE GOES OVER, in every country, so a channel with no
+        # branch of its own fails closed instead of open.
+        if channel not in _CHANNELS_WITH_OWN_MARKETING_RULE:
+            if not consent_store.has_valid_consent(recipient_id, channel, "marketing"):
+                _other_rule = "whatsapp_marketing_consent" if channel == "whatsapp" else "marketing_consent"
+                _label = "WhatsApp" if channel == "whatsapp" else f"the {channel} channel"
+                _audit_violation(
+                    _other_rule,
+                    recipient_id, channel, jurisdiction, agent_id, trace_id,
+                    reason=f"No opt-in on file for marketing on {channel} (the service's own default; "
+                           f"no jurisdiction-specific statute applied)",
+                    preview=preview,
+                )
+                raise ComplianceViolationError(
+                    rule=_other_rule,
+                    recipient_id=recipient_id,
+                    channel=channel,
+                    jurisdiction=jurisdiction,
+                    message=(f"Recipient {recipient_id} has not opted in to marketing on {_label}. Recorded "
+                             f"opt-in consent is required for marketing on every channel this gate has no "
+                             f"statute-specific rule for, and an opt-in given for another channel does not "
+                             f"cover this one. This is the service's own policy, not a citation of any "
+                             f"country's law."),
                 )
 
     # 3b. QUIET HOURS. TCPA restricts solicitation to 8am-9pm in the
@@ -433,8 +495,9 @@ def pre_check(
             message=_qh_message,
         )
 
-    # 4. 10DLC campaign check for US SMS
-    if channel == "sms" and (not country_code or country_code.upper() == "US"):
+    # 4. 10DLC campaign check for US SMS. A US carrier rule: applied to a US recipient and to one the number
+    # could not rule out (+1, or no number at all), never to a number that cannot be American (+44, +968, +7).
+    if channel == "sms" and could_be_us(resolution):
         use_case_map = {
             "marketing": UseCaseType.MARKETING,
             "transactional": UseCaseType.ACCOUNT_NOTIFICATION,
@@ -474,6 +537,17 @@ def pre_check(
         decision="allow",
         trace_id=trace_id,
     )
+
+
+# Channels whose marketing consent is decided by the branches above (SMS, voice, email, and every channel inside
+# the GDPR and CASL blocs). Any other channel falls to the service's own opt-in default.
+_CHANNELS_WITH_OWN_MARKETING_RULE = frozenset({"sms", "voice", "email"})
+
+
+def _default_policy_note(rules, country_code, what: str) -> str:
+    """A leading space and the sentence saying a refusal is the service's own policy, when no statute of the
+    country is modeled; nothing at all where one is (so a US voice refusal does not call itself a default)."""
+    return "" if rules.statutes else " " + consent_basis_sentence(country_code, what)
 
 
 def _audit_violation(

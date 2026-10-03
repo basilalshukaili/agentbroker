@@ -455,7 +455,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR and CASL where modeled; the service's own opt-in default for every other country, the Gulf included): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
       "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
       "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
@@ -467,7 +467,7 @@
         "Canadian recipients require CASL express consent for commercial electronic messages.",
         "Voice channel to US recipients requires prior express consent for autodialed/prerecorded calls (TCPA).",
         "All commercial email contains a functional unsubscribe link (CAN-SPAM).",
-        "GCC recipients (UAE, SA, OM, QA, KW, BH) covered by PDPL-style rules per jurisdiction; the gate routes by country_code."
+        "Gulf recipients (UAE, SA, OM, QA, KW, BH): no Gulf statute is modeled, so the gate applies the service's own opt-in default (recorded opt-in for marketing, an 08:00-21:00 local solicitation window) and its answer says so. The country is read from the recipient's number; a marketing or follow-up message whose country_code contradicts the number is refused as jurisdiction_conflict."
       ],
       "input_schema": {
         "type": "object",
@@ -2398,18 +2398,18 @@
           "jurisdiction_source": {
             "type": "string",
             "enum": ["caller", "recipient_number", "unknown"],
-            "description": "How the jurisdiction was decided: the caller's country_code, the recipient number's country calling code (which wins over a contradicting country_code), or unknown."
+            "description": "How the jurisdiction was decided: the caller's country_code, the recipient number's country calling code (which wins over a contradicting country_code for a message that is not a solicitation), or unknown (which includes a marketing or follow-up message whose country_code contradicts the number)."
           },
           "jurisdiction_conflict": {
             "type": "string",
-            "description": "Present only when country_code contradicted the recipient number or could not be used; says which jurisdiction was applied instead."
+            "description": "Present only when country_code contradicted the recipient number or could not be used. For a message that is not a solicitation it says which jurisdiction was applied instead; for a marketing or follow-up message none was, and the answer is rule jurisdiction_conflict."
           },
           "rule_set": {
             "type": "object",
-            "description": "What the rules applied are based on. basis is 'statute' where a named statute is modeled (US, EU/UK states modeled, Canada) and 'conservative_default' everywhere else, which means no statute of that country was applied - the service's own opt-in policy was.",
+            "description": "What the rules applied are based on. basis is 'statute' where a named statute is modeled (US, EU/UK states modeled, Canada) and 'conservative_default' everywhere else, which means no statute of that country was applied - the service's own opt-in policy was. It is 'undecided' (code null) when a marketing or follow-up message's country_code contradicts the recipient number: the gate refused to choose and applied no rule set.",
             "properties": {
-              "code": {"type": "string"},
-              "basis": {"type": "string", "enum": ["statute", "conservative_default"]},
+              "code": {"type": ["string", "null"]},
+              "basis": {"type": "string", "enum": ["statute", "conservative_default", "undecided"]},
               "statutes_modeled": {"type": "array", "items": {"type": "string"}},
               "note": {"type": "string"}
             }

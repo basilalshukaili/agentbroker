@@ -19,12 +19,22 @@ The quiet-hours version of this lookup took every digit out of any string, so an
 user44@example.com read as a British number; this one does not.
 
 THE RULES BELOW ARE DELIBERATE:
-  * When the number names exactly one country and the caller's country_code names another, the NUMBER wins and
-    the contradiction is reported in plain words. A caller cannot move a number's rules by typing a different
-    country, and every rule set this gate implements is opt-in or stricter for marketing, so the number's own
-    country is the safe side to resolve towards.
+  * When the number names exactly one country and the caller's country_code names another, what happens depends
+    on what is being sent. For a message that is not a solicitation (transactional, reminder, notification...)
+    the NUMBER wins and the contradiction is reported in plain words: a caller cannot move a number's rules by
+    typing a different country. For a SOLICITATION (marketing and follow-up, the types quiet hours governs) the
+    number does not win, because "the number's country" is not the safe side: the calling-hours and carrier
+    rules follow where the person is, a roaming or expatriate recipient is exactly the case where the two
+    differ, and the review of 2026-10-04 measured 2,914 answers that had been refusals become allows when the
+    number was let to override. The jurisdiction is then UNRESOLVED (country None, `contradicts` True) and the
+    gate refuses with `jurisdiction_conflict` until the caller removes the contradiction.
+  * A country_code that is an EU-wide label ("EU") is consistent with the number of any EU member state, and the
+    usual non-ISO spellings (UK, USA, the ISO 3166 alpha-3 codes) are read as the country they name.
   * When the number names only a shared region and the caller's country_code is outside it, the jurisdiction is
     UNRESOLVED (country None), never guessed. Marketing is then refused as `jurisdiction_required`.
+  * An unresolved jurisdiction is not "possibly American" unless the number could be: only a +1 number, or
+    something that is not a number at all, can be a US recipient, so the US-only 10DLC carrier rule is applied
+    to those and to no others (`could_be_us`). A +7 number is Russian or Kazakhstani, never American.
   * Nothing here talks to the network, a database or the clock. Pure functions.
 
 Territories that share a calling code with their sovereign state (Guernsey, Jersey and the Isle of Man with
@@ -37,6 +47,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Optional
+
+# The message types that count as solicitation. One definition: quiet hours reads it too, and a conflict between
+# the number and the caller's country_code is judged by the same line (see the module docstring).
+from compliance.quiet_hours import SOLICITATION_TYPES
 
 # Calling codes that name exactly one country (its principal one; see the module docstring).
 CALLING_CODES: dict = {
@@ -91,6 +105,62 @@ _SHARED_REGION_NAME = {
     "7": "Russia or Kazakhstan",
 }
 
+# The member states of the EU. A caller who says "EU" for a recipient whose number is a member state's is not
+# contradicting the number: the EU-wide rule set and the member's own are both GDPR.
+EU_MEMBERS = frozenset({
+    "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU",
+    "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+})
+
+# What callers actually type for a country: "UK" (not an ISO code) and the ISO 3166-1 alpha-3 codes. Without
+# this a caller who wrote "GBR" or "UK" for a British number was told their country_code "contradicts" it, and
+# "USA" for a +1 number was treated as outside North America and refused. One entry per country the tables above
+# know; a test pins that every one of them has its alpha-3 code and that no two share one. "ASC" (Ascension) and
+# "XKX" (Kosovo) are the user-assigned codes in common use for the two entries that have no official alpha-3.
+COUNTRY_ALIASES: dict = {
+    "UK": "GB",
+    # Africa and the 2xx block
+    "EGY": "EG", "SSD": "SS", "MAR": "MA", "DZA": "DZ", "TUN": "TN", "LBY": "LY", "GMB": "GM", "SEN": "SN",
+    "MRT": "MR", "MLI": "ML", "GIN": "GN", "CIV": "CI", "BFA": "BF", "NER": "NE", "TGO": "TG", "BEN": "BJ",
+    "MUS": "MU", "LBR": "LR", "SLE": "SL", "GHA": "GH", "NGA": "NG", "TCD": "TD", "CAF": "CF", "CMR": "CM",
+    "CPV": "CV", "STP": "ST", "GNQ": "GQ", "GAB": "GA", "COG": "CG", "COD": "CD", "AGO": "AO", "GNB": "GW",
+    "IOT": "IO", "ASC": "AC", "SYC": "SC", "SDN": "SD", "RWA": "RW", "ETH": "ET", "SOM": "SO", "DJI": "DJ",
+    "KEN": "KE", "TZA": "TZ", "UGA": "UG", "BDI": "BI", "MOZ": "MZ", "ZMB": "ZM", "MDG": "MG", "REU": "RE",
+    "ZWE": "ZW", "NAM": "NA", "MWI": "MW", "LSO": "LS", "BWA": "BW", "SWZ": "SZ", "COM": "KM", "ZAF": "ZA",
+    "SHN": "SH", "ERI": "ER", "ABW": "AW", "FRO": "FO", "GRL": "GL",
+    # Europe
+    "GRC": "GR", "NLD": "NL", "BEL": "BE", "FRA": "FR", "ESP": "ES", "GIB": "GI", "PRT": "PT", "LUX": "LU",
+    "IRL": "IE", "ISL": "IS", "ALB": "AL", "MLT": "MT", "CYP": "CY", "FIN": "FI", "BGR": "BG", "HUN": "HU",
+    "LTU": "LT", "LVA": "LV", "EST": "EE", "MDA": "MD", "ARM": "AM", "BLR": "BY", "AND": "AD", "MCO": "MC",
+    "SMR": "SM", "VAT": "VA", "UKR": "UA", "SRB": "RS", "MNE": "ME", "XKX": "XK", "HRV": "HR", "SVN": "SI",
+    "BIH": "BA", "MKD": "MK", "ITA": "IT", "ROU": "RO", "CHE": "CH", "CZE": "CZ", "SVK": "SK", "LIE": "LI",
+    "AUT": "AT", "GBR": "GB", "DNK": "DK", "SWE": "SE", "NOR": "NO", "POL": "PL", "DEU": "DE",
+    # The Americas
+    "FLK": "FK", "BLZ": "BZ", "GTM": "GT", "SLV": "SV", "HND": "HN", "NIC": "NI", "CRI": "CR", "PAN": "PA",
+    "SPM": "PM", "HTI": "HT", "PER": "PE", "MEX": "MX", "CUB": "CU", "ARG": "AR", "BRA": "BR", "CHL": "CL",
+    "COL": "CO", "VEN": "VE", "GLP": "GP", "BOL": "BO", "GUY": "GY", "ECU": "EC", "GUF": "GF", "PRY": "PY",
+    "MTQ": "MQ", "SUR": "SR", "URY": "UY", "CUW": "CW",
+    # The North American Numbering Plan
+    "USA": "US", "CAN": "CA", "ATG": "AG", "AIA": "AI", "ASM": "AS", "BRB": "BB", "BMU": "BM", "BHS": "BS",
+    "DMA": "DM", "DOM": "DO", "GRD": "GD", "GUM": "GU", "JAM": "JM", "KNA": "KN", "CYM": "KY", "LCA": "LC",
+    "MNP": "MP", "MSR": "MS", "PRI": "PR", "SXM": "SX", "TCA": "TC", "TTO": "TT", "VCT": "VC", "VGB": "VG",
+    "VIR": "VI",
+    # South-east Asia and Oceania
+    "MYS": "MY", "AUS": "AU", "IDN": "ID", "PHL": "PH", "NZL": "NZ", "SGP": "SG", "THA": "TH", "TLS": "TL",
+    "NFK": "NF", "BRN": "BN", "NRU": "NR", "PNG": "PG", "TON": "TO", "SLB": "SB", "VUT": "VU", "FJI": "FJ",
+    "PLW": "PW", "WLF": "WF", "COK": "CK", "NIU": "NU", "WSM": "WS", "KIR": "KI", "NCL": "NC", "TUV": "TV",
+    "PYF": "PF", "TKL": "TK", "FSM": "FM", "MHL": "MH",
+    # Russia and Kazakhstan, which share +7
+    "RUS": "RU", "KAZ": "KZ",
+    # East, west, south and central Asia
+    "JPN": "JP", "KOR": "KR", "VNM": "VN", "PRK": "KP", "HKG": "HK", "MAC": "MO", "KHM": "KH", "LAO": "LA",
+    "CHN": "CN", "BGD": "BD", "TWN": "TW", "TUR": "TR", "IND": "IN", "PAK": "PK", "AFG": "AF", "LKA": "LK",
+    "MMR": "MM", "MDV": "MV", "LBN": "LB", "JOR": "JO", "SYR": "SY", "IRQ": "IQ", "KWT": "KW", "SAU": "SA",
+    "YEM": "YE", "OMN": "OM", "PSE": "PS", "ARE": "AE", "ISR": "IL", "BHR": "BH", "QAT": "QA", "BTN": "BT",
+    "MNG": "MN", "NPL": "NP", "IRN": "IR", "TJK": "TJ", "TKM": "TM", "AZE": "AZ", "GEO": "GE", "KGZ": "KG",
+    "UZB": "UZ",
+}
+
 _E164 = re.compile(r"^(?:\+|00)([0-9][0-9 ().\-]{5,29})$")
 # A country_code is repeated in OUR sentences, labels and audit rows only if it looks like a code. Anything else
 # (a phrase, a sentence of instructions) is ignored and said to be ignored, never echoed.
@@ -107,6 +177,11 @@ class Resolution:
     supplied: Optional[str]          # the caller's country_code, trimmed and upper-cased
     conflict: Optional[str]          # a sentence when the caller's country_code contradicts the number
     calling_code: Optional[str] = None
+    # True when the number names exactly ONE country and a recognizable country_code names a DIFFERENT one. For
+    # a solicitation the country is then None (unresolved) and the gate refuses; otherwise the number's country
+    # is used and `conflict` says so. Not set for a shared calling code (+1, +7): there the number names no
+    # single country, so nothing is contradicted - the country is simply unresolved.
+    contradicts: bool = False
 
 
 def _digits(recipient_id) -> Optional[str]:
@@ -148,11 +223,19 @@ def _normalize(country_code) -> tuple:
         return None, False
     if not _SAFE_COUNTRY.match(code):
         return None, True
-    return code, False
+    return COUNTRY_ALIASES.get(code, code), False
 
 
-def resolve_jurisdiction(recipient_id, country_code) -> Resolution:
-    """Decide the country a send is judged under. See the module docstring for the rules."""
+def _is_solicitation(message_type) -> bool:
+    return isinstance(message_type, str) and message_type.strip().lower() in SOLICITATION_TYPES
+
+
+def resolve_jurisdiction(recipient_id, country_code, message_type=None) -> Resolution:
+    """Decide the country a send is judged under. See the module docstring for the rules.
+
+    `message_type` matters in exactly one case: a number that names one country, with a country_code that names
+    another. For a solicitation (marketing, follow_up) that is left UNRESOLVED and flagged `contradicts`; for
+    anything else, and when no message_type is given, the number's country is used."""
     supplied, ignored = _normalize(country_code)
     digits = _digits(recipient_id)
     code = _calling_code(digits) if digits else None
@@ -164,9 +247,19 @@ def resolve_jurisdiction(recipient_id, country_code) -> Resolution:
             return Resolution(number_country, "recipient_number", number_country, None, note, code)
         if supplied == number_country:
             return Resolution(number_country, "caller", number_country, supplied, None, code)
+        if supplied == "EU" and number_country in EU_MEMBERS:
+            return Resolution(number_country, "recipient_number", number_country, supplied, None, code)
+        if _is_solicitation(message_type):
+            conflict = (f"country_code '{supplied}' contradicts the recipient number: +{code} is the "
+                        f"country calling code of {number_country}. A marketing or follow-up message is judged "
+                        f"by where the recipient is, which the gate cannot tell from two different answers, so "
+                        f"it does not choose between them: pass {number_country} if the recipient is there, or "
+                        f"correct the recipient number.")
+            return Resolution(None, "unknown", number_country, supplied, conflict, code, contradicts=True)
         conflict = (f"country_code '{supplied}' contradicts the recipient number: +{code} is the "
                     f"country calling code of {number_country}, so {number_country} was used.")
-        return Resolution(number_country, "recipient_number", number_country, supplied, conflict, code)
+        return Resolution(number_country, "recipient_number", number_country, supplied, conflict, code,
+                          contradicts=True)
 
     if code in SHARED_CALLING_CODES:
         shared = SHARED_CALLING_CODES[code]
@@ -182,6 +275,16 @@ def resolve_jurisdiction(recipient_id, country_code) -> Resolution:
     if supplied:
         return Resolution(supplied, "caller", None, supplied, None, None)
     return Resolution(None, "unknown", None, None, note, None)
+
+
+def could_be_us(resolution: Resolution) -> bool:
+    """May this send be to a US recipient? True when the country is the US; when it is unsettled, true only if
+    the number could be an American one - a +1 number (the North American Numbering Plan), or something that is
+    not an E.164 number with a known calling code at all. A +44, +968 or +7 number never can be, whatever the
+    caller typed, so a US-only rule (10DLC carrier registration) is never applied to it."""
+    if resolution.country is not None:
+        return resolution.country == "US"
+    return resolution.calling_code in (None, "1")
 
 
 def jurisdiction_label(country: Optional[str], state: Optional[str] = None) -> str:

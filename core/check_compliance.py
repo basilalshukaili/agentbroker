@@ -61,8 +61,8 @@ from core.models import (
     OutcomeReceipt,
 )
 from compliance.jev_advisory import get_restricted_category_advisory
-from compliance.jurisdiction_rules import describe_rule_set
-from compliance.number_jurisdiction import jurisdiction_label, resolve_jurisdiction
+from compliance.jurisdiction_rules import describe_resolved
+from compliance.number_jurisdiction import could_be_us, jurisdiction_label, resolve_jurisdiction
 from compliance.remediation import remediation_for as _remediation_for_shared
 
 _VALID_CHANNELS = ("sms", "email", "voice")
@@ -210,14 +210,18 @@ def _ruleset_evidence(country_code, state_code, resolution=None) -> dict:
     import compliance.pre_check as _pc
 
     applied = resolution.country if resolution is not None else country_code
+    # A solicitation whose number and country_code contradict each other was refused WITHOUT applying any rule
+    # set; the receipt must not claim the international default decided it.
+    undecided = resolution is not None and resolution.contradicts and resolution.country is None
     rules = _jr.infer_jurisdiction(applied, state_code)
-    described = _jr.describe_rule_set(applied, state_code)
+    described = ({"basis": "undecided", "statutes_modeled": []} if undecided
+                 else _jr.describe_rule_set(applied, state_code))
     return {
         "gate": "compliance.pre_check (preview mode: decision only, no send, "
                 "no audit-log write)",
         "gate_source_sha256": source_fingerprint(_pc),
         "jurisdiction_rules_source_sha256": source_fingerprint(_jr),
-        "jurisdiction_applied": rules.jurisdiction_code,
+        "jurisdiction_applied": None if undecided else rules.jurisdiction_code,
         # Which country the rules were selected for, and how that was decided: the caller's country_code, the
         # recipient number's country calling code, or neither.
         "country_applied": applied,
@@ -233,7 +237,7 @@ def _ruleset_evidence(country_code, state_code, resolution=None) -> dict:
         # produced this decision.
         "jurisdiction_supplied_by_caller": bool(country_code),
         "supported_jurisdictions": len(_jr.list_supported_jurisdictions()),
-        "rules_applied": dataclasses.asdict(rules),
+        "rules_applied": None if undecided else dataclasses.asdict(rules),
     }
 
 
@@ -271,10 +275,10 @@ def _attach(result: dict, operation_id: str, subject: dict, inputs: dict,
 
 def _scope_sentence(channel: str, resolution) -> str:
     """What this preview covers. 10DLC carrier registration is a US SMS requirement, so it is named only for an
-    SMS whose country is the US or unknown (where the gate assumes it): naming it on an Omani answer would put a
-    US rule in the record of a send it was never applied to."""
+    SMS to a US recipient or one the number could not rule out (a +1 number, or no number at all): naming it on
+    an Omani or a +7 answer would put a US rule in the record of a send it was never applied to."""
     rules = "restricted content, opt-out, marketing consent and quiet hours"
-    if channel == "sms" and (resolution is None or resolution.country in (None, "US")):
+    if channel == "sms" and (resolution is None or could_be_us(resolution)):
         rules = "restricted content, opt-out, marketing consent, quiet hours and 10DLC campaign registration"
     sentence = f"Outbound-messaging gate only: {rules}."
     if channel == "voice":
@@ -350,8 +354,8 @@ async def handle_check_compliance(
     # WHICH RULES, AND WHY (Door Reliability Run D2): the recipient's number decides when it names one country,
     # then the caller's country_code, else the jurisdiction is unknown - and an unknown one is reported as
     # "unknown", not as "US".
-    resolution = resolve_jurisdiction(recipient_id, country_code)
-    rule_set = describe_rule_set(resolution.country, state_code)
+    resolution = resolve_jurisdiction(recipient_id, country_code, message_type)
+    rule_set = describe_resolved(resolution, state_code)
 
     base_result = {
         "channel": channel,

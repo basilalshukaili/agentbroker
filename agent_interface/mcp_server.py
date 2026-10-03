@@ -676,6 +676,20 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
                          "Request must be a JSON object" if not_an_object else "Missing 'method' field"),
         ).to_dict()
 
+    # `method` MUST BE A STRING (JSON-RPC 2.0). A list or an object used to reach the handler table below and
+    # raise "unhashable type" - an HTTP 500 carrying a Python exception text, on every door, with no
+    # credentials (found by the independent review of 2026-10-04, which fuzzed the envelope). It is a malformed
+    # request, answered as one, before anything keyed on it.
+    if not isinstance(method, str):
+        obs.outcome, obs.error_code = "rpc_error", "invalid_request"
+        return JsonRpcResponse(
+            id=rpc_id,
+            error=_error(
+                ERR_INVALID_REQUEST,
+                f"'method' must be a string, got {_argtypes.type_phrase(method)}. Name the method as text, "
+                f"for example \"tools/list\" or \"tools/call\". Nothing was run or charged."),
+        ).to_dict()
+
     if params_not_object:
         obs.outcome, obs.error_code = "rpc_error", "invalid_argument"
         _got = _argtypes.json_type(raw_params)
@@ -928,8 +942,13 @@ def _as_enum(enum_cls, value, field: str):
         return enum_cls(value)
     except (ValueError, KeyError):
         allowed = [getattr(m, "value", m) for m in enum_cls]
+        # What arrived is echoed so the caller can see the typo, but only the first 40 characters of it: this
+        # message is built from a value an unauthenticated caller chose, and was echoed in full.
+        shown = repr(value)
+        if len(shown) > 40:
+            shown = shown[:37] + "..."
         raise _ParamError(
-            f"'{field}' must be one of {allowed}, got {value!r}.") from None
+            f"'{field}' must be one of {allowed}, got {shown}.") from None
 
 
 class _ToolError(Exception):
@@ -1221,11 +1240,25 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     covers every billing branch: bypass, x402, credits, quota, free.
     """
     name = params.get("name")
+    _require_tool_name(name)         # before anything below asks `name in <set>`: a list is not hashable
     arguments = params.get("arguments")
     idem_key: Optional[str] = None
     if isinstance(arguments, dict) and "idempotency_key" in arguments:
         _v = arguments.pop("idempotency_key")  # pop -> handlers never see it
-        idem_key = str(_v)[:128] if _v else None
+        # THE KEY IS AN ARGUMENT THE SCHEMA DECLARES (a string, at most 128 characters, on every write tool),
+        # AND THIS IS WHERE IT IS READ - so this is where its type is checked. It used to be turned into text
+        # with str(): 12345 and {"a": 1} became claim keys, and a falsy key (0, false, []) silently switched the
+        # retry contract OFF on a write tool, so a retry could double-send or double-charge. Only the write
+        # tools advertise it; on any other tool a stray one is consumed and has no effect, as before.
+        if name in _WRITE_TOOLS_REQUIRING_AUTH:
+            _key_problems = _argtypes.idempotency_key_problems(_v)
+            if _key_problems:
+                raise _ArgumentTypeError(
+                    _argtypes.explain(name, _key_problems,
+                                      hint="It is the retry key: send a string of your own, or leave it out."),
+                    name, _key_problems)
+        idem_key = _v if (isinstance(_v, str) and _v.strip()
+                          and len(_v) <= _argtypes.IDEMPOTENCY_KEY_MAX) else None
     if not idem_key:
         _hv = (headers or {}).get("x-idempotency-key", "")
         idem_key = str(_hv)[:128] if _hv else None
@@ -1242,6 +1275,16 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
                 _scope = "tok_" + _hl.sha256(_raw_tok.encode()).hexdigest()[:16]
 
     if _scope and idem_key:
+        # THE TYPE GUARD RUNS BEFORE THE CLAIM. A call that is going to be refused for a wrong-typed argument
+        # used to take the key first and release it when the guard raised: for that moment a retry of the
+        # SAME key was told "in progress" by a call that was never going to run. The guard is repeated in
+        # _h_tools_call_impl (cheap, and that is the place a caller who skips this wrapper reaches).
+        _guard_op = get_operation(name)
+        if _guard_op:
+            _guard_args, _guard_problems = _argtypes.check(
+                name, _guard_op.get("input_schema"), arguments if isinstance(arguments, dict) else {})
+            if _guard_problems:
+                raise _ArgumentTypeError(_argtypes.explain(name, _guard_problems), name, _guard_problems)
         from agent_interface import idempotency_gate as _ig
         _ah = _ig.args_hash(arguments if isinstance(arguments, dict) else {})
         _status, _hit = await _ig.claim(_scope, name, idem_key)
@@ -1307,8 +1350,21 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     return await _h_tools_call_impl(params, headers)
 
 
+def _require_tool_name(name: Any) -> None:
+    """The `name` of a tools/call must be a string. Anything else (a list, an object, a number) used to reach a
+    set or dict lookup keyed on it and raise "unhashable type" as a -32603 "Internal error" on every narrow
+    door; it is the caller's mistake, answered as one, with the same guided shape as every other wrong type."""
+    problems = _argtypes.tool_name_problems(name)
+    if problems:
+        raise _ArgumentTypeError(
+            _argtypes.explain("tools/call", problems,
+                              hint="Pass the tool's name as a string, as listed by tools/list."),
+            "tools/call", problems)
+
+
 async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> dict:
     name = params.get("name")
+    _require_tool_name(name)
     arguments = params.get("arguments", {}) or {}
     if not name:
         raise _ParamError("Missing 'name' parameter")
@@ -2636,8 +2692,9 @@ async def _h_resources_read(params: dict) -> dict:
                     "reminder, follow_up, notification, marketing. Marketing requires a "
                     "valid `consent_record_id` referencing a recorded opt-in in the "
                     "consent_store; the compliance gate verifies at send time and rejects "
-                    "any marketing send without recorded consent (TCPA / GDPR / CASL / PDPL "
-                    "across 26 jurisdictions). Cold outreach, drip campaigns, bulk lists, "
+                    "any marketing send without recorded consent (TCPA / GDPR / CASL where "
+                    "those statutes apply, the service's own opt-in default everywhere else, "
+                    "the Gulf states included). Cold outreach, drip campaigns, bulk lists, "
                     "and A/B sends are out of scope and rate-limited regardless.\n"
                     "1. (optional) `POST /compliance/check` to preview legality for the jurisdiction\n"
                     "2. `send_message(...)` — gate runs again at send time\n"

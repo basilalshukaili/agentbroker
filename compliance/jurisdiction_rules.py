@@ -190,12 +190,13 @@ def _has_own_entry(cc: str | None) -> bool:
     return bool(cc) and cc in _RULES and cc != "INTERNATIONAL"
 
 
-def consent_basis_sentence(country_code) -> str:
-    """Why a marketing SMS to this country needs recorded opt-in, in words that do not name a law that was not
-    applied. For a jurisdiction with a modeled statute the statute's own rule id says it, so this is only used
-    where none is."""
+def consent_basis_sentence(country_code, what: str = "marketing SMS") -> str:
+    """Why a marketing message to this country needs recorded opt-in, in words that do not name a law that was
+    not applied. `what` names the kind of message ("marketing SMS", "marketing calls", "marketing email").
+    For a jurisdiction with a modeled statute the statute's own rule id says it, so this is only used where
+    none is."""
     cc = _clean_country(country_code)
-    tail = ("recorded opt-in consent is required for marketing SMS. This is the service's own policy, not a "
+    tail = ("recorded opt-in consent is required for " + what + ". This is the service's own policy, not a "
             "citation of {law} law.")
     if cc is None:
         return ("No country was supplied and none could be read from the recipient, so the INTERNATIONAL "
@@ -232,6 +233,17 @@ def describe_rule_set(country_code, state_code: str | None = None) -> dict:
                 f"({_DEFAULT_POLICY}). It is the service's own policy, not a citation of {shown} law.")
     return {"code": rules.jurisdiction_code, "basis": "conservative_default",
             "statutes_modeled": [], "note": note}
+
+
+def describe_resolved(resolution, state_code: str | None = None) -> dict:
+    """describe_rule_set for a number_jurisdiction.Resolution - except that a solicitation whose recipient number
+    and country_code name different countries has NO rule set: the gate refused to choose, so it says nothing
+    about "the rule set that applied" (basis "undecided") rather than describing a default it did not use."""
+    if getattr(resolution, "contradicts", False) and resolution.country is None:
+        return {"code": None, "basis": "undecided", "statutes_modeled": [],
+                "note": "No rule set was applied: " + (resolution.conflict or "the recipient number and "
+                                                       "country_code name different countries.")}
+    return describe_rule_set(resolution.country, state_code)
 
 
 def rule_sets_listing() -> list[dict]:

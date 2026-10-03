@@ -27,6 +27,17 @@ REMEDIATION = {
     "voice_marketing_consent": (
         "Obtain and record the recipient's prior express consent for marketing calls, or use a non-marketing "
         "purpose for the call."),
+    "whatsapp_marketing_consent": (
+        "Record the recipient's opt-in for marketing on WhatsApp and pass its consent_record_id, or send a "
+        "non-marketing message type. An opt-in given for SMS, email or calls does not cover WhatsApp, and this "
+        "service's own policy asks for it in every country."),
+    "marketing_consent": (
+        "Record the recipient's opt-in for marketing on this channel and pass its consent_record_id, or send a "
+        "non-marketing message type. An opt-in given for another channel does not cover it."),
+    "jurisdiction_conflict": (
+        "The recipient's number belongs to one country and country_code names another. For a marketing or "
+        "follow-up message the gate does not choose between them. Pass the country_code the number belongs to "
+        "(the answer names it), or correct the recipient number, then run the check again."),
     "email_marketing_consent": (
         "Obtain and record the recipient's opt-in for marketing email, or send a non-marketing message type."),
     "TCPA_quiet_hours": (

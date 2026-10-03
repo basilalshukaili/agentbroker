@@ -62,8 +62,8 @@ receipt, verifiable offline against the public key at hatchloop.dev/agents.md.
 Live lookups against official sources: OFAC SDN, the EU Consolidated list,
 the UK Sanctions List, GLEIF LEI, SEC EDGAR, USASpending.gov federal contract
 awards. Also finds, verifies, messages, and schedules with small/mid-sized
-businesses, gated by a non-bypassable TCPA/GDPR/CASL/PDPL compliance check
-across 26 jurisdictions.
+businesses, gated by a non-bypassable compliance check (TCPA/GDPR/CASL where
+modeled, the service's own opt-in default for every other country).
 
 23 tools. 14 need no key (11 always-free + 3 free within a daily quota). The
 8 write tools need a free email-verified key (100 write ops/day) or credits/x402.

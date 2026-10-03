@@ -60,8 +60,10 @@ class AuditLog:
     It used to be the list alone, with a docstring promising that "production
     replaces with PostgreSQL-backed append-only table" - which nothing ever
     did. Meanwhile the privacy policy (web/pages.py) tells users we keep this
-    data "to prove compliance with TCPA, GDPR, CASL, PDPL, and equivalents on
-    request from a regulator or recipient". A trail that dies on every deploy
+    data "to show a regulator or recipient, on request, what the compliance
+    gate decided and why" (it used to say it proved compliance with a list of
+    statutes, one of which the gate does not implement). A trail that dies on
+    every deploy
     proves nothing, and the deploy happens far more often than the regulator
     asks (found 2026-08-26).
 

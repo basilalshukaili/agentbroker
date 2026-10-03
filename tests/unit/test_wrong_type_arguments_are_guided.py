@@ -197,9 +197,9 @@ def _cases():
         for path, declared, _prop in _walk(schema):
             if declared not in WORDS:
                 continue
-            top = re.split(r"[.\[]", path)[0]
-            if top == "idempotency_key":          # popped before validation by design
-                continue
+            # `idempotency_key` is swept like every other declared argument. It used to be skipped here ("popped
+            # before validation by design"), which is how a key of the wrong type was accepted and stringified:
+            # the dispatcher now checks it before it pops it (see test_guard_review_fixes_20261004.py).
             for label, value in WRONG_VALUES:
                 if _is(value, declared):
                     continue

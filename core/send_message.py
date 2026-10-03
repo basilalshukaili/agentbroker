@@ -14,6 +14,7 @@ from core.models import (
     ChannelPreference, ComplianceViolationError, ErrorCode
 )
 from core.ownership import owner_for_storage
+from compliance.number_jurisdiction import resolve_jurisdiction
 from channels.error_classification import classify_channel_failure
 import os
 
@@ -153,6 +154,17 @@ async def _do_send_message(
                 retriable=False,
                 trace_id=trace_id,
             )
+
+    # WHAT WAS DONE WITH THE SENDER'S country_code, told to the sender. The gate reads the country from the
+    # recipient's number and, for anything that is not a solicitation, lets the number override a contradicting
+    # country_code; a solicitation with a contradiction is refused. Until now only the free preview said so,
+    # so the tool that actually sends was the one that left a sender unaware their stated country was not
+    # the one applied. Pure and offline; added to the result only when there is something to say.
+    _resolution = resolve_jurisdiction(request.recipient.id_value, request.recipient.country_code,
+                                       request.message_type.value)
+    _jurisdiction_note: dict = ({"jurisdiction_source": _resolution.source,
+                                 "jurisdiction_conflict": _resolution.conflict}
+                                if _resolution.conflict else {})
 
     chain = _build_channel_chain(request.preferred_channel, request.recipient.id_value)
     attempted: list[str] = []
@@ -314,6 +326,7 @@ async def _do_send_message(
                             **({"pair_conflict": conversation["pair_conflict"]}
                                if conversation.get("pair_conflict") else {}),
                         }} if conversation else {}),
+                        **_jurisdiction_note,
                     },
                     cost=CostRecord(amount=cost_amount, currency="USD", basis="per_message"),
                     latency_ms=int((time.monotonic() - t0) * 1000),
@@ -347,7 +360,7 @@ async def _do_send_message(
                 status=OperationStatus.FAILURE,
                 reason_code="compliance_violation",
                 human_message=cve.message,
-                result={"rule": cve.rule, "jurisdiction": cve.jurisdiction},
+                result={"rule": cve.rule, "jurisdiction": cve.jurisdiction, **_jurisdiction_note},
                 cost=CostRecord(amount=0.0, currency="USD", basis="no_charge_compliance_block"),
                 latency_ms=int((time.monotonic() - t0) * 1000),
                 channel_used=None,

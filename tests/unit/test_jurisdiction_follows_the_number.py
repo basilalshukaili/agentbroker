@@ -296,9 +296,14 @@ def test_a_us_state_keeps_its_state_label():
 
 
 def test_a_conflicting_country_code_is_reported_and_the_number_wins():
-    r = check("+96891234567", country_code="US")
+    """For a message that is NOT a solicitation. (This test first used a marketing message and pinned "the
+    number wins" for it; the review of 2026-10-04 showed that was the unsafe direction, because the number's
+    country can have the milder calling-hours window. A marketing or follow-up message with a contradicting
+    country_code is now refused as `jurisdiction_conflict` - see test_gate_review_fixes_20261004.py.)"""
+    r = check("+96891234567", country_code="US", message_type="reminder",
+              content="Your appointment is tomorrow at 10:30.")
     res = r.result
-    assert res["jurisdiction"] == "OM" and res["rule"] == "sms_marketing_consent"
+    assert res["jurisdiction"] == "OM" and res["legal"] is True
     assert res["jurisdiction_source"] == "recipient_number"
     assert "US" in res["jurisdiction_conflict"] and "968" in res["jurisdiction_conflict"]
     assert not re.search(r"TCPA|10DLC", everything_said(r).replace(res["jurisdiction_conflict"], ""))
