@@ -185,11 +185,24 @@ UNTRUSTED_PATHS: dict[str, tuple[str, ...]] = {
         "result.possible_matches_unverified[].name",
         "result.possible_matches_unverified[].program",
         "result.possible_matches_unverified[].entity_type",
+        # Sound-based and Arabic-script matches (core/arabic_names.py): the
+        # primary Latin name of the party an Arabic alias belongs to, and the
+        # listed name elements the alignment names. Both are the publisher's
+        # words, however thoroughly reduced to letters.
+        "result.matches[].listed_primary_name",
+        "result.matches[].token_alignment[].listed_element",
+        "result.possible_matches_unverified[].listed_primary_name",
+        "result.possible_matches_unverified[].token_alignment[].listed_element",
     ),
     "map_trade_restriction": (
         "result.parties_screened[].matches[].name",
         "result.parties_screened[].matches[].program",
         "result.parties_screened[].possible_matches_unverified[].name",
+        # the sound-based fields screen_sanctions adds (core/arabic_names.py)
+        "result.parties_screened[].matches[].listed_primary_name",
+        "result.parties_screened[].matches[].token_alignment[].listed_element",
+        "result.parties_screened[].possible_matches_unverified[].listed_primary_name",
+        "result.parties_screened[].possible_matches_unverified[].token_alignment[].listed_element",
         "result.restrictions[].detail",
     ),
     # USASpending.gov award records. `description` is a free-text contract

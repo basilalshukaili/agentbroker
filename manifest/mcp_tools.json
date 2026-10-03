@@ -756,7 +756,7 @@
   },
   {
     "name": "screen_sanctions",
-    "description": "Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
+    "description": "Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -765,7 +765,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available for best accuracy."
+          "description": "Name of the person or entity to screen, in Latin or Arabic script, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available. Arabic names are also matched by sound across spellings."
         },
         "country": {
           "type": "string",

@@ -129,7 +129,7 @@ servers:
     kind: door
     of: agent-broker
     title: Sanctions Screening
-    description: "Screen a name or entity against OFAC SDN, the EU Consolidated list and the UK list."
+    description: "Screen a name or entity, in Latin or Arabic script, against OFAC SDN, EU and UK sanctions lists."
     prefix: ""
     legacy_unprefixed: true
     version: 0.2.13

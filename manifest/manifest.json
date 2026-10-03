@@ -2679,9 +2679,9 @@
     },
     {
       "name": "screen_sanctions",
-      "description": "Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
+      "description": "Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
       "when_to_use": "Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.",
-      "when_not_to_use": "Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.",
+      "when_not_to_use": "Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query. Arabic names are matched by transliteration, which is lossy: sound-alikes come back as graded candidates (match_confidence, token_alignment), never as findings; the one exception is an Arabic-script name equal to an Arabic alias a list prints. An Arabic query with no hits is 'partial', never 'clean'.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -2692,7 +2692,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available for best accuracy."
+            "description": "Name of the person or entity to screen, in Latin or Arabic script, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available. Arabic names are also matched by sound across spellings."
           },
           "country": {
             "type": "string",
@@ -2787,6 +2787,10 @@
               "type": "string"
             },
             "description": "Sources that were attempted but unavailable (fail-open: partial results returned)."
+          },
+          "arabic_matching": {
+            "type": "object",
+            "description": "Present when the name was Arabic-script or showed Arabic-name structure. Says whether the sound-based layer ran (applied, not_applied_reason), what it searched on (query_elements), how many candidates it produced (sound_based_candidates) and how many low-confidence pairs it counted but did not list (low_confidence_not_listed). Each sound-based candidate in possible_matches_unverified also carries match_basis, match_confidence (high or medium), match_explanation and token_alignment."
           }
         }
       },

@@ -61,7 +61,7 @@ All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_us
 | 8 | `check_booking_link` | Classify a URL and confirm import_booking_url will accept it  -  sub-100ms pre-flight | **free** |
 | 9 | `check_compliance` | Preview TCPA/GDPR/CASL/10DLC gate result before spending a paid send | **free** |
 | 10 | `verify_company_record` | Live GLEIF LEI registry + SEC EDGAR lookup  -  official legal name, status, jurisdiction, address | **free up to daily limit** |
-| 11 | `screen_sanctions` | Check a name or entity against OFAC SDN, the EU Consolidated list and the UK Sanctions List | **free up to daily limit** |
+| 11 | `screen_sanctions` | Check a name or entity, in Latin or Arabic script, against OFAC SDN, the EU Consolidated list and the UK Sanctions List. Arabic names are matched by transliteration (candidates with a stated confidence, never findings) and against the Arabic-script aliases the EU and UK print | **free up to daily limit** |
 | 12 | `map_trade_restriction` | OFAC country embargoes + export-control Entity List + sanctioned-party screening for a proposed shipment | **free up to daily limit** |
 | 13 | `get_conversation` | Read a two-way thread you started: state, full transcript, reply count | free, key |
 | 14 | `lookup_us_contracts` | Search US federal contract awards by company name via USASpending.gov  -  awardee, agency, amount, NAICS, period | **free** |
