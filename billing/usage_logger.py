@@ -47,6 +47,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from billing.pipeline_health import RollingOutcomes, failure_reason
+
 logger = logging.getLogger("smb_broker.usage_logger")
 
 # ---------------------------------------------------------------------------
@@ -68,16 +70,31 @@ _stats: dict = {
 }
 
 
+# What the last WINDOW_S seconds of writes looked like. `_stats` above only ever grows, so on its
+# own it cannot tell "lost a few writes in a database stall an hour ago" from "has been dead since
+# the last deploy"; the health verdict asks the window instead (billing/pipeline_health.py).
+_window = RollingOutcomes()
+
+
 def get_usage_logger_health() -> dict:
     """A snapshot a health check (self_test, /health) can read to tell a
     silently-dead metering pipeline from a healthy one, instead of only
-    finding out from a downstream row count days later."""
-    return {**_stats, "pending": len(_pending_tasks)}
+    finding out from a downstream row count days later.
+
+    `healthy` is the verdict (False only while a sustained share of recent writes
+    is failing, see billing/pipeline_health.py); `failed`/`succeeded`/
+    `last_failure_reason` are the cumulative counters and never reset."""
+    healthy, why = _window.assess()
+    snap = _window.snapshot()
+    return {**_stats, "pending": len(_pending_tasks), "healthy": healthy,
+            "unhealthy_reason": why, "recent_attempts": snap["attempts"],
+            "recent_failed": snap["failed"], "window_s": snap["window_s"]}
 
 
 def _record_success() -> None:
     _stats["succeeded"] += 1
     _stats["last_success_ts"] = datetime.now(timezone.utc).isoformat()
+    _window.record(True)
 
 
 def _record_failure(reason: str) -> None:
@@ -85,6 +102,20 @@ def _record_failure(reason: str) -> None:
     _stats["failed"] += 1
     _stats["last_failure_ts"] = datetime.now(timezone.utc).isoformat()
     _stats["last_failure_reason"] = reason
+    _window.record(False)
+
+
+def _log_write_exception(method: str, tool_name: Optional[str], exc: BaseException) -> None:
+    """One diagnostic line for a failed write, WITHOUT the `usage_log_failed` token.
+
+    That token belongs to _record_failure's line alone, so a count of `usage_log_failed` lines is a
+    count of failed writes. It used to be on both lines: 26 lines in the log of 2026-10-03 were
+    13 failed writes. A failure that already names its cause (RpcError) needs no traceback."""
+    if getattr(exc, "kind", None) in ("transport", "http", "decode"):
+        logger.error("usage_log_exception method=%s tool=%s err=%s", method, tool_name, exc)
+    else:
+        logger.error("usage_log_exception method=%s tool=%s err=%s", method, tool_name, exc,
+                     exc_info=exc)
 
 
 def _on_log_task_done(task: "asyncio.Task") -> None:
@@ -261,9 +292,8 @@ async def log_usage_event(
         else:
             _record_success()
     except Exception as exc:  # noqa: BLE001
-        logger.error("usage_log_failed method=%s tool=%s err=%s", method, tool_name, exc,
-                     exc_info=exc)
-        _record_failure(f"exception:{type(exc).__name__}")
+        _log_write_exception(method, tool_name, exc)
+        _record_failure(failure_reason(exc))
 
 
 def fire_log_usage(
@@ -418,9 +448,8 @@ async def log_usage_outcome(event: UsageEvent) -> None:
         else:
             _record_success()
     except Exception as exc:  # noqa: BLE001
-        logger.error("usage_log_failed method=%s tool=%s err=%s", event.method, event.tool_name,
-                     exc, exc_info=exc)
-        _record_failure(f"exception:{type(exc).__name__}")
+        _log_write_exception(event.method, event.tool_name, exc)
+        _record_failure(failure_reason(exc))
 
 
 def fire_log_outcome(event: UsageEvent) -> None:

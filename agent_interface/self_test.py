@@ -237,41 +237,40 @@ async def _check_metering_pipeline() -> TestCheck:
 
     This check does NOT make a network call (self_test's own contract is to
     hit no real external API) — it reads the in-process health snapshot each
-    rail now keeps (get_usage_logger_health / get_durable_meter_health) and
-    fails if either rail has ever recorded a failed write, or has a
-    scheduled write that never resolved. A clean process that has logged
-    nothing yet (both counters at zero) is healthy by default: this check
-    catches a rail that HAS tried and failed, or lost a task, not the
-    absence of traffic.
+    rail keeps (get_usage_logger_health / get_durable_meter_health).
+
+    It fails when a rail is FAILING NOW, not when it has ever failed: unhealthy means a
+    sustained share of the last few minutes of writes failed (billing/pipeline_health.py:
+    at least 3 failures and at least half of the recent attempts), or writes are stuck
+    pending. It used to fail for the rest of the process's life on the first failed write.
+    On 2026-10-02 12:12 UTC and again on 2026-10-03 07:16 UTC the database's shared connection
+    pool starved for 10-25 seconds and usage_events writes failed (13 of the last 24 hours'
+    15,283); the public self_test said `healthy: false` from the first stall until the
+    container was restarted at 18:39 on 2026-10-03, about 30 hours. A dead rail (every write
+    rejected) still trips it after three writes; a stall clears itself ten minutes after it
+    ends.
+    A clean process that has logged nothing yet is healthy by default.
     """
     start = time.time()
     try:
         from billing.usage_logger import get_usage_logger_health
         from billing.durable_meter import get_durable_meter_health
 
-        usage_health = get_usage_logger_health()
-        billing_health = get_durable_meter_health()
-
         problems = []
-        if usage_health["failed"] > 0:
-            problems.append(
-                f"usage_events: {usage_health['failed']} failed write(s), "
-                f"last={usage_health['last_failure_reason']}@{usage_health['last_failure_ts']}"
-            )
-        if billing_health["failed"] > 0:
-            problems.append(
-                f"billing_events: {billing_health['failed']} failed write(s), "
-                f"last={billing_health['last_failure_reason']}@{billing_health['last_failure_ts']}"
-            )
-        # A pending count that has been building up (rather than draining
-        # back toward zero between requests) is the "task never resolved"
-        # shape this whole audit exists to catch. A hard-coded threshold
-        # here (rather than 0) tolerates ordinary in-flight writes from
-        # concurrent requests without needing a time-windowed rate.
-        if usage_health["pending"] > 50:
-            problems.append(f"usage_events: {usage_health['pending']} writes stuck pending")
-        if billing_health["pending"] > 50:
-            problems.append(f"billing_events: {billing_health['pending']} writes stuck pending")
+        for label, health in (("usage_events", get_usage_logger_health()),
+                              ("billing_events", get_durable_meter_health())):
+            if not health.get("healthy", True):
+                problems.append(
+                    f"{label}: {health['unhealthy_reason']}, "
+                    f"last={health['last_failure_reason']}@{health['last_failure_ts']}"
+                )
+            # A pending count that has been building up (rather than draining
+            # back toward zero between requests) is the "task never resolved"
+            # shape this whole audit exists to catch. A hard-coded threshold
+            # here (rather than 0) tolerates ordinary in-flight writes from
+            # concurrent requests without needing a time-windowed rate.
+            if health["pending"] > 50:
+                problems.append(f"{label}: {health['pending']} writes stuck pending")
 
         ok = not problems
         return TestCheck(
