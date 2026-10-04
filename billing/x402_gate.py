@@ -213,6 +213,70 @@ def price_usd(name: str) -> Optional[str]:
     return _PRICING_USD.get(name)
 
 
+USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"          # Circle USDC, Base mainnet
+USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  # Circle test USDC, Base Sepolia
+
+
+def discovery_document() -> Optional[dict]:
+    """The /.well-known/x402 document, or None when this host does not take x402 payment.
+
+    DERIVED FROM THE GATE, never asserted. Every field comes from the same config the
+    gate quotes from (receiver, facilitator, network, public endpoint, per-tool prices
+    from billing/pricing.py), so the published document cannot name a different
+    address or price than the 402 offer an agent actually receives. Measured
+    2026-10-03: a static hatchloop.dev/.well-known/x402 named a payTo that differed
+    from the one the live container would have quoted, and described a rail whose
+    switch (X402_ENABLED) was off. When enabled() is False this returns None and
+    the route answers 404, so a document can never outlive the rail it describes.
+
+    There is no ratified core-spec format for this path. Indexers read
+    {"version": 1, "resources": [url, ...]} (the x402scan convention); an individual
+    IETF draft (draft-hawkins-x402-dns-discovery) names the manifest fields
+    x402Version / kind / resources. Both are carried, plus the two top-level fields
+    (payTo, network) the earlier static document used. Unknown fields are ignored
+    by both conventions.
+    """
+    if not enabled():
+        return None
+    # The three premium data tools are answered FREE, before the x402 branch, while DATA_METERING_ENABLED
+    # is off (the bypass in agent_interface/mcp_server.py), so a payment attached to one is never read.
+    # Listing them here would show free tools as pay-per-call to every indexer. This is the same
+    # predicate agent_interface/mcp_server._x402_tag uses, so the document and tools/list agree.
+    from billing import switches
+    from billing.data_quota import PREMIUM_DATA_TOOLS
+    metering = switches.data_metering_enabled()
+    prices = {t: p for t, p in _PRICING_USD.items() if metering or t not in PREMIUM_DATA_TOOLS}
+    accepts = [{
+        "scheme": "exact",
+        "network": MAINNET,
+        "asset": USDC_BASE,
+        "payTo": config.X402_RECEIVER_ADDRESS,
+    }]
+    if config.X402_ENABLE_TESTNET:
+        accepts.append({
+            "scheme": "exact",
+            "network": TESTNET,
+            "asset": USDC_BASE_SEPOLIA,
+            "payTo": config.X402_RECEIVER_ADDRESS,
+        })
+    return {
+        "version": 1,
+        "x402Version": 2,
+        "kind": "resource-server",
+        "name": "HatchLoop AgentBroker",
+        "description": ("Pay per tool call with USDC on Base, no account. Attach the signed "
+                        "payment as params._meta['x402/payment'] on a tools/call; send any "
+                        "value there first to receive the priced offer."),
+        "resources": [config.X402_PUBLIC_MCP_URL],
+        "accepts": accepts,
+        "facilitatorUrl": config.X402_FACILITATOR_URL,
+        "pricesUsd": dict(sorted(prices.items())),
+        "pricing": "https://hatchloop.dev/pricing",
+        "payTo": config.X402_RECEIVER_ADDRESS,
+        "network": MAINNET,
+    }
+
+
 # ---------------------------------------------------------------------------
 # CDP facilitator auth — EdDSA JWT per endpoint
 # ---------------------------------------------------------------------------
@@ -393,17 +457,20 @@ async def _notify_first_payment(ctx: Any) -> None:
 
 # Cooldown so a buyer retrying a payment several times doesn't spam Telegram.
 # In-memory: resets on restart, which is fine — re-alerting after a restart on a
-# genuine buyer is acceptable (better to over-signal a real buyer than miss one).
+# payer is acceptable (better to over-signal an attempt than miss a buyer).
 _buyer_intent_last_alert: dict[str, float] = {}
 _BUYER_INTENT_COOLDOWN_S = 900.0  # 15 min per tool
 
 
 async def _notify_buyer_intent(tool: str) -> None:
-    """Fire a Telegram push the moment a REAL buyer attempts to pay (an x402
-    payment payload arrived), BEFORE settlement. Crawlers/scorers never build
-    signed payments, so this is the earliest high-signal "a real buyer is here"
-    event — even if their payment later fails, the founder hears about it and can
-    react. Never raises."""
+    """Fire a Telegram push the moment a structurally valid x402 payment payload arrives, BEFORE
+    verification or settlement. Crawlers/scorers rarely build one, so it is an early, useful signal.
+
+    IT IS NOT PROOF OF A BUYER. The predicate (_is_signed_payment_attempt) is the SDK's own parse: it checks
+    the SHAPE (a payload and an `accepted` block), not the signature, so anyone can send a payload that passes
+    it, and this route is reachable anonymously. The text therefore says "unverified" and claims nothing about
+    who sent it. At most one alert per tool per 15 minutes. The PAID alert, after settlement, is the proof.
+    Never raises."""
     try:
         import time
         now = time.time()
@@ -414,10 +481,11 @@ async def _notify_buyer_intent(tool: str) -> None:
         from billing.telegram_revenue_alerts import send_telegram_alert
         usd = price_usd(tool) or "?"
         await send_telegram_alert("\n".join([
-            "*Agent Broker* — a real buyer is here. 👀",
-            f"An AI agent attached an x402 payment for `{tool}` (${usd} USDC).",
+            "*Agent Broker* — an x402 payment attempt arrived (unverified). 👀",
+            f"A caller attached an x402 payment payload for `{tool}` (${usd} USDC).",
             "Verifying + settling now — if it clears you'll get the PAID alert next.",
-            "(Crawlers don't build signed payments, so this is a genuine buyer attempt.)",
+            "(Only the payload's shape has been checked, not its signature: anyone can send one. "
+            "The PAID alert is the proof of a buyer.)",
         ]))
         log.info("x402 buyer-intent alert sent tool=%s", tool)
     except Exception as e:  # noqa: BLE001
@@ -470,6 +538,34 @@ def _mcp_result_to_jsonrpc(result: Any) -> dict:
     return out
 
 
+def _is_signed_payment_attempt(meta: Any) -> bool:
+    """True only when `_meta['x402/payment']` is a payment the x402 SDK itself would parse.
+
+    The server's own advertised quote flow tells an agent to send ANY value in
+    `_meta['x402/payment']` to receive the priced offer (the founder's
+    scripts/x402_test_payment.py sends the string "quote-request"). Treating every
+    non-empty value as "a real buyer is here" would page the founder, and bump the
+    payment-attempt counter, for each agent that merely asks the price - at most one
+    alert per tool per 15 minutes, but across ten paid tools that is a standing
+    stream of false alarms the moment the rail is advertised.
+
+    THE QUESTION IS "WOULD THE SDK TREAT THIS AS A PAYMENT?", SO THE SDK ANSWERS IT. A hand-written
+    shape test ("a dict with a non-empty `payload`") disagreed with the SDK in BOTH directions
+    (review of feat/x402-honesty-20261004, F4): it rejected a complete, valid payment sent as a JSON
+    string (which extract_payment_from_meta accepts and the wrapper then verifies and settles - a
+    real buyer who was never counted or announced), and it accepted `{"payload": {"a": 1}}`, which
+    the SDK parses to None (no `accepted`), so one anonymous request with that meta paged the founder
+    "a real buyer is here". Calling extract_payment_from_meta makes the two unable to differ.
+    """
+    if not isinstance(meta, dict):
+        return False
+    try:
+        from x402.mcp.utils import extract_payment_from_meta
+        return extract_payment_from_meta({"_meta": meta}) is not None
+    except Exception:  # noqa: BLE001 - a funnel counter must never raise into a sale
+        return False
+
+
 async def run_paid_tool(
     tool: str,
     arguments: dict,
@@ -495,7 +591,7 @@ async def run_paid_tool(
     try:
         from telemetry.metrics import record_paid_tool_attempt, record_payment_attempt
         record_paid_tool_attempt()
-        if isinstance(meta, dict) and meta.get("x402/payment"):
+        if _is_signed_payment_attempt(meta):
             record_payment_attempt()
             await _notify_buyer_intent(tool)
     except Exception as e:  # noqa: BLE001 — telemetry/alert must never block a sale

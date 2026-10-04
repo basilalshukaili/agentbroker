@@ -48,12 +48,18 @@ def _mcp_description() -> str:
 
 
 def _payments_block() -> dict:
-    """What a caller actually pays. Derived from billing/pricing.py.
+    """What a caller actually pays. Prices from billing/pricing.py, rails from billing/switches.py.
 
     The old hardcoded note said billing was "not yet active" and that "All
-    tools are currently free to call". Neither is true: credits are live and
-    write tools spend them. Telling an agent everything is free is the same
-    class of defect as a manifest advertising prices we do not charge.
+    tools are currently free to call", which was false while credits were
+    switched on. The replacement then asserted status "active" and the rail
+    ["credits"] as literals, which is false while they are switched off (the
+    running container, 2026-10-04). Telling an agent everything is free, or that
+    a rail is open, is the same class of defect as a manifest advertising prices
+    we do not charge: a claim written as a constant cannot follow a runtime flag.
+    So `status`, `rails`, `premium_data_quota_enforced` and the closing sentences
+    of `note` are read from the switches on every call; the access lists are a
+    classification and do not move.
     """
     try:
         from billing.pricing import _PRICING_CENTS
@@ -121,15 +127,36 @@ def _payments_block() -> dict:
     #
     # Derived rather than re-hardcoded to "credits, x402", because the next
     # person to switch the gate off must not have to remember this file.
-    try:
-        from billing import x402_gate
-        x402_live = x402_gate.enabled()
-    except Exception:  # noqa: BLE001
-        x402_live = False
+    #
+    # AND THE SAME WAS TRUE OF CREDITS, ONE LINE ABOVE. `rails = ["credits"] + ...` and
+    # `"status": "active"` were literals. Measured 2026-10-03: the running container has
+    # CREDITS_ENABLED=false and DATA_METERING_ENABLED=false, so no call is charged, a Polar
+    # purchase grants no credits, and the premium-data daily quota does not exist - while this
+    # document told every agent that credits were an active rail. Both now come from
+    # billing/switches.py, the same expressions the gates evaluate.
+    from billing import switches
+    rails = switches.live_rails()
+    x402_live = "x402" in rails
+    credits_live = "credits" in rails
+    metering_live = switches.data_metering_enabled()
+    quota_terms = switches.premium_data_terms()
 
-    rails = ["credits"] + (["x402"] if x402_live else [])
+    # What the switches being off means, in words, because an agent may read only the note.
+    # The access lists below are a CLASSIFICATION (which tools need a key, which carry a price)
+    # and stay put; what the switches decide is whether that price is ever charged.
+    switch_notes = ""
+    if not rails:
+        switch_notes += (
+            " No payment rail is switched on at this time, so no call is charged; the prices "
+            "here are the schedule that applies once a rail is enabled.")
+    elif not credits_live:
+        switch_notes += " Credits are not switched on at this time; x402 is the only way to pay."
+    if not metering_live:
+        switch_notes += (
+            " The free daily limit on the quota_free_tools is not enforced at this time: those tools "
+            "run free and unmetered.")
     return {
-        "status": "active",
+        "status": switches.payments_status(),
         # Callable with NO key and NO credits.
         "free_tools": free,
         # Cost no credits, but need a free key. Kept separate because an agent
@@ -145,17 +172,21 @@ def _payments_block() -> dict:
         # count seven different ways.
         "quota_free_tools": quota_free,
         "spends_credits_once_past_quota": spends_credits,
+        # Is the daily quota on quota_free_tools actually enforced? False means those tools run
+        # free and unmetered (DATA_METERING_ENABLED is off); the list is then a classification.
+        "premium_data_quota_enforced": metering_live,
         "note": (
             f"THREE NUMBERS, because 'free' means three things here. "
             f"{len(free)} tools are callable with NO key and NO credits. "
-            f"{len(quota_free)} more are callable with no key up to a daily "
-            f"quota, then cost credits. That is {len(free) + len(quota_free)} "
+            f"{len(quota_free)} more are callable with no key {quota_terms}. "
+            f"That is {len(free) + len(quota_free)} "
             f"usable without signing up. The remaining {len(paid) + len(free_with_key)} "
-            f"need a free key, and {len(spends_credits)} spend credits once past any "
-            f"quota (the quota-free ones only past it). Every tool is in exactly one of "
+            f"need a free key, and {len(spends_credits)} carry a list price (the quota-free "
+            f"ones only past their quota, where one is enforced). Every tool is in exactly one of "
             f"free_tools, quota_free_tools, free_with_key_tools, paid_tools. Call preview_cost "
-            f"(free) for the exact price of any operation before committing. "
-            f"Pricing: https://hatchloop.dev/pricing"
+            f"(free) for the exact price of any operation before committing."
+            + switch_notes
+            + f" Pricing: https://hatchloop.dev/pricing"
             + (" No account needed to pay per call: attach an x402 payment in "
                "params._meta['x402/payment'] and the server returns a signed "
                "price offer (USDC on Base) for any paid tool."
@@ -175,19 +206,30 @@ def describe_cost(cost: dict) -> str:
     """
     if not cost:
         return ""
+    from billing import switches
     basis = cost.get("basis")
     amount = cost.get("unit_price_usd", cost.get("amount_usd"))
+    # The daily quota on the premium data tools exists only while DATA_METERING_ENABLED is on. Off, those
+    # tools run free and unmetered (the descriptor says premium_data_quota_enforced=false), so the quota
+    # sentence is not true and the tool is simply free.
+    if basis == "freemium_daily_quota" and not switches.data_metering_enabled():
+        basis = "free"
     if basis == "free" or amount in (0, 0.0):
         return "Cost: free (no key required)."
     if basis == "freemium_daily_quota":
+        # With no rail on, a call past the quota is refused, not charged and not carried on free.
+        if not switches.charging_active():
+            return f"Cost: free within the daily quota; past it the call is {switches.QUOTA_REFUSED}."
         return f"Cost: free within the daily quota, then ${amount} per call."
     if amount is None:
         return "Cost: see preview_cost."
+    # While no payment rail is on, a price is a schedule: nothing is charged. The figure stays.
+    nc = switches.not_charged_note()
     max_usd = cost.get("max_price_usd")
     if max_usd and max_usd != amount:
         return (f"Cost: from ${amount} per call, up to ${max_usd} "
-                f"(call preview_cost for the exact price).")
-    return f"Cost: ${amount} per call."
+                f"(call preview_cost for the exact price" + (f"; {nc}" if nc else "") + ").")
+    return f"Cost: ${amount} per call" + (f" ({nc})." if nc else ".")
 
 
 # ---------------------------------------------------------------------------
@@ -422,10 +464,11 @@ def get_agent_card() -> dict:
             # DERIVED, not asserted. This block said status "coming_soon",
             # "Billing is in development", "all tools are callable at no cost"
             # and "Crypto payment is not offered" - FOUR claims, every one of
-            # them false. Credits went live 2026-08-24 and the x402 rail has
-            # been accepting payment offers in production. An agent card is
-            # read by machines deciding whether they can transact with us, so
-            # these were the most expensive wrong sentences on the site.
+            # them false on the day they were read. The replacement then said
+            # "active" with the credits rail unconditionally, false in the other
+            # direction once the switches were off. An agent card is read by
+            # machines deciding whether they can transact with us, so these were
+            # the most expensive wrong sentences on the site. See _payments_block.
             "payments": _payments_block(),
         },
     }

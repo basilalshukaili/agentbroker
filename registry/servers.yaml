@@ -90,14 +90,20 @@ servers:
       businesses over WhatsApp, SMS, email and voice. GLEIF/SEC verification,
       TCPA/GDPR/CASL compliance, live sanctions screening, cross-border
       trade-restriction mapping. {n_no_key} of the {n_tools} tools are usable
-      with no key ({n_keyless} always-free + {n_quota} free within a daily quota).
+      with no key ({n_keyless} always-free + {n_quota} premium data tools).
     license: MIT
+    # THIS TEXT IS STATIC, so it must be true in every state of the money switches (CREDITS_ENABLED,
+    # DATA_METERING_ENABLED, X402_ENABLED) and may not offer a rail or promise a quota: a file cannot
+    # follow a switch, and registries republish it. What can follow the switches is the live descriptor,
+    # so this points there. scripts/check_pricing.py refuses an offer to sell credits and a promise of
+    # a daily quota in this file and in every file generated from it.
     auth_note: >
       {n_no_key} of the {n_tools} tools require no auth ({n_keyless} always-free
-      + {n_quota} free within a daily quota). Write ops require an
+      + {n_quota} premium data tools). Write ops require an
       X-Agent-Identity bearer token: a free
-      email-verified key gives 100 ops/day, or buy credits at
-      https://hatchloop.dev/pricing
+      email-verified key gives 100 ops/day. Which payment rails and daily
+      quotas are switched on right now is published live in the payments
+      block of https://api.hatchloop.dev/.well-known/mcp.json
     tags:
       - mcp
       - mcp-server

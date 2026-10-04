@@ -403,8 +403,8 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
     # The account_id convention matches resolve_account (agent_id from JWT):
     # issue_subscription_token sets agent_id = f"sub_{customer_id}".
     try:
-        import os as _os_c
-        if _os_c.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+        from billing import switches as _switches
+        if _switches.credits_enabled():
             from billing.packages import credits_for_product
             from billing.credits import grant as _credit_grant
 

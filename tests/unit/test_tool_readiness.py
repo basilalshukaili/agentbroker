@@ -302,7 +302,9 @@ def test_the_note_numbers_are_the_list_lengths():
     p = wk.get_mcp_descriptor()["payments"]
     note = p["note"]
     assert f"{len(p['free_tools'])} tools are callable with NO key" in note
-    assert f"{len(p['quota_free_tools'])} more are callable with no key up to a daily quota" in note
+    # The wording after "callable with no key" follows DATA_METERING_ENABLED (test_quota_claims_follow_metering.py);
+    # the number does not.
+    assert f"{len(p['quota_free_tools'])} more are callable with no key" in note
     assert f"That is {tool_auth.usable_without_key()} usable without signing up" in note
     assert f"The remaining {tool_auth.needs_key()} need a free key" in note
-    assert f"{len(p['spends_credits_once_past_quota'])} spend credits once past any quota" in note
+    assert f"{len(p['spends_credits_once_past_quota'])} carry a list price" in note

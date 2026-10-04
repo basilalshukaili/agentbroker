@@ -218,9 +218,14 @@ def free_tier_sentence() -> str:
     """The one sentence every public surface should use for the free tier.
 
     One phrasing, one source. Three surfaces previously said it three ways.
+
+    The quota half follows DATA_METERING_ENABLED (billing/switches.py): the three premium data tools are
+    "free within a daily quota" only while that quota is enforced, and "free and unmetered at this time"
+    while it is not, which is what the running container does today.
     """
+    from billing import switches
     return (f"{usable_without_key()} of the {total_tools()} tools work with no key "
-            f"({keyless()} always free, {quota_free()} free within a daily quota)")
+            f"({keyless()} always free, {quota_free()} {switches.free_quota_clause()})")
 
 
 def auth_note() -> str:
@@ -230,8 +235,9 @@ def auth_note() -> str:
     import anything, so scripts/gen_manifests.py substitutes this in from
     registry/servers.yaml tokens and CI fails if a generated file drifts.
     """
+    from billing import switches
     return (f"{usable_without_key()} of the {total_tools()} tools require no auth "
-            f"({keyless()} always-free + {quota_free()} free within a daily quota)")
+            f"({keyless()} always-free + {quota_free()} {switches.free_quota_clause()})")
 
 
 # Tokens the page templates and the registry source use instead of digits.

@@ -128,7 +128,7 @@
       },
       {
         "name": "send_message",
-        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. [from $0.02/call, variable] [async→get_outcome]",
+        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. [from $0.02/call, variable, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -230,7 +230,7 @@
       },
       {
         "name": "capture_lead",
-        "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified. [$0.05/per_call] [async→get_outcome] [beta]",
+        "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified. [$0.05/per_call, not charged while no payment rail is on] [async→get_outcome] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -296,7 +296,7 @@
       },
       {
         "name": "schedule_appointment",
-        "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [from $0.15/call, variable] [async→get_outcome] [limited]",
+        "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [from $0.15/call, variable, not charged while no payment rail is on] [async→get_outcome] [limited]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -382,7 +382,7 @@
       },
       {
         "name": "send_transactional_confirmation",
-        "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen. [$0.02/per_call] [async→get_outcome]",
+        "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen. [$0.02/per_call, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -445,7 +445,7 @@
       },
       {
         "name": "handle_inbound",
-        "description": "Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed. [$0.03/per_call] [async→get_outcome] [beta]",
+        "description": "Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed. [$0.03/per_call, not charged while no payment rail is on] [async→get_outcome] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -515,7 +515,7 @@
       },
       {
         "name": "escalate_to_human",
-        "description": "Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time. [$0.2/per_call] [async→get_outcome] [beta]",
+        "description": "Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time. [$0.2/per_call, not charged while no payment rail is on] [async→get_outcome] [beta]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -789,7 +789,7 @@
       },
       {
         "name": "call_business",
-        "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf; give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. [$0.2/per_call] [async→get_outcome]",
+        "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf; give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. [$0.2/per_call, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -895,7 +895,7 @@
       },
       {
         "name": "verify_company_record",
-        "description": "Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried. [free in quota, then $0.02/call]",
+        "description": "Free, live lookup of a company official registry record. Queries the GLEIF global LEI registry (primary, 2.6 million legal entities worldwide) and SEC EDGAR (US public companies) to return the official legal name, LEI, entity status, jurisdiction, registered address, and registry authority. Never fabricates: if the company is not found in these free registries, returns an honest not_found with the sources that were queried. [free, no key]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -926,7 +926,7 @@
       },
       {
         "name": "screen_sanctions",
-        "description": "Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed. [free in quota, then $0.02/call]",
+        "description": "Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed. [free, no key]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -935,7 +935,7 @@
           "properties": {
             "name": {
               "type": "string",
-              "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME…"
+              "description": "Name of the person or entity to screen, in Latin or Arabic script, e.g. 'Kim…"
             },
             "country": {
               "type": "string",
@@ -961,7 +961,7 @@
       },
       {
         "name": "map_trade_restriction",
-        "description": "Free cross-border screening of destination and parties: DOES NOT CLASSIFY THE PRODUCT: echoed back, never checked against export-control lists, so a controlled item to an unrestricted destination returns 'partial', never 'clear'. Not an export-control clearance -- classify HS/ECCN yourself. Never fabricates a tariff rate, a clear, or a restricted status. [free in quota, then $0.02/call]",
+        "description": "Free cross-border screening of destination and parties: DOES NOT CLASSIFY THE PRODUCT: echoed back, never checked against export-control lists, so a controlled item to an unrestricted destination returns 'partial', never 'clear'. Not an export-control clearance -- classify HS/ECCN yourself. Never fabricates a tariff rate, a clear, or a restricted status. [free, no key]",
         "inputSchema": {
           "type": "object",
           "required": [

@@ -421,25 +421,61 @@ def render_checkout(plan: str | None) -> str:
         f"<td>{_op_cost_label(op)}</td></tr>"
         for op in _WRITE_OPS_FOR_CHECKOUT
     )
-    body = f"""
-<header class="hero">
-  <h1>How you pay</h1>
-  <p class="lead">
-    Two rails, both metered per call &mdash; no subscription at any price.
-    Credits, bought by card through Polar. Or pay per call in USDC on Base
-    via <strong>x402</strong>, with no signup and no account: attach a signed
-    payment in <code class="inline">params._meta["x402/payment"]</code> on any
-    paid tool call and the server answers an unpaid attempt with a priced
-    offer first.
-  </p>
+    # EACH RAIL IS DESCRIBED ONLY WHILE ITS GATE RUNS (billing.switches). This page used to say
+    # "Two rails ... or pay per call in USDC on Base via x402" unconditionally while X402_ENABLED was
+    # unset in the running container, and then still sold credits, linked a real Polar checkout and
+    # listed a package table while CREDITS_ENABLED was off - a purchase made then mints a key but is
+    # never credited (billing/polar_webhook.py skips the grant, and the grant is idempotent on the
+    # order id). The card half is the credits gate's, the x402 half is the x402 gate's, and "two rails"
+    # needs both: the page asks the same functions the gates and the webhook ask.
+    from billing import switches as _switches
+    _credits_open = _switches.credits_enabled()
+    _x402_open = _switches.x402_enabled()
+    _x402_how = (
+        'Pay per call in USDC on Base via <strong>x402</strong>, with no signup and no account: '
+        'attach a signed payment in <code class="inline">params._meta["x402/payment"]</code> on any '
+        'paid tool call and the server answers an unpaid attempt with a priced offer first.')
+    if _credits_open and _x402_open:
+        _lead = ('Two rails, both metered per call &mdash; no subscription at any price. '
+                 'Credits, bought by card through Polar. Or ' + _x402_how[0].lower() + _x402_how[1:])
+        _beyond_free = "credits or x402"
+        _meta_description = ("Credits, bought by card through Polar. Or pay per call in USDC via x402, "
+                             "with no signup.")
+    elif _x402_open:
+        _lead = 'One rail, metered per call &mdash; no subscription at any price. ' + _x402_how
+        _beyond_free = "x402"
+        _meta_description = "Pay per call in USDC via x402, with no signup."
+    elif _credits_open:
+        _lead = 'No subscription at any price. Credits, bought by card through Polar.'
+        _beyond_free = "credits"
+        _meta_description = "Credits, bought by card through Polar."
+    else:
+        _lead = ('No payment rail is switched on at the moment, so nothing is charged. Credits are '
+                 'not on sale yet. Use the free tools with no key, or the write tools with a free '
+                 'email-verified key; the prices below are the list prices that apply once a rail is '
+                 'switched on.')
+        _beyond_free = ""
+        _meta_description = "No payment rail is switched on at the moment, so nothing is charged."
+    if _credits_open or _x402_open:
+        _write_note = (
+            "These {n_write_tools} tools need a free email-verified key (100 write ops/day, no "
+            "cost) before they spend anything; beyond that, " + _beyond_free + ".")
+    else:
+        _write_note = (
+            "These {n_write_tools} tools need a free email-verified key (100 write ops/day, no "
+            "cost). Nothing is charged while no payment rail is switched on.")
+
+    # The card half exists only while credits are on sale; the Polar session behind its button is minted
+    # only then too (main.billing_checkout).
+    if _credits_open:
+        _balance_para = """
   <p class="lead" style="font-size:16px;">
     One balance covers every HatchLoop server. Credits are the platform's unit,
     not any one product's: a credit bought today is spendable on whatever we run
     tomorrow, and each server states its own free tier and its own per-call
     price on its own page.
-  </p>
-</header>
-
+  </p>"""
+        _packages_section = f"""
 <section class="section">
   <h2>Credit packages (card, via Polar)</h2>
   <p style="color:var(--text-muted);">
@@ -463,14 +499,28 @@ def render_checkout(plan: str | None) -> str:
     <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.
   </p>
 </section>
+"""
+        _refund_item = """
+    <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.</li>"""
+    else:
+        _balance_para = ""
+        _packages_section = ""
+        _refund_item = ""
 
+    body = f"""
+<header class="hero">
+  <h1>How you pay</h1>
+  <p class="lead">
+    {_lead}
+  </p>{_balance_para}
+</header>
+{_packages_section}
 <section class="section">
   <h2>Write-tool cost per call &mdash; Agent Broker</h2>
   <p style="color:var(--text-muted);">
     Prices below are Agent Broker's. Every server publishes its own table; the
     credits are the same credits.
-    These {{n_write_tools}} tools need a free email-verified key (100 write ops/day, no
-    cost) before they spend anything; beyond that, credits or x402.
+    {_write_note}
     <code class="inline">preview_cost</code> returns these same numbers
     programmatically for free.
   </p>
@@ -486,8 +536,7 @@ def render_checkout(plan: str | None) -> str:
     <li><strong>Compliance gate.</strong> Every outbound message routes through
         <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
         PDPL across 26 jurisdictions. Marketing without a verified consent_record_id
-        is rejected at runtime regardless of how you paid.</li>
-    <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.</li>
+        is rejected at runtime regardless of how you paid.</li>{_refund_item}
     <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
         See <a href="/privacy">Privacy Policy</a>.</li>
     <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
@@ -496,7 +545,7 @@ def render_checkout(plan: str | None) -> str:
 </section>
 """
     return page("How you pay", body, active="pricing",
-                description=f"Credits, bought by card through Polar. Or pay per call in USDC via x402, with no signup. {BRAND} does not require human signup to use the {{n_no_key}} free tools.")
+                description=f"{_meta_description} {BRAND} does not require human signup to use the {{n_no_key}} free tools.")
 
 
 # ---------------------------------------------------------------------------

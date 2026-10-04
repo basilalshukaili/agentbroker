@@ -166,12 +166,18 @@ SSE transport, not streamable HTTP. With your AgentBroker key:
 the agent identity that opened it, so send the same `X-Agent-Identity` key you send with
 `send_message`; a call with no key is refused rather than answered.
 
-**3 premium data tools are free up to a daily quota, then $0.02/call:** `verify_company_record`
-(live GLEIF/SEC company data), `screen_sanctions` (live OFAC/EU/UK sanctions screening),
-`map_trade_restriction` (cross-border embargo/export-control mapping). Anonymous callers get
-100 calls/day; email-verified free keys get 500/day. Beyond the quota: top up credits by card
-at https://hatchloop.dev/pricing, or pay per call in USDC on Base by attaching an x402 payment
-in `params._meta["x402/payment"]` (no account needed).
+**3 premium data tools are free up to a daily quota, then $0.02/call, once metering and credits
+are switched on:** `verify_company_record` (live GLEIF/SEC company data), `screen_sanctions`
+(live OFAC/EU/UK sanctions screening), `map_trade_restriction` (cross-border
+embargo/export-control mapping). Anonymous callers get 100 calls/day; email-verified free keys
+get 500/day. **As of 2026-10-04 metering and credits are off, so these three tools run free and
+unmetered and nothing is charged;** `preview_cost` and `payments` in
+`https://api.hatchloop.dev/.well-known/mcp.json` (`status`, `rails`, `premium_data_quota_enforced`)
+report the live state. Once metering is on, a call beyond the quota is refused until the quota resets
+(`free_quota_exceeded`, nothing charged) unless you can pay: top up credits by card at
+https://hatchloop.dev/pricing (only while credits are on; they are off today), or, while the x402
+rail is on (it is off today), pay per call in USDC on Base by attaching an x402 payment in
+`params._meta["x402/payment"]` (no account needed).
 
 ## Optional: unlock the write tools (free)
 
@@ -188,8 +194,10 @@ Click the verification link in the email, then add the key as a header using the
 `headers` (or `--header`) example under your client above:
 `X-Agent-Identity: YOUR_KEY_HERE`.
 
-Free tier (write tools): 100 operations/day. Free tier (premium data tools): 500 calls/day.
-Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing.
+Free tier (write tools): 100 operations/day. Free tier (premium data tools): 500 calls/day once
+metering is on (not enforced as of 2026-10-04; see above).
+Credit packages from $9/1,000 credits at https://hatchloop.dev/pricing are on sale only while the
+credit ledger is switched on; it is off as of 2026-10-04, so they are not on sale (see above).
 
 ## Verify it is working
 

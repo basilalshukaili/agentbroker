@@ -65,6 +65,23 @@ def _free_tier_sentence() -> str:
         return "many of our tools work with no key at all"
 
 
+def _x402_live() -> bool:
+    """Is pay-per-call x402 accepting payment right now? The gate's own answer, read per request."""
+    from billing import switches
+    return switches.x402_enabled()
+
+
+def _no_inbox_alternative() -> str:
+    """What to do when you cannot receive a verification email. True of the running system."""
+    if _x402_live():
+        return ("Pay per call with x402 (USDC on Base) - no signup, "
+                "no card, no email. Attach a signed payment as "
+                "params._meta['x402/payment'] on any paid tool and "
+                "retry; the server replies with a priced offer.")
+    return ("No pay-per-call route is switched on at this time. Email hello@hatchloop.dev "
+            "for a key provisioned by hand; the tools marked as needing no key work without one.")
+
+
 def _public_base() -> str:
     """The branded host, not whatever the request happened to arrive on."""
     import os
@@ -107,10 +124,10 @@ async def describe_free_key_flow():
                  "including sanctions screening and company verification."),
         "no_email_available": {
             "reason": "Autonomous agents often have no inbox.",
-            "alternative": ("Pay per call with x402 (USDC on Base) - no signup, "
-                            "no card, no email. Attach a signed payment as "
-                            "params._meta['x402/payment'] on any paid tool and "
-                            "retry; the server replies with a priced offer."),
+            # DERIVED FROM THE GATE. This always offered x402; the rail is off in the running
+            # container (X402_ENABLED unset), where a payment attached to a call is ignored, so the
+            # one route offered to an agent with no inbox was a route that did not exist.
+            "alternative": _no_inbox_alternative(),
         },
     }
 
@@ -174,8 +191,8 @@ async def request_free_key(body: KeyRequestBody):
         # Honest refusal: no email left this process, so no caller should be
         # told to go check an inbox. NOT gated on any env var beyond the ones
         # send_verification_email already checked - this must be correct with
-        # today's production configuration (RESEND_API_KEY unset), not some
-        # future one.
+        # whatever the provider's state is (unset key, refused address, outage),
+        # which GET /healthz/external reports live.
         logger.warning("onboarding_unavailable email_domain=%s reason=verification_email_not_sent",
                         email.split("@")[-1])
         return JSONResponse(
@@ -187,8 +204,9 @@ async def request_free_key(body: KeyRequestBody):
                     "nothing was sent to your inbox. Email-verified signup is not available "
                     "on this deployment right now. " + _free_tier_sentence() + ", so you may "
                     "not need a key at all. If you do, contact hello@hatchloop.dev for manual "
-                    "provisioning, or pay per call with x402 (USDC on Base, no signup) - see "
-                    f"{_public_base()}/docs."
+                    "provisioning"
+                    + (", or pay per call with x402 (USDC on Base, no signup) - see "
+                       f"{_public_base()}/docs." if _x402_live() else ".")
                 ),
             },
         )

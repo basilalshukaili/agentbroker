@@ -441,6 +441,19 @@ async def portal_topup(
     package = req.package.lower()
     if package not in ("starter", "growth", "scale"):
         raise HTTPException(status_code=400, detail=f"Unknown package: {package!r}.")
+    # A CREDIT PACKAGE IS SOLD ONLY WHILE THE CREDITS GATE DELIVERS IT. With CREDITS_ENABLED off
+    # (the running container, 2026-10-04) billing/polar_webhook.py skips the grant and is idempotent
+    # on the order id, so a buyer who paid would hold a receipt and no credits. This is the same
+    # expression the webhook's grant and /billing/checkout use (billing/switches.py). The portal
+    # page treats any non-ok answer as "Top-up packages are not yet configured. Available at launch."
+    from billing import switches
+    if not switches.credits_enabled():
+        return JSONResponse({
+            "ok": False,
+            "reason": "credits_not_enabled",
+            "message": "Credit packages are not on sale yet: credits are not switched on, so a "
+                       "purchase would not be credited.",
+        })
     pkg_match = product_id_for_package(package)
     if not pkg_match:
         return JSONResponse({"ok": False, "reason": "not_configured"})

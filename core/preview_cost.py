@@ -183,7 +183,7 @@ async def handle_preview_cost(
     agent_id: str | None = None,
     trace_id: str | None = None,
 ) -> PreviewCostResponse | OutcomeReceipt:
-    import os as _os_pc
+    from billing import switches as _switches
     op = request.operation
     if op not in _KNOWN_OPERATIONS:
         valid = sorted(_KNOWN_OPERATIONS)
@@ -199,9 +199,7 @@ async def handle_preview_cost(
     # Honesty invariant: preview_cost == real charge.
     # When DATA_METERING_ENABLED is off (the default), the 3 premium data tools
     # are unconditionally free (bypass gate). Show $0.00 so the preview matches.
-    _data_metering_on = _os_pc.getenv("DATA_METERING_ENABLED", "").lower() in (
-        "1", "true", "yes"
-    )
+    _data_metering_on = _switches.data_metering_enabled()
     if op in _PREMIUM_DATA_TOOLS and not _data_metering_on:
         pricing = _ZERO_PRICING
     else:
@@ -219,6 +217,16 @@ async def handle_preview_cost(
     # range, and saying so beats quoting a tolerance we never check.
     is_exact = pricing["min"] == pricing["max"]
     accuracy = "exact" if is_exact else "range: see cost_range (min/max)"
+    # The figures above are the price schedule. While no payment rail is on nothing is charged, and
+    # "exact" with no qualifier read as "this call will cost $0.05". The numbers do not move (the receipts
+    # and the x402 gate read the same schedule); the basis says what they mean right now.
+    if pricing["max"] > 0 and _switches.not_charged_note():
+        if op in _PREMIUM_DATA_TOOLS:
+            # Metering is on here (off, the pricing above is zero). Past the free quota with no rail on the
+            # call is refused: "not charged" read as "the call carries on, free".
+            accuracy += f" (free within the daily quota; past it the call is {_switches.QUOTA_REFUSED})"
+        else:
+            accuracy += f" ({_switches.NOT_CHARGED})"
 
     _succ, _succ_basis = _success_estimate(op)
     _lat, _lat_basis = _latency_estimate(op, latency)

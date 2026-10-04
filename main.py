@@ -503,8 +503,8 @@ async def _credits_rest_payment_gate(request: Request, call_next):
     When true: reserve MAX -> dispatch -> commit on success / release on failure.
     ONE rail: skips when x402 is enabled (x402_gate owns that rail).
     """
-    import os as _os_c
-    if not _os_c.getenv("CREDITS_ENABLED", "").lower() in ("1", "true", "yes"):
+    from billing import switches as _switches
+    if not _switches.credits_enabled():
         return await call_next(request)
 
     if request.method != "POST":
@@ -890,6 +890,19 @@ async def well_known_agent_json():
 async def well_known_mcp():
     """MCP server descriptor pointing at /mcp."""
     return get_mcp_descriptor()
+
+
+@app.get("/.well-known/x402", tags=["Discovery"], include_in_schema=False)
+async def well_known_x402():
+    # include_in_schema=False: /openapi.json and /docs are static and public, and a route listed
+    # there would advertise a rail that is switched off. The document itself is the discovery
+    # surface; it exists exactly when the rail accepts payment (billing.x402_gate.enabled()) and
+    # is a 404 otherwise. Never a static claim: see x402_gate.discovery_document().
+    from billing import x402_gate
+    doc = x402_gate.discovery_document()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="x402 is not enabled on this host")
+    return doc
 
 
 @app.get("/llms.txt", response_class=PlainTextResponse, tags=["Discovery"])
@@ -1643,8 +1656,7 @@ async def polar_webhook(request: Request):
 
     A developer prepays via Polar's hosted checkout (Polar = Merchant of Record:
     card + global tax + payout to Oman); on payment we issue a long-lived token
-    their agent sends as X-Agent-Identity to call paid tools pre-paid. Coexists
-    with the x402 crypto rail (no token → x402 402; valid token → pre-paid).
+    their agent sends as X-Agent-Identity to call paid tools pre-paid.
 
     Auth: Standard Webhooks signature (webhook-id/-timestamp/-signature headers),
     secret in POLAR_WEBHOOK_SECRET. Bad signature → 401, no grant.
@@ -1799,6 +1811,12 @@ async def billing_checkout():
     """
     import os as _os
     import html as _html
+    from billing import switches as _switches
+    # NO CHECKOUT SESSION WHILE CREDITS ARE OFF. A purchase made then mints a key but is never credited:
+    # billing/polar_webhook.py skips the grant while this same switch is off, and the grant is idempotent
+    # on the order id, so the buyer would have paid for nothing. /checkout explains the state in words.
+    if not _switches.credits_enabled():
+        return RedirectResponse(url="/checkout", status_code=303)
     from billing.providers import get_billing_provider
     base = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev")
     try:

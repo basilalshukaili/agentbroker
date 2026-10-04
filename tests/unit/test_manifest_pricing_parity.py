@@ -134,8 +134,13 @@ def test_tool_descriptions_carry_exactly_one_cost_tag():
         )
 
 
-def test_cost_lines_are_honest_per_class():
+def test_cost_lines_are_honest_per_class(monkeypatch):
     from agent_interface.mcp_server import _build_tool_list
+    # The premium data tools carry a quota tag only while the quota exists (DATA_METERING_ENABLED);
+    # this test pins the metered state. The off state is pinned in test_cost_claims_follow_the_switches.py.
+    monkeypatch.setenv("DATA_METERING_ENABLED", "true")
+    # A price is quoted as a charge only while a rail can charge it (the same file pins the no-rail form).
+    monkeypatch.setenv("CREDITS_ENABLED", "true")
     got = {t["name"]: _cost_tag(t["description"]) for t in _build_tool_list()}
     # free, keyless tool must say both
     assert "free" in got["find_business"], (
@@ -169,12 +174,16 @@ def test_well_known_descriptors_report_the_real_version():
     assert get_mcp_descriptor()["version"] == config.SERVICE_VERSION
 
 
-def test_descriptor_cost_sentences_cover_every_class():
+def test_descriptor_cost_sentences_cover_every_class(monkeypatch):
     """openai-tools/anthropic-tools read `amount_usd`, which the generated cost
     models do not have — so after the regeneration they said NOTHING about
     price. Better than the old lie ($0.005 for a free tool), worse than the
     truth."""
     from agent_interface.well_known import describe_cost
+    # Pins the state in which each sentence is a charge: the quota exists and a rail is on. The states
+    # in which they are not are pinned in test_cost_claims_follow_the_switches.py.
+    monkeypatch.setenv("DATA_METERING_ENABLED", "true")
+    monkeypatch.setenv("CREDITS_ENABLED", "true")
     assert describe_cost({"basis": "free", "unit_price_usd": 0.0}).startswith("Cost: free")
     assert "quota" in describe_cost(
         {"basis": "freemium_daily_quota", "unit_price_usd": 0.02})

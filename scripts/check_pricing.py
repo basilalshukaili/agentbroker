@@ -17,6 +17,7 @@ Or from the repo root:
 """
 from __future__ import annotations
 
+import ast
 import os
 import re
 import sys
@@ -275,13 +276,32 @@ def _check_file(path: Path) -> list[str]:
 # marketing prose may still say whatever is currently true; this only polices
 # the generators, which are the surfaces an agent actually reads.
 
+# THE SAME DEFECT IN A THIRD SHAPE (2026-10-04). The first rule below only matched the JSON
+# spelling `"rails": [...]`. The generator actually wrote `rails = ["credits"] + (...)` and
+# `"status": "active"`, which no rule matched, so the credits rail stayed a constant for six
+# weeks after the checker was written - and was false from the day the VPS container started
+# with CREDITS_ENABLED and DATA_METERING_ENABLED set to "false". Rails, status and the numbered
+# "Option N (credits)" / "Option N (pay per call" sentences now come from billing/switches.py
+# (and x402_gate.enabled() behind it); every spelling of a literal is refused here.
 _RAIL_ASSERTIONS = [
-    (r'"rails"\s*:\s*\[[^\]]*\]',
-     'hardcodes the payment rails - derive them from x402_gate.enabled()'),
+    # Either quote style: {'rails': ['credits']} is as common in Python as "rails": [...] is in JSON.
+    (r'["\']rails["\']\s*:\s*\[[^\]]*\]',
+     'hardcodes the payment rails - derive them from billing.switches.live_rails()'),
+    (r'\brails\s*=\s*\[\s*["\']',
+     'assigns a literal list of payment rails - derive it from billing.switches.live_rails()'),
+    # Either quote style (a Python dict literal is as often single-quoted as JSON is double-quoted).
+    (r'["\']status["\']\s*:\s*["\']active["\']',
+     'hardcodes payments status "active" - use billing.switches.payments_status()'),
+    # NOT anchored to the start of a literal: the 10-03 sentence began " To get access: Option 1 (free)..."
+    # and put "Option 2 (credits)" in the middle, which an anchored rule never saw.
+    (r'\bOption\s+\d\s*\((credits|pay per call)',
+     'numbers a payment option by hand - build the option list from billing.switches so '
+     'the numbers close up and a switched-off rail is not offered'),
     (r'(?i)(x402|crypto)[^\n]{0,40}(is\s+not\s+offered|switched\s+off|is\s+off\b)',
      'asserts the crypto rail is off - it was ON for weeks while this said so'),
     (r'(?i)all tools are (currently )?free to call',
-     'asserts everything is free - credits have been live since 2026-08-24'),
+     'asserts everything is free - true only while no rail is switched on; derive it '
+     'from billing.switches'),
 ]
 
 # Files that GENERATE what an agent reads. Prose files are excluded on purpose:
@@ -291,11 +311,135 @@ _GENERATORS = [
     "agent_interface/well_known.py",
     "agent_interface/mcp_server.py",
     "agent_interface/discovery.py",
+    # The key-request guidance an agent is sent to from the auth_required error.
+    "agent_interface/key_requests.py",
     # Lives in the parent orchestration repo but emits copy pasted into four
     # public directories. This exact omission let a hardcoded "crypto is not
     # offered" survive while production advertised x402.
     "../scripts/manual_listings.py",
+    # Every other file that writes a sentence about how to pay. The free-key page, the past-quota
+    # messages and the OAuth consent page all offered credits while the credits gate was off, and none of
+    # them was policed (review of feat/x402-honesty-20261004, F5).
+    "agent_interface/key_request_logic.py",
+    "billing/data_quota.py",
+    "agent_interface/oauth/pages.py",
+    "web/pages.py",
+    "core/preview_cost.py",
 ]
+
+# STATIC COPY: files that cannot import anything and are republished by registries we do not control
+# (generated from registry/servers.yaml by scripts/gen_manifests.py). A file cannot follow a switch, so
+# it may not offer credits for sale and may not promise a daily quota on the premium data tools; the live
+# descriptor (/.well-known/mcp.json, payments) is where those are stated, and it IS derived.
+_STATIC_COPY = [
+    "smithery.yaml",
+    "glama.json",
+    "server.json",
+    "registry/servers.yaml",
+]
+_STATIC_COPY_BANNED = [
+    (r'(?i)\b(buy|top[ -]?up|purchase)\s+(more\s+)?credits?\b',
+     'offers credits for sale in static copy - it cannot follow CREDITS_ENABLED; point at the live '
+     'payments descriptor instead'),
+    (r'(?i)free within a daily quota',
+     'promises a daily quota in static copy - it exists only while DATA_METERING_ENABLED is on; point at '
+     'the live payments descriptor instead'),
+]
+
+
+# THE TREE RULE (third review of feat/x402-honesty-20261004, P3). Line regexes can be respelled: the original
+# defect passed as {'rails': ['credits']}, "status": f"active", status = "active", rails = list(("credits",)),
+# rails = DEFAULT_RAILS, rails.append("credits") and a variable fed into the rails key. For Python generators the
+# source is parsed and the TREE is judged, so how a literal is spelled no longer matters. A claim about a rail or
+# the payments status is derived (a call into billing.switches, or a value passed in) or it is refused.
+_RAIL_WORDS = frozenset({"credits", "x402"})
+_STATUS_LITERALS = frozenset({"active", "not_enabled"})
+_GROW_METHODS = frozenset({"append", "extend", "insert", "add", "update"})
+
+
+def _strs_in(node) -> set:
+    return {n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+
+
+def _constant_text(node):
+    """The text of a string constant or of an f-string with no fields, otherwise None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr) and all(isinstance(v, ast.Constant) for v in node.values):
+        return "".join(str(v.value) for v in node.values)
+    return None
+
+
+def _target_name(node) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def ast_rail_problems(source: str, rel: str) -> list[str]:
+    """Literal rail / payments-status claims in Python source, whatever their spelling."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return [f"{rel}: could not parse as Python ({exc.msg} at line {exc.lineno}); the rail rules were not checked"]
+
+    # name -> the value last assigned to it anywhere in the file (a variable fed into a rails key is judged
+    # by what it holds, not by what it is called)
+    assigned: dict = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            assigned[n.targets[0].id] = n.value
+        elif isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.value is not None:
+            assigned[n.target.id] = n.value
+
+    def literal_rails(value) -> bool:
+        """Is this value a hand-written list of rails (directly, or through a name that holds one)?"""
+        if isinstance(value, ast.Name) and value.id in assigned:
+            value = assigned[value.id]
+        if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            return True
+        # A rail NAME anywhere in the expression is a typed claim, even next to a call into billing.switches:
+        # `switches.live_rails() + ["x402"]` is the derived list with a rail asserted on top of it.
+        return bool(_strs_in(value) & _RAIL_WORDS)
+
+    def literal_status(value) -> bool:
+        if isinstance(value, ast.Name) and value.id in assigned:
+            value = assigned[value.id]
+        return _constant_text(value) in _STATUS_LITERALS
+
+    problems: list = []
+
+    def add(node, why):
+        problems.append(f"{rel}:{node.lineno} {why}")
+
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Dict):
+            for k, v in zip(n.keys, n.values):
+                key = _constant_text(k) if k is not None else None
+                if key == "rails" and literal_rails(v):
+                    add(k, "a literal list of payment rails under the 'rails' key - derive it from "
+                           "billing.switches.live_rails()")
+                elif key == "status" and literal_status(v):
+                    add(k, "a literal payments status under the 'status' key - use billing.switches.payments_status()")
+        elif isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = n.targets if isinstance(n, ast.Assign) else [n.target]
+            value = n.value
+            if value is None:
+                continue
+            for t in targets:
+                name = _target_name(t).lower()
+                if "rails" in name and literal_rails(value):
+                    add(n, f"assigns hand-written payment rails to {name!r} - derive them from "
+                           "billing.switches.live_rails()")
+                if name in ("status", "payments_status") and _constant_text(value) in _STATUS_LITERALS:
+                    add(n, f"assigns a literal payments status to {name!r} - use billing.switches.payments_status()")
+        elif isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _GROW_METHODS:
+            owner = _target_name(n.func.value).lower()
+            if "rails" in owner and any(_strs_in(a) & _RAIL_WORDS for a in n.args):
+                add(n, f"adds a hand-written rail to {owner!r} - derive the list from billing.switches.live_rails()")
+    return problems
 
 
 def check_rail_claims() -> list[str]:
@@ -305,13 +449,30 @@ def check_rail_claims() -> list[str]:
         if not path.exists():
             continue
         with open(path, encoding="utf-8", errors="replace") as fh:
+            source = fh.read()
+        for n, line in enumerate(source.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            for pat, why in _RAIL_ASSERTIONS:
+                if re.search(pat, line):
+                    problems.append(f"{rel}:{n} {why} -> {stripped[:80]}")
+        if rel.endswith(".py"):
+            problems.extend(ast_rail_problems(source, rel))
+    return problems
+
+
+def check_static_copy() -> list[str]:
+    problems = []
+    for rel in _STATIC_COPY:
+        path = _AGENTBROKER_DIR / rel
+        if not path.exists():
+            continue
+        with open(path, encoding="utf-8", errors="replace") as fh:
             for n, line in enumerate(fh, 1):
-                stripped = line.strip()
-                if stripped.startswith("#"):
-                    continue
-                for pat, why in _RAIL_ASSERTIONS:
+                for pat, why in _STATIC_COPY_BANNED:
                     if re.search(pat, line):
-                        problems.append(f"{rel}:{n} {why} -> {stripped[:80]}")
+                        problems.append(f"{rel}:{n} {why} -> {line.strip()[:80]}")
     return problems
 
 
@@ -320,7 +481,7 @@ def main() -> int:
     for fpath in _SCAN_FILES:
         all_hits.extend(_check_file(fpath))
 
-    rail_hits = check_rail_claims()
+    rail_hits = check_rail_claims() + check_static_copy()
 
     if all_hits or rail_hits:
         if all_hits:

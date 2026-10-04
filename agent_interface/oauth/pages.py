@@ -106,13 +106,21 @@ def _app_block(client: ClientInfo, redirect_uri: str) -> str:
     return f"<dl>{''.join(rows)}</dl>{warn}"
 
 
-_WHAT_IT_ALLOWS = (
-    "<ul>"
-    "<li>Use AgentBroker's tools as your account - the free tools, and your account's free daily allowance.</li>"
-    "<li>Spend credits on your account, if you have bought any. Credits are bought on "
-    f'<a href="{SITE}/pricing">hatchloop.dev</a>, never inside the assistant.</li>'
-    "<li>It does not see your email address, and cannot change your account or billing.</li>"
-    "</ul>")
+def what_it_allows() -> str:
+    """The list of what an approved app can do. The credits line is there only while credits exist: with
+    CREDITS_ENABLED off nothing can be bought or spent, and the page would be advertising a rail that is
+    off (billing/switches.py is the one reader of the switch)."""
+    from billing import switches
+    credits_li = (
+        "<li>Spend credits on your account, if you have bought any. Credits are bought on "
+        f'<a href="{SITE}/pricing">hatchloop.dev</a>, never inside the assistant.</li>'
+        if switches.credits_enabled() else "")
+    return (
+        "<ul>"
+        "<li>Use AgentBroker's tools as your account - the free tools, and your account's free daily allowance.</li>"
+        + credits_li +
+        "<li>It does not see your email address, and cannot change your account or billing.</li>"
+        "</ul>")
 
 
 def start_page(client: ClientInfo, redirect_uri: str, rid: str, nonce: str, *, error: str = "",
@@ -123,7 +131,7 @@ def start_page(client: ClientInfo, redirect_uri: str, rid: str, nonce: str, *, e
         '<p class="mute">Sign in with your email. There is no password.</p>'
         f"{_app_block(client, redirect_uri)}"
         "<p>If you continue, this app will be able to:</p>"
-        f"{_WHAT_IT_ALLOWS}"
+        f"{what_it_allows()}"
         f"{err}"
         '<form method="post" action="/oauth/authorize/email" autocomplete="on">'
         f'<input type="hidden" name="rid" value="{_e(rid)}">'
@@ -206,7 +214,7 @@ def confirm_page(client_label: str, redirect_uri: str, email_hint: str, magic_to
         "<h1>Confirm sign-in</h1>"
         f"<p><strong>{_e(client_label)}</strong> is asking to use AgentBroker as "
         f"<strong>{_e(email_hint)}</strong>.</p>"
-        f"{app}<p>If you confirm, it will be able to:</p>{_WHAT_IT_ALLOWS}{err}"
+        f"{app}<p>If you confirm, it will be able to:</p>{what_it_allows()}{err}"
         '<form method="post" action="/oauth/verify">'
         f'<input type="hidden" name="t" value="{_e(magic_token)}">'
         f"{code_block}"
