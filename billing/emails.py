@@ -16,6 +16,8 @@ import logging
 import os
 from typing import Optional
 
+from compliance.log_redactor import mask_email, scrub_address
+
 logger = logging.getLogger("smb_broker.emails")
 
 _FROM = "HatchLoop <hello@hatchloop.dev>"
@@ -89,7 +91,7 @@ async def _send(to: str, subject: str, html: str) -> bool:
     """Send via Resend. Returns True on success. Never raises."""
     resend_key = os.getenv("RESEND_API_KEY", "")
     if not resend_key:
-        logger.warning("emails._send skipped: RESEND_API_KEY not set (to=%s subject=%r)", to, subject)
+        logger.warning("emails._send skipped: RESEND_API_KEY not set (to=%s subject=%r)", mask_email(to), subject)
         return False
     try:
         import httpx
@@ -104,14 +106,14 @@ async def _send(to: str, subject: str, html: str) -> bool:
                 json=payload,
             )
         if resp.status_code in (200, 201):
-            logger.info("email_sent to=%s subject=%r", to, subject)
+            logger.info("email_sent to=%s subject=%r", mask_email(to), subject)
             return True
         logger.warning(
             "email_send_failed to=%s status=%s body=%s",
-            to, resp.status_code, resp.text[:300],
+            mask_email(to), resp.status_code, scrub_address(resp.text[:300], to),
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("email_send_exception to=%s err=%s", to, exc)
+        logger.warning("email_send_exception to=%s err=%s", mask_email(to), scrub_address(exc, to))
     return False
 
 

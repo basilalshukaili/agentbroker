@@ -14,6 +14,8 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+from compliance.log_redactor import mask_email, scrub_address
+
 logger = logging.getLogger("smb_broker.key_request_logic")
 
 # ---------------------------------------------------------------------------
@@ -132,7 +134,7 @@ async def send_verification_email(email: str, verify_url: str) -> bool:
     """
     resend_key = os.getenv("RESEND_API_KEY", "")
     if not resend_key:
-        logger.warning("RESEND_API_KEY not set — skipping verification email to %s", email)
+        logger.warning("RESEND_API_KEY not set — skipping verification email to %s", mask_email(email))
         return False
     try:
         import httpx
@@ -159,12 +161,12 @@ async def send_verification_email(email: str, verify_url: str) -> bool:
         if resp.status_code not in (200, 201):
             logger.warning(
                 "resend_send_failed email=%s status=%s body=%s",
-                email, resp.status_code, resp.text[:200],
+                mask_email(email), resp.status_code, scrub_address(resp.text[:200], email),
             )
             return False
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("resend_exception email=%s err=%s", email, exc)
+        logger.warning("resend_exception email=%s err=%s", mask_email(email), scrub_address(exc, email))
         return False
 
 
@@ -172,7 +174,7 @@ async def send_key_email(email: str, token_value: str, expires_iso: str) -> None
     """Email the minted key to the user. Best-effort — never raises."""
     resend_key = os.getenv("RESEND_API_KEY", "")
     if not resend_key:
-        logger.warning("RESEND_API_KEY not set — skipping key delivery email to %s", email)
+        logger.warning("RESEND_API_KEY not set — skipping key delivery email to %s", mask_email(email))
         return
     paid_url = os.getenv("POLAR_CHECKOUT_URL", "https://buy.polar.sh")
     try:
@@ -200,9 +202,9 @@ async def send_key_email(email: str, token_value: str, expires_iso: str) -> None
                 json=payload,
             )
         if resp.status_code not in (200, 201):
-            logger.warning("key_email_failed email=%s status=%s", email, resp.status_code)
+            logger.warning("key_email_failed email=%s status=%s", mask_email(email), resp.status_code)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("key_email_exception email=%s err=%s", email, exc)
+        logger.warning("key_email_exception email=%s err=%s", mask_email(email), scrub_address(exc, email))
 
 
 # ---------------------------------------------------------------------------
@@ -238,10 +240,10 @@ async def store_pending(email: str, token: str, expires_at: float) -> bool:
         })
         if isinstance(out, dict) and out.get("stored") is True:
             return True
-        logger.warning("pending_keys_store_failed email=%s err=unexpected_rpc_shape", email)
+        logger.warning("pending_keys_store_failed email=%s err=unexpected_rpc_shape", mask_email(email))
         return False
     except Exception as exc:  # noqa: BLE001
-        logger.warning("pending_keys_store_failed email=%s err=%s", email, exc)
+        logger.warning("pending_keys_store_failed email=%s err=%s", mask_email(email), scrub_address(exc, email))
         return False
 
 

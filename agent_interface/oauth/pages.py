@@ -25,6 +25,7 @@ import json
 import secrets
 from typing import Optional
 
+from agent_interface.oauth import settings as _settings
 from agent_interface.oauth.clients import ClientInfo, is_loopback_uri, redirect_host
 
 SITE = "https://hatchloop.dev"
@@ -83,8 +84,8 @@ def _shell(title: str, body: str, nonce: str, script: str = "") -> str:
         '<meta name="robots" content="noindex,nofollow">'
         f"<title>{_e(title)}</title><style nonce=\"{nonce}\">{_CSS}</style></head>"
         f"<body><main>{body}"
-        f'<footer>HatchLoop AgentBroker &middot; <a href="{SITE}/terms">Terms</a> &middot; '
-        f'<a href="{SITE}/privacy">Privacy</a></footer></main>{scr}</body></html>')
+        f'<footer>HatchLoop AgentBroker &middot; <a href="{_settings.issuer()}/terms">Terms</a> &middot; '
+        f'<a href="{_settings.issuer()}/privacy">Privacy</a></footer></main>{scr}</body></html>')
 
 
 def _app_block(client: ClientInfo, redirect_uri: str) -> str:

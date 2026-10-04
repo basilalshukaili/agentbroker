@@ -2572,11 +2572,12 @@ async def _h_resources_read(params: dict) -> dict:
                     "3. If empty AND the user can supply a URL, fall through to `import_booking_url`\n\n"
                     "## When sending an outbound message\n"
                     "`send_message` supports five `message_type` values: transactional, "
-                    "reminder, follow_up, notification, marketing. Marketing requires a "
-                    "valid `consent_record_id` referencing a recorded opt-in in the "
-                    "consent_store; the compliance gate verifies at send time and rejects "
-                    "any marketing send without recorded consent (TCPA / GDPR / CASL / PDPL "
-                    "across 26 jurisdictions). Cold outreach, drip campaigns, bulk lists, "
+                    "reminder, follow_up, notification, marketing. A marketing send must "
+                    "pass `country_code`. Where that country requires opt-in, the compliance "
+                    "gate checks the recipient's recorded consent at send time and rejects "
+                    "the send without it; where it works by opt-out (a US marketing email) "
+                    "the gate enforces opt-out and unsubscribe rules instead (TCPA / GDPR / "
+                    "CASL / PDPL across 26 jurisdictions). Cold outreach, drip campaigns, bulk lists, "
                     "and A/B sends are out of scope and rate-limited regardless.\n"
                     "1. (optional) `POST /compliance/check` to preview legality for the jurisdiction\n"
                     "2. `send_message(...)` — gate runs again at send time\n"
@@ -2647,7 +2648,7 @@ async def _h_prompts_list(params: dict) -> dict:
                 ),
                 "arguments": [
                     {"name": "recipient", "description": "Phone (E.164) or email of the SMB the consumer named, or the consumer themselves for a transactional confirmation.", "required": True},
-                    {"name": "message_type", "description": "transactional | marketing | reminder | follow_up | notification. Marketing requires a valid consent_record_id; the gate verifies and rejects unrecorded consent.", "required": True},
+                    {"name": "message_type", "description": "transactional | marketing | reminder | follow_up | notification. A marketing send needs country_code; where that country requires opt-in, the gate rejects it unless the recipient's consent is on record.", "required": True},
                     {"name": "country_code", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE'). Auto-inferred from phone if omitted.", "required": False},
                 ],
             },

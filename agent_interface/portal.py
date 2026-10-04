@@ -38,6 +38,7 @@ from fastapi import APIRouter, Cookie, HTTPException, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
+from compliance.log_redactor import mask_email, scrub_address
 from agent_interface.portal_logic import (
     make_magic_token,
     verify_magic_token,
@@ -140,7 +141,7 @@ async def _get_account(email: str) -> Optional[dict[str, Any]]:
         rows = await select_rows("credit_accounts", filters={"email": email}, limit=1)
         return rows[0] if rows else None
     except Exception as exc:  # noqa: BLE001
-        logger.debug("portal._get_account failed email=%s err=%s", email, exc)
+        logger.debug("portal._get_account failed email=%s err=%s", mask_email(email), scrub_address(exc, email))
         return None
 
 
@@ -529,7 +530,7 @@ async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONRe
             },
         )
         if not ok:
-            logger.error("portal.key_generate update_account failed email=%s", email)
+            logger.error("portal.key_generate update_account failed email=%s", mask_email(email))
             return JSONResponse({"ok": False, "reason": "key_store_failed"})
     else:
         # No account yet — create one with the free key attached
@@ -550,7 +551,7 @@ async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONRe
                 on_conflict="email",
             )
         except Exception as exc:  # noqa: BLE001
-            logger.error("portal.key_generate upsert_account failed email=%s err=%s", email, exc)
+            logger.error("portal.key_generate upsert_account failed email=%s err=%s", mask_email(email), scrub_address(exc, email))
             return JSONResponse({"ok": False, "reason": "key_store_failed"})
         # upsert_row returns None on EVERY failure and cannot raise, so the
         # except above was dead code for the common failure shapes (409 on a
@@ -559,7 +560,7 @@ async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONRe
         # later /key/reveal come back empty. Same class as the outcome-store
         # persist check: a write you did not confirm is not a write.
         if written is None:
-            logger.error("portal.key_generate upsert_account returned None email=%s", email)
+            logger.error("portal.key_generate upsert_account returned None email=%s", mask_email(email))
             return JSONResponse({"ok": False, "reason": "key_store_failed"})
 
     logger.info("portal.free_key_generated customer_id=%s", customer_id)

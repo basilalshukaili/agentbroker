@@ -643,6 +643,14 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
     ("tests/unit/test_data_metering.py", "storage.supabase_client.rpc"):
         "targets billing.data_quota._consume_anon_data (deferred rpc import); no "
         "reference to billing.credits or run_metered_tool anywhere in this file.",
+    # 2026-10-04: the legal-pages tests capture what two writers actually send. Both import rpc INSIDE the
+    # function body (billing/usage_logger.py log_usage_outcome, agent_interface/key_request_logic.py
+    # store_pending), a deferred import that reads the live module attribute on every call - distinct from
+    # billing.credits.py:35's eager import. The file never references billing.credits or run_metered_tool.
+    ("tests/unit/test_legal_pages_match_the_system.py", "storage.supabase_client.rpc"):
+        "targets billing.usage_logger.log_usage_outcome and key_request_logic.store_pending "
+        "(both deferred rpc imports); no reference to billing.credits or run_metered_tool anywhere "
+        "in this file.",
     ("tests/unit/test_demand_queue.py", "storage.supabase_client.select_rows"):
         "targets core.demand_queue (deferred import); no reference to get_balance or "
         "billing.credits anywhere in this file.",

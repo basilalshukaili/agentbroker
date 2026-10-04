@@ -129,8 +129,8 @@ def render_home() -> str:
     </div>
     <div class="card">
       <h3 style="color:#fca5a5;">What the gate rejects</h3>
-      <p>Marketing to recipients without a verified
-         <code class="inline">consent_record_id</code>. Bulk / list-based / drip campaigns.
+      <p>Marketing to recipients without recorded opt-in consent, where their
+         country requires it. Bulk / list-based / drip campaigns.
          Cold outreach to non-opted-in numbers. A/B test sends. Spam by any definition.
          The gate runs synchronously before every send and returns a structured
          <code class="inline">compliance_violation</code> receipt on rejection.</p>
@@ -250,7 +250,7 @@ def render_home() -> str:
   <h2>Built right.</h2>
   <div class="grid grid-3">
     <div class="card"><span class="tag tag-ok">Discovery</span><h3>7 agent protocols</h3><p>MCP, OpenAI plugin, OpenAI tools, Anthropic tools, A2A, llms.txt, OpenAPI.</p></div>
-    <div class="card"><span class="tag tag-ok">Compliance</span><h3>Non-bypassable gate</h3><p>Pre-check is the only path to outbound. PII stored as SHA-256 hash only.</p></div>
+    <div class="card"><span class="tag tag-ok">Compliance</span><h3>Non-bypassable gate</h3><p>Every message sent through the messaging tools passes the pre-check first. In the compliance audit log, recipient identifiers are stored as SHA-256 hashes; the privacy policy lists the other records.</p></div>
     <div class="card"><span class="tag tag-ok">Reliability</span><h3>Fallback chain</h3><p>direct_api &rarr; voice_ai &rarr; sms &rarr; email &rarr; web_form. Circuit breakers per channel.</p></div>
     <div class="card"><span class="tag tag-ok">Idempotency</span><h3>24h TTL</h3><p>Scoped per <code>(agent_id, operation, key)</code>. Safe to retry.</p></div>
     <div class="card"><span class="tag tag-ok">Async</span><h3>Webhook callbacks</h3><p>HMAC-SHA256 signed. Up to 24h retry with exponential backoff.</p></div>
@@ -483,12 +483,13 @@ def render_checkout(plan: str | None) -> str:
 <section class="section">
   <h2>Your rights either way</h2>
   <ul style="color:var(--text-muted);">
-    <li><strong>Compliance gate.</strong> Every outbound message routes through
+    <li><strong>Compliance gate.</strong> Every message sent through the messaging tools routes through
         <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
-        PDPL across 26 jurisdictions. Marketing without a verified consent_record_id
-        is rejected at runtime regardless of how you paid.</li>
+        PDPL across 26 jurisdictions. Where the recipient&rsquo;s country requires opt-in, marketing
+        without recorded consent is rejected at runtime regardless of how you paid.</li>
     <li><strong>14-day refund</strong> on credit packages. See <a href="/refund">Refund Policy</a>.</li>
-    <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
+    <li><strong>Privacy.</strong> In the compliance audit log, recipient phone numbers and emails are
+        stored as SHA-256 hashes; the privacy policy lists every other record we keep.
         See <a href="/privacy">Privacy Policy</a>.</li>
     <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
         rights are preserved. See <a href="/terms">Terms</a>.</li>
@@ -563,7 +564,7 @@ def render_terms() -> str:
 <article class="legal">
   <h1>Terms of Service</h1>
   <p class="updated">Last updated: 4 October 2026.</p>
-  <p class="updated">Changed in this version: section 2 (service description) now describes the service as it runs today, including what each tool does and does not do, the readiness labels and Arabic-name screening, and the date above. Sections 1 and 3 to 13 are unchanged from the version of 29 April 2026.</p>
+  <p class="updated">Changed in this version: section 2 (service description) now describes the service as it runs today, including what each tool does and does not do, which channels each messaging tool can use, the readiness labels, Arabic-name screening, what the compliance gate does and does not cover, and the date above. In section 6, the first prohibition no longer says that a marketing message must carry a consent record identifier, an argument the sending tools do not take; it still prohibits marketing without recorded opt-in consent. Sections 1, 3 to 5 and 7 to 13 are unchanged from the version of 29 April 2026.</p>
 
   <h2>1. Acceptance</h2>
   <p>By using {BRAND} (the &ldquo;Service&rdquo;), you agree to these Terms.
@@ -574,17 +575,24 @@ def render_terms() -> str:
   <ul>
     <li><strong>Company and sanctions checks.</strong> <code>verify_company_record</code> looks a company up in the GLEIF global LEI registry and in SEC EDGAR. <code>screen_sanctions</code> screens a name against the OFAC SDN list, the EU consolidated list and the UK Sanctions List; a name written in Arabic script is read as well and compared with the Arabic-script names the EU and UK lists publish, and a name that only sounds like a listed one is returned as an unverified candidate for a person to check, never as a match. <code>map_trade_restriction</code> screens a destination and parties for cross-border trade restrictions. <code>lookup_us_contracts</code> searches US federal contract awards through the public USAspending.gov API.</li>
     <li><strong>Business discovery.</strong> <code>find_business</code> finds businesses near a place using OpenStreetMap data, and <code>verify_business</code> looks businesses up in the Service&rsquo;s own supply network.</li>
-    <li><strong>Messaging and booking.</strong> <code>send_message</code> and <code>send_transactional_confirmation</code> send messages on the channels enabled on the current deployment, which are WhatsApp and email. SMS and voice calling (<code>call_business</code>) are listed but are not enabled on the current deployment, and those tools say so in their own responses. <code>handle_inbound</code> classifies a reply by keyword rules and <code>get_conversation</code> reads a conversation. <code>capture_lead</code> records a lead in the Service&rsquo;s own lead funnel and does not notify the business. <code>escalate_to_human</code> writes a ticket to the Service&rsquo;s operator queue; it sends no notification and makes no response-time commitment. <code>schedule_appointment</code> books through Cal.com when a business&rsquo;s booking link is connected to the Service&rsquo;s Cal.com account; otherwise it reports that it cannot, and does not invent a booking.</li>
+    <li><strong>Messaging and booking.</strong> <code>send_message</code> sends messages on the channels enabled on the current deployment, which are WhatsApp and email. <code>send_transactional_confirmation</code> sends by email only on the current deployment: a phone-number recipient needs SMS, which is not enabled. SMS and voice calling (<code>call_business</code>) are listed but are not enabled on the current deployment, and those tools say so in their own responses. <code>handle_inbound</code> classifies a reply by keyword rules and <code>get_conversation</code> reads a conversation. <code>capture_lead</code> records a lead in the Service&rsquo;s own lead funnel and does not notify the business. <code>escalate_to_human</code> writes a ticket to the Service&rsquo;s operator queue; it sends no notification and makes no response-time commitment. <code>schedule_appointment</code> books through Cal.com when a business&rsquo;s booking link is connected to the Service&rsquo;s Cal.com account; otherwise it reports that it cannot, and does not invent a booking.</li>
     <li><strong>Utility tools.</strong> <code>preview_cost</code>, <code>check_quota</code>, <code>check_compliance</code>, <code>check_booking_link</code>, <code>import_booking_url</code>, <code>get_status</code>, <code>get_outcome</code>, <code>self_test</code> and <code>mint_key</code>.</li>
   </ul>
   <p>A tool that has a limit carries a readiness label in its description: <em>beta</em> (it works, with a limit on what you can rely on), <em>limited</em> (it works for a narrow set of inputs and fails honestly for the rest) or <em>unavailable</em> (the current deployment lacks what it needs). The sentence in the tool&rsquo;s metadata says what the limit is; read it before relying on the tool.</p>
-  <p>Screening and lookup results are informational. Each response names the public lists and registries it used and the ones it did not (the UN consolidated list, for example, is NOT screened), and those sources can be incomplete or out of date. A result is not legal advice, not a clearance and not a compliance determination, and &ldquo;no match&rdquo; is not a finding that a person or company is free of sanctions or restrictions. Prices and free daily allowances are published on the <a href="https://hatchloop.dev/pricing/">pricing</a> page, refunds on the <a href="https://hatchloop.dev/refund">refund</a> page, and how data is handled in the <a href="https://hatchloop.dev/privacy/">privacy policy</a>.</p>
-  <p>Every outbound communication routes through a non-bypassable compliance
+  <p>Screening and lookup results are informational. Each response names the public lists and registries it used and the ones it did not (the UN consolidated list, for example, is NOT screened), and those sources can be incomplete or out of date. A result is not legal advice, not a clearance and not a compliance determination, and &ldquo;no match&rdquo; is not a finding that a person or company is free of sanctions or restrictions. Prices and free daily allowances are published on the <a href="https://hatchloop.dev/pricing/">pricing</a> page, refunds on the <a href="https://hatchloop.dev/refund">refund</a> page, and how data is handled in the <a href="__ORIGIN__/privacy">privacy policy</a>.</p>
+  <p>Every message sent through the messaging tools (<code>send_message</code> and
+  <code>send_transactional_confirmation</code>) routes through a non-bypassable compliance
   gate that enforces TCPA / GDPR / CASL / PDPL rules across 26 jurisdictions.
-  Marketing messages require a verified opt-in <code>consent_record_id</code>
-  at send time &mdash; without one, the gate rejects the send with a
-  structured <code>compliance_violation</code> receipt that never reaches a
-  carrier. The gate, not the API surface, is the safety mechanism.</p>
+  A marketing message must state the recipient&rsquo;s country (<code>country_code</code>).
+  Where that country&rsquo;s rules require the recipient&rsquo;s opt-in, the gate checks the
+  consent recorded for that recipient and channel and, without one, rejects the send with a
+  structured <code>compliance_violation</code> receipt that never reaches a carrier; where
+  the rules work by opt-out instead (a marketing email in the United States, for example),
+  the gate enforces the opt-out and unsubscribe rules. An opt-out is honoured in every
+  jurisdiction. The gate, not the API surface, is the safety mechanism. It does not cover
+  everything the Service itself sends: the sign-in, key and billing emails that go to our own
+  users, and the clarifying question that the WhatsApp inbound handler sends back to a person
+  who has messaged us (which checks the opt-out list first), are not sent through it.</p>
   <p>The Service is offered on an &ldquo;as-is&rdquo; basis with no
   implied warranties.</p>
 
@@ -613,10 +621,10 @@ def render_terms() -> str:
   in immediate suspension of your account:</p>
   <ul>
     <li><strong>Marketing without recorded opt-in consent.</strong> Every
-        marketing message must reference a valid
-        <code>consent_record_id</code> in the consent_store; the compliance
-        gate verifies the consent at send time and rejects any send tagged
-        <code>marketing</code> that does not.</li>
+        marketing message must be sent only to a recipient whose opt-in
+        consent is on record; where the recipient&rsquo;s country requires
+        opt-in, the compliance gate checks that record at send time and
+        rejects any send tagged <code>marketing</code> without one.</li>
     <li><strong>Bulk, list-based, A/B test, or drip outbound communication</strong>
         to recipients who did not request that specific outreach. We are a
         per-call transaction broker, not a campaign sender.</li>
@@ -685,7 +693,7 @@ def render_privacy() -> str:
 <article class="legal">
   <h1>Privacy Policy</h1>
   <p class="updated">Last updated: 4 October 2026.</p>
-  <p class="updated">Changed in this version: where the service is hosted (our own server, not Vercel, Render, Supabase or Cloudflare; Vercel now only hosts our DNS records), who else receives data, what the usage log holds, where the text you send to lookup tools goes and what is kept in memory, how long things are kept, and the sign-in that AI assistants use (&ldquo;Connect&rdquo;): its cookie, what it stores and what it sends to Resend. The previous version of this page was dated 29 April 2026.</p>
+  <p class="updated">Changed in this version: where the service is hosted (our own server rather than Vercel, Render or Supabase; Vercel now only hosts our DNS records, and Cloudflare relays only the older workers.dev address), who else receives data, what the usage log holds, where the text you send to lookup tools goes and what is kept in memory, the business records and queued messages that some tools leave in our database, how long things are kept (including the service&rsquo;s own program log), and the sign-in that AI assistants use (&ldquo;Connect&rdquo;): its cookie, what it stores and what it sends to Resend. Two things the previous version promised are no longer promised: 30-day advance notice of material changes to this policy (the Terms keep their own 30 days for changes to the Terms) and the list of data we never collect (card numbers are still covered in section 2). The previous version of this page was dated 29 April 2026.</p>
 
   <h2>1. Who we are</h2>
   <p>HatchLoop and AgentBroker are products of <strong>{LEGAL_ENTITY}</strong>. Techmate is the legal entity behind this site and the data controller for everything described below; HatchLoop is the name of the product, not a separate company.</p>
@@ -700,14 +708,14 @@ def render_privacy() -> str:
   </ul>
   <p><strong>When your agent calls a tool.</strong> For each call the usage log records:</p>
   <ul>
-    <li>the time, the type of request (such as <code>tools/call</code>), the tool name (or the name asked for, if it is not one of ours), the outcome and status, and how long it took;</li>
-    <li>the door of the service that was called (such as <code>agent-broker</code>) and the protocol version;</li>
+    <li>the time, the type of request (such as <code>tools/call</code>), the tool name (or the name asked for, if it is not one of ours), the outcome, the error code and status for a call that failed, and how long it took;</li>
+    <li>the door of the service that was called (such as <code>agent-broker</code>) and the protocol version; for a web request that failed before a tool ran, the method and a sanitised version of the path (words that look like identifiers only, never a key or token), such as <code>POST /mcp</code>;</li>
     <li>the client name and version your software reports;</li>
     <li>whether a key was used, its state and its identifier (for a free key, a short code derived from a hash of your email address; for a paid account, your Polar customer identifier);</li>
     <li>the names of the arguments you sent, never their values, and a short one-way hash of the arguments;</li>
     <li>a short one-way hash of your IP address, and your user agent;</li>
     <li>a label we derive from the call: a registry crawler, a caller with no key, or a caller with a key.</li>
-    <li>The values you pass to lookup and screening tools (a company name, a person&rsquo;s name, a place) are not written to the usage log and are not saved in the database; section 3 says what is held in memory. Tools that change state (sending a message, capturing a lead, booking, escalating) store a record of the operation, described under &ldquo;Messaging&rdquo; below.</li>
+    <li>The values you pass to lookup and screening tools (a company name, a person&rsquo;s name, a place) are not written to the usage log and, for those tools, are not saved in the database; section 3 says what is held in memory. Tools that change state (sending a message, capturing a lead, booking, escalating, importing a booking page) store a record of the operation, described in section 5.</li>
     <li>A billing record of each charge: the tool, the amount, the status, the time and your key identifier.</li>
   </ul>
   <p><strong>Keys, sign-in and payments.</strong></p>
@@ -736,7 +744,7 @@ def render_privacy() -> str:
     <li><code>verify_company_record</code> sends the company name (and country, if given) to the GLEIF LEI registry (api.gleif.org). For US public companies it downloads the SEC&rsquo;s public company file and matches the name on our server.</li>
     <li><code>lookup_us_contracts</code> sends the company name to the USAspending.gov public API (api.usaspending.gov).</li>
     <li><code>find_business</code> sends the place text you give it (up to 200 characters), the search area and the business category to the public OpenStreetMap services: Nominatim for geocoding, run by the OpenStreetMap Foundation (nominatim.openstreetmap.org), and the public Overpass API for businesses, which has its own operator (overpass-api.de). They also receive our server&rsquo;s IP address. Treat that field as public and do not put a private person&rsquo;s home address in it. The server remembers a place for up to 7 days and the businesses found there for 6 hours, so that a repeat costs the public servers nothing. The map data is &copy; OpenStreetMap contributors, available under the ODbL.</li>
-    <li><code>import_booking_url</code> fetches the booking page address you give it, from our server.</li>
+    <li><code>import_booking_url</code> fetches the booking page address you give it, from our server, and saves a business record built from it (and from any name, phone number or email address you pass with it) in our supply directory, in readable form: see section 5.</li>
     <li>The Retail Broker at hatchloop.dev/retail forwards a visitor&rsquo;s product search to the public catalogue endpoints of the stores it searches.</li>
   </ul>
   <p>Some of this is held in the server&rsquo;s memory only, never in the database: the places and results above, and, so that the sanctions screen is fast, its analysis of recently screened names and name parts. A restart of the service empties all of it.</p>
@@ -746,12 +754,14 @@ def render_privacy() -> str:
   <p>To provide and bill the service, run the compliance gate (including opt-outs), prevent abuse and keep the service reliable. We do <strong>not</strong> sell personal data and we do not use message content for advertising. The legal bases we rely on, where GDPR or UK GDPR applies, are contract (delivering the service you asked for), legitimate interests (abuse prevention, security logging, reliability) and legal obligation (tax records and regulatory disclosures).</p>
 
   <h2>5. Messaging</h2>
-  <p>Messaging tools work on the channels enabled on the current deployment, which are WhatsApp and email. SMS and voice calling are not enabled, and nothing is sent to an SMS or voice provider. When your agent sends a message we process its content and the recipient&rsquo;s identifier to deliver it and to run the compliance gate (TCPA, GDPR, CASL and PDPL checks, consent and opt-out enforcement). Replying <strong>STOP</strong> on a channel, including WhatsApp, records an opt-out that blocks further messages to you on that channel.</p>
+  <p><code>send_message</code> works on WhatsApp and email, the channels enabled on the current deployment; <code>send_transactional_confirmation</code> works by email only, because a phone-number recipient would need SMS. SMS and voice calling are not enabled, and nothing is sent to an SMS or voice provider. When your agent sends a message we process its content and the recipient&rsquo;s identifier to deliver it and to run the compliance gate (TCPA, GDPR, CASL and PDPL checks, consent and opt-out enforcement). Replying <strong>STOP</strong> on a channel, including WhatsApp, records an opt-out that blocks further messages to you on that channel.</p>
   <p>What these tools store:</p>
   <ul>
     <li>The compliance audit log keeps a SHA-256 hash of each recipient identifier, with the channel, the decision and the reason, and no plaintext identifier.</li>
     <li>Other records hold identifiers in readable form: opt-outs (the recipient and the channel), leads your agent captures (name, phone, email, notes), conversation records (the numbers involved and the message text) and replies received on WhatsApp (sender number, profile name and text), which are kept so the requesting agent can read them.</li>
     <li>Receipts of operations that change state, which can include the free text your agent supplied, and the ticket that a human escalation writes to our operator queue (the reason, the recommended next step your agent wrote and your key identifier).</li>
+    <li>The supply directory. <code>import_booking_url</code> saves a business record in our database table <code>smb_supply</code> (and keeps it in memory so that it can be found), in readable form: the business name (the one your agent gives, or the title of the page), the booking-page address and the booking platform it detects, the country and kind of business, the capabilities and channels, and any phone number or email address your agent passes with it. A record made by one agent can be read back by any other: <code>find_business</code> and <code>verify_business</code> return its name, location, capabilities and channels, <code>schedule_appointment</code> uses its booking-page address, and <code>call_business</code>, which is not enabled on the current deployment, would call its stored phone number. Nothing deletes these records on a schedule; to have one removed, email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.</li>
+    <li>Queued messages. When the business your agent is messaging (identified by the <code>business_id</code> your agent supplies) is over its message budget, <code>send_message</code> queues the request instead of sending it, and stores, in readable form, the recipient&rsquo;s phone number, your agent&rsquo;s identifier, your agent&rsquo;s reference for the end user and the first 200 characters of the message. Once a request has been queued for 48 hours it is marked expired, not deleted. Queued requests can be sent to that business together, in one WhatsApp digest message that carries that text and your agent&rsquo;s reference for the end user, when the business&rsquo;s service window is open; a record of each digest (the numbers, the request identifiers and their state, not the message text) is kept.</li>
   </ul>
 
   <h2>6. Who else receives data</h2>
@@ -768,20 +778,22 @@ def render_privacy() -> str:
   <ul>
     <li><strong>Meta</strong> (WhatsApp Business Platform) carries WhatsApp messages and receives the recipient&rsquo;s number and the text. Meta&rsquo;s own terms and privacy policy also apply to that channel.</li>
     <li><strong>Cal.com</strong> receives the attendee&rsquo;s name, email address and notes when a booking is made.</li>
+    <li><strong>Cloudflare</strong> runs a relay, a Cloudflare Worker at agent-broker-edge.basil-agent.workers.dev, for the older address under which AgentBroker was first listed in some MCP directories, and it is still running. A client that connects through that address sends its requests, including the tool arguments and the key header, to Cloudflare, which passes them on to our server; the relay keeps a daily counter per IP address for the free allowance, and Cloudflare may log the requests it handles. Connections to hatchloop.dev and api.hatchloop.dev do not go through Cloudflare.</li>
     <li><strong>Render</strong> runs only a redirect from our former address (smb-broker.onrender.com) to api.hatchloop.dev. A client that still uses the old address sends its first request there, so Render sees that request.</li>
   </ul>
   <p><strong>Public sources</strong> that receive the text you ask us to look up are listed in section 3: GLEIF, OpenStreetMap services, USAspending.gov and the stores searched by the Retail Broker.</p>
-  <p><strong>Integrations that exist but are switched off</strong> and receive nothing: SMS (Twilio), voice calls (Vapi) and on-chain payments (Coinbase).</p>
+  <p><strong>Integrations that exist but are switched off</strong> and receive no messages or personal data: SMS (Twilio), voice calls (Vapi) and on-chain payments (Coinbase). The service&rsquo;s public health check (<code>/healthz/external</code>) does call the status endpoints of the providers that are configured, Vapi among them, with our own credentials, to see whether they are up.</p>
 
   <h2>7. Where data is processed</h2>
-  <p>The server is in Kuala Lumpur, Malaysia. We operate from Oman, and the database backups are also copied to a company computer. The providers in section 6 process data in their own locations, which include the United States and Europe.</p>
+  <p>The server is in Kuala Lumpur, Malaysia. We operate from Oman, and the database backups are also copied to a company computer. The providers in section 6 process data in their own locations, which include the United States and Europe, and the Cloudflare relay for the older address handles each request in whichever Cloudflare location is nearest to the caller.</p>
 
   <h2>8. How long we keep it</h2>
   <ul>
     <li>Web server access logs are kept in rotating files limited by size (20 MB a file, 10 files per site), which at current traffic is a matter of days. The server&rsquo;s system journal keeps at most 7 days.</li>
+    <li>The service&rsquo;s own program log (what it prints while it runs: warnings and errors) is kept by the container runtime for as long as the container exists. It has no line for each web request, and the lines that mention a customer&rsquo;s email address show it masked, with one exception: when a paid order cannot be recorded, the line that preserves the order, as a recovery record, holds the buyer&rsquo;s address. Earlier releases of the service are kept stopped, for rollback, together with their logs, and are removed by hand with no fixed schedule; their logs can still hold sign-in links and session tokens (from the request lines they used to write) and some email addresses in plain text.</li>
     <li>Database backups are written every 12 hours and kept for 30 days, on the server and on that company computer.</li>
     <li>Connect sign-ins, authorisation codes and refresh tokens expire on their own (see section 2). Expired sign-ins and codes, and refresh tokens past their 90-day limit, are deleted at least a day later, a few at a time whenever a new sign-in starts, so they can remain for some time after that.</li>
-    <li>We do not yet delete the other records described above on a fixed schedule. Usage, billing and compliance audit records are kept so that we can bill, prevent abuse and show what the compliance gate decided; account records, the apps that registered themselves and the link between a hashed email address and a paid account are kept while the account or the service exists; opt-outs are kept indefinitely because that is what makes them enforceable.</li>
+    <li>We do not yet delete the other records described above on a fixed schedule. Usage, billing and compliance audit records are kept so that we can bill, prevent abuse and show what the compliance gate decided; account records, the apps that registered themselves and the link between a hashed email address and a paid account are kept while the account or the service exists, except that when the list of registered apps reaches 50,000, registrations that were never used and are more than 30 days old are removed to make room; business records saved by <code>import_booking_url</code> and queued messages (which are marked expired after 48 hours, not deleted) are kept until we are asked to remove them; opt-outs are kept indefinitely because that is what makes them enforceable.</li>
     <li>To have your records deleted, email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>; we respond within 30 days. Billing and tax records can only be deleted where the law allows it.</li>
   </ul>
 

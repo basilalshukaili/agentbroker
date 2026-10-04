@@ -369,7 +369,7 @@ Every outbound communication passes through `compliance/pre_check()`:
 3. **Consent check**  -  TCPA written consent, GDPR opt-in, CASL implied/express
 4. **10DLC registry check**  -  US SMS campaign compliance
 5. **Two-party recording consent**  -  CA, FL, IL, MD, MA, MT, NV, NH, PA, WA
-6. **Audit log**  -  PII stored as SHA-256 hash, never plaintext
+6. **Audit log**  -  recipient phone/email stored as a SHA-256 hash in this log, never plaintext (other records, such as leads, opt-outs and conversations, hold identifiers in readable form; see the privacy policy)
 
 Violations surface as `ComplianceViolationError` and are never silently bypassed.
 

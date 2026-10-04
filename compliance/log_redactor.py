@@ -107,6 +107,19 @@ def mask_phone(value: str | None) -> str:
     return _mask_phone(value)
 
 
+def scrub_address(text: object, address: str | None) -> str:
+    """`text` with every occurrence of `address` (any letter case) replaced by its masked form.
+
+    For log lines that carry text a provider or the database sent back: Resend's error body and a Postgres
+    unique-violation message both echo the address that was rejected, so masking the address we pass to the
+    logger is not enough on its own.
+    """
+    out = str(text)
+    if not address:
+        return out
+    return re.sub(re.escape(address), mask_email(address), out, flags=re.IGNORECASE)
+
+
 def mask_token(value: str | None) -> str:
     if not value:
         return "<empty>"
