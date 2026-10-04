@@ -210,6 +210,11 @@ from agent_interface.oauth.router import router as oauth_router
 from agent_interface.oauth import challenge as oauth_challenge
 app.include_router(oauth_router)
 
+# Discovery files served only when true: /.well-known/glama.json (a claim token or 404), /.well-known/mcp/server-card.json,
+# /.well-known/x402.json (an alias of /.well-known/x402). See agent_interface/discovery_extras.py.
+from agent_interface.discovery_extras import router as discovery_extras_router
+app.include_router(discovery_extras_router)
+
 
 # ---------------------------------------------------------------------------
 # Telemetry middleware — single source of truth for request/op counters.

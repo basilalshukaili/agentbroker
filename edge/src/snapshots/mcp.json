@@ -70,7 +70,59 @@
   },
   "auth": {
     "header": "X-Agent-Identity",
-    "scheme": "bearer"
+    "scheme": "bearer",
+    "oauth2": {
+      "authorization_server": "https://api.hatchloop.dev",
+      "protected_resource_metadata_url": "https://api.hatchloop.dev/.well-known/oauth-protected-resource/mcp",
+      "authorization_server_metadata_url": "https://api.hatchloop.dev/.well-known/oauth-authorization-server",
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "code_challenge_methods": [
+        "S256"
+      ],
+      "client_registration": [
+        "client_id_metadata_document",
+        "dynamic_client_registration"
+      ],
+      "scopes": [
+        "agentbroker.tools",
+        "offline_access"
+      ],
+      "sign_in": "An email address and a one-time link we send to it. No password.",
+      "token": "The access token is an Agent-Identity key: send it as 'Authorization: Bearer <token>'.",
+      "tools_that_need_an_account": [
+        "call_business",
+        "capture_lead",
+        "escalate_to_human",
+        "get_conversation",
+        "handle_inbound",
+        "import_booking_url",
+        "schedule_appointment",
+        "send_message",
+        "send_transactional_confirmation"
+      ]
+    }
+  },
+  "protocol_versions": {
+    "supported": [
+      "2026-07-28",
+      "2025-11-25",
+      "2025-06-18",
+      "2025-03-26",
+      "2024-11-05"
+    ],
+    "modern": [
+      "2026-07-28"
+    ],
+    "legacy": [
+      "2025-11-25",
+      "2025-06-18",
+      "2025-03-26",
+      "2024-11-05"
+    ],
+    "server_discover": true
   },
   "capability_endpoints": [
     {

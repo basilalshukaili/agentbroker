@@ -10,6 +10,9 @@
 
     Add `--change retired` to plan / install / verify to work on the SECOND change instead (deploy/caddy/
     mcp_retired.py: the retired MCP doors answered by the origin's tombstone). Deploy the origin first.
+    Add `--change oauth_prm` for the THIRD (deploy/caddy/oauth_prm.py: hatchloop.dev's OAuth protected-resource
+    documents routed to the origin with the Host header intact, so a door's metadata names the URL a client
+    connected to). It needs no origin deploy: the live build already answers by Host.
 
 Connection: --target user@host and --key PATH, or VPS_SSH_TARGET / VPS_SSH_KEY, or --env-file PATH with
 VPS_IP (or VPS_HOST) and optionally VPS_USER, plus --key. No host or credential is stored in this repo.
@@ -42,6 +45,7 @@ sys.path.insert(0, str(HERE.parent.parent))
 
 import mcp_direct  # noqa: E402
 import mcp_retired  # noqa: E402
+import oauth_prm  # noqa: E402
 
 LIVE = "/etc/caddy/Caddyfile"
 REMOTE_TMP = "/tmp/_mcp_direct"
@@ -117,6 +121,8 @@ def _change(args) -> tuple:
     if getattr(args, "change", "direct") == "retired":
         from agent_interface import retired_doors
         return mcp_retired, sorted(retired_doors.RETIRED_DOORS)
+    if getattr(args, "change", "direct") == "oauth_prm":
+        return oauth_prm, _doors()
     return mcp_direct, _doors()
 
 
@@ -272,7 +278,7 @@ def main(argv=None) -> int:
     ap.add_argument("--key")
     ap.add_argument("--env-file")
     ap.add_argument("--yes", action="store_true")
-    ap.add_argument("--change", choices=["direct", "retired"], default="direct",
+    ap.add_argument("--change", choices=["direct", "retired", "oauth_prm"], default="direct",
                     help="which Caddyfile change plan / install / verify work on (default: direct)")
     ap.add_argument("--apply", action="store_true", help="scrub: actually blank the values")
     ap.add_argument("--write-patch", metavar="PATH", help="plan: also write the unified diff here")

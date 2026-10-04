@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from agent_interface import discovery_auth
 from agent_interface.manifest_server import get_full_manifest, get_manifest_version
 
 _SERVICE_DESCRIPTION = (
@@ -39,6 +40,16 @@ def get_discovery_card(agent_id: Optional[str] = None) -> dict:
     the full capability manifest.
     """
     version_info = get_manifest_version(agent_id)
+    card = _discovery_card(version_info)
+    # The OAuth sign-in, when it is switched on (agent_interface/discovery_auth.py: derived from the router's own
+    # metadata, absent while OAUTH_CONNECT_ENABLED is off). The header key above stays the default path.
+    oauth = discovery_auth.oauth_block()
+    if oauth is not None:
+        card["auth"]["oauth2"] = oauth
+    return card
+
+
+def _discovery_card(version_info: dict) -> dict:
     return {
         "service_type": "smb_broker",
         "service_id": "smb-broker-v1",
