@@ -190,10 +190,46 @@ def test_the_document_cannot_name_a_different_receiver_than_the_offer(gate_on, m
     assert RECEIVER not in json.dumps(doc)
 
 
-def test_prices_in_the_document_are_the_gates_prices(gate_on):
+def test_prices_in_the_document_are_the_gates_prices(gate_on, monkeypatch):
+    # With metering on every paid tool is priced by the gate. (With it off the three premium data
+    # tools are answered free before the x402 branch and are not listed: see the test below.)
+    monkeypatch.setenv("DATA_METERING_ENABLED", "true")
     doc = gate_on.discovery_document()
     assert doc["pricesUsd"] == dict(sorted(gate_on._PRICING_USD.items()))
     assert doc["pricesUsd"], "no prices published"
+
+
+def test_discovery_does_not_price_the_data_tools_while_metering_is_off(gate_on, monkeypatch):
+    """THE FINDING (third review, P2). X402_ENABLED on and DATA_METERING_ENABLED off is the state an
+    operator reaches by switching x402 on first. A tools/call for screen_sanctions that carries a payment
+    never reaches run_paid_tool there: the data-metering bypass answers it free. Yet the document listed
+    all three at $0.02, so an indexer would show free tools as pay-per-call."""
+    from billing.data_quota import PREMIUM_DATA_TOOLS
+    monkeypatch.delenv("DATA_METERING_ENABLED", raising=False)
+    doc = gate_on.discovery_document()
+    for tool in PREMIUM_DATA_TOOLS:
+        assert tool not in doc["pricesUsd"], f"{tool} is priced in /.well-known/x402 but served free"
+    assert "send_message" in doc["pricesUsd"], "the tools the gate does charge for stay listed"
+    monkeypatch.setenv("DATA_METERING_ENABLED", "true")
+    on = gate_on.discovery_document()
+    for tool in PREMIUM_DATA_TOOLS:
+        assert on["pricesUsd"][tool] == gate_on.price_usd(tool), tool
+
+
+def test_discovery_prices_and_tool_tags_name_the_same_tools(gate_on, monkeypatch):
+    """The document and tools/list are one claim: a tool is priced in /.well-known/x402 exactly when its
+    description offers x402 for it, in both metering states."""
+    from agent_interface import mcp_server as ms
+    from billing.data_quota import PREMIUM_DATA_TOOLS
+    assert PREMIUM_DATA_TOOLS == ms._PREMIUM_DATA_TOOLS, "two copies of the premium-data list must agree"
+    for metering in (False, True):
+        if metering:
+            monkeypatch.setenv("DATA_METERING_ENABLED", "true")
+        else:
+            monkeypatch.delenv("DATA_METERING_ENABLED", raising=False)
+        listed = set(gate_on.discovery_document()["pricesUsd"])
+        tagged = {t for t in gate_on._PRICING_USD if ms._x402_tag(t)}
+        assert listed == tagged, (metering, sorted(listed ^ tagged))
 
 
 def test_testnet_is_listed_only_when_the_gate_accepts_it(gate_on, monkeypatch):
@@ -289,3 +325,29 @@ def test_run_paid_tool_only_alerts_on_a_signed_payment(gate_on, monkeypatch):
         with pytest.raises(RuntimeError):
             _run(gate_on.run_paid_tool("screen_sanctions", {}, meta, dispatch))
         assert alerts == expected, f"{meta!r} -> {alerts}"
+
+
+def test_the_buyer_intent_alert_does_not_claim_the_payment_is_real(gate_on, monkeypatch):
+    """THE FINDING (third review, P3). The predicate is the SDK's parse, which accepts any structurally valid
+    payload: a forged one with a fake signature (the SIGNED fixture above carries signature '0x01') passes.
+    The alert used to say 'a real buyer is here' and 'this is a genuine buyer attempt'. It cannot know that
+    before verification, and it is anonymous-reachable, so it says what it knows: an unverified attempt."""
+    import billing.telegram_revenue_alerts as alerts_mod
+    sent = []
+
+    async def fake_send(text, *a, **k):
+        sent.append(text)
+
+    monkeypatch.setattr(alerts_mod, "send_telegram_alert", fake_send)
+    gate_on._buyer_intent_last_alert.clear()
+    _run(gate_on._notify_buyer_intent("screen_sanctions"))
+    assert len(sent) == 1, sent
+    text = sent[0].lower()
+    assert "unverified" in text, "the alert must say the payment has not been checked"
+    for claim in ("real buyer", "genuine"):
+        assert claim not in text, f"the alert still claims {claim!r} about an unverified payload"
+    assert "screen_sanctions" in sent[0], "the tool is still named"
+    # the cooldown is unchanged: a second attempt inside it is silent
+    _run(gate_on._notify_buyer_intent("screen_sanctions"))
+    assert len(sent) == 1
+    gate_on._buyer_intent_last_alert.clear()

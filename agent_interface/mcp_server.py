@@ -276,6 +276,8 @@ def _format_description_for_llm(op: dict) -> str:
         if cost_basis == "freemium_daily_quota" and not _sw.data_metering_enabled():
             cost_basis = "free"
         # While no rail is on, a price is a schedule and nothing is charged; say so, once, in the tag.
+        # (A premium data tool past its quota is the exception: there the call is refused, which the quota
+        # tag below says in its own words. "Not charged" there read as "the call carries on, free".)
         _nc = _sw.not_charged_note()
         _nc_tag = f", {_nc}" if _nc else ""
         has_variable = (
@@ -284,7 +286,7 @@ def _format_description_for_llm(op: dict) -> str:
                                        "tiers", "max_price_usd"))
         )
         if cost_basis == "freemium_daily_quota":
-            cost_tag = f" [free in quota, then ${cost_amount}/call{_nc_tag}]"
+            cost_tag = f" [free in quota, {_sw.past_quota_tag(cost_amount)}]"
         elif cost_basis == "free":
             # `requires_key`, NOT the write set. get_conversation costs nothing
             # and is not a write, so the narrower test tagged it "[free, no
@@ -1033,6 +1035,7 @@ async def _h_initialize(params: dict) -> dict:
     detail that made an honest listing look like a duplicate.
     """
     from agent_interface import profiles as _profiles
+    from billing import switches as _switches_init
     profile = params.get("_profile") if isinstance(params, dict) else None
     if profile:
         try:
@@ -1093,7 +1096,7 @@ async def _h_initialize(params: dict) -> dict:
             # missing one read as free to every client that connected.
             f"{_keyless_count()} of the {_total_tool_count()} tools need no "
             f"key at all ({tool_auth.keyless()} always free, "
-            f"{tool_auth.quota_free()} free within a daily quota); the other "
+            f"{tool_auth.quota_free()} {_switches_init.free_quota_clause()}); the other "
             f"{tool_auth.needs_key()} require an X-Agent-Identity token in the "
             f"underlying HTTP request - the {len(_WRITE_TOOLS_REQUIRING_AUTH)} "
             f"write tools, plus "

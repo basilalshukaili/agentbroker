@@ -139,6 +139,7 @@ def _payments_block() -> dict:
     x402_live = "x402" in rails
     credits_live = "credits" in rails
     metering_live = switches.data_metering_enabled()
+    quota_terms = switches.premium_data_terms()
 
     # What the switches being off means, in words, because an agent may read only the note.
     # The access lists below are a CLASSIFICATION (which tools need a key, which carry a price)
@@ -152,7 +153,7 @@ def _payments_block() -> dict:
         switch_notes += " Credits are not switched on at this time; x402 is the only way to pay."
     if not metering_live:
         switch_notes += (
-            " The daily quota on the quota_free_tools is not enforced at this time: those tools "
+            " The free daily limit on the quota_free_tools is not enforced at this time: those tools "
             "run free and unmetered.")
     return {
         "status": switches.payments_status(),
@@ -177,11 +178,11 @@ def _payments_block() -> dict:
         "note": (
             f"THREE NUMBERS, because 'free' means three things here. "
             f"{len(free)} tools are callable with NO key and NO credits. "
-            f"{len(quota_free)} more are callable with no key up to a daily "
-            f"quota, then cost credits. That is {len(free) + len(quota_free)} "
+            f"{len(quota_free)} more are callable with no key {quota_terms}. "
+            f"That is {len(free) + len(quota_free)} "
             f"usable without signing up. The remaining {len(paid) + len(free_with_key)} "
-            f"need a free key, and {len(spends_credits)} spend credits once past any "
-            f"quota (the quota-free ones only past it). Every tool is in exactly one of "
+            f"need a free key, and {len(spends_credits)} carry a list price (the quota-free "
+            f"ones only past their quota, where one is enforced). Every tool is in exactly one of "
             f"free_tools, quota_free_tools, free_with_key_tools, paid_tools. Call preview_cost "
             f"(free) for the exact price of any operation before committing."
             + switch_notes
@@ -216,8 +217,10 @@ def describe_cost(cost: dict) -> str:
     if basis == "free" or amount in (0, 0.0):
         return "Cost: free (no key required)."
     if basis == "freemium_daily_quota":
-        return (f"Cost: free within the daily quota, then ${amount} per call"
-                + (f" ({switches.NOT_CHARGED})." if not switches.charging_active() else "."))
+        # With no rail on, a call past the quota is refused, not charged and not carried on free.
+        if not switches.charging_active():
+            return f"Cost: free within the daily quota; past it the call is {switches.QUOTA_REFUSED}."
+        return f"Cost: free within the daily quota, then ${amount} per call."
     if amount is None:
         return "Cost: see preview_cost."
     # While no payment rail is on, a price is a schedule: nothing is charged. The figure stays.

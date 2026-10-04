@@ -55,7 +55,7 @@
       "verify_company_record"
     ],
     "premium_data_quota_enforced": false,
-    "note": "THREE NUMBERS, because 'free' means three things here. 11 tools are callable with NO key and NO credits. 3 more are callable with no key up to a daily quota, then cost credits. That is 14 usable without signing up. The remaining 9 need a free key, and 10 spend credits once past any quota (the quota-free ones only past it). Every tool is in exactly one of free_tools, quota_free_tools, free_with_key_tools, paid_tools. Call preview_cost (free) for the exact price of any operation before committing. No payment rail is switched on at this time, so no call is charged; the prices here are the schedule that applies once a rail is enabled. The daily quota on the quota_free_tools is not enforced at this time: those tools run free and unmetered. Pricing: https://hatchloop.dev/pricing"
+    "note": "THREE NUMBERS, because 'free' means three things here. 11 tools are callable with NO key and NO credits. 3 more are callable with no key and run free and unmetered at this time. That is 14 usable without signing up. The remaining 9 need a free key, and 10 carry a list price (the quota-free ones only past their quota, where one is enforced). Every tool is in exactly one of free_tools, quota_free_tools, free_with_key_tools, paid_tools. Call preview_cost (free) for the exact price of any operation before committing. No payment rail is switched on at this time, so no call is charged; the prices here are the schedule that applies once a rail is enabled. The free daily limit on the quota_free_tools is not enforced at this time: those tools run free and unmetered. Pricing: https://hatchloop.dev/pricing"
   },
   "description": "MCP server for HatchLoop AgentBroker. Exposes 23 operations: find_business, verify_business, send_message, capture_lead, schedule_appointment, send_transactional_confirmation, handle_inbound, escalate_to_human, get_status, get_outcome, preview_cost, self_test, check_quota, check_booking_link, import_booking_url, call_business, check_compliance, verify_company_record, screen_sanctions, map_trade_restriction, get_conversation, mint_key, lookup_us_contracts.",
   "tool_readiness": {
@@ -94,7 +94,7 @@
     {
       "name": "sanctions-screening",
       "endpoint": "https://api.hatchloop.dev/mcp/sanctions-screening",
-      "description": "Sanctions screening (OFAC, EU, UK) + company verification. No key; free within a daily quota.",
+      "description": "Sanctions screening (OFAC, EU, UK) + company verification. No key needed.",
       "tool_count": 8
     },
     {

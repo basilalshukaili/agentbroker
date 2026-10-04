@@ -221,7 +221,12 @@ async def handle_preview_cost(
     # "exact" with no qualifier read as "this call will cost $0.05". The numbers do not move (the receipts
     # and the x402 gate read the same schedule); the basis says what they mean right now.
     if pricing["max"] > 0 and _switches.not_charged_note():
-        accuracy += f" ({_switches.NOT_CHARGED})"
+        if op in _PREMIUM_DATA_TOOLS:
+            # Metering is on here (off, the pricing above is zero). Past the free quota with no rail on the
+            # call is refused: "not charged" read as "the call carries on, free".
+            accuracy += f" (free within the daily quota; past it the call is {_switches.QUOTA_REFUSED})"
+        else:
+            accuracy += f" ({_switches.NOT_CHARGED})"
 
     _succ, _succ_basis = _success_estimate(op)
     _lat, _lat_basis = _latency_estimate(op, latency)

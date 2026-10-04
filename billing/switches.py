@@ -121,3 +121,38 @@ def charging_active() -> bool:
 def not_charged_note() -> str:
     """NOT_CHARGED while no rail is on, otherwise "". Safe to splice into any price sentence."""
     return "" if charging_active() else NOT_CHARGED
+
+
+# ---------------------------------------------------------------------------
+# The premium data tools' free quota, in words. Every surface that mentions the quota calls these, so
+# no surface can promise one while DATA_METERING_ENABLED is off, and none can say a call past it "carries
+# on, uncharged" while no rail exists. What the gate does past the quota with nothing able to charge:
+# agent_interface/mcp_server.py -> billing.data_quota.consume_data_quota returns status "failure",
+# reason_code "free_quota_exceeded" and the tool is NOT dispatched. QUOTA_REFUSED says exactly that.
+# ---------------------------------------------------------------------------
+
+QUOTA_REFUSED = "refused until the quota resets"
+
+
+def free_quota_clause() -> str:
+    """The premium data tools' free allowance as a clause ("3 <clause>"), for the state right now."""
+    return "free within a daily quota" if data_metering_enabled() else "free and unmetered at this time"
+
+
+def past_quota_tag(amount) -> str:
+    """What follows "free in quota," in a tool tag: the price once a rail can charge it, otherwise the refusal.
+
+    "" while metering is off: with no quota enforced there is no "past it".
+    """
+    if not data_metering_enabled():
+        return ""
+    return f"then ${amount}/call" if charging_active() else f"then {QUOTA_REFUSED}"
+
+
+def premium_data_terms() -> str:
+    """The clause that follows "N more are callable with no key" in the payments note, for the state right now."""
+    if not data_metering_enabled():
+        return "and run free and unmetered at this time"
+    if charging_active():
+        return "up to a daily quota, then they are charged at the list price"
+    return "up to a daily quota, then refused until it resets"

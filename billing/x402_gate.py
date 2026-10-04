@@ -238,6 +238,14 @@ def discovery_document() -> Optional[dict]:
     """
     if not enabled():
         return None
+    # The three premium data tools are answered FREE, before the x402 branch, while DATA_METERING_ENABLED
+    # is off (the bypass in agent_interface/mcp_server.py), so a payment attached to one is never read.
+    # Listing them here would show free tools as pay-per-call to every indexer. This is the same
+    # predicate agent_interface/mcp_server._x402_tag uses, so the document and tools/list agree.
+    from billing import switches
+    from billing.data_quota import PREMIUM_DATA_TOOLS
+    metering = switches.data_metering_enabled()
+    prices = {t: p for t, p in _PRICING_USD.items() if metering or t not in PREMIUM_DATA_TOOLS}
     accepts = [{
         "scheme": "exact",
         "network": MAINNET,
@@ -262,7 +270,7 @@ def discovery_document() -> Optional[dict]:
         "resources": [config.X402_PUBLIC_MCP_URL],
         "accepts": accepts,
         "facilitatorUrl": config.X402_FACILITATOR_URL,
-        "pricesUsd": dict(sorted(_PRICING_USD.items())),
+        "pricesUsd": dict(sorted(prices.items())),
         "pricing": "https://hatchloop.dev/pricing",
         "payTo": config.X402_RECEIVER_ADDRESS,
         "network": MAINNET,
@@ -449,17 +457,20 @@ async def _notify_first_payment(ctx: Any) -> None:
 
 # Cooldown so a buyer retrying a payment several times doesn't spam Telegram.
 # In-memory: resets on restart, which is fine — re-alerting after a restart on a
-# genuine buyer is acceptable (better to over-signal a real buyer than miss one).
+# payer is acceptable (better to over-signal an attempt than miss a buyer).
 _buyer_intent_last_alert: dict[str, float] = {}
 _BUYER_INTENT_COOLDOWN_S = 900.0  # 15 min per tool
 
 
 async def _notify_buyer_intent(tool: str) -> None:
-    """Fire a Telegram push the moment a REAL buyer attempts to pay (an x402
-    payment payload arrived), BEFORE settlement. Crawlers/scorers never build
-    signed payments, so this is the earliest high-signal "a real buyer is here"
-    event — even if their payment later fails, the founder hears about it and can
-    react. Never raises."""
+    """Fire a Telegram push the moment a structurally valid x402 payment payload arrives, BEFORE
+    verification or settlement. Crawlers/scorers rarely build one, so it is an early, useful signal.
+
+    IT IS NOT PROOF OF A BUYER. The predicate (_is_signed_payment_attempt) is the SDK's own parse: it checks
+    the SHAPE (a payload and an `accepted` block), not the signature, so anyone can send a payload that passes
+    it, and this route is reachable anonymously. The text therefore says "unverified" and claims nothing about
+    who sent it. At most one alert per tool per 15 minutes. The PAID alert, after settlement, is the proof.
+    Never raises."""
     try:
         import time
         now = time.time()
@@ -470,10 +481,11 @@ async def _notify_buyer_intent(tool: str) -> None:
         from billing.telegram_revenue_alerts import send_telegram_alert
         usd = price_usd(tool) or "?"
         await send_telegram_alert("\n".join([
-            "*Agent Broker* — a real buyer is here. 👀",
-            f"An AI agent attached an x402 payment for `{tool}` (${usd} USDC).",
+            "*Agent Broker* — an x402 payment attempt arrived (unverified). 👀",
+            f"A caller attached an x402 payment payload for `{tool}` (${usd} USDC).",
             "Verifying + settling now — if it clears you'll get the PAID alert next.",
-            "(Crawlers don't build signed payments, so this is a genuine buyer attempt.)",
+            "(Only the payload's shape has been checked, not its signature: anyone can send one. "
+            "The PAID alert is the proof of a buyer.)",
         ]))
         log.info("x402 buyer-intent alert sent tool=%s", tool)
     except Exception as e:  # noqa: BLE001

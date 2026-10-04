@@ -62,7 +62,10 @@ PROFILES: dict[str, dict] = {
         # commercial carve-out, unlike OFAC (public domain), the EU list (EC
         # open-data) and the UK list (OGL v3.0). We screen what we are licensed
         # to screen and say exactly that. See core/screen_sanctions.py.
-        "description": "Sanctions screening (OFAC, EU, UK) + company verification. No key; free within a daily quota.",
+        # STATIC, SO TRUE IN EVERY STATE OF THE MONEY SWITCHES. It said "free within a daily quota" and the
+        # quota exists only while DATA_METERING_ENABLED is on (off in the running container). The live terms are
+        # in /.well-known/mcp.json payments; a description that depends on a switch cannot be a literal.
+        "description": "Sanctions screening (OFAC, EU, UK) + company verification. No key needed.",
         "tools": (
             "screen_sanctions",
             "verify_company_record",

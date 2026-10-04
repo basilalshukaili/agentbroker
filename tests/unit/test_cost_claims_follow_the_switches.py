@@ -50,6 +50,9 @@ def _every_switch_off(monkeypatch):
 
 
 def _set(monkeypatch, *, credits=False, metering=False, x402=False):
+    # Each call describes the WHOLE state: a switch an earlier call set must not leak into this one.
+    monkeypatch.delenv("CREDITS_ENABLED", raising=False)
+    monkeypatch.delenv("DATA_METERING_ENABLED", raising=False)
     if credits:
         monkeypatch.setenv("CREDITS_ENABLED", "true")
     if metering:
@@ -91,16 +94,19 @@ def test_metering_off_the_data_tools_are_not_tagged_with_a_quota():
 
 
 def test_metering_on_the_data_tools_carry_the_quota_tag(monkeypatch):
-    _set(monkeypatch, metering=True)
+    _set(monkeypatch, metering=True, credits=True)
     descs = _descriptions()
     for name in DATA_TOOLS:
         assert re.search(r"\[free in quota, then \$0\.0\d/call[,\]]", descs[name]), (name, descs[name][-80:])
 
 
-def test_metering_on_with_no_rail_the_quota_tag_still_says_nothing_is_charged(monkeypatch):
-    """Past the quota the call is refused, not charged, until a rail exists: the schedule is a schedule."""
+def test_metering_on_with_no_rail_the_quota_tag_says_the_call_is_refused(monkeypatch):
+    """Past the quota with no rail the call is REFUSED (free_quota_exceeded, nothing dispatched). It is not
+    "not charged": that read as "the call carries on, free". (test_quota_claims_follow_metering.py drives the gate.)"""
     _set(monkeypatch, metering=True)
-    assert NOT_CHARGED in _cost_tag(_descriptions()["screen_sanctions"])
+    tag = _cost_tag(_descriptions()["screen_sanctions"])
+    assert tag == "[free in quota, then refused until the quota resets]", tag
+    assert NOT_CHARGED not in tag
     _set(monkeypatch, metering=True, credits=True)
     assert _cost_tag(_descriptions()["screen_sanctions"]) == "[free in quota, then $0.02/call]"
 
@@ -122,7 +128,8 @@ def test_describe_cost_follows_metering(monkeypatch):
     quota_cost = {"basis": "freemium_daily_quota", "unit_price_usd": 0.02}
     assert describe_cost(quota_cost) == "Cost: free (no key required)."
     _set(monkeypatch, metering=True)
-    assert describe_cost(quota_cost) == f"Cost: free within the daily quota, then $0.02 per call ({NOT_CHARGED})."
+    assert describe_cost(quota_cost) == ("Cost: free within the daily quota; past it the call is "
+                                         "refused until the quota resets.")
     _set(monkeypatch, metering=True, credits=True)
     assert describe_cost(quota_cost) == "Cost: free within the daily quota, then $0.02 per call."
 
@@ -151,10 +158,14 @@ def test_metering_off_no_surface_promises_a_quota_on_the_data_tools():
 
 
 def test_metering_on_the_quota_sentence_is_back(monkeypatch):
-    _set(monkeypatch, metering=True)
+    _set(monkeypatch, metering=True, credits=True)
     texts = _surfaces_text(_client())
     assert "free within the daily quota, then $" in texts["/llms.txt"]
     assert "free in quota, then $" in texts["tools/list"]
+    _set(monkeypatch, metering=True)
+    texts = _surfaces_text(_client())
+    assert "free within the daily quota; past it the call is refused" in texts["/llms.txt"]
+    assert "free in quota, then refused" in texts["tools/list"]
 
 
 # ---------------------------------------------------------------- the other priced tools
