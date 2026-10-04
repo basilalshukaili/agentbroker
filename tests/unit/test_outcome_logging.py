@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -262,7 +263,8 @@ def test_door_is_recorded(events):
 # the logger itself
 # ---------------------------------------------------------------------------
 
-def test_log_usage_outcome_sends_v2_with_every_field(monkeypatch):
+def test_log_usage_outcome_sends_v3_with_every_field(monkeypatch):
+    """v3 (migration 013) is v2 plus door / protocol_version / result_count; every v2 field is still sent."""
     sent = []
 
     async def _rpc(fn, payload):
@@ -270,7 +272,7 @@ def test_log_usage_outcome_sends_v2_with_every_field(monkeypatch):
         return {"id": 7}
     import storage.supabase_client as sb
     monkeypatch.setattr(sb, "rpc", _rpc)
-    ul._v2_missing_until = 0.0
+    ul._v2_missing_until = ul._v3_missing_until = 0.0
     before = ul.get_usage_logger_health()["succeeded"]
     _run(ul.log_usage_outcome(ul.UsageEvent(
         method="tools/call", tool_name="screen_sanctions", ip="198.51.100.1", user_agent="UA",
@@ -278,8 +280,9 @@ def test_log_usage_outcome_sends_v2_with_every_field(monkeypatch):
         client_name="C", client_version="1", key_state="valid", arg_names=["name"],
         requested_name=None, detail="door=sanctions-screening")))
     fn, p = sent[0]
-    assert fn == "usage_events_insert_v2"
+    assert fn == "usage_events_insert_v3"
     assert p["p_outcome"] == "ok" and p["p_latency_ms"] == 33 and p["p_key_state"] == "valid"
+    assert (p["p_door"], p["p_protocol_version"], p["p_result_count"]) == (None, None, None), "nothing was told"
     assert p["p_session_kind"] == "verified_human_key"
     assert ul.get_usage_logger_health()["succeeded"] == before + 1
 
@@ -292,30 +295,32 @@ def test_log_usage_outcome_rejects_an_unknown_outcome_by_defaulting_not_crashing
         return {"id": 1}
     import storage.supabase_client as sb
     monkeypatch.setattr(sb, "rpc", _rpc)
-    ul._v2_missing_until = 0.0
+    ul._v2_missing_until = ul._v3_missing_until = 0.0
     _run(ul.log_usage_outcome(ul.UsageEvent(method="x", outcome="made-up")))
     assert sent[0]["p_outcome"] == "ok"
 
 
 def test_if_the_v2_function_is_missing_it_falls_back_to_v1_and_says_so(monkeypatch, caplog):
     """Code deployed ahead of the migration, or a database rolled back: logging must degrade to
-    the 7-field insert, loudly, never go dark."""
+    the 7-field insert, loudly, never go dark. (Since migration 013 the ladder has a rung above v2;
+    here v3 and v2 are both missing, which is a database that has had neither migration.)"""
     calls = []
 
     async def _rpc(fn, payload):
         calls.append(fn)
-        if fn == "usage_events_insert_v2":
-            raise RuntimeError("rpc('usage_events_insert_v2') failed: HTTP 404 body={\"code\":\"PGRST202\"}")
+        if fn in ("usage_events_insert_v3", "usage_events_insert_v2"):
+            raise RuntimeError(f"rpc({fn!r}) failed: HTTP 404 body={{\"code\":\"PGRST202\"}}")
         return {"id": 1}
     import storage.supabase_client as sb
     monkeypatch.setattr(sb, "rpc", _rpc)
-    ul._v2_missing_until = 0.0
+    ul._v2_missing_until = ul._v3_missing_until = 0.0
     with caplog.at_level("ERROR"):
         _run(ul.log_usage_outcome(ul.UsageEvent(method="tools/call", tool_name="find_business")))
         _run(ul.log_usage_outcome(ul.UsageEvent(method="tools/call", tool_name="find_business")))
-    assert calls == ["usage_events_insert_v2", "usage_events_insert", "usage_events_insert"], calls
+    assert calls == ["usage_events_insert_v3", "usage_events_insert_v2", "usage_events_insert",
+                     "usage_events_insert"], calls
     assert "usage_log_v2_missing" in caplog.text
-    ul._v2_missing_until = 0.0
+    ul._v2_missing_until = ul._v3_missing_until = 0.0
 
 
 def test_a_real_failure_is_not_mistaken_for_a_missing_function(monkeypatch):
@@ -326,10 +331,10 @@ def test_a_real_failure_is_not_mistaken_for_a_missing_function(monkeypatch):
         raise RuntimeError("rpc failed: HTTP 503")
     import storage.supabase_client as sb
     monkeypatch.setattr(sb, "rpc", _rpc)
-    ul._v2_missing_until = 0.0
+    ul._v2_missing_until = ul._v3_missing_until = 0.0
     before = ul.get_usage_logger_health()["failed"]
     _run(ul.log_usage_outcome(ul.UsageEvent(method="ping")))
-    assert calls == ["usage_events_insert_v2"], "a 503 must not trigger the v1 fallback"
+    assert calls == ["usage_events_insert_v3"], "a 503 must not trigger any fallback"
     assert ul.get_usage_logger_health()["failed"] == before + 1
 
 
@@ -349,10 +354,14 @@ def test_the_rpc_payload_matches_the_migrations_signature():
     orig = sb.rpc
     sb.rpc = _rpc
     try:
+        # v2 is the second rung since migration 013; pause the first so this test reads the v2 call
+        # (the v3 contract has its own test in test_door_instrumentation.py).
         ul._v2_missing_until = 0.0
+        ul._v3_missing_until = time.monotonic() + 3600.0
         _run(ul.log_usage_outcome(ul.UsageEvent(method="tools/call", tool_name="x")))
     finally:
         sb.rpc = orig
+        ul._v3_missing_until = 0.0
     assert set(sent[0]) == sql_params, (set(sent[0]) ^ sql_params)
 
 

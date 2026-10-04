@@ -687,6 +687,14 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
     ("tests/unit/test_outcome_logging.py", "storage.supabase_client.rpc"):
         "targets billing.usage_logger.log_usage_outcome (deferred rpc import inside the "
         "function); no reference to billing.credits or run_metered_tool.",
+    ("tests/unit/test_door_instrumentation.py", "storage.supabase_client.rpc"):
+        "targets billing.usage_logger.log_usage_outcome (deferred rpc import inside the "
+        "function), reached from the dispatcher's _finish_request and from the retired-door "
+        "route; no reference to billing.credits or run_metered_tool.",
+    ("tests/unit/test_spine_013_usage_events_door_pg.py", "storage.supabase_client.rpc"):
+        "targets billing.usage_logger.log_usage_outcome (deferred rpc import inside the "
+        "function) against a throwaway PostgreSQL; no reference to billing.credits or "
+        "run_metered_tool.",
     ("tests/unit/test_unsubscribe.py", "storage.supabase_client.rpc"):
         "targets compliance.optout_store.record_optout (deferred rpc import inside the "
         "function), reached from agent_interface.unsubscribe._record_optout; no reference "
