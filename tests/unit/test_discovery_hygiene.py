@@ -356,11 +356,31 @@ X402 = "/.well-known/x402"
 X402_JSON = "/.well-known/x402.json"
 
 
+def _primaries() -> list:
+    """(index, route) of every app-level GET route for /.well-known/x402 in main.app."""
+    return [(i, r) for i, r in enumerate(main.app.router.routes)
+            if getattr(r, "path", None) == X402 and "GET" in (getattr(r, "methods", None) or ())]
+
+
 @pytest.fixture
-def primary_route():
+def no_primary_route():
+    """The state "a build with no /.well-known/x402 route" is ESTABLISHED here, not assumed: this base has none, but
+    once feat/x402-advertise-20261003 is merged main.py has one, and a test that only held on this base would fail
+    in the integrated tree (it did, in a scratch merge)."""
+    saved = _primaries()
+    for _, route in reversed(saved):
+        main.app.router.routes.remove(route)
+    yield
+    for index, route in saved:
+        main.app.router.routes.insert(index, route)
+
+
+@pytest.fixture
+def primary_route(no_primary_route):
     """The route feat/x402-advertise-20261003 (and feat/x402-honesty-20261004) add to main.py, registered here exactly
     as they write it: it asks billing.x402_gate.discovery_document() and raises a 404 whose detail names the host.
-    This base has no such route, so the tests that need the integrated state register it and take it away again."""
+    This base has no such route, so the tests that need the integrated state register it and take it away again;
+    in an integrated tree the real one is set aside for the test, so the same fixture proves the same thing."""
     from fastapi import HTTPException
     from billing import x402_gate
 
@@ -403,14 +423,14 @@ def test_the_alias_is_the_primarys_own_404_byte_for_byte_when_the_rail_is_off(cl
     assert alias.content == primary.content, f"alias {alias.content!r} != primary {primary.content!r}"
 
 
-def test_the_alias_is_the_same_404_on_a_build_with_no_primary_route(client, monkeypatch):
+def test_the_alias_is_the_same_404_on_a_build_with_no_primary_route(client, monkeypatch, no_primary_route):
     """This base: there is no /.well-known/x402 route at all, so the primary answers the framework's own 404."""
     primary, alias = _pair(client)
     assert primary.status_code == 404 and alias.status_code == 404
     assert alias.content == primary.content
 
 
-def test_the_alias_never_serves_a_document_the_primary_does_not(client, monkeypatch):
+def test_the_alias_never_serves_a_document_the_primary_does_not(client, monkeypatch, no_primary_route):
     """A discovery_document() function with no route behind it is not a published document: the alias answers
     whatever the primary path answers, so it can never be a 200 where /.well-known/x402 is a 404."""
     from billing import x402_gate
