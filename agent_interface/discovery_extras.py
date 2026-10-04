@@ -87,7 +87,12 @@ async def server_card():
 
 
 def _x402_primary_route(app) -> Optional[APIRoute]:
-    """The app's own GET route for /.well-known/x402, or None on a build that has none."""
+    """The app's own GET route for /.well-known/x402, or None on a build that has none.
+
+    Looked up in the app router's own list: where `@app.get` in main.py puts it, and where FastAPI 0.111 (the version
+    requirements.txt pins) flattens an included router's routes to. A newer FastAPI keeps an included router as one
+    nested entry this does not look inside, so the primary stays an app-level route, as main.py writes it; the live
+    verifier (scripts/live_verify_discovery.py --only x402) is what would show a divergence if that ever changed."""
     for route in app.router.routes:
         if isinstance(route, APIRoute) and route.path == X402_PRIMARY_PATH and "GET" in route.methods:
             return route
