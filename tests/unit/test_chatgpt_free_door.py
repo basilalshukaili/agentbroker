@@ -223,7 +223,7 @@ def test_input_descriptions_are_whole_sentences_not_cut_at_eighty_characters():
     assert cut, "the existing door no longer truncates; update this control"
 
 
-def test_descriptions_say_what_each_tool_does_and_nothing_is_priced():
+def test_descriptions_say_what_each_tool_does_and_nothing_is_priced(monkeypatch):
     manifest = {o["name"]: o for o in mcp_server.get_full_manifest()["operations"]}
     for t in tools_list():
         d = t["description"]
@@ -232,9 +232,10 @@ def test_descriptions_say_what_each_tool_does_and_nothing_is_priced():
         assert not re.search(r"\[[^\]]*\]\s*$", d), "a bracketed cost tag is still appended: " + d[-40:]
         # the manifest's own sentences minus the pricing words: nothing was invented for the door
         assert d == no_commerce.clean_description(manifest[t["name"]]["description"]), t["name"]
-    # control: the existing door's descriptions DO carry the tag section 13 names
-    assert any("[free in quota, then $0.02/call]" in t["description"] for t in tools_list(OLD_DOOR)
-               if t["name"] in THREE)
+    # control: the existing door's descriptions DO carry a quota tag (metering on, the state that prints one;
+    # with metering off the other doors correctly print none, billing/switches.py)
+    monkeypatch.setenv("DATA_METERING_ENABLED", "true")
+    assert any("[free in quota" in t["description"] for t in tools_list(OLD_DOOR) if t["name"] in THREE)
 
 
 def test_nothing_in_tools_list_sells_prices_or_names_a_tool_the_door_lacks():
@@ -276,9 +277,10 @@ def test_the_handshake_carries_no_pricing_no_preview_cost_and_no_key_talk():
         assert banned.lower() not in text.lower(), banned
     assert "3 " in text and "read-only" in text
     assert "[UNTRUSTED]" in text            # the fencing rule still travels with the door
-    # control: the existing door's handshake carries every one of them
+    # control: the existing door's handshake carries the price and key talk the door must not (its quota wording
+    # follows DATA_METERING_ENABLED since x402-honesty, so it is not a stable control)
     old = rpc("initialize", {}, profile=OLD_DOOR)["result"]["instructions"]
-    assert "preview_cost" in old and "free within a daily quota" in old
+    assert "preview_cost" in old and "X-Agent-Identity" in old
 
 
 def test_the_door_declares_tools_only_and_the_modern_handshake_agrees():

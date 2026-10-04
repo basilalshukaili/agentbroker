@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Optional
 
 from agent_interface.oauth import settings
+from billing import switches as _switches
 from core import tool_auth
 
 
@@ -111,7 +112,7 @@ def llms_txt_sign_in_lines(base_url: str) -> list:
         f"token is an Agent-Identity key, so it also works as `Authorization: Bearer <token>` at `{base_url}/mcp`.",
         "",
         f"Tools that need an account: {needs}. Every other tool works without a key or a sign-in "
-        "(the premium data tools within a daily quota). "
+        f"(the premium data tools {_switches.free_quota_clause()}). "
         "Sign-in and the key-by-email path above give the same kind of key.",
         "",
     ]

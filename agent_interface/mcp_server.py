@@ -793,6 +793,10 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
     # raise "unhashable type" - an HTTP 500 carrying a Python exception text, on every door, with no
     # credentials (found by the independent review of 2026-10-04, which fuzzed the envelope). It is a malformed
     # request, answered as one, before anything keyed on it.
+    # On the ChatGPT door these refusals end "Nothing was run." - "charged" is a word that door never says
+    # (release 2 integration gate, 2026-10-04; agent_interface/no_commerce.py).
+    from agent_interface import profiles as _pf_env
+    _nothing_ran = _argtypes.nothing_ran(_pf_env.is_no_commerce(profile), capital=True)
     if not isinstance(method, str):
         obs.outcome, obs.error_code = "rpc_error", "invalid_request"
         return JsonRpcResponse(
@@ -800,7 +804,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
             error=_error(
                 ERR_INVALID_REQUEST,
                 f"'method' must be a string, got {_argtypes.type_phrase(method)}. Name the method as text, "
-                f"for example \"tools/list\" or \"tools/call\". Nothing was run or charged."),
+                f"for example \"tools/list\" or \"tools/call\". {_nothing_ran}."),
         ).to_dict()
 
     if params_not_object:
@@ -812,7 +816,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
                 ERR_INVALID_PARAMS,
                 f"'params' must be a JSON object, got {_argtypes.type_phrase(raw_params)}. Pass the method's "
                 f"parameters as named fields, for example {{\"name\": \"screen_sanctions\", "
-                f"\"arguments\": {{...}}}} for tools/call. Nothing was run or charged.",
+                f"\"arguments\": {{...}}}} for tools/call. {_nothing_ran}.",
                 data={"error_code": "invalid_argument",
                       "retriable": False,
                       "invalid_fields": [f"params (expected object, got {_got})"],
@@ -920,7 +924,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
             _data["invalid_fields"], _data["expected_types"] = _argtypes.as_data(pe.problems)
             _data["how_to_resolve"]["hint"] = (
                 "send each named argument as its declared JSON type; retrying unchanged will fail "
-                "identically, and this refusal cost nothing")
+                "identically" + ("" if _pf_env.is_no_commerce(profile) else ", and this refusal cost nothing"))
         return JsonRpcResponse(
             id=rpc_id,
             error=_error(ERR_INVALID_PARAMS, str(pe), data=_data),
@@ -1379,7 +1383,7 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     covers every billing branch: bypass, x402, credits, quota, free.
     """
     name = params.get("name")
-    _require_tool_name(name)         # before anything below asks `name in <set>`: a list is not hashable
+    _require_tool_name(name, params)  # before anything below asks `name in <set>`: a list is not hashable
     arguments = params.get("arguments")
     # A tool the ChatGPT door does not have is refused by the door, and must not meet the idempotency gate first:
     # its replies ("a duplicate charge", a cached write-tool response) are the other doors' words and results, on a
@@ -1524,21 +1528,24 @@ def _require_arguments_object(arguments: Any) -> dict:
     return arguments
 
 
-def _require_tool_name(name: Any) -> None:
+def _require_tool_name(name: Any, params: Optional[dict] = None) -> None:
     """The `name` of a tools/call must be a string. Anything else (a list, an object, a number) used to reach a
     set or dict lookup keyed on it and raise "unhashable type" as a -32603 "Internal error" on every narrow
-    door; it is the caller's mistake, answered as one, with the same guided shape as every other wrong type."""
+    door; it is the caller's mistake, answered as one, with the same guided shape as every other wrong type.
+    `params` carries the route's door, so the ChatGPT door's refusal is worded for that door."""
     problems = _argtypes.tool_name_problems(name)
     if problems:
+        from agent_interface import profiles as _profiles
         raise _ArgumentTypeError(
             _argtypes.explain("tools/call", problems,
-                              hint="Pass the tool's name as a string, as listed by tools/list."),
+                              hint="Pass the tool's name as a string, as listed by tools/list.",
+                              no_commerce=_profiles.is_no_commerce((params or {}).get("_profile"))),
             "tools/call", problems)
 
 
 async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> dict:
     name = params.get("name")
-    _require_tool_name(name)
+    _require_tool_name(name, params)
     arguments = params.get("arguments", {}) or {}
     if not name:
         raise _ParamError("Missing 'name' parameter")
@@ -1575,6 +1582,17 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
         # THE CHATGPT DOOR leaves here, before the channel gate, the data-tool bypass, the x402 gate, the credits
         # rail and the data-quota gate below: none of them may run for a ChatGPT caller, because each can answer
         # with a price or a link to a page that sells credits (agent_interface/no_commerce.py).
+        #
+        # BUT NOT BEFORE THE TYPE GUARD (release 2 integration gate, 2026-10-04). The guard below the door's exit
+        # is the one that turned `screen_sanctions {"name": 12345}` from -32603 "'int' object has no attribute
+        # 'strip'" into a guided -32602 (Door Reliability Run, D1). Leaving before it kept D1 alive on this door
+        # alone. Same check, same cleaned arguments, in this door's words (no "charged").
+        _nc_op = get_operation(name)
+        if _nc_op:
+            arguments, _nc_problems = _argtypes.check(name, _nc_op.get("input_schema"), arguments)
+            if _nc_problems:
+                raise _ArgumentTypeError(_argtypes.explain(name, _nc_problems, no_commerce=True),
+                                         name, _nc_problems)
         return await _no_commerce_call(name, arguments, params, headers or {})
 
     op = get_operation(name)

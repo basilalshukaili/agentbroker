@@ -312,9 +312,18 @@ def idempotency_key_problems(value: Any, path: str = "idempotency_key") -> list:
 _DEFAULT_HINT = "Types are exact: see inputSchema from tools/list."
 
 
-def explain(tool: str, problems: list, hint: str = _DEFAULT_HINT) -> str:
+def nothing_ran(no_commerce: bool = False, capital: bool = False) -> str:
+    """The closing clause of a refusal: nothing ran and nothing was charged. On a no-commerce door (the ChatGPT
+    door, agent_interface/no_commerce.py) a refusal says only that nothing ran - "charged" is a word that door
+    never says, and no charge was possible there anyway."""
+    text = "nothing was run" if no_commerce else "nothing was run or charged"
+    return text[0].upper() + text[1:] if capital else text
+
+
+def explain(tool: str, problems: list, hint: str = _DEFAULT_HINT, no_commerce: bool = False) -> str:
     """One sentence an agent can act on: which arguments, what they must be, what arrived, and that the
-    refusal was free. The caller's value is never echoed back - only its JSON type."""
+    refusal was free. The caller's value is never echoed back - only its JSON type. `no_commerce` drops the
+    word "charged" (see nothing_ran)."""
     shown = []
     for p in problems[:6]:
         if p.kind == "type":
@@ -325,7 +334,7 @@ def explain(tool: str, problems: list, hint: str = _DEFAULT_HINT) -> str:
     more = f" (and {len(problems) - 6} more)" if len(problems) > 6 else ""
     noun = "argument" if len(problems) == 1 else "arguments"
     return (f"Invalid {noun} for '{tool}': " + "; ".join(shown) + more + ". "
-            "Fix it and call again - nothing was run or charged. " + hint)
+            f"Fix it and call again - {nothing_ran(no_commerce)}. " + hint)
 
 
 def as_data(problems: list) -> tuple:

@@ -75,8 +75,10 @@ def _client():
 
 def _rpc(method, params=None, headers=None):
     from agent_interface.mcp_server import handle_mcp_request
-    return _run(handle_mcp_request({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}},
-                                   headers=headers or {"user-agent": "quota-claims-test"}))
+    params = dict(params or {})
+    profile = params.pop("_profile", None)   # the door comes from the ROUTE (a payload _profile is dropped)
+    return _run(handle_mcp_request({"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+                                   headers=headers or {"user-agent": "quota-claims-test"}, profile=profile))
 
 
 def _promises(text: str) -> list[str]:

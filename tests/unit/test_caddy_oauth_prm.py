@@ -29,6 +29,7 @@ import oauth_prm as op  # noqa: E402
 
 from agent_interface import profiles, retired_doors  # noqa: E402
 from tests.unit.test_caddy_mcp_direct import LIVE, DOORS, _directives, _handle_body  # noqa: E402
+LISTED = sorted(profiles.listed_profiles())  # the doors the installer routes and probes on hatchloop.dev
 
 SLUGS = sorted(retired_doors.RETIRED_DOORS)
 PRM = "/.well-known/oauth-protected-resource"
@@ -159,7 +160,7 @@ def test_the_origin_answers_what_the_probes_expect_when_it_is_asked_on_the_host_
     import main
     c = TestClient(main.app)
     checked = 0
-    for m, url, _body, status, text in op.post_checks(DOORS):
+    for m, url, _body, status, text in op.post_checks(LISTED):
         host, _, path = url.removeprefix("https://").partition("/")
         path = "/" + path
         if m != "GET" or not path.startswith("/.well-known/"):
@@ -167,7 +168,7 @@ def test_the_origin_answers_what_the_probes_expect_when_it_is_asked_on_the_host_
         r = c.get(path, headers={"host": host})
         assert r.status_code == status and text in r.text, (url, r.status_code, r.text[:200])
         checked += 1
-    assert checked >= len(DOORS) + 5
+    assert checked >= len(LISTED) + 5
 
 
 def test_the_installer_works_the_third_change_through_the_same_flow():
@@ -177,7 +178,7 @@ def test_the_installer_works_the_third_change_through_the_same_flow():
         change = "oauth_prm"
 
     mod, names = inst._change(Args())
-    assert mod is op and names == sorted(profiles.PROFILES)
+    assert mod is op and names == LISTED
 
     class FakeConn:
         def __init__(self, text):

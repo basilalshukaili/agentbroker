@@ -79,7 +79,7 @@ Production requires real TCR registration before live US SMS traffic.
 - Every `pre_check()` call writes either `OUTBOUND_DISPATCHED` or `COMPLIANCE_VIOLATION`
 - Every consent change writes `CONSENT_RECORDED` or `CONSENT_REVOKED`
 - Every recording consent prompt/confirmation writes appropriate event
-- PII (recipient phone/email) stored as SHA-256 hash only — never in plaintext
+- In this log, the recipient's phone/email is stored as a SHA-256 hash only — never in plaintext. Other records (leads, opt-outs, conversations, WhatsApp replies, the supply directory) hold identifiers in readable form.
 
 ---
 

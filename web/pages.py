@@ -253,7 +253,7 @@ def render_home() -> str:
   <h2>Built right.</h2>
   <div class="grid grid-3">
     <div class="card"><span class="tag tag-ok">Discovery</span><h3>7 agent protocols</h3><p>MCP, OpenAI plugin, OpenAI tools, Anthropic tools, A2A, llms.txt, OpenAPI.</p></div>
-    <div class="card"><span class="tag tag-ok">Compliance</span><h3>Non-bypassable gate</h3><p>Pre-check is the only path to outbound. PII stored as SHA-256 hash only.</p></div>
+    <div class="card"><span class="tag tag-ok">Compliance</span><h3>Non-bypassable gate</h3><p>Every message sent through the messaging tools passes the pre-check first. In the compliance audit log, recipient identifiers are stored as SHA-256 hashes; other records, such as leads and opt-outs, keep them readable.</p></div>
     <div class="card"><span class="tag tag-ok">Reliability</span><h3>Fallback chain</h3><p>direct_api &rarr; voice_ai &rarr; sms &rarr; email &rarr; web_form. Circuit breakers per channel.</p></div>
     <div class="card"><span class="tag tag-ok">Idempotency</span><h3>24h TTL</h3><p>Scoped per <code>(agent_id, operation, key)</code>. Safe to retry.</p></div>
     <div class="card"><span class="tag tag-ok">Async</span><h3>Webhook callbacks</h3><p>HMAC-SHA256 signed. Up to 24h retry with exponential backoff.</p></div>
@@ -541,8 +541,9 @@ def render_checkout(plan: str | None) -> str:
         where those statutes apply, and our own opt-in default everywhere else. Marketing on
         SMS, voice, WhatsApp and non-US email without a recorded opt-in is rejected at runtime
         regardless of how you paid; US marketing email follows CAN-SPAM opt-out rules.</li>{_refund_item}
-    <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
-        See <a href="/privacy">Privacy Policy</a>.</li>
+    <li><strong>Privacy.</strong> In the compliance audit log, recipient phone numbers and emails are
+        stored as SHA-256 hashes; other records (leads, opt-outs, conversations, the supply directory)
+        keep them readable. See <a href="/privacy">Privacy Policy</a>.</li>
     <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
         rights are preserved. See <a href="/terms">Terms</a>.</li>
   </ul>

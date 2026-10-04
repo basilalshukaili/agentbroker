@@ -21,6 +21,7 @@ import json
 from config import SERVICE_VERSION
 from agent_interface.manifest_server import get_full_manifest
 from agent_interface import discovery_auth, profiles
+from billing import switches as _switches
 from core import tool_readiness
 
 
@@ -587,7 +588,7 @@ def get_server_card() -> dict:
         # "free" is not "keyless" (core/tool_auth.py): two tools cost nothing and still refuse an anonymous call, and the
         # tools list below marks them requiresKey. The note speaks of that field, not of price.
         "note": ("A tool marked requiresKey refuses an anonymous call; every other tool works without a key or a "
-                 "sign-in (the premium data tools within a daily quota)."),
+                 f"sign-in (the premium data tools {_switches.free_quota_clause()})."),
     }
     oauth = discovery_auth.oauth_block()
     if oauth is not None:
