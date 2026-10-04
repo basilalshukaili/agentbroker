@@ -67,6 +67,7 @@ def _reset_usage_logger_stats():
         "last_success_ts": None, "last_failure_ts": None, "last_failure_reason": None,
     })
     ul._pending_tasks.clear()
+    ul._window.reset()
 
 
 def _reset_durable_meter_stats():
@@ -76,6 +77,7 @@ def _reset_durable_meter_stats():
         "last_success_ts": None, "last_failure_ts": None, "last_failure_reason": None,
     })
     dm._pending_tasks.clear()
+    dm._window.reset()
 
 
 async def _drain_pending(pending_set, max_turns=20):
@@ -357,10 +359,22 @@ class TestMeteringPipelineSelfTestCheck:
     """The self_test check itself must exist, must actually run as part of
     self_test (not merely be defined and orphaned -- this codebase has hit
     that exact "wired but unreachable" shape before, see mcp_server.py's
-    profile-door history), and must go unhealthy exactly when a rail has
-    recorded a failure, not merely when there has been no traffic yet."""
+    profile-door history), and must go unhealthy exactly when a rail is
+    FAILING -- not merely when there has been no traffic yet, and not merely
+    because one write failed at some point since the process started.
+
+    That last clause is the 2026-10-03 fix (tm_requirements row 358). The
+    check used to fail for the rest of the process's life on the first failed
+    write: two stalls of the database's shared connection pool (2026-10-02 12:12 and
+    2026-10-03 07:16 UTC) lost 13 of the last 24 hours' 15,283 usage_events writes, and the
+    public self_test said `healthy: false` from the first one until a restart reset the
+    counter, about 30 hours later."""
 
     def setup_method(self):
+        _reset_usage_logger_stats()
+        _reset_durable_meter_stats()
+
+    def teardown_method(self):
         _reset_usage_logger_stats()
         _reset_durable_meter_stats()
 
@@ -371,26 +385,96 @@ class TestMeteringPipelineSelfTestCheck:
         assert check.passed is True
 
     @pytest.mark.asyncio
-    async def test_unhealthy_when_usage_logger_has_a_failure(self):
+    async def test_one_failed_write_among_many_successes_does_not_flip_the_check(self):
+        """THE REGRESSION. The old rule (`failed > 0`) fails this."""
         import billing.usage_logger as ul
-        ul._stats["failed"] = 1
-        ul._stats["last_failure_reason"] = "exception:RuntimeError"
+        import billing.durable_meter as dm
+        for _ in range(200):
+            ul._record_success()
+            dm._record_success()
+        ul._record_failure("transport:ReadTimeout")
+        dm._record_failure("http_504:PGRST003")
+
+        from agent_interface.self_test import _check_metering_pipeline
+        check = await _check_metering_pipeline()
+        assert check.passed is True, check.error
+        # the cumulative counters still remember it: nothing is hidden, the verdict just changed
+        assert ul.get_usage_logger_health()["failed"] == 1
+        assert ul.get_usage_logger_health()["last_failure_reason"] == "transport:ReadTimeout"
+
+    @pytest.mark.asyncio
+    async def test_the_real_incident_ratio_is_healthy(self):
+        """13 failed writes in a day of 15,283 -- spread through a 10 minute window of normal
+        traffic that is a few percent, and must not be called a broken pipeline."""
+        import billing.usage_logger as ul
+        for _ in range(180):
+            ul._record_success()
+        for _ in range(13):
+            ul._record_failure("transport:ReadTimeout")
+
+        from agent_interface.self_test import _check_metering_pipeline
+        assert (await _check_metering_pipeline()).passed is True
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_when_usage_logger_is_failing_every_write(self):
+        """A dead rail -- the AUDIT-2026-09-28 / row 1181 shape: every write rejected."""
+        import billing.usage_logger as ul
+        for _ in range(3):
+            ul._record_failure("http_401")
 
         from agent_interface.self_test import _check_metering_pipeline
         check = await _check_metering_pipeline()
         assert check.passed is False
         assert "usage_events" in check.error
+        assert "http_401" in check.error
 
     @pytest.mark.asyncio
-    async def test_unhealthy_when_durable_meter_has_a_failure(self):
+    async def test_unhealthy_when_durable_meter_is_failing_every_write(self):
         import billing.durable_meter as dm
-        dm._stats["failed"] = 1
-        dm._stats["last_failure_reason"] = "exception:RuntimeError"
+        for _ in range(3):
+            dm._record_failure("exception:RuntimeError")
 
         from agent_interface.self_test import _check_metering_pipeline
         check = await _check_metering_pipeline()
         assert check.passed is False
         assert "billing_events" in check.error
+
+    @pytest.mark.asyncio
+    async def test_two_failures_are_not_yet_a_dead_rail(self):
+        import billing.usage_logger as ul
+        ul._record_failure("transport:ReadTimeout")
+        ul._record_failure("transport:ReadTimeout")
+
+        from agent_interface.self_test import _check_metering_pipeline
+        assert (await _check_metering_pipeline()).passed is True
+
+    @pytest.mark.asyncio
+    async def test_a_burst_of_failures_clears_itself_once_it_leaves_the_window(self):
+        """No restart needed: the failures age out ten minutes after they happened."""
+        import time
+        import billing.usage_logger as ul
+        from agent_interface.self_test import _check_metering_pipeline
+
+        for _ in range(6):
+            ul._window.record(False, now=time.monotonic() - 100)    # recent
+        assert (await _check_metering_pipeline()).passed is False
+
+        ul._window.reset()
+        for _ in range(6):
+            ul._window.record(False, now=time.monotonic() - 700)    # older than the window
+        assert (await _check_metering_pipeline()).passed is True
+
+    @pytest.mark.asyncio
+    async def test_writes_stuck_pending_are_still_unhealthy(self):
+        import billing.usage_logger as ul
+        ul._pending_tasks.update(object() for _ in range(51))
+        try:
+            from agent_interface.self_test import _check_metering_pipeline
+            check = await _check_metering_pipeline()
+            assert check.passed is False
+            assert "stuck pending" in check.error
+        finally:
+            ul._pending_tasks.clear()
 
     def test_metering_pipeline_check_is_registered_in_self_test(self):
         """A check that exists but is never added to _CHECKS runs in no
@@ -400,12 +484,12 @@ class TestMeteringPipelineSelfTestCheck:
         assert _check_metering_pipeline in _CHECKS
 
     @pytest.mark.asyncio
-    async def test_run_self_test_reports_unhealthy_when_a_rail_failed(self):
+    async def test_run_self_test_reports_unhealthy_when_a_rail_is_failing(self):
         """End-to-end through the same run_self_test() the MCP self_test
         tool calls."""
         import billing.usage_logger as ul
-        ul._stats["failed"] = 1
-        ul._stats["last_failure_reason"] = "exception:RuntimeError"
+        for _ in range(4):
+            ul._record_failure("exception:RuntimeError")
 
         from agent_interface.self_test import run_self_test
         report = await run_self_test()
@@ -413,3 +497,209 @@ class TestMeteringPipelineSelfTestCheck:
         names = {c.name: c for c in report.checks}
         assert "metering_pipeline" in names
         assert names["metering_pipeline"].passed is False
+
+    @pytest.mark.asyncio
+    async def test_run_self_test_stays_healthy_after_one_stray_failure(self):
+        import billing.usage_logger as ul
+        ul._record_failure("transport:ReadTimeout")
+
+        from agent_interface.self_test import run_self_test
+        report = await run_self_test()
+        names = {c.name: c for c in report.checks}
+        assert names["metering_pipeline"].passed is True
+
+
+# ---------------------------------------------------------------------------
+# billing/pipeline_health.py -- the rolling window, with an injected clock
+# ---------------------------------------------------------------------------
+
+class TestRollingOutcomes:
+    def _fresh(self):
+        from billing.pipeline_health import RollingOutcomes
+        return RollingOutcomes()
+
+    def test_empty_is_healthy(self):
+        assert self._fresh().assess(now=1000.0) == (True, None)
+
+    def test_the_thresholds(self):
+        cases = [
+            # (failures, successes, healthy)
+            (2, 0, True),      # two is not yet a dead rail
+            (3, 0, False),     # three of three: dead
+            (3, 4, True),      # 3 of 7 = 43%
+            (3, 3, False),     # 3 of 6 = 50%
+            (13, 400, True),   # the real incident, diluted by normal traffic
+            (50, 40, False),   # more than half failing
+            (1, 0, True),
+        ]
+        for failed, ok, want in cases:
+            w = self._fresh()
+            for _ in range(ok):
+                w.record(True, now=1000.0)
+            for _ in range(failed):
+                w.record(False, now=1000.0)
+            assert w.assess(now=1001.0)[0] is want, (failed, ok)
+
+    def test_events_age_out_of_the_window(self):
+        w = self._fresh()
+        for _ in range(5):
+            w.record(False, now=1000.0)
+        assert w.assess(now=1001.0)[0] is False
+        assert w.assess(now=1000.0 + w.window_s + 1)[0] is True
+        assert w.snapshot(now=1000.0 + w.window_s + 1)["attempts"] == 0
+
+    def test_the_reason_says_what_happened(self):
+        w = self._fresh()
+        for _ in range(4):
+            w.record(False, now=1000.0)
+        healthy, why = w.assess(now=1001.0)
+        assert healthy is False
+        assert "4 of the last 4 writes" in why and "10 min" in why
+
+    def test_memory_is_bounded(self):
+        from billing.pipeline_health import RollingOutcomes
+        w = RollingOutcomes(max_events=50)
+        for i in range(500):
+            w.record(True, now=1000.0)
+        assert w.snapshot(now=1000.0)["attempts"] == 50
+
+    def test_reset_clears_everything(self):
+        w = self._fresh()
+        for _ in range(5):
+            w.record(False, now=1000.0)
+        w.reset()
+        assert w.snapshot(now=1000.0)["attempts"] == 0
+
+
+class TestFailureReason:
+    def test_plain_exceptions_keep_the_historical_shape(self):
+        from billing.pipeline_health import failure_reason
+        assert failure_reason(RuntimeError("anything")) == "exception:RuntimeError"
+        assert failure_reason(ValueError("x")) == "exception:ValueError"
+
+    def test_rpc_errors_name_the_cause(self):
+        import httpx
+        from billing.pipeline_health import failure_reason
+        from storage.supabase_client import RpcError
+        assert failure_reason(RpcError("m", kind="transport", fn="f",
+                                       cause=httpx.ReadTimeout(""))) == "transport:ReadTimeout"
+        assert failure_reason(RpcError("m", kind="transport", fn="f")) == "transport:unknown"
+        assert failure_reason(RpcError("m", kind="http", fn="f", status=504,
+                                       pg_code="PGRST003")) == "http_504:PGRST003"
+        assert failure_reason(RpcError("m", kind="http", fn="f", status=401)) == "http_401"
+        assert failure_reason(RpcError("m", kind="decode", fn="f")) == "decode_error"
+
+
+class TestUsageLoggerNamesTheCause:
+    def setup_method(self):
+        _reset_usage_logger_stats()
+
+    def teardown_method(self):
+        _reset_usage_logger_stats()
+
+    @pytest.mark.asyncio
+    async def test_a_timeout_is_recorded_as_a_timeout_not_as_a_runtime_error(self):
+        import httpx
+        import billing.usage_logger as ul
+        from storage.supabase_client import RpcError
+
+        async def stalled(fn, payload):
+            raise RpcError(f"rpc({fn!r}) transport error: ReadTimeout", kind="transport",
+                           fn=fn, cause=httpx.ReadTimeout(""))
+
+        with patch("storage.supabase_client.rpc", stalled):
+            await ul.log_usage_event("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
+
+        assert ul.get_usage_logger_health()["last_failure_reason"] == "transport:ReadTimeout"
+
+    @pytest.mark.asyncio
+    async def test_the_outcome_path_records_the_postgrest_pool_timeout_by_name(self):
+        import billing.usage_logger as ul
+        from storage.supabase_client import RpcError
+
+        async def pool_timeout(fn, payload):
+            raise RpcError(f"rpc({fn!r}) failed: HTTP 504 body=PGRST003", kind="http", fn=fn,
+                           status=504, pg_code="PGRST003")
+
+        with patch("storage.supabase_client.rpc", pool_timeout):
+            await ul.log_usage_outcome(ul.UsageEvent(method="initialize"))
+
+        assert ul.get_usage_logger_health()["last_failure_reason"] == "http_504:PGRST003"
+
+    @pytest.mark.asyncio
+    async def test_one_failed_write_leaves_exactly_one_usage_log_failed_line(self, caplog):
+        """A count of `usage_log_failed` lines must be a count of failed writes. It used to be
+        double: 26 lines in the 2026-10-03 log were 13 writes."""
+        import logging
+        import billing.usage_logger as ul
+        from storage.supabase_client import RpcError
+
+        async def denied(fn, payload):
+            raise RpcError(f"rpc({fn!r}) failed: HTTP 401 body=x", kind="http", fn=fn, status=401)
+
+        caplog.set_level(logging.ERROR, logger="smb_broker.usage_logger")
+        with patch("storage.supabase_client.rpc", denied):
+            await ul.log_usage_event("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert sum("usage_log_failed" in m for m in messages) == 1, messages
+        assert sum("usage_log_exception" in m for m in messages) == 1, messages
+        assert not any(r.exc_info for r in caplog.records), "a named cause needs no traceback"
+
+    @pytest.mark.asyncio
+    async def test_an_unnamed_exception_still_gets_its_traceback(self, caplog):
+        import logging
+        import billing.usage_logger as ul
+
+        async def odd(fn, payload):
+            raise ZeroDivisionError("boom")
+
+        caplog.set_level(logging.ERROR, logger="smb_broker.usage_logger")
+        with patch("storage.supabase_client.rpc", odd):
+            await ul.log_usage_event("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
+
+        assert ul.get_usage_logger_health()["last_failure_reason"] == "exception:ZeroDivisionError"
+        assert any(r.exc_info for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_success_and_failure_both_feed_the_window(self):
+        import billing.usage_logger as ul
+
+        async def ok(fn, payload):
+            return {"id": 1}
+
+        with patch("storage.supabase_client.rpc", ok):
+            await ul.log_usage_event("tools/call", "self_test", {}, "1.2.3.4", "UA/1", None)
+        health = ul.get_usage_logger_health()
+        assert health["recent_attempts"] == 1 and health["recent_failed"] == 0
+        assert health["healthy"] is True and health["unhealthy_reason"] is None
+
+
+class TestDurableMeterNamesTheCause:
+    def setup_method(self):
+        _reset_durable_meter_stats()
+
+    def teardown_method(self):
+        _reset_durable_meter_stats()
+
+    @pytest.mark.asyncio
+    async def test_an_rpc_error_is_recorded_by_cause_and_feeds_the_window(self):
+        import httpx
+        import billing.durable_meter as dm
+        from storage.supabase_client import RpcError
+
+        async def stalled(fn, payload):
+            raise RpcError(f"rpc({fn!r}) transport error: ReadTimeout", kind="transport",
+                           fn=fn, cause=httpx.ReadTimeout(""))
+
+        with patch("storage.supabase_client.rpc", stalled):
+            meter = dm.DurableMeter()
+            meter.record(agent_id="anonymous", operation="check_compliance",
+                        operation_id="diag-op-9", amount_usd=0.0, basis="free")
+            await _drain_pending(dm._pending_tasks)
+
+        health = dm.get_durable_meter_health()
+        assert health["last_failure_reason"] == "transport:ReadTimeout"
+        assert health["recent_failed"] == 1
+        assert health["healthy"] is True   # one failure is not a dead rail
+

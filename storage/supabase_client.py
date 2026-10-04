@@ -38,6 +38,53 @@ def _headers(key: str) -> dict[str, str]:
     }
 
 
+class RpcError(RuntimeError):
+    """A failed rpc()/rpc_sync() call, with the CAUSE attached instead of buried in a sentence.
+
+    Still a RuntimeError with the same message shapes as before ("rpc('x') transport error: ...",
+    "rpc('x') failed: HTTP 504 body=...", "... JSON decode error: ..."), because
+    billing/data_quota.py's _classify_rpc_exception reads those substrings. What is new:
+
+      kind        "transport" (the request never produced a response), "http" (a non-2xx
+                  answer) or "decode" (a 2xx whose body was not JSON)
+      status      the HTTP status for kind "http"
+      cause_name  the exception class behind a "transport" failure
+      pg_code     PostgREST's own error code when the body carries one (PGRST003 = no database
+                  connection became free within the pool-acquisition timeout)
+
+    Why: an httpx timeout has an EMPTY message, so the old "transport error: " told nobody
+    whether a failed write was a timeout, a refused connection or a TLS failure. Two stalls of
+    the shared PostgREST connection pool (2026-10-02 12:12 and 2026-10-03 07:16 UTC) failed
+    usage_events writes, 13 of them in the last 24 hours, and the log could not say why
+    (tm_requirements row 358).
+    """
+
+    def __init__(self, message: str, *, kind: str, fn: str, status: Optional[int] = None,
+                 cause: Optional[BaseException] = None, pg_code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.fn = fn
+        self.status = status
+        self.cause_name = type(cause).__name__ if cause is not None else None
+        self.pg_code = pg_code
+
+
+def _exc_detail(exc: BaseException) -> str:
+    """'ReadTimeout' for an exception with no message, 'ConnectError: [Errno 111] ...' otherwise."""
+    text = str(exc).strip()
+    name = type(exc).__name__
+    return f"{name}: {text}" if text else name
+
+
+def _pg_code(resp: Any) -> Optional[str]:
+    """PostgREST's error code from a JSON error body, or None."""
+    try:
+        code = resp.json().get("code")
+    except Exception:  # noqa: BLE001 - a body that is not JSON just has no code
+        return None
+    return code if isinstance(code, str) and 0 < len(code) <= 16 else None
+
+
 async def rpc(fn: str, payload: dict[str, Any]) -> Any:
     """
     Call a Supabase Postgres function via PostgREST: POST /rest/v1/rpc/{fn}.
@@ -66,19 +113,22 @@ async def rpc(fn: str, payload: dict[str, Any]) -> Any:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(endpoint, headers=headers, json=payload)
     except Exception as exc:
-        raise RuntimeError(
-            f"rpc({fn!r}) transport error: {exc}"
+        raise RpcError(
+            f"rpc({fn!r}) transport error: {_exc_detail(exc)}",
+            kind="transport", fn=fn, cause=exc,
         ) from exc
 
     if resp.status_code not in (200, 201):
-        raise RuntimeError(
-            f"rpc({fn!r}) failed: HTTP {resp.status_code} body={resp.text[:400]}"
+        raise RpcError(
+            f"rpc({fn!r}) failed: HTTP {resp.status_code} body={resp.text[:400]}",
+            kind="http", fn=fn, status=resp.status_code, pg_code=_pg_code(resp),
         )
     try:
         return resp.json()
     except Exception as exc:
-        raise RuntimeError(
-            f"rpc({fn!r}) JSON decode error: {exc} body={resp.text[:200]}"
+        raise RpcError(
+            f"rpc({fn!r}) JSON decode error: {exc} body={resp.text[:200]}",
+            kind="decode", fn=fn, status=resp.status_code, cause=exc,
         ) from exc
 
 
@@ -115,19 +165,22 @@ def rpc_sync(fn: str, payload: dict[str, Any]) -> Any:
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(endpoint, headers=headers, json=payload)
     except Exception as exc:
-        raise RuntimeError(
-            f"rpc_sync({fn!r}) transport error: {exc}"
+        raise RpcError(
+            f"rpc_sync({fn!r}) transport error: {_exc_detail(exc)}",
+            kind="transport", fn=fn, cause=exc,
         ) from exc
 
     if resp.status_code not in (200, 201):
-        raise RuntimeError(
-            f"rpc_sync({fn!r}) failed: HTTP {resp.status_code} body={resp.text[:400]}"
+        raise RpcError(
+            f"rpc_sync({fn!r}) failed: HTTP {resp.status_code} body={resp.text[:400]}",
+            kind="http", fn=fn, status=resp.status_code, pg_code=_pg_code(resp),
         )
     try:
         return resp.json()
     except Exception as exc:
-        raise RuntimeError(
-            f"rpc_sync({fn!r}) JSON decode error: {exc} body={resp.text[:200]}"
+        raise RpcError(
+            f"rpc_sync({fn!r}) JSON decode error: {exc} body={resp.text[:200]}",
+            kind="decode", fn=fn, status=resp.status_code, cause=exc,
         ) from exc
 
 

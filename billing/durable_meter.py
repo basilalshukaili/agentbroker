@@ -45,6 +45,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from billing.meter import UsageMeter, UsageRecord, get_meter
+from billing.pipeline_health import RollingOutcomes, failure_reason
 
 logger = logging.getLogger("smb_broker.durable_meter")
 
@@ -63,14 +64,23 @@ _stats: dict = {
 }
 
 
+# Rolling view of recent outcomes; see billing/pipeline_health.py and usage_logger._window.
+_window = RollingOutcomes()
+
+
 def get_durable_meter_health() -> dict:
     """Snapshot for a health check — see usage_logger.get_usage_logger_health()."""
-    return {**_stats, "pending": len(_pending_tasks)}
+    # One look at the window gives the verdict and the counts beside it, so they cannot disagree.
+    v = _window.evaluate()
+    return {**_stats, "pending": len(_pending_tasks), "healthy": v["healthy"],
+            "unhealthy_reason": v["reason"], "recent_attempts": v["attempts"],
+            "recent_failed": v["failed"], "window_s": v["window_s"]}
 
 
 def _record_success() -> None:
     _stats["succeeded"] += 1
     _stats["last_success_ts"] = datetime.now(timezone.utc).isoformat()
+    _window.record(True)
 
 
 def _record_failure(reason: str) -> None:
@@ -78,6 +88,7 @@ def _record_failure(reason: str) -> None:
     _stats["failed"] += 1
     _stats["last_failure_ts"] = datetime.now(timezone.utc).isoformat()
     _stats["last_failure_reason"] = reason
+    _window.record(False)
 
 
 def _on_persist_task_done(task: "asyncio.Task") -> None:
@@ -210,7 +221,7 @@ class DurableMeter(UsageMeter):
         except Exception as exc:  # noqa: BLE001
             logger.error("billing_event_persist_failed record_id=%s err=%s", rec.record_id, exc,
                         exc_info=exc)
-            _record_failure(f"exception:{type(exc).__name__}")
+            _record_failure(failure_reason(exc))
 
 
 # Module-level singleton.
