@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from config import SERVICE_VERSION
 from agent_interface.manifest_server import get_full_manifest
-from agent_interface import profiles
+from agent_interface import discovery_auth, profiles
 from core import tool_readiness
 
 
@@ -435,6 +435,18 @@ def get_agent_card() -> dict:
 # /.well-known/mcp.json — MCP server descriptor
 # ---------------------------------------------------------------------------
 
+def _auth_block() -> dict:
+    """The key header, plus the OAuth sign-in when it is switched on (agent_interface/discovery_auth.py)."""
+    auth = {
+        "header": "X-Agent-Identity",
+        "scheme": "bearer",
+    }
+    oauth = discovery_auth.oauth_block()
+    if oauth is not None:
+        auth["oauth2"] = oauth
+    return auth
+
+
 def get_mcp_descriptor() -> dict:
     """Where to connect to our MCP server."""
     return {
@@ -458,10 +470,9 @@ def get_mcp_descriptor() -> dict:
         # listed here has none. Derived from the manifest (core/tool_readiness.py); delivery-channel
         # availability is per deployment and is reported by tools/list itself.
         "tool_readiness": tool_readiness.all_labelled(get_full_manifest().get("operations", [])),
-        "auth": {
-            "header": "X-Agent-Identity",
-            "scheme": "bearer",
-        },
+        "auth": _auth_block(),
+        # The versions this endpoint speaks, read from the list `server/discover` answers (release 1, 2026-10-03).
+        "protocol_versions": discovery_auth.protocol_versions(),
         # NARROWER ENDPOINTS, advertised where an agent already looks.
         #
         # These exist because tools/list on the full server costs ~11,000
@@ -490,6 +501,69 @@ def get_mcp_descriptor() -> dict:
             }
             for pid, spec in sorted(profiles.PROFILES.items())
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# /.well-known/mcp/server-card.json — MCP server card (SEP-1649 draft shape)
+# ---------------------------------------------------------------------------
+
+SERVER_CARD_SCHEMA = "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json"
+
+
+def get_server_card() -> dict:
+    """What a scanner or a directory reads BEFORE connecting: identity, endpoint, versions, capabilities, who needs
+    an account. Every field is read from the code that makes it true (the handshake's identity and capabilities,
+    the manifest's tool list, core/tool_auth.py, the OAuth router), never restated. No price and no payment
+    wording: those live in the payments block of /.well-known/mcp.json, behind the switches that decide them.
+
+    SEP-1649 is a draft and is not part of the 2026-07-28 revision (whose `server/discover` is the in-protocol
+    answer); the card says so, so nobody reads it as a ratified format."""
+    from agent_interface.mcp_server import SERVER_NAME, SERVER_VERSION, _build_tool_list
+    from agent_interface.mcp_2026 import discover_capabilities
+    from core import tool_auth
+    from core.channel_status import annotate_tools
+
+    # The tool list and its readiness come through the SAME two steps `tools/list` takes (the manifest, then this
+    # deployment's delivery-channel status), so a tool tools/list says is unavailable here is not shown as working.
+    tools = []
+    for t in annotate_tools(_build_tool_list()):
+        entry = {"name": t["name"], "requiresKey": tool_auth.requires_key(t["name"])}
+        state = ((t.get("_meta") or {}).get(tool_readiness.META_KEY) or {}).get("state")
+        if state:
+            entry["readiness"] = state
+        tools.append(entry)
+
+    versions = discovery_auth.protocol_versions()
+    auth = {
+        "required": False,
+        "schemes": ["bearer"],
+        "header": "X-Agent-Identity",
+        "note": "The free tools need no key and no sign-in; a tool that needs an account refuses an anonymous call.",
+    }
+    oauth = discovery_auth.oauth_block()
+    if oauth is not None:
+        auth["schemes"].append("oauth2")
+        auth["oauth2"] = oauth
+    return {
+        "$schema": SERVER_CARD_SCHEMA,
+        "version": "1.0",
+        "protocolVersion": versions["supported"][0],
+        "supportedProtocolVersions": versions["supported"],
+        "serverInfo": {"name": SERVER_NAME, "title": "HatchLoop AgentBroker", "version": SERVER_VERSION},
+        "description": (f"{tool_auth.total_tools()} MCP tools: compliance, verification, messaging, booking, "
+                        f"US contracts. {tool_auth.usable_without_key()} need no key."),
+        "websiteUrl": "https://hatchloop.dev/agent-broker/",
+        "documentationUrl": f"{BASE_URL}/llms.txt",
+        "repository": {"url": "https://github.com/basilalshukaili/agentbroker", "source": "github"},
+        "transport": {"type": "streamable-http", "endpoint": f"{BASE_URL}/mcp"},
+        "capabilities": discover_capabilities(),
+        "authentication": auth,
+        "tools": tools,
+        "_meta": {
+            "hatchloop/card": ("Shaped after SEP-1649, a draft that is not part of MCP 2026-07-28. The in-protocol "
+                               "answer is the server/discover method at the transport endpoint."),
+        },
     }
 
 
@@ -582,6 +656,7 @@ def get_llms_txt() -> str:
         "endpoint - it 401s for every outside caller.) "
         "Scopes include allowed operations, budget cap, and verticals.",
         "",
+    ] + discovery_auth.llms_txt_sign_in_lines(BASE_URL) + [
         "## Compliance",
         "",
         f"See [compliance docs]({BASE_URL}/docs/compliance) for full jurisdiction matrix. "
@@ -605,6 +680,7 @@ def get_llms_txt() -> str:
         "directly; there is nothing to install and no key is needed for the free "
         "tools.",
         "",
+    ] + discovery_auth.llms_txt_protocol_lines() + [
         "**DeepSeek Harness (`dsh`)** - add one entry to your config:",
         "",
         "```yaml",
