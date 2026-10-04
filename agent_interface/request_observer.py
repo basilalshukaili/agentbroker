@@ -156,3 +156,108 @@ class ClientRegistry:
 
 
 CLIENTS = ClientRegistry()
+
+
+# ---------------------------------------------------------------------------
+# protocol version and result count (migration 013, verdict item A7)
+# ---------------------------------------------------------------------------
+# Two more facts about a request, both derived from things a stranger controls (a header, a `_meta` field, a tool
+# result) and both returned as something that is either OUR OWN value, a plain number, or None - never caller
+# text. The database function refuses anything else, and a refused call loses the whole row.
+
+_META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+# Written to be identical in Python and PostgreSQL: migration 013 validates p_protocol_version against it.
+PROTOCOL_VERSION_PATTERN = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+_PROTOCOL_VERSION = re.compile(PROTOCOL_VERSION_PATTERN)
+
+
+def safe_protocol_version(value: Any, known: Any) -> Optional[str]:
+    """`value` if it is exactly one of the versions in `known` (the ones WE speak), else None. A version we do
+    not speak is not stored: it is caller text, and the request that carried it is already labelled by its
+    error code (unsupported_protocol_version)."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v if v in known else None
+
+
+def declared_protocol_version(method: Any, raw_params: Any, headers: Any, known: Any,
+                              reply: Any = None) -> Optional[str]:
+    """The MCP revision a request ran under, or None when it did not say.
+
+      * `initialize`: the version the server NEGOTIATED (the reply's protocolVersion), the one the
+        connection will use; falls back to the header when there is no reply to read.
+      * a request whose `_meta` carries a protocolVersion: that declaration and nothing else. If it names a
+        version we do not speak the answer is None - the header is not consulted, because the body is what
+        the request was judged on.
+      * otherwise the MCP-Protocol-Version header, which clients of 2025-06-18 onwards send on every request.
+
+    A stateless server cannot know what an earlier handshake agreed, so a legacy request with no header is
+    None ("not stated"), not "old"."""
+    if method == "initialize":
+        result = reply.get("result") if isinstance(reply, dict) else None
+        negotiated = safe_protocol_version(result.get("protocolVersion") if isinstance(result, dict) else None, known)
+        if negotiated:
+            return negotiated
+    meta = raw_params.get("_meta") if isinstance(raw_params, dict) else None
+    if isinstance(meta, dict) and _META_PROTOCOL_VERSION in meta:
+        return safe_protocol_version(meta[_META_PROTOCOL_VERSION], known)
+    header = headers.get("mcp-protocol-version") if isinstance(headers, dict) else None
+    return safe_protocol_version(header, known)
+
+
+# A list method counts what it listed. A tool counts ITS principal list, named here once per tool, because "the
+# first list in the result" is a guess and a count nobody can explain is worse than none. Everything else is None.
+_LIST_METHOD_FIELD = {
+    "tools/list": "tools", "resources/list": "resources",
+    "resources/templates/list": "resourceTemplates", "prompts/list": "prompts",
+}
+_TOOL_LIST_FIELD = {
+    "find_business": "businesses", "screen_sanctions": "matches",
+    "map_trade_restriction": "restrictions", "lookup_us_contracts": "awards",
+}
+MAX_RESULT_COUNT = 1_000_000          # the database column's ceiling (migration 013)
+_MAX_RESULT_TEXT = 512 * 1024         # a result larger than this is not parsed just to be counted
+
+
+def _plain_count(value: Any) -> Optional[int]:
+    # bool is an int in Python: True must not become 1.
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= MAX_RESULT_COUNT else None
+
+
+def result_count_of(method: Any, tool_name: Any, response: Any) -> Optional[int]:
+    """How many items a successful reply handed back, or None when that has no plain meaning (a failure, a
+    method or tool with no list, a result too large to be worth parsing). Never raises.
+
+    `response` is the JSON-RPC reply the dispatcher built. For a tool the count is the tool's own
+    `result_count` when it states one (find_business does) and otherwise the length of its principal list."""
+    try:
+        if not isinstance(response, dict):
+            return None
+        result = response.get("result")
+        if not isinstance(result, dict):
+            return None
+        field = _LIST_METHOD_FIELD.get(method) if isinstance(method, str) else None
+        if field:
+            items = result.get(field)
+            return _plain_count(len(items)) if isinstance(items, list) else None
+        if method != "tools/call" or tool_name not in _TOOL_LIST_FIELD or result.get("isError"):
+            return None
+        content = result.get("content")
+        first = content[0] if isinstance(content, list) and content else None
+        text = first.get("text") if isinstance(first, dict) else None
+        if not isinstance(text, str) or len(text) > _MAX_RESULT_TEXT:
+            return None
+        body = json.loads(text)
+        if not isinstance(body, dict):
+            return None
+        payload = body.get("result") if isinstance(body.get("result"), dict) else body
+        stated = _plain_count(payload.get("result_count"))
+        if stated is not None:
+            return stated
+        items = payload.get(_TOOL_LIST_FIELD[tool_name])
+        return _plain_count(len(items)) if isinstance(items, list) else None
+    except Exception:  # noqa: BLE001 - a malformed result must never cost the row it describes
+        return None

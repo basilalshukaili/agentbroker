@@ -50,6 +50,7 @@ from core import tool_readiness
 from core.tool_auth import WRITE_TOOLS_REQUIRING_AUTH, requires_key
 # MCP protocol revision 2026-07-28, served alongside the legacy handshake. A pure module: era resolution,
 # header validation, the discover result and the modern result shape. See its docstring.
+from agent_interface import door_label as _door_label
 from agent_interface import mcp_2026 as _m2026
 
 
@@ -479,9 +480,15 @@ def _attach_auth_warning(response: dict, method: Optional[str], warning: dict) -
 
 
 def _finish_request(payload: Any, response: dict, obs: "_Observed", started: float,
-                    profile: Optional[str] = None) -> None:
+                    profile: Optional[str] = None, door: Optional[str] = None,
+                    executed: bool = True) -> None:
     """The single place a finished request is annotated and recorded. NEVER raises: the audit
-    trail and the courtesy warning must not be able to break the response they describe."""
+    trail and the courtesy warning must not be able to break the response they describe.
+
+    `door` overrides the label derived from `profile` (a retired door has no profile: the dispatcher never
+    sees it, see record_retired_request). `executed=False` says nothing was RUN: the reply is a fixed answer (a
+    tombstone), so no tool name is claimed for the row (the name asked for goes in `requested_name`) and no key
+    warning is attached to the reply."""
     try:
         from agent_interface import request_observer as _ro
         from agent_interface.key_state import classify_key, auth_warning
@@ -494,7 +501,7 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
         params = (payload.get("params") if isinstance(payload, dict) else None) or {}
 
         status = classify_key(h.get("x-agent-identity", ""))
-        warning = auth_warning(status)
+        warning = auth_warning(status) if executed else None
         if warning:
             _attach_auth_warning(response, method, warning)
 
@@ -509,7 +516,7 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
             raw_name = params.get("name")
             arguments = params.get("arguments")
             arg_names = _ro.safe_arg_names(arguments)
-            if isinstance(raw_name, str) and get_operation(raw_name):
+            if executed and isinstance(raw_name, str) and get_operation(raw_name):
                 tool_name = raw_name
             elif requested_name is None:
                 requested_name = _ro.safe_requested_name(raw_name)
@@ -526,6 +533,12 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
             _ro.CLIENTS.remember(fingerprint, client_name, client_version)
         else:
             client_name, client_version = _ro.CLIENTS.recall(fingerprint)
+
+        # Migration 013: which door, under which protocol version, and how many results came back. All three
+        # are our own labels or numbers, never caller text (agent_interface/door_label.py, request_observer.py).
+        raw_params = payload.get("params") if isinstance(payload, dict) else None
+        protocol_version = _ro.declared_protocol_version(method, raw_params, h, ALL_PROTOCOL_VERSIONS, reply=response)
+        result_count = None if is_notification else _ro.result_count_of(method, tool_name, response)
 
         from billing.usage_logger import UsageEvent, fire_log_outcome
         fire_log_outcome(UsageEvent(
@@ -546,11 +559,73 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
             arg_names=arg_names,
             requested_name=requested_name,
             detail=_event_detail(profile, obs),
+            door=door or _door_label.for_profile(profile),
+            protocol_version=protocol_version,
+            result_count=result_count,
         ))
         box = REQUEST_OBSERVATION.get()
         if box is not None:
             box.logged = True
     except Exception:  # noqa: BLE001 - telemetry must never break the response
+        pass
+
+
+def _note_notification(obs: "_Observed", method: str) -> None:
+    """Classify a message that carries no `id` for the outcome log. Shared by the dispatcher and by the retired
+    doors' recorder, so a notification is labelled the same way at every door."""
+    obs.outcome = "notification"
+    if method in KNOWN_NOTIFICATIONS:
+        obs.log_method = method
+    elif method in _METHOD_HANDLERS:
+        obs.log_method, obs.error_code = method, "request_without_id"
+    else:
+        from agent_interface import request_observer as _ro
+        obs.log_method, obs.error_code = "notification", "unknown_notification"
+        obs.requested_name = _ro.safe_requested_name(method)
+
+
+_RETIRED_RPC_LABEL = {-32600: "invalid_request", -32601: "method_not_found", -32700: "parse_error"}
+
+
+def record_retired_request(slug: str, msg: Any, reply: Any, headers: Optional[dict], started: float) -> None:
+    """One usage row for one JSON-RPC message that a RETIRED door answered with its tombstone.
+
+    Until 2026-10-04 these wrote nothing, so the part of our traffic that is mostly directory scorers - about 440
+    requests a day - was the one part we could not see, and nobody could tell a scorer from a person whose agent
+    still points at a dead address. The row is built by the same code as a live door's (`_finish_request`), so
+    identity, client name, key state and the address are read the same way; what differs is the label
+    (`retired:<slug>`), the filing of a keyless caller as a crawler (billing/usage_logger.classify_session_kind),
+    and that the reply is never annotated. NEVER raises, and the HTTP layer will not log the request a second time."""
+    try:
+        obs = _Observed()
+        obs.headers = _normalize_headers(headers)
+        method = msg.get("method") if isinstance(msg, dict) else None
+        has_id = isinstance(msg, dict) and "id" in msg
+        if isinstance(msg, dict) and not has_id and isinstance(method, str) and method:
+            _note_notification(obs, method)
+            obs.http_status = 202
+        elif isinstance(msg, dict) and not method and has_id and ("result" in msg or "error" in msg):
+            obs.outcome, obs.log_method, obs.http_status = "notification", "response", 202
+        else:
+            raw_params = msg.get("params") if isinstance(msg, dict) else None
+            era = _m2026.resolve_era(method, raw_params, obs.headers, SUPPORTED_PROTOCOL_VERSIONS, check_headers=False)
+            obs.client_info = era.client_info
+            if isinstance(era, _m2026.Rejection):
+                obs.outcome, obs.error_code, obs.http_status = "rpc_error", era.error_code, era.http_status
+            else:
+                if era.modern:
+                    obs.era_version = era.version
+                obs.http_status = _m2026.status_of(reply)
+                error = reply.get("error") if isinstance(reply, dict) else None
+                result = reply.get("result") if isinstance(reply, dict) else None
+                if isinstance(error, dict):
+                    obs.outcome = "rpc_error"
+                    obs.error_code = _RETIRED_RPC_LABEL.get(error.get("code"), "rpc_error")
+                elif method == "tools/call" and isinstance(result, dict) and result.get("isError"):
+                    # Any tool name but the tombstone's own is a request for something that no longer exists.
+                    obs.outcome, obs.error_code = "tool_failure", "server_retired"
+        _finish_request(msg, reply, obs, started, door=_door_label.for_retired(slug), executed=False)
+    except Exception:  # noqa: BLE001 - telemetry must never break the answer it describes
         pass
 
 
@@ -643,15 +718,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
     # not run for a caller that cannot be told what it cost. `"id": null` is present, so it is still
     # a request and still answered.
     if not not_an_object and "id" not in payload and isinstance(method, str) and method:
-        obs.outcome = "notification"
-        if method in KNOWN_NOTIFICATIONS:
-            obs.log_method = method
-        elif method in _METHOD_HANDLERS:
-            obs.log_method, obs.error_code = method, "request_without_id"
-        else:
-            from agent_interface import request_observer as _ro
-            obs.log_method, obs.error_code = "notification", "unknown_notification"
-            obs.requested_name = _ro.safe_requested_name(method)
+        _note_notification(obs, method)
         return None
     if not not_an_object and not method and "id" in payload and ("result" in payload or "error" in payload):
         # A client's response to a request WE sent (ping, sampling...). We send none, but the

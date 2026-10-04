@@ -193,17 +193,31 @@ def _answer(slug: str, msg: Any) -> Optional[dict]:
 MAX_BATCH = 16          # the live handler's limit (agent_interface/mcp_server.py MAX_BATCH); a test keeps them equal
 
 
-def handle(slug: str, payload: Any, headers: Optional[dict] = None) -> Any:
-    """The JSON-RPC answer for a POST to a retired door: a dict, a list (a batch), or None (202, no body)."""
+def handle(slug: str, payload: Any, headers: Optional[dict] = None, observe: Any = None) -> Any:
+    """The JSON-RPC answer for a POST to a retired door: a dict, a list (a batch), or None (202, no body).
+
+    `observe(message, reply)`, when given, is called once for every message that was answered (the whole batch
+    for a batch that is refused as a whole), so the caller can record what a retired door was asked. It is the
+    caller's to make safe: whatever it raises is swallowed here, because the answer must not depend on it. This
+    module stays pure - it knows nothing of how the messages are recorded."""
     if not is_retired(slug):
         raise KeyError(slug)
+
+    def seen(message: Any, reply: Any) -> Any:
+        if observe is not None:
+            try:
+                observe(message, reply)
+            except Exception:  # noqa: BLE001
+                pass
+        return reply
+
     if isinstance(payload, list):
         if not payload:
-            return _err(None, -32600, "Empty batch")
+            return seen(payload, _err(None, -32600, "Empty batch"))
         if len(payload) > MAX_BATCH:
             # Refused whole, like the live handler: JSON-RPC answers every request in a batch, and answering
             # the first sixteen in silence would drop the rest without a word.
-            return _err(None, -32600, f"Batch too large (max {MAX_BATCH} messages)")
-        replies = [r for r in (_one(slug, m, headers) for m in payload) if r is not None]
+            return seen(payload, _err(None, -32600, f"Batch too large (max {MAX_BATCH} messages)"))
+        replies = [r for r in (seen(m, _one(slug, m, headers)) for m in payload) if r is not None]
         return replies or None
-    return _one(slug, payload, headers)
+    return seen(payload, _one(slug, payload, headers))

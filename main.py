@@ -428,6 +428,7 @@ def _log_http_outcome(request: Request, status: int, error_code: str, client_ip:
             admit, held = RATE_LIMIT_LOG_THROTTLE.admit(throttle_key)
             if not admit:
                 return
+        from agent_interface import door_label
         from agent_interface.request_observer import safe_path
         detail = f"{request.method} {safe_path(request.url.path)}"[:200]
         if held:
@@ -443,6 +444,7 @@ def _log_http_outcome(request: Request, status: int, error_code: str, client_ip:
             http_status=status,
             key_state="valid" if key_id else ("none" if not _rl_presented_token(request) else "invalid"),
             detail=detail,
+            door=door_label.for_path(request.url.path),
         ))
     except Exception:  # noqa: BLE001 - the audit trail must never break the response
         pass
@@ -809,7 +811,16 @@ async def _retired_door_post(slug: str, request: Request):
         return JSONResponse(
             status_code=400,
             content={"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
-    reply = retired_doors.handle(slug, payload, dict(request.headers))
+    headers = dict(request.headers)
+    started = time.monotonic()
+
+    def _record(message, answer):
+        # One usage row per message answered, labelled retired:<slug> (verdict item A7). It marks the request as
+        # logged, so the HTTP layer does not write a second row for the same request.
+        from agent_interface.mcp_server import record_retired_request
+        record_retired_request(slug, message, answer, headers, started)
+
+    reply = retired_doors.handle(slug, payload, headers, observe=_record)
     if reply is None:
         return Response(status_code=202)
     return JSONResponse(content=reply, status_code=_mcp_status_of(reply), headers={"Cache-Control": "no-store"})

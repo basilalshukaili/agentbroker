@@ -42,12 +42,15 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
 from billing.pipeline_health import RollingOutcomes, failure_reason
+from agent_interface import door_label
+from agent_interface.request_observer import MAX_RESULT_COUNT, PROTOCOL_VERSION_PATTERN
 
 logger = logging.getLogger("smb_broker.usage_logger")
 
@@ -177,6 +180,7 @@ def classify_session_kind(
     user_agent: str,
     key_id: Optional[str],
     principal_type: Optional[str] = None,
+    door: Optional[str] = None,
 ) -> str:
     """
     Classify the caller into one of four buckets:
@@ -198,6 +202,13 @@ def classify_session_kind(
     'system' principal → 'verified_agent_key'; 'human'/'consumer' → 'verified_human_key'.
     When principal_type is absent (older tokens / free-key callers), the safe
     default is 'verified_human_key' so existing quota paths are unchanged.
+
+    RETIRED DOORS (2026-10-04, verdict item A7): a keyless request to a retired door
+    (`door` = 'retired:<slug>') is 'crawler' whatever its method. A retired door runs
+    nothing, so nobody is "doing work" there, and filing a scorer's tools/call as
+    'anon_agent' would put directory-probe traffic into the one bucket every "does anybody
+    use us" figure reads. A KEYED caller at a retired door keeps its key classification:
+    somebody who holds a key knocking on a dead door is the one signal such a door can give.
     """
     # Key presence wins — checked FIRST, before any UA inspection.
     if key_id and key_id not in ("", "anonymous"):
@@ -208,6 +219,9 @@ def classify_session_kind(
             if principal_type in ("system", "business"):
                 return "verified_agent_key"
             return "verified_human_key"
+
+    if door and door.startswith(door_label.RETIRED_PREFIX):
+        return "crawler"
 
     ua_lower = (user_agent or "").lower()
 
@@ -353,12 +367,17 @@ def fire_log_usage(
 # database function to accept it; deploy 010 BEFORE the code that sends it.
 OUTCOMES = ("ok", "tool_failure", "tool_error", "rpc_error", "exception", "http_error", "notification")
 
+_V3_RPC = "usage_events_insert_v3"
 _V2_RPC = "usage_events_insert_v2"
 _V1_RPC = "usage_events_insert"
-# If the v2 function is missing (code deployed ahead of the migration, or a rollback of the
-# database), fall back to the original 7-field insert for this long, then try v2 again.
+# THE LADDER. v3 (migrations/spine/013) adds door, protocol_version and result_count to v2; v2 (009) adds the
+# outcome columns to v1; v1 is the original 7-field insert. If a function is missing (code deployed ahead of its
+# migration, or a rollback of the database) the writer steps DOWN to the next one for this long, then tries the
+# higher one again. Each step loses only what that migration added: with 013 missing, every outcome column is
+# still recorded and only door / protocol_version / result_count are not.
 _V2_RETRY_AFTER_S = 600.0
 _v2_missing_until = 0.0
+_v3_missing_until = 0.0
 
 
 @dataclass
@@ -380,6 +399,30 @@ class UsageEvent:
     arg_names: Optional[list] = None
     requested_name: Optional[str] = None
     detail: Optional[str] = None
+    # Migration 013. `door` is one of OUR labels (agent_interface/door_label.py), `protocol_version` one of the
+    # versions we speak, `result_count` a plain number; log_usage_outcome sends NULL for anything else.
+    door: Optional[str] = None
+    protocol_version: Optional[str] = None
+    result_count: Optional[int] = None
+
+
+def _clean_door(door: object) -> Optional[str]:
+    """The door if it is a label the database will accept, else None. The database REFUSES a malformed one, and a
+    refused call loses the whole row, so a value that cannot be vouched for is dropped here instead."""
+    return door if door_label.is_valid(door) else None
+
+
+_PROTOCOL_VERSION = re.compile(PROTOCOL_VERSION_PATTERN)
+
+
+def _clean_protocol_version(value: object) -> Optional[str]:
+    return value if isinstance(value, str) and _PROTOCOL_VERSION.fullmatch(value) else None
+
+
+def _clean_result_count(value: object) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= MAX_RESULT_COUNT else None
 
 
 def _safe_args_hash(arguments: Optional[dict]) -> Optional[str]:
@@ -398,13 +441,14 @@ def _is_missing_function(exc: Exception) -> bool:
 
 async def log_usage_outcome(event: UsageEvent) -> None:
     """Record one outcome. Never raises. See the block comment above."""
-    global _v2_missing_until
+    global _v2_missing_until, _v3_missing_until
     try:
         ip_hash = _hash8(event.ip) if event.ip else None
         ua = (event.user_agent or "")[:512]
         key_id = event.key_id
+        door = _clean_door(event.door)
         session_kind = classify_session_kind(event.method, event.tool_name, ua, key_id,
-                                             principal_type=event.principal_type)
+                                             principal_type=event.principal_type, door=door)
         clean_key_id = (key_id[:64] if key_id and key_id != "anonymous" else None)
         base = {
             "p_tool": event.tool_name or event.method,
@@ -417,33 +461,56 @@ async def log_usage_outcome(event: UsageEvent) -> None:
         }
         from storage.supabase_client import rpc
 
+        outcome = event.outcome if event.outcome in OUTCOMES else "ok"
+        with_outcome = {
+            **base,
+            "p_outcome": outcome,
+            "p_error_code": event.error_code,
+            "p_http_status": event.http_status,
+            "p_latency_ms": event.latency_ms,
+            "p_client_name": event.client_name,
+            "p_client_version": event.client_version,
+            "p_key_state": event.key_state,
+            "p_arg_names": event.arg_names,
+            "p_requested_name": event.requested_name,
+            "p_detail": event.detail,
+        }
+        now = time.monotonic()
+        # Highest function first; a step is skipped while its pause runs; v1 is the last resort and is
+        # only reached when everything above it answered "no such function".
+        steps = []
+        if now >= _v3_missing_until:
+            steps.append((_V3_RPC, {
+                **with_outcome,
+                "p_door": door,
+                "p_protocol_version": _clean_protocol_version(event.protocol_version),
+                "p_result_count": _clean_result_count(event.result_count),
+            }))
+        if now >= _v2_missing_until:
+            steps.append((_V2_RPC, with_outcome))
+        steps.append((_V1_RPC, base))
+
         result = None
-        if time.monotonic() >= _v2_missing_until:
-            outcome = event.outcome if event.outcome in OUTCOMES else "ok"
+        for fn, payload in steps:
             try:
-                result = await rpc(_V2_RPC, {
-                    **base,
-                    "p_outcome": outcome,
-                    "p_error_code": event.error_code,
-                    "p_http_status": event.http_status,
-                    "p_latency_ms": event.latency_ms,
-                    "p_client_name": event.client_name,
-                    "p_client_version": event.client_version,
-                    "p_key_state": event.key_state,
-                    "p_arg_names": event.arg_names,
-                    "p_requested_name": event.requested_name,
-                    "p_detail": event.detail,
-                })
+                result = await rpc(fn, payload)
             except Exception as exc:  # noqa: BLE001
-                if not _is_missing_function(exc):
+                if fn == _V1_RPC or not _is_missing_function(exc):
                     raise
-                _v2_missing_until = time.monotonic() + _V2_RETRY_AFTER_S
-                logger.error(
-                    "usage_log_v2_missing -- migrations/spine/009 is not applied; falling back "
-                    "to the 7-field usage_events_insert for %ds (outcome columns are NOT being "
-                    "recorded)", int(_V2_RETRY_AFTER_S))
-        if result is None and time.monotonic() < _v2_missing_until:
-            result = await rpc(_V1_RPC, base)
+                if fn == _V3_RPC:
+                    _v3_missing_until = time.monotonic() + _V2_RETRY_AFTER_S
+                    logger.error(
+                        "usage_log_v3_missing -- migrations/spine/013 is not applied; falling back "
+                        "to usage_events_insert_v2 for %ds (door, protocol_version and result_count "
+                        "are NOT being recorded)", int(_V2_RETRY_AFTER_S))
+                else:
+                    _v2_missing_until = time.monotonic() + _V2_RETRY_AFTER_S
+                    logger.error(
+                        "usage_log_v2_missing -- migrations/spine/009 is not applied; falling back "
+                        "to the 7-field usage_events_insert for %ds (outcome columns are NOT being "
+                        "recorded)", int(_V2_RETRY_AFTER_S))
+                continue
+            break
         if result is None:
             _record_failure("rpc_returned_none")
         else:
