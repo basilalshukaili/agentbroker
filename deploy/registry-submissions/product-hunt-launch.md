@@ -40,9 +40,9 @@ So Agent Broker does two things properly:
   rather than silently including it.
 
 Plus the original angle: finding, verifying, messaging, and scheduling with
-small/mid-sized businesses, gated by the same non-bypassable TCPA/GDPR/CASL/PDPL
-compliance check across 26 jurisdictions, with channel fallback across
-WhatsApp/SMS/email/voice.
+small/mid-sized businesses, gated by the same non-bypassable compliance check
+(TCPA/GDPR/CASL where modeled, the service's own opt-in default for every other
+country), with channel fallback across WhatsApp/SMS/email/voice.
 
 • 23 tools total. 14 work with no key — 11 always-free, 3 free within a
   daily quota (100/day anonymous, 500/day with a free key)

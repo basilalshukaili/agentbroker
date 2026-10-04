@@ -34,9 +34,9 @@ What's there:
   Sanctions List (screen_sanctions), GLEIF LEI + SEC EDGAR
   (verify_company_record), USASpending.gov federal contract awards
   (lookup_us_contracts).
-- Business messaging + scheduling with a non-bypassable TCPA/GDPR/CASL/PDPL
-  compliance gate across 26 jurisdictions, and channel fallback across
-  WhatsApp/SMS/email/voice.
+- Business messaging + scheduling with a non-bypassable compliance gate (TCPA/GDPR/CASL
+  where modeled, the service's own opt-in default for every other country), and
+  channel fallback across WhatsApp/SMS/email/voice.
 - Discovery: MCP, OpenAI function calling, Anthropic tool_use, A2A, llms.txt,
   OpenAPI.
 - Free tier by design: reads are free forever; write ops get 100/day free

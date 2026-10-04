@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import config
 from core.models import (
@@ -931,7 +931,8 @@ class _ComplianceCheckRequest(BaseModel):
     channel: str = Field(..., description="One of: sms, email, voice.")
     message_type: str = Field(
         "transactional",
-        description="One of: marketing, transactional, reminder, opt-in-confirm, customer-service.",
+        description=("One of: transactional, marketing, reminder, follow_up, notification (upper or lower case). "
+                     "Any other value is refused with a 422."),
     )
     content: str = Field(..., description="The message body the agent is about to send.")
     country_code: Optional[str] = Field(
@@ -941,14 +942,31 @@ class _ComplianceCheckRequest(BaseModel):
         None, description="US state code (e.g. 'CA') for state-specific rules."
     )
 
+    @field_validator("message_type", mode="before")
+    @classmethod
+    def _message_type_is_a_real_type(cls, value):
+        """A known type is read in any case ("Marketing" is marketing); anything else is a 422, not a verdict.
+        An unknown type used to skip the marketing consent check and come back `legal: true` (second review,
+        2026-10-04), for a message the real send path refuses."""
+        from compliance.message_type import canonical_message_type, refusal_sentence
+        canonical = canonical_message_type(value)
+        if canonical is None:
+            raise ValueError(refusal_sentence(value))
+        return canonical
+
 
 @app.post("/compliance/check", tags=["Public APIs"])
 async def compliance_check_public(req: _ComplianceCheckRequest):
     """Free, public, no-auth compliance pre-check API.
 
     Returns whether sending the supplied (recipient, channel, message_type, content)
-    combination would comply with TCPA / GDPR / CASL / 10DLC and 22 country-specific
-    rule sets. Drop-in for any messaging stack — no need to use our broker.
+    combination would pass the same compliance gate send_message runs: the US TCPA,
+    CAN-SPAM and 10DLC rules, GDPR for the EU/UK states modeled, CASL for Canada, and
+    the service's own conservative opt-in default for every other country. The answer
+    names which of those applied (`rule_set`, `jurisdiction_source`) and, where it was
+    the conservative default, says that no statute of that country was applied.
+    The country is read from the recipient's phone number when `country_code` is
+    omitted; a number's own country wins over a contradicting `country_code`.
 
     Use cases:
       - Pre-flight check before calling Twilio/Vonage/Plivo directly
@@ -958,7 +976,13 @@ async def compliance_check_public(req: _ComplianceCheckRequest):
     Free forever. Rate-limited to ~60 req/min per IP.
     """
     from compliance.pre_check import pre_check
+    from compliance.jurisdiction_rules import describe_resolved
+    from compliance.number_jurisdiction import resolve_jurisdiction
     from core.models import ComplianceViolationError
+    resolution = resolve_jurisdiction(req.recipient_id, req.country_code, req.message_type)
+    # What the answer was decided under: the statutes modeled, or the service's own default, or - for a
+    # solicitation whose number and country_code contradict each other - nothing. Returned on BOTH branches.
+    described = describe_resolved(resolution, req.state_code)
     try:
         pre_check(
             recipient_id=req.recipient_id,
@@ -968,37 +992,43 @@ async def compliance_check_public(req: _ComplianceCheckRequest):
             country_code=req.country_code,
             state_code=req.state_code,
         )
-        return _labelled("check_compliance", {
+        if described["basis"] == "statute":
+            notes = "Pre-check passed. Send is permitted under the supplied jurisdiction."
+        else:
+            notes = ("Pre-check passed under the service's conservative default. " + described["note"] +
+                     " This is not a determination of any country's law.")
+        payload = {
             "legal": True,
-            "rule_set": req.country_code or "international",
+            "rule_set": resolution.country or "international",
+            "rule_basis": described,
+            "jurisdiction_source": resolution.source,
             "channel": req.channel,
             "message_type": req.message_type,
-            "notes": "Pre-check passed. Send is permitted under the supplied jurisdiction.",
-        })
+            "notes": notes,
+        }
+        if resolution.conflict:
+            payload["jurisdiction_conflict"] = resolution.conflict
+        return _labelled("check_compliance", payload)
     except ComplianceViolationError as cve:
-        return JSONResponse(
-            status_code=200,
-            content=_labelled("check_compliance", {
-                "legal": False,
-                "rule": cve.rule,
-                "rule_set": cve.jurisdiction,
-                "channel": cve.channel,
-                "message": cve.message,
-                "remediation": _remediation_for(cve.rule),
-            }),
-        )
+        payload = {
+            "legal": False,
+            "rule": cve.rule,
+            "rule_set": cve.jurisdiction,
+            "rule_basis": described,
+            "jurisdiction_source": resolution.source,
+            "channel": cve.channel,
+            "message": cve.message,
+            "remediation": _remediation_for(cve.rule),
+        }
+        if resolution.conflict:
+            payload["jurisdiction_conflict"] = resolution.conflict
+        return JSONResponse(status_code=200, content=_labelled("check_compliance", payload))
 
 
 def _remediation_for(rule: str) -> str:
-    return {
-        "restricted_content": "Reword the message to remove the restricted category, or seek explicit licensing for the regulated content.",
-        "recipient_opted_out": "Honor the opt-out — the recipient has unsubscribed. Do not send. Add to suppression list.",
-        "TCPA_marketing_consent": "Obtain prior express written consent (TCPA) before sending marketing SMS to US numbers.",
-        "GDPR_marketing_consent": "Obtain GDPR Article 6/7 consent before marketing email to EU/UK residents.",
-        "CASL_marketing_consent": "Obtain explicit CASL consent before commercial electronic messages to Canadian recipients.",
-        "10DLC_unregistered": "Register your sending number under a 10DLC campaign with The Campaign Registry before sending US A2P SMS.",
-        "10DLC_campaign_not_registered": "Register a 10DLC campaign with The Campaign Registry (TCR) before sending US A2P SMS. Required by US carriers since 2023.",
-    }.get(rule, "Review the cited rule in our jurisdiction reference at /docs.")
+    # One table for this endpoint and the check_compliance tool: compliance/remediation.py.
+    from compliance.remediation import remediation_for
+    return remediation_for(rule)
 
 
 @app.get("/supply/platforms", tags=["Public APIs"])
@@ -1094,13 +1124,18 @@ async def demo():
 
 @app.get("/compliance/jurisdictions", tags=["Public APIs"])
 async def compliance_jurisdictions():
-    """Public list of jurisdictions with native compliance rules.
-    No auth, free. Useful for any compliance-aware sender."""
-    from compliance.jurisdiction_rules import list_supported_jurisdictions
+    """Public list of the jurisdictions the gate has an entry for, and what each entry is based on.
+    No auth, free. `basis` is "statute" where a named statute is modeled and "conservative_default" where the
+    service's own opt-in policy applies instead (which is every code not marked "statute")."""
+    from compliance.jurisdiction_rules import list_supported_jurisdictions, rule_sets_listing
     return {
         "supported": list_supported_jurisdictions(),
+        "rule_sets": rule_sets_listing(),
         "fallback": "international",
-        "note": "Unknown jurisdictions fall back to a conservative INTERNATIONAL rule set.",
+        "note": ("Only the entries whose basis is \"statute\" implement a named statute. Every other code in "
+                 "`supported`, and any country not listed, is judged by the service's conservative default "
+                 "(recorded opt-in consent for marketing, a 08:00-21:00 local solicitation window), and the "
+                 "answer says so instead of naming a country's law."),
     }
 
 

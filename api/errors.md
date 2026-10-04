@@ -51,6 +51,71 @@ All errors follow the `APIError` schema defined in `/core/models.py`.
 
 ---
 
+## Which rule a compliance refusal names
+
+`violation_detail.rule` names the law that was applied, and only where the gate implements it:
+`TCPA_marketing_consent`, `TCPA_quiet_hours` and `10DLC_campaign_not_registered` for US recipients,
+`GDPR_marketing_consent` for the EU/UK states modeled, `CASL_marketing_consent` for Canada.
+
+For every other country the gate applies the service's own conservative default and names it as such:
+`sms_marketing_consent` (recorded opt-in is required for marketing SMS), `voice_marketing_consent`,
+`email_marketing_consent`, `quiet_hours` (a 08:00-21:00 local solicitation window unless one is modeled). The
+message then says that no statute of that country was applied, and `check_compliance` returns the same fact as
+`rule_set` (`basis: "conservative_default"`, `statutes_modeled: []`). Marketing on WhatsApp needs a recorded
+opt-in on WhatsApp in every country (`whatsapp_marketing_consent`; an opt-in given for SMS, email or calls does
+not cover it), and marketing on any other channel the gate has no rule for is refused the same way
+(`marketing_consent`) rather than allowed. 10DLC carrier registration is a US rule and is applied only to a US
+recipient or to a +1 number whose country is not settled, never to a number that cannot be American.
+
+Marketing needs a recorded opt-in on SMS, voice, WhatsApp and on email to every country except the US; marketing
+email to a US recipient follows CAN-SPAM's opt-out rules, is permitted with no prior opt-in, and still honors a
+recorded opt-out. A number that rules the US out (+7, +44, +968) is never judged by a US default, including one
+set in the environment.
+
+`invalid_message_type` means the gate was handed a message type it does not recognise. The type is read in any
+case (`Marketing` is `marketing`); anything that is not `transactional`, `marketing`, `reminder`, `follow_up` or
+`notification` is refused instead of being read as "not marketing", because the consent rules depend on it.
+`check_compliance` answers `bad_input` and the public HTTP check answers 422; neither returns a verdict.
+
+`jurisdiction_required` means the country could not be determined: pass `country_code`, or an E.164 recipient
+number whose country calling code names it (a +1 or +7 number needs `country_code`). When the recipient number
+names exactly one country and `country_code` names another, what happens depends on the message. For a marketing
+or follow-up message the gate does not choose between them: it refuses with `jurisdiction_conflict` (the answer
+names both countries and `rule_set.basis` is `undecided`), because calling hours and carrier rules follow where
+the recipient is, which two different answers do not settle. For any other message type the number's country is
+used and the answer says so in `jurisdiction_conflict`. `check_compliance`, `send_message` (in its refusal and in
+its success result) and the public HTTP check all report it, and the HTTP check also returns `rule_basis`. Common
+spellings of a country (`UK`, `USA`, the three-letter ISO codes) are read as the country they name.
+
+---
+
+## Argument errors on MCP `tools/call`
+
+A call whose arguments have the wrong JSON type is refused before anything is run, held or charged, as JSON-RPC
+`-32602` with `data.error_code: "invalid_argument"` and `data.retriable: false`. The message names each argument,
+the type it must have and the type that arrived (never the value); `data.invalid_fields` lists them and
+`data.expected_types` maps each argument path (`name`, `prospect.name`, `parties[1]`) to its declared type.
+Retrying unchanged fails identically. `integer` accepts `5` and `5.0`, never `true`, `1.5`, `"5"` or a
+non-finite number. An explicit `null` for an optional argument means "not given"; for a required one it is a
+type error. Every item of an array is checked, wherever it sits; a call that holds more than 50,000 values in
+all (array items and fields together) is refused as too large rather than checked in part.
+
+Three arguments are accepted in more than their declared type, on purpose, and nothing else is: `find_business`
+interprets the shapes callers really write (for example `location` as a plain string) and answers the rest in
+its own words; `send_message.content` may be a bare string, which is read as the message body; and
+`mint_key.timestamp` may be a numeric string, which the tool converts and answers in its own words if it is not
+a number.
+
+The tool `name` of a `tools/call` must be a string (a list or an object is the same `-32602`), and the request's
+`method` must be a string (`-32600`). On the write tools `idempotency_key` must be a non-empty string of at most
+128 characters: any other type, an empty or blank string, or a longer one is refused as above, so a retry key is
+never silently ignored or cut short; `null` means "not given". The `X-Idempotency-Key` header is the same key and
+is held to the same rule. `arguments` must be a JSON object and is refused as such before an idempotency key is
+claimed. `params` must be a JSON object; an absent or
+`null` `params`, and the empty values `{}`, `[]`, `0`, `false` and `""`, are treated as no parameters.
+
+---
+
 ## Failure Class Taxonomy (for OutcomeOptimizationAgent attribution)
 
 | Failure class | Meaning |

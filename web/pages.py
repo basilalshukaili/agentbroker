@@ -96,7 +96,8 @@ def render_home() -> str:
     any MCP client) actually <strong>do business</strong> with the long tail of small
     and mid-sized businesses worldwide &mdash; finding them, verifying them, booking
     appointments, sending messages, escalating to a human when stuck &mdash; with full
-    TCPA / GDPR / CASL / PDPL compliance enforced at runtime by a non-bypassable gate.
+    TCPA / GDPR / CASL compliance, and our own opt-in default for every other country, enforced at runtime
+    by a non-bypassable gate.
   </p>
   <div class="cta">
     <a class="btn btn-primary" href="/docs">Browse the live API &rarr;</a>
@@ -129,8 +130,8 @@ def render_home() -> str:
     </div>
     <div class="card">
       <h3 style="color:#fca5a5;">What the gate rejects</h3>
-      <p>Marketing to recipients without a verified
-         <code class="inline">consent_record_id</code>. Bulk / list-based / drip campaigns.
+      <p>SMS, voice, WhatsApp and non-US email marketing to recipients without a
+         recorded opt-in (US marketing email follows CAN-SPAM opt-out rules instead). Bulk / list-based / drip campaigns.
          Cold outreach to non-opted-in numbers. A/B test sends. Spam by any definition.
          The gate runs synchronously before every send and returns a structured
          <code class="inline">compliance_violation</code> receipt on rejection.</p>
@@ -138,9 +139,11 @@ def render_home() -> str:
     <div class="card">
       <h3>How enforcement works</h3>
       <p><a href="__ORIGIN__/compliance/check">/compliance/check</a> runs before every outbound
-         channel call. TCPA, GDPR, CASL, PDPL rules across 26 jurisdictions, including
-         GCC (UAE, SA, OM, QA, KW, BH). A request that violates returns a structured
-         receipt and never reaches a carrier.</p>
+         channel call. A rule set for each of 26 jurisdictions: TCPA, CAN-SPAM and 10DLC for
+         the US, GDPR for the EU/UK states modeled, CASL for Canada, and our own opt-in
+         default for every other country, the Gulf states (UAE, SA, OM, QA, KW, BH)
+         included; the answer says which applied. A request that violates returns a
+         structured receipt and never reaches a carrier.</p>
     </div>
   </div>
 </section>
@@ -287,8 +290,8 @@ def render_pricing() -> str:
     or pay-per-call in USDC on Base via <strong>x402</strong> &mdash; no
     signup, no card, no account. Reads are free on both rails; writes cost a
     few cents each. The compliance gate, not the price page, decides what
-    gets sent &mdash; marketing requires verified opt-in regardless of how
-    you pay.
+    gets sent &mdash; marketing needs a recorded opt-in (US marketing email
+    follows CAN-SPAM opt-out rules) regardless of how you pay.
   </p>
   <div class="cta" style="margin-top:8px;">
     <a class="btn btn-primary" href="/billing/checkout">Pay with card via Polar &rarr;</a>
@@ -534,9 +537,10 @@ def render_checkout(plan: str | None) -> str:
   <h2>Your rights either way</h2>
   <ul style="color:var(--text-muted);">
     <li><strong>Compliance gate.</strong> Every outbound message routes through
-        <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR, CASL,
-        PDPL across 26 jurisdictions. Marketing without a verified consent_record_id
-        is rejected at runtime regardless of how you paid.</li>{_refund_item}
+        <a href="__ORIGIN__/compliance/check">/compliance/check</a> &mdash; TCPA, GDPR and CASL
+        where those statutes apply, and our own opt-in default everywhere else. Marketing on
+        SMS, voice, WhatsApp and non-US email without a recorded opt-in is rejected at runtime
+        regardless of how you paid; US marketing email follows CAN-SPAM opt-out rules.</li>{_refund_item}
     <li><strong>Privacy.</strong> PII (phone, email) is stored as a SHA-256 hash only.
         See <a href="/privacy">Privacy Policy</a>.</li>
     <li><strong>Governing law:</strong> Sultanate of Oman. EU/UK/CA consumer statutory
@@ -631,11 +635,13 @@ def render_terms() -> str:
   commercial redistribution, and screen_sanctions says so in its own
   output.</p>
   <p>Every outbound communication routes through a non-bypassable compliance
-  gate that enforces TCPA / GDPR / CASL / PDPL rules across 26 jurisdictions.
-  Marketing messages require a verified opt-in <code>consent_record_id</code>
+  gate that enforces TCPA, GDPR and CASL rules where those statutes apply and our own
+  opt-in default everywhere else (26 jurisdictions in all).
+  Marketing on SMS, voice, WhatsApp and non-US email requires a recorded opt-in
   at send time &mdash; without one, the gate rejects the send with a
   structured <code>compliance_violation</code> receipt that never reaches a
-  carrier. The gate, not the API surface, is the safety mechanism.</p>
+  carrier. US marketing email follows CAN-SPAM opt-out rules instead.
+  The gate, not the API surface, is the safety mechanism.</p>
   <p>The Service is offered on an &ldquo;as-is&rdquo; basis with no
   implied warranties.</p>
 
@@ -665,9 +671,10 @@ def render_terms() -> str:
   <ul>
     <li><strong>Marketing without recorded opt-in consent.</strong> Every
         marketing message must reference a valid
-        <code>consent_record_id</code> in the consent_store; the compliance
-        gate verifies the consent at send time and rejects any send tagged
-        <code>marketing</code> that does not.</li>
+        <code>consent_record_id</code> in the consent_store; on SMS, voice,
+        WhatsApp and non-US email the compliance gate verifies the consent at
+        send time and rejects any send tagged <code>marketing</code> that does
+        not (US marketing email follows CAN-SPAM opt-out rules at the gate).</li>
     <li><strong>Bulk, list-based, A/B test, or drip outbound communication</strong>
         to recipients who did not request that specific outreach. We are a
         per-call transaction broker, not a campaign sender.</li>
@@ -774,8 +781,8 @@ def render_privacy() -> str:
     <li>To bill you accurately. Every operation returns an itemised receipt
         showing what was charged and why; call <code>preview_cost</code>
         (free) to see the price before you commit.</li>
-    <li>To prove compliance with TCPA, GDPR, CASL, PDPL, and equivalents on
-        request from a regulator or recipient.</li>
+    <li>To show a regulator or recipient, on request, what the compliance gate
+        decided and why.</li>
     <li>To detect abuse and enforce the Terms of Service.</li>
   </ul>
 

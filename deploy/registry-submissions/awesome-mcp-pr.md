@@ -52,7 +52,8 @@ What makes it different from other business/scheduling MCP servers:
 It also finds, verifies, messages, and schedules with small/mid-sized
 businesses (Cal.com direct booking + 11 further platforms recognised via
 `import_booking_url`), with every outbound message routed through the same
-non-bypassable compliance gate (TCPA/GDPR/CASL/PDPL across 26 jurisdictions).
+non-bypassable compliance gate (TCPA/GDPR/CASL where modeled, the service's own
+opt-in default for every other country).
 
 - 23 tools total. 14 need no key (11 always-free + 3 free within a daily
   quota of 100/day anonymous, 500/day with a free key). The 8 write tools

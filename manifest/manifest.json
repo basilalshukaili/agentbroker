@@ -455,19 +455,19 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
-      "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
-      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules.",
+      "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in. Where opt-in is required (everything except US marketing email, which follows CAN-SPAM opt-out rules) the gate verifies it on every send.",
+      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send SMS, voice, WhatsApp or non-US email marketing without a recorded opt-in — the gate will reject the send and log a compliance_violation (US marketing email follows CAN-SPAM opt-out rules instead). Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
         "Permitted message types: transactional, marketing, reminder, follow_up, notification.",
-        "Marketing messages require a valid consent_record_id at send time — the gate looks it up in the consent_store and rejects if missing, expired, or revoked.",
+        "Marketing on SMS, voice, WhatsApp and non-US email requires a recorded opt-in at send time — the gate looks it up in the consent_store and rejects if missing, expired, or revoked. US marketing email follows CAN-SPAM opt-out rules: no prior opt-in is required, and a recorded opt-out is honored.",
         "US SMS marketing requires TCPA prior express written consent + 10DLC campaign registration.",
         "EU/UK recipients require explicit GDPR lawful basis (contract or freely-given consent) for marketing messages.",
         "Canadian recipients require CASL express consent for commercial electronic messages.",
         "Voice channel to US recipients requires prior express consent for autodialed/prerecorded calls (TCPA).",
         "All commercial email contains a functional unsubscribe link (CAN-SPAM).",
-        "GCC recipients (UAE, SA, OM, QA, KW, BH) covered by PDPL-style rules per jurisdiction; the gate routes by country_code."
+        "Gulf recipients (UAE, SA, OM, QA, KW, BH): no Gulf statute is modeled, so the gate applies the service's own opt-in default (recorded opt-in for marketing, an 08:00-21:00 local solicitation window) and its answer says so. The country is read from the recipient's number; a marketing or follow-up message whose country_code contradicts the number is refused as jurisdiction_conflict."
       ],
       "input_schema": {
         "type": "object",
@@ -504,7 +504,7 @@
           },
           "message_type": {
             "type": "string",
-            "description": "Intent tag for the message. Five permitted types. 'marketing' is allowed only when paired with a valid consent_record_id; the compliance gate verifies the consent at send time and rejects (compliance_violation receipt) if it's missing, expired, or revoked.",
+            "description": "'marketing' needs recorded opt-in, except US email (CAN-SPAM opt-out rules). Five types. The gate checks the opt-in at send time and rejects the send (compliance_violation receipt) if it is missing, expired, or revoked.",
             "enum": [
               "transactional",
               "marketing",
@@ -2366,7 +2366,7 @@
           },
           "message_type": {
             "type": "string",
-            "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+            "description": "One of transactional, marketing, reminder, follow_up, notification (any case). Any other value is refused. 'marketing' triggers the consent checks. Defaults to transactional.",
             "default": "transactional"
           },
           "country_code": {
@@ -2394,6 +2394,25 @@
           },
           "jurisdiction": {
             "type": "string"
+          },
+          "jurisdiction_source": {
+            "type": "string",
+            "enum": ["caller", "recipient_number", "unknown"],
+            "description": "How the jurisdiction was decided: the caller's country_code, the recipient number's country calling code (which wins over a contradicting country_code for a message that is not a solicitation), or unknown (which includes a marketing or follow-up message whose country_code contradicts the number)."
+          },
+          "jurisdiction_conflict": {
+            "type": "string",
+            "description": "Present only when country_code contradicted the recipient number or could not be used. For a message that is not a solicitation it says which jurisdiction was applied instead; for a marketing or follow-up message none was, and the answer is rule jurisdiction_conflict."
+          },
+          "rule_set": {
+            "type": "object",
+            "description": "What the rules applied are based on. basis is 'statute' where a named statute is modeled (US, EU/UK states modeled, Canada) and 'conservative_default' everywhere else, which means no statute of that country was applied - the service's own opt-in policy was. It is 'undecided' (code null) when a marketing or follow-up message's country_code contradicts the recipient number: the gate refused to choose and applied no rule set.",
+            "properties": {
+              "code": {"type": ["string", "null"]},
+              "basis": {"type": "string", "enum": ["statute", "conservative_default", "undecided"]},
+              "statutes_modeled": {"type": "array", "items": {"type": "string"}},
+              "note": {"type": "string"}
+            }
           },
           "rule": {
             "type": "string",

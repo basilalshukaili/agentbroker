@@ -107,33 +107,29 @@ class QuietHoursDecision:
                 "retry_after_s": self.retry_after_s}
 
 
-# E.164 dialling prefixes -> ISO country. Longest prefix wins.
-# WHY THIS EXISTS: failing closed on "unknown local time" is the right call
-# legally, but only if "unknown" is RARE. Without this, every marketing send
-# that omitted the optional country_code would be blocked - a correct rule
-# applied so broadly it breaks the product. A phone number almost always tells
-# us the country, so infer it rather than refuse.
-_E164_COUNTRY: dict[str, str] = {
-    "968": "OM", "971": "AE", "966": "SA", "974": "QA", "965": "KW", "973": "BH",
-    "44": "GB", "353": "IE", "351": "PT", "33": "FR", "49": "DE", "34": "ES",
-    "39": "IT", "31": "NL", "32": "BE", "46": "SE", "48": "PL",
-    "91": "IN", "92": "PK", "880": "BD",
-    "65": "SG", "60": "MY", "63": "PH", "852": "HK", "86": "CN",
-    "81": "JP", "82": "KR", "64": "NZ",
-    # +1 is US AND Canada and spans six zones; it does NOT resolve a timezone,
-    # so it is deliberately absent. Guessing there is what we are avoiding.
-}
-
-
 def country_from_number(recipient_id: Optional[str]) -> Optional[str]:
-    """ISO country from an E.164 number, or None. Never raises."""
-    s = "".join(c for c in (recipient_id or "") if c.isdigit())
-    if not s:
-        return None
-    for length in (3, 2, 1):
-        if s[:length] in _E164_COUNTRY:
-            return _E164_COUNTRY[s[:length]]
-    return None
+    """ISO country from an E.164 number, or None. Never raises.
+
+    WHY THIS READS A SHARED TABLE. Failing closed on "unknown local time" is the right call legally, but only if
+    "unknown" is RARE: without inference, every marketing send that omitted the optional country_code would be
+    blocked. A phone number almost always names its country, so infer it rather than refuse.
+
+    This used to carry its own 27-entry table and took every digit out of ANY string, so an email address such as
+    user44@example.com read as a British number. The table now lives in compliance/number_jurisdiction.py, which
+    the consent rules read too, so the two cannot disagree about where a number is from. +1 (US and Canada, six
+    time zones) and +7 are deliberately unresolved there: guessing is what this module exists to avoid.
+    """
+    from compliance.number_jurisdiction import country_of_number
+    return country_of_number(recipient_id)
+
+
+def window_is_modeled(country_code: Optional[str], state_code: Optional[str]) -> bool:
+    """True when a solicitation window is modeled for this jurisdiction (US, FL, OK, CA, GB, EU); False when
+    the service's default window is what applies. Callers say which in the words they give a caller."""
+    cc = (country_code or "").upper()
+    sc = (state_code or "").upper()
+    key = f"{cc}-{sc}" if sc else cc
+    return key in _JURISDICTION_WINDOWS or cc in _JURISDICTION_WINDOWS
 
 
 def _offset_for(country_code: Optional[str],
