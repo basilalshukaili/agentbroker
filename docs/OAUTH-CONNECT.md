@@ -1,6 +1,7 @@
 # OAuth "Connect" sign-in (MCP authorization)
 
-Branch `feat/oauth-connect-20261003`, built from the live commit `1f85885`. **Not deployed.** Evidence for it:
+Branch `feat/oauth-connect-20261003`, built from the commit `1f85885`. **Live since 2026-10-03 (build `48e8b62`, the
+"fix what we have" release); the notes below were written before the deploy.** Evidence for it:
 `docs/reviews/2026-10-03-mcp-demand-evidence.md` (934 OAuth-discovery probes, every one a 404; consumer assistants
 offer only "no authentication" or OAuth) and verdict item A3 in `2026-10-03-mcp-focus-verdict.md`.
 
@@ -148,18 +149,17 @@ Log lines to watch (never contain an address, link, code or token): `oauth_signi
 `oauth_token_issued`, `oauth_refresh_refused reason=...`, `oauth_challenge style=... verdict=...`.
 Rollback: `OAUTH_CONNECT_ENABLED=0` (no redeploy of code needed beyond the env), or `ops/vps/deploy_agentbroker_vps.py --rollback-only`.
 
-**Site-host discovery (optional, a Caddy change).** `hatchloop.dev/.well-known/*` still goes to Next.js, so a client
-that probes the *site* URL's well-known path (ChatGPT does, at connector creation) finds nothing there. Until a route is
-added, connect assistants to **`https://api.hatchloop.dev/mcp`** (every discovery path is served by the origin), or add
-inside the `hatchloop.dev` site block, next to the existing `mcp_direct` handles:
-
-```
-@oauth_prm path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
-handle @oauth_prm {
-    reverse_proxy 127.0.0.1:8010 { header_up X-Forwarded-Proto https
-                                   header_up -X-Real-IP }
-}
-```
+**Site-host discovery (a Caddy change, prepared in `deploy/caddy/oauth_prm.py`; see `docs/DISCOVERY.md`).** This
+paragraph used to say that `hatchloop.dev/.well-known/*` "still goes to Next.js" and that a client probing the site URL
+"finds nothing there". Measured on 2026-10-04 that was half right: the site's Next.js rewrite
+(`web_hatchloop_v2/next.config.ts`, `/.well-known/:path*`) already proxies every well-known path to the origin, so the
+documents are found. They are wrong for the doors: the rewrite replaces the Host header, the origin builds `resource` from
+Host, and `hatchloop.dev/.well-known/oauth-protected-resource/mcp/sanctions-screening` answers `resource:
+https://api.hatchloop.dev/mcp/sanctions-screening` instead of the URL the client connected to. A client that validates
+`resource` (RFC 9728, and the MCP authorization specification) refuses it. Only `/mcp/agent-broker` is right, because the
+origin special-cases that one path. The route that fixes it is one Caddy `handle` for the protected-resource family only,
+applied with `python deploy/caddy/install_mcp_direct.py install --change oauth_prm --yes` (it needs no origin deploy). Until
+then, connect assistants to **`https://api.hatchloop.dev/mcp`**, whose documents are right.
 
 ## Not done here
 

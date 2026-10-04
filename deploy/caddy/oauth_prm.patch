@@ -1,0 +1,18 @@
+--- a/Caddyfile
++++ b/Caddyfile
+@@ -583,0 +584,15 @@
++	# >>> oauth_prm 2026-10-04
++	# OAUTH PROTECTED-RESOURCE DOCUMENTS, STRAIGHT TO THE CONTAINER WITH THE HOST HEADER INTACT.
++	# The Next.js rewrite that proxies /.well-known/* replaces Host with api.hatchloop.dev, and the origin builds
++	# the document's `resource` from Host, so a door's metadata named the API host instead of the URL the client
++	# connected to (RFC 9728 requires them to match). Only this one family is routed here: it is the only
++	# /.well-known document that depends on Host. No wildcard over /.well-known/, no `header_up Host`.
++	@oauth_prm path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
++	handle @oauth_prm {
++		reverse_proxy 127.0.0.1:8010 {
++			header_up X-Forwarded-Proto https
++			header_up -X-Real-IP
++		}
++	}
++	# <<< oauth_prm
++
