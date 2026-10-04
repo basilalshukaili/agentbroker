@@ -487,16 +487,33 @@ def check_chatgpt_door(ctx: dict) -> dict:
         problems.append(f"initialize declares {sorted(res.get('capabilities') or {})}, not tools only")
     scan("initialize", init)
 
+    st, _, disc = rpc(url, "server/discover", {"_meta": {M + "protocolVersion": V}},
+                      headers={"MCP-Protocol-Version": V, "Mcp-Method": "server/discover"})
+    dres = (disc or {}).get("result") or {}
+    if st != 200 or ((dres.get("_meta") or {}).get(M + "serverInfo") or {}).get("name") != "chatgpt" \
+            or set(dres.get("capabilities") or {}) != {"tools"}:
+        problems.append(f"server/discover: status {st}, declares {sorted(dres.get('capabilities') or {})}")
+    scan("server/discover", disc)
+
     st, _, tl = rpc(url, "tools/list")
     tools = ((tl or {}).get("result") or {}).get("tools") or []
     if st != 200 or {t.get("name") for t in tools} != three:
         problems.append(f"tools/list names {sorted(t.get('name') for t in tools)}")
+    # EXACT values, not "is a bool": a door that said readOnlyHint false and destructiveHint true would have passed.
+    want_hints = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True}
     for t in tools:
         a = t.get("annotations") or {}
         if not (isinstance(t.get("title"), str) and t.get("outputSchema")
-                and all(isinstance(a.get(h), bool) for h in ("readOnlyHint", "destructiveHint", "openWorldHint"))
+                and all(a.get(h) is v for h, v in want_hints.items())
                 and t.get("securitySchemes") == [{"type": "noauth"}]):
-            problems.append(f"{t.get('name')}: missing title/outputSchema/explicit annotations/noauth")
+            problems.append(f"{t.get('name')}: missing title/outputSchema/exact annotations/noauth "
+                            f"(hints {[a.get(h) for h in want_hints]})")
+    from core import input_limits as lim
+    by_name = {t.get("name"): t for t in tools}
+    declared = ((by_name.get("screen_sanctions") or {}).get("inputSchema") or {}).get("properties") or {}
+    if (declared.get("name") or {}).get("maxLength") != lim.MAX_NAME_CHARS:
+        problems.append("screen_sanctions does not declare the name length limit the handler enforces")
+    for t in tools:
         if str(t.get("description", "")).rstrip().endswith("\u2026"):
             problems.append(f"{t.get('name')}: description is cut off")
     scan("tools/list", tl)
@@ -514,6 +531,24 @@ def check_chatgpt_door(ctx: dict) -> dict:
         problems.append("a tool outside the door was not refused")
     scan("refusal", d)
 
+    _, _, d = rpc(url, "preview_cost https://hatchloop.dev/pricing", {})
+    if ((d or {}).get("error") or {}).get("message") != no_commerce.METHOD_NOT_FOUND:
+        problems.append("an unknown method was not answered in the door's own words")
+    scan("unknown method", d)
+
+    # An over-long name is refused before anything runs (nothing is looked up, nothing is echoed).
+    _, _, d = rpc(url, "tools/call", {"name": "screen_sanctions", "arguments": {"name": "a" * (lim.MAX_NAME_CHARS + 1)}})
+    body = tool_body(d)
+    if body.get("reason_code") != "bad_input" or "aaaa" in json.dumps(body):
+        problems.append(f"an over-long name was not refused as bad_input (reason_code {body.get('reason_code')!r})")
+    scan("over-long input", d)
+
+    # The FULL server must not let a caller pick the door by writing `_profile` in its own request.
+    _, _, d = rpc(ctx["base"] + "/mcp", "tools/list", {"_profile": "chatgpt"})
+    full = {t.get("name") for t in (((d or {}).get("result") or {}).get("tools") or [])}
+    if full <= three:
+        problems.append(f"/mcp let a request choose the ChatGPT door: it listed only {sorted(full)}")
+
     _, _, d = rpc(url, "tools/call", {"name": "screen_sanctions", "arguments": {"name": "Zzyzx Holdings Quuxland Ltd"},
                                       "_meta": {"x402/payment": "x"}})
     body = tool_body(d)
@@ -530,6 +565,18 @@ def check_chatgpt_door(ctx: dict) -> dict:
         problems.append(f"result: status {st}, isError {r.get('isError')}, leaked keys {sorted(found)}, "
                         f"structuredContent equal {r.get('structuredContent') == body}")
     scan("result", body)
+    # The official client SDKs throw when structuredContent does not satisfy the outputSchema the tool declared.
+    try:
+        import jsonschema
+    except ImportError:
+        problems.append("structuredContent was NOT validated against the outputSchema: the jsonschema package is "
+                        "not installed here (a check that cannot run is not a pass)")
+    else:
+        schema = (by_name.get("screen_sanctions") or {}).get("outputSchema")
+        try:
+            jsonschema.validate(r.get("structuredContent"), schema)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"structuredContent does not satisfy the declared outputSchema: {str(exc)[:160]}")
 
     gs, _, _ = http("GET", url)
     if gs != 405:
@@ -537,8 +584,10 @@ def check_chatgpt_door(ctx: dict) -> dict:
     os_, _, _ = http("GET", ctx["base"] + "/.well-known/oauth-protected-resource/mcp/chatgpt")
     if os_ != 404:
         problems.append(f"oauth protected-resource metadata for the door answered {os_}, not 404")
-    _, _, llms = http("GET", ctx["base"] + "/llms.txt")
-    if "/mcp/chatgpt" in llms:
+    ls, _, llms = http("GET", ctx["base"] + "/llms.txt")
+    if ls != 200:
+        problems.append(f"/llms.txt answered {ls}, so 'the door is not advertised there' was not checked")
+    elif "/mcp/chatgpt" in llms:
         problems.append("the door is advertised in llms.txt")
     return check(not problems, problems=problems[:12], tools=sorted(t.get("name") for t in tools))
 

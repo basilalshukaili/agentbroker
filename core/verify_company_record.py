@@ -23,6 +23,7 @@ import urllib.parse
 import uuid
 from typing import Optional
 
+from core import input_limits as _limits
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 from core.untrusted import fence as _fence_untrusted
 
@@ -327,6 +328,21 @@ async def handle_verify_company_record(
         )
 
     name = name.strip()
+    too_long = (_limits.too_long("name", name, _limits.MAX_NAME_CHARS)
+                or _limits.too_long("country", country, _limits.MAX_COUNTRY_CHARS)
+                or _limits.too_long("lei", lei, _limits.MAX_LEI_CHARS))
+    if too_long:
+        return OutcomeReceipt(
+            operation_id=op_id,
+            status=OperationStatus.FAILURE,
+            reason_code="bad_input",
+            human_message=too_long,
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        )
+
     country_upper = country.strip().upper() if country else None
 
     record: Optional[dict] = None

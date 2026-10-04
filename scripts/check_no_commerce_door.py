@@ -54,9 +54,9 @@ ALLOWED_LITERALS = {
 }
 
 
-def call(method: str, params: dict | None = None, profile: str = DOOR) -> dict:
+def call(method: str, params: dict | None = None, profile: str = DOOR, headers: dict | None = None) -> dict:
     return asyncio.run(handle_mcp_request(
-        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}, headers={}, profile=profile))
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}, headers=headers or {}, profile=profile))
 
 
 def strings(obj):
@@ -91,6 +91,20 @@ def door_surfaces() -> dict:
     s["refusal of a tool the door lacks"] = call("tools/call", {"name": "preview_cost", "arguments": {}})
     s["x402 attachment refused"] = call(
         "tools/call", {"name": "screen_sanctions", "arguments": {"name": "x"}, "_meta": {"x402/payment": "x"}})
+    # ENVELOPE-LEVEL surfaces: the dispatcher's own words around a tool, which the result projection never sees.
+    s["unknown method (caller's text must not be echoed)"] = call("preview_cost https://hatchloop.dev/pricing", {})
+    s["a bad key (no key-issuance warning)"] = call("tools/list", {}, headers={"x-agent-identity": "not-a-real-key"})
+    s["a write tool the door lacks, with a key and an idempotency key"] = call(
+        "tools/call", {"name": "send_message", "arguments": {"idempotency_key": "k"}},
+        headers={"x-agent-identity": "not-a-real-key"})
+    s["an over-long name refused"] = call(
+        "tools/call", {"name": "screen_sanctions", "arguments": {"name": "a" * 5000}})
+    s["tools/list in the 2026-07-28 envelope"] = call(
+        "tools/list", {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}},
+        headers={"mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list"})
+    s["initialize in the 2026-07-28 envelope"] = call(
+        "server/discover", {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}},
+        headers={"mcp-protocol-version": "2026-07-28", "mcp-method": "server/discover"})
     # the over-ceiling answer, without running a tool
     saved = os.environ.get("CHATGPT_DOOR_DAILY_CEILING")
     os.environ["CHATGPT_DOOR_DAILY_CEILING"] = "1"

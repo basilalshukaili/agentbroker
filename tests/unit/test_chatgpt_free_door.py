@@ -617,26 +617,17 @@ def test_the_regex_catches_the_strings_section_13_names_and_spares_ordinary_pros
 def test_handler_prose_cannot_grow_new_commerce_wording_unnoticed():
     """The door passes our own sentences through, so a new 'free' or 'credits' in one of the three handlers
     would reach ChatGPT. Every string literal in them that is not a docstring is scanned; the three allowed
-    ones are exactly the ones the door rewords, plus the cost block the door drops."""
-    allowed = {"USD", "free", ". The company may not be a legal entity registered with these free registries.",
-               " per call so one request cannot occupy the service. Split the list across calls - each call "
-               "screens every party it is given, completely. Nothing was screened on this call and nothing was "
-               "charged."}
-    offenders = []
-    for rel in ("core/verify_company_record.py", "core/map_trade_restriction.py", "core/screen_sanctions.py"):
-        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
-            tree = ast.parse(fh.read())
-        docs = set()
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
-                first = node.body[0]
-                if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant):
-                    docs.add(id(first.value))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
-                if no_commerce.FORBIDDEN_RE.search(node.value) and node.value not in allowed \
-                        and not any(node.value in a for a in allowed):
-                    offenders.append(f"{rel}:{node.lineno}: {node.value[:90]!r}")
+    ones are exactly the ones the door rewords, plus the cost block the door drops.
+
+    ONE EXACT LIST, shared with the CI gate (scripts/check_no_commerce_door.ALLOWED_LITERALS). This test used to accept
+    any literal that was a SUBSTRING of an allowed sentence, so a new literal "nothing was charged" passed here and only
+    the gate caught it (review of the door, 2026-10-04)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("check_no_commerce_door_unit",
+                                                  os.path.join(ROOT, "scripts", "check_no_commerce_door.py"))
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    offenders = gate.handler_literals()
     assert not offenders, offenders
 
 

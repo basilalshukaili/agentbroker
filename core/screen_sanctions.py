@@ -59,6 +59,7 @@ Design:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextvars
 import csv
 import hashlib
@@ -75,6 +76,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from core import arabic_names as _ar
+from core import input_limits as _limits
 from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 from core.untrusted import fence as _fence_untrusted
@@ -314,7 +316,16 @@ def _word_match_score(query: str, candidate: str) -> float:
     discriminated on, and the honest behaviour is to score it as the plain
     overlap and let the threshold and the human caveat do their work.
     """
-    q_all = set(_normalize_name(query).split())
+    return _word_match_score_tokens(set(_normalize_name(query).split()), candidate)
+
+
+def _word_match_score_tokens(q_all: set, candidate: str) -> float:
+    """`_word_match_score` with the QUERY ALREADY NORMALISED to its token set. Same arithmetic, same result.
+
+    The scan of a list entry used to normalise the caller's name again for every one of ~79,000 entries, so the cost
+    of a request grew with the length of a string the caller chose: a name of 20,000 spaces took 13.6 s (review of
+    the ChatGPT door, 2026-10-04). The query's tokens do not depend on the candidate, so the caller of this
+    function computes them once; only the candidate is normalised here."""
     c_all = set(_normalize_name(candidate).split())
     if not q_all or not c_all:
         return 0.0
@@ -619,6 +630,9 @@ def _parse_ofac_sdn(csv_text: str, query_name: str,
 
     matches: list[dict] = []
     seen_ids: set[str] = set()
+    q_tokens = set(_normalize_name(query_name).split())     # once, not once per list entry (see above)
+    if not q_tokens:
+        return matches              # every score would be 0.0; skip normalising 79,000 names to learn that
     try:
         for row in csv.reader(io.StringIO(csv_text)):
             if len(row) < 4:
@@ -633,7 +647,7 @@ def _parse_ofac_sdn(csv_text: str, query_name: str,
             candidates = [primary_name] + aliases.get(entity_id, [])
             best_score, best_name = 0.0, primary_name
             for cand in candidates:
-                sc = _word_match_score(query_name, cand)
+                sc = _word_match_score_tokens(q_tokens, cand)
                 if sc > best_score:
                     best_score, best_name = sc, cand
             if best_score < _MATCH_THRESHOLD_OFAC:
@@ -2088,6 +2102,9 @@ async def _screen_list_db(name: str, list_code: str, list_label: str,
     return out, queried, partial
 
 
+_OFAC_SCAN_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="ofac-scan")
+
+
 async def _call_ofac_sdn(
     name: str,
 ) -> tuple[list[dict], list[str], list[str]]:
@@ -2120,7 +2137,12 @@ async def _call_ofac_sdn(
     else:
         sources_queried.append(_OFAC_ALT_CSV_URL)
 
-    matches = _parse_ofac_sdn(csv_text, name, alt_text)
+    # OFF THE EVENT LOOP. This scan is ~80,000 list entries of pure CPU. Run inline it held the one worker for as
+    # long as it took, and every other request, health check included, waited behind it. Two at a time, on their
+    # own threads: each scan holds a copy of the list text and the alias table, so unbounded parallelism would
+    # trade a stall for the out-of-memory kill the database path was built to avoid.
+    matches = await asyncio.get_running_loop().run_in_executor(
+        _OFAC_SCAN_POOL, _parse_ofac_sdn, csv_text, name, alt_text)
 
     # Sound-based and Arabic-script matching. OFAC publishes Latin script only,
     # so an Arabic query reaches it by transliteration.
@@ -2306,6 +2328,20 @@ async def handle_screen_sanctions(
             status=OperationStatus.FAILURE,
             reason_code="bad_input",
             human_message="name is required -- provide the person or entity name to screen.",
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        )
+
+    too_long = (_limits.too_long("name", name_clean, _limits.MAX_NAME_CHARS)
+                or _limits.too_long("country", country, _limits.MAX_COUNTRY_CHARS))
+    if too_long:
+        return OutcomeReceipt(
+            operation_id=op_id,
+            status=OperationStatus.FAILURE,
+            reason_code="bad_input",
+            human_message=too_long,
             cost=CostRecord(amount=0.0, currency="USD", basis="free"),
             latency_ms=int((time.monotonic() - t0) * 1000),
             retriable=False,

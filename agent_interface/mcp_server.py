@@ -607,6 +607,14 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
         # by sending _profile itself, so the server-side value always
         # overwrites whatever arrived.
         params = {**params, "_profile": profile}
+    elif isinstance(params, dict) and "_profile" in params:
+        # THE FULL SERVER HAS NO PROFILE, AND A CALLER MUST NOT BE ABLE TO GIVE IT ONE. The route's profile
+        # overwrote the payload only when the route had one, so on /mcp (no profile) a request carrying
+        # `_profile: "chatgpt"` was served by the ChatGPT door: the door that never enters the x402 gate, the credits
+        # rail or the data quota. Before that door existed the same trick could only narrow a caller's own tool
+        # list; it now moves a billed call onto an unbilled path. Dropped here, before anything reads it
+        # (found in review of the ChatGPT door, 2026-10-04).
+        params = {k: v for k, v in params.items() if k != "_profile"}
     # Normalize header keys to lower-case so callers don't have to.
 
     # ACCEPT THE HEADERS THE BIGGEST CLIENT CAN ACTUALLY SEND.
@@ -690,9 +698,17 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
         handler = None      # the revision removed it; a request in the revision's own envelope is told so
     if not handler:
         obs.outcome, obs.error_code = "rpc_error", "method_not_found"
+        # The ChatGPT door answers in its own words: the method is the caller's text, and the door does not echo
+        # a requested name anywhere else (no_commerce.not_available_message).
+        from agent_interface import profiles as _pf_nf
+        if _pf_nf.is_no_commerce(profile):
+            from agent_interface import no_commerce as _nc_nf
+            _nf_text = _nc_nf.METHOD_NOT_FOUND
+        else:
+            _nf_text = f"Method '{method}' not found"
         not_found = JsonRpcResponse(
             id=rpc_id,
-            error=_error(ERR_METHOD_NOT_FOUND, f"Method '{method}' not found"),
+            error=_error(ERR_METHOD_NOT_FOUND, _nf_text),
         ).to_dict()
         if era.modern:
             # Streamable HTTP, 2026-07-28: an unimplemented method is 404 + -32601 (the JSON-RPC body is
@@ -1193,6 +1209,13 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     """
     name = params.get("name")
     arguments = params.get("arguments")
+    # A tool the ChatGPT door does not have is refused by the door, and must not meet the idempotency gate first:
+    # its replies ("a duplicate charge", a cached write-tool response) are the other doors' words and results, on a
+    # door that says nothing about charges (found in review of the door, 2026-10-04).
+    from agent_interface import profiles as _profiles
+    _door = params.get("_profile")
+    if isinstance(name, str) and _profiles.is_no_commerce(_door) and not _profiles.allows(_door, name):
+        return await _h_tools_call_impl(params, headers)
     idem_key: Optional[str] = None
     if isinstance(arguments, dict) and "idempotency_key" in arguments:
         _v = arguments.pop("idempotency_key")  # pop -> handlers never see it

@@ -274,9 +274,14 @@ ANON_DATA_QUOTA_PER_DAY = _env_int("ANON_DATA_QUOTA_PER_DAY", 100)
 # The ChatGPT-only door (/mcp/chatgpt, agent_interface/no_commerce.py) is NOT subject to either quota above: nothing
 # on it may sell or price, so it has no allowance to run out of and no upgrade to point at. Its one limit is an ABUSE
 # ceiling per network address, answered with the limit and the reset time and no link. It is two orders of magnitude
-# above the anonymous quota because ChatGPT's requests come from a small set of published addresses, so one address
-# can stand for every ChatGPT user at once. 0 turns it off.
+# above the anonymous quota because OpenAI publishes the ranges ChatGPT's requests come from (278 IPv4 prefixes,
+# 36,359 addresses, openai.com/chatgpt-connectors.json on 2026-10-04) but not how traffic is spread over them, so one
+# address can stand for many ChatGPT users at once. 0 turns it off.
 CHATGPT_DOOR_DAILY_CEILING = _env_int("CHATGPT_DOOR_DAILY_CEILING", 20000)
+# The door's per-address RATE bucket (burst, then tokens per second), separate from the 60-burst / 1-a-second bucket the
+# other doors share: see agent_interface/no_commerce.rate_bucket and docs/CHATGPT_DOOR.md.
+CHATGPT_DOOR_RATE_BURST = _env_int("CHATGPT_DOOR_RATE_BURST", 150)
+CHATGPT_DOOR_RATE_PER_S = _env_float("CHATGPT_DOOR_RATE_PER_S", 2.0)
 
 # ---------------------------------------------------------------------------
 # x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)

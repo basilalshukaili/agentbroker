@@ -313,25 +313,47 @@ def _rl_evict_stale(now: float) -> None:
         _rl_buckets.pop(k, None)
 
 
-def _rl_consume(client_ip: str, now: float) -> bool:
-    """Try to take a token from the per-IP bucket. Returns True on allow."""
+def _rl_consume(client_ip: str, now: float, size: Optional[float] = None,
+                refill: Optional[float] = None) -> bool:
+    """Try to take a token from the per-IP bucket. Returns True on allow. `size` and `refill` default to the shared
+    bucket's (read at call time); the ChatGPT door passes its own."""
+    size = _RL_BUCKET_SIZE if size is None else size
+    refill = _RL_REFILL_RATE if refill is None else refill
     bucket = _rl_buckets.get(client_ip)
     if bucket is None:
         bucket = {
-            "tokens": _RL_BUCKET_SIZE - 1.0,  # consume one immediately
+            "tokens": size - 1.0,  # consume one immediately
             "last_refill": now,
             "last_touch": now,
         }
         _rl_buckets[client_ip] = bucket
         return True
     elapsed = max(0.0, now - bucket["last_refill"])
-    bucket["tokens"] = min(_RL_BUCKET_SIZE, bucket["tokens"] + elapsed * _RL_REFILL_RATE)
+    bucket["tokens"] = min(size, bucket["tokens"] + elapsed * refill)
     bucket["last_refill"] = now
     bucket["last_touch"] = now
     if bucket["tokens"] >= 1.0:
         bucket["tokens"] -= 1.0
         return True
     return False
+
+
+def _rl_door_bucket(path: str) -> Optional[tuple]:
+    """(bucket namespace, burst, tokens per second) when `path` is a door that carries its own rate bucket (the
+    ChatGPT door, whose callers may share addresses), else None: the shared bucket applies.
+
+    The namespace keeps its tokens apart from the shared bucket's. Without it a scanner that spent the shared
+    bucket from an address would also refuse that address's ChatGPT users, and the other way round."""
+    p = path.rstrip("/")
+    if not p.startswith("/mcp/"):
+        return None
+    door = p[len("/mcp/"):]
+    from agent_interface import profiles
+    if not profiles.is_no_commerce(door):
+        return None
+    from agent_interface import no_commerce
+    burst, per_s = no_commerce.rate_bucket()
+    return f"door:{door}|", burst, per_s
 
 
 def _rl_path_should_limit(path: str) -> bool:
@@ -365,7 +387,12 @@ async def _rate_limit_middleware(request: Request, call_next):
 
     client_ip = _rl_client_ip(request)
     bucket_id, bucket_key_id = _rl_bucket_for(request, client_ip)
-    allowed = _rl_consume(bucket_id, now)
+    door_bucket = _rl_door_bucket(path)
+    if door_bucket is None:
+        allowed = _rl_consume(bucket_id, now)
+    else:
+        namespace, burst, per_s = door_bucket
+        allowed = _rl_consume(namespace + bucket_id, now, burst, per_s)
     if not allowed:
         _log_http_outcome(request, 429, "rate_limited", client_ip, bucket_key_id,
                           throttle_key=bucket_id)
