@@ -156,8 +156,10 @@ class MessageType(str, Enum):
     # opt-in consent per jurisdiction (TCPA in US, GDPR in EU/UK, CASL in
     # Canada; every other country, the Gulf states included, gets the
     # service's own conservative opt-in default - no Gulf statute is
-    # modeled). A marketing send without recorded consent is
-    # rejected at runtime with a structured compliance_violation receipt.
+    # modeled). A marketing send on SMS, voice, WhatsApp or non-US email
+    # without recorded consent is rejected at runtime with a structured
+    # compliance_violation receipt; marketing EMAIL to a US recipient follows
+    # CAN-SPAM's opt-out rules and needs no prior opt-in.
     # The gate, not the schema, is the safety mechanism — this lets agents
     # legitimately help SMBs send marketing messages to opted-in customers
     # while never allowing spam to non-consenting recipients.

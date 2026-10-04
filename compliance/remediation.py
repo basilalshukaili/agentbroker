@@ -57,6 +57,10 @@ REMEDIATION = {
         "category, in any language or script, then re-run check_compliance. "
         "This signal is advisory, not authoritative — see result.jev_advisory."
     ),
+    "invalid_message_type": (
+        "Send message_type as one of transactional, marketing, reminder, follow_up or notification (upper or "
+        "lower case is read the same). A type the gate does not recognise is refused rather than treated as "
+        "not-marketing, because the consent rules depend on it."),
 }
 
 FALLBACK = "Review the cited rule in the jurisdiction reference at /compliance/jurisdictions."

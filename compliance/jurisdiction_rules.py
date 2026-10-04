@@ -155,10 +155,27 @@ def requires_two_party_recording_consent(country_code: str, state_code: str | No
     return get_rules(country_code, state_code).recording_consent_type == RecordingConsentType.TWO_PARTY
 
 
-def infer_jurisdiction(country_code: str | None, state_code: str | None = None) -> JurisdictionRules:
+def rules_out_the_us(resolution) -> bool:
+    """True when the recipient's number settles that this is NOT an American recipient while naming no single
+    country (a +7 number: Russia or Kazakhstan). `resolution` is a number_jurisdiction.Resolution, read by its
+    fields so this module need not import that one.
+
+    The environment's default jurisdiction (below) is for a recipient the gate knows nothing about. Applying a
+    US default to a number that cannot be American judged it by TCPA rules while the same answer reported that
+    it could not be a US number (second review, 2026-10-04; configuration-dependent, not the shipped default)."""
+    return (getattr(resolution, "country", None) is None
+            and getattr(resolution, "calling_code", None) not in (None, "1"))
+
+
+def infer_jurisdiction(country_code: str | None, state_code: str | None = None,
+                       use_environment_default: bool = True) -> JurisdictionRules:
     """Best-effort jurisdiction inference when explicit codes are unavailable.
-    Defaults to INTERNATIONAL (conservative) when no country is supplied."""
+    Defaults to INTERNATIONAL (conservative) when no country is supplied; with `use_environment_default`
+    (the normal case) COMPLIANCE_DEFAULT_JURISDICTION may name another default for a recipient about whom
+    nothing is known."""
     if not country_code:
+        if not use_environment_default:
+            return _RULES["INTERNATIONAL"]
         import os
         default = os.getenv("COMPLIANCE_DEFAULT_JURISDICTION", "international").upper()
         return _RULES.get(default, _RULES["INTERNATIONAL"])
@@ -209,13 +226,13 @@ def consent_basis_sentence(country_code, what: str = "marketing SMS") -> str:
             + tail.replace("{law}", shown))
 
 
-def describe_rule_set(country_code, state_code: str | None = None) -> dict:
+def describe_rule_set(country_code, state_code: str | None = None, use_environment_default: bool = True) -> dict:
     """{code, basis, statutes_modeled, note} for the rule set a send to this country is judged under.
 
     basis is "statute" when the rule set models a named statute and "conservative_default" when it does not -
     which is the honest description of every jurisdiction other than the US, the EU/UK states and Canada."""
     cc = _clean_country(country_code)
-    rules = infer_jurisdiction(cc if cc != "?" else "ZZ", state_code)
+    rules = infer_jurisdiction(cc if cc != "?" else "ZZ", state_code, use_environment_default)
     if rules.statutes:
         return {"code": rules.jurisdiction_code, "basis": "statute",
                 "statutes_modeled": list(rules.statutes),
@@ -243,7 +260,8 @@ def describe_resolved(resolution, state_code: str | None = None) -> dict:
         return {"code": None, "basis": "undecided", "statutes_modeled": [],
                 "note": "No rule set was applied: " + (resolution.conflict or "the recipient number and "
                                                        "country_code name different countries.")}
-    return describe_rule_set(resolution.country, state_code)
+    return describe_rule_set(resolution.country, state_code,
+                             use_environment_default=not rules_out_the_us(resolution))
 
 
 def rule_sets_listing() -> list[dict]:

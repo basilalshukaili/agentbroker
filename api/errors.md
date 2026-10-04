@@ -67,6 +67,16 @@ not cover it), and marketing on any other channel the gate has no rule for is re
 (`marketing_consent`) rather than allowed. 10DLC carrier registration is a US rule and is applied only to a US
 recipient or to a +1 number whose country is not settled, never to a number that cannot be American.
 
+Marketing needs a recorded opt-in on SMS, voice, WhatsApp and on email to every country except the US; marketing
+email to a US recipient follows CAN-SPAM's opt-out rules, is permitted with no prior opt-in, and still honors a
+recorded opt-out. A number that rules the US out (+7, +44, +968) is never judged by a US default, including one
+set in the environment.
+
+`invalid_message_type` means the gate was handed a message type it does not recognise. The type is read in any
+case (`Marketing` is `marketing`); anything that is not `transactional`, `marketing`, `reminder`, `follow_up` or
+`notification` is refused instead of being read as "not marketing", because the consent rules depend on it.
+`check_compliance` answers `bad_input` and the public HTTP check answers 422; neither returns a verdict.
+
 `jurisdiction_required` means the country could not be determined: pass `country_code`, or an E.164 recipient
 number whose country calling code names it (a +1 or +7 number needs `country_code`). When the recipient number
 names exactly one country and `country_code` names another, what happens depends on the message. For a marketing
@@ -99,7 +109,9 @@ a number.
 The tool `name` of a `tools/call` must be a string (a list or an object is the same `-32602`), and the request's
 `method` must be a string (`-32600`). On the write tools `idempotency_key` must be a non-empty string of at most
 128 characters: any other type, an empty or blank string, or a longer one is refused as above, so a retry key is
-never silently ignored or cut short; `null` means "not given". `params` must be a JSON object; an absent or
+never silently ignored or cut short; `null` means "not given". The `X-Idempotency-Key` header is the same key and
+is held to the same rule. `arguments` must be a JSON object and is refused as such before an idempotency key is
+claimed. `params` must be a JSON object; an absent or
 `null` `params`, and the empty values `{}`, `[]`, `0`, `false` and `""`, are treated as no parameters.
 
 ---

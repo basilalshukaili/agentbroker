@@ -15,7 +15,9 @@ from typing import Optional
 from core.models import ComplianceViolationError
 from compliance.consent_store import get_consent_store
 from compliance.content_classifier import classify_content
-from compliance.jurisdiction_rules import get_rules, infer_jurisdiction, consent_basis_sentence
+from compliance.jurisdiction_rules import (get_rules, infer_jurisdiction, consent_basis_sentence,
+                                           rules_out_the_us)
+from compliance.message_type import canonical_message_type, refusal_sentence, shown as _shown
 from compliance.number_jurisdiction import resolve_jurisdiction, jurisdiction_label, could_be_us
 from compliance.campaign_registry import get_campaign_registry, UseCaseType
 from compliance.audit_log import AuditEventType, get_audit_log
@@ -58,9 +60,35 @@ def pre_check(
     # EXCEPT for a solicitation, where a contradiction is refused below), otherwise the caller's, otherwise
     # None - and None is "unknown", never "US". See compliance/number_jurisdiction.py for the rules and for
     # why a +1 or +7 number needs the caller to say.
+    # THE MESSAGE TYPE IS READ BEFORE ANYTHING ELSE DEPENDS ON IT (second review, 2026-10-04). The consent branch
+    # below compares it exactly, so "Marketing", "MARKETING" and " marketing" used to skip it, and so did any
+    # string that is not a message type at all ("promotional"): both were read as "not marketing" and came back
+    # permitted on the free previews. It is now lower-cased and trimmed once, and a value that is not one of the
+    # MessageType values is REFUSED here - a gate that does not recognise what kind of message it is looking at
+    # cannot say the message is lawful. (The previews refuse it first, with a 422 / bad_input; this is the
+    # backstop for any caller that reaches the gate without them.)
+    _mt = canonical_message_type(message_type)
+    if _mt is None:
+        _audit_violation(
+            "invalid_message_type",
+            recipient_id, channel, "unknown", agent_id, trace_id,
+            reason=f"unrecognised message_type '{_shown(message_type)}'",
+            preview=preview,
+        )
+        raise ComplianceViolationError(
+            rule="invalid_message_type",
+            recipient_id=recipient_id,
+            channel=channel,
+            jurisdiction="unknown",
+            message=refusal_sentence(message_type),
+        )
+    message_type = _mt
+
     resolution = resolve_jurisdiction(recipient_id, country_code, message_type)
     country_code = resolution.country
-    rules = infer_jurisdiction(country_code, state_code)
+    # An environment default jurisdiction is for a recipient nothing is known about, never for a number that
+    # rules the US out (a +7 number): judging it by a US default contradicted `could_be_us` in the same answer.
+    rules = infer_jurisdiction(country_code, state_code, use_environment_default=not rules_out_the_us(resolution))
     consent_store = get_consent_store()
     jurisdiction = jurisdiction_label(country_code, state_code)
     is_us = rules.jurisdiction_code == "US" or rules.jurisdiction_code.startswith("US-")

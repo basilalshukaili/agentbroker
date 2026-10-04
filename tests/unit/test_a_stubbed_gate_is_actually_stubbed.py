@@ -654,6 +654,11 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "own `import storage.supabase_client as sb` module reference, exactly as "
         "test_idempotency_dispatch.py does; no reference to get_balance or "
         "billing.credits anywhere in this file.",
+    ("tests/unit/test_review_round2_20261004.py", "storage.supabase_client.select_rows"):
+        "targets agent_interface.idempotency_gate (deferred import), patched via its "
+        "own `import storage.supabase_client as sb` module reference, exactly as "
+        "test_guard_review_fixes_20261004.py does; no reference to get_balance or "
+        "billing.credits anywhere in this file.",
     ("tests/unit/test_polar_webhook.py", "storage.supabase_client.select_rows"):
         "targets billing.polar_webhook's idempotency check (deferred import); no "
         "reference to get_balance or billing.credits anywhere in this file.",

@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import config
 from core.models import (
@@ -907,7 +907,8 @@ class _ComplianceCheckRequest(BaseModel):
     channel: str = Field(..., description="One of: sms, email, voice.")
     message_type: str = Field(
         "transactional",
-        description="One of: marketing, transactional, reminder, opt-in-confirm, customer-service.",
+        description=("One of: transactional, marketing, reminder, follow_up, notification (upper or lower case). "
+                     "Any other value is refused with a 422."),
     )
     content: str = Field(..., description="The message body the agent is about to send.")
     country_code: Optional[str] = Field(
@@ -916,6 +917,18 @@ class _ComplianceCheckRequest(BaseModel):
     state_code: Optional[str] = Field(
         None, description="US state code (e.g. 'CA') for state-specific rules."
     )
+
+    @field_validator("message_type", mode="before")
+    @classmethod
+    def _message_type_is_a_real_type(cls, value):
+        """A known type is read in any case ("Marketing" is marketing); anything else is a 422, not a verdict.
+        An unknown type used to skip the marketing consent check and come back `legal: true` (second review,
+        2026-10-04), for a message the real send path refuses."""
+        from compliance.message_type import canonical_message_type, refusal_sentence
+        canonical = canonical_message_type(value)
+        if canonical is None:
+            raise ValueError(refusal_sentence(value))
+        return canonical
 
 
 @app.post("/compliance/check", tags=["Public APIs"])

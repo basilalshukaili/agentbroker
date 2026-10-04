@@ -280,7 +280,9 @@ def test_a_refused_conflict_is_reported_by_the_free_preview_with_its_own_remedia
     assert ev["ruleset"]["jurisdiction_conflict"]
 
 
-@pytest.mark.parametrize("message_type", ["transactional", "reminder", "notification", "otp"])
+# "otp" was listed here, but it was never a message type (MessageType has five values); the gate used to read any
+# unknown string as "not marketing" and now refuses it - see test_review_round2_20261004.py.
+@pytest.mark.parametrize("message_type", ["transactional", "reminder", "notification"])
 def test_a_conflict_on_a_message_that_is_not_a_solicitation_keeps_number_wins_and_says_so(message_type):
     r = check("+96891234567", channel="sms", message_type=message_type, country_code="US",
               content="Your appointment is confirmed for 10:30.")

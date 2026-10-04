@@ -278,8 +278,14 @@ def tool_name_problems(value: Any) -> list:
     return [Problem(path="name", expected="string", got=json_type(value), detail=_GOT[json_type(value)])]
 
 
-def idempotency_key_problems(value: Any) -> list:
+IDEMPOTENCY_HEADER = "X-Idempotency-Key header"
+
+
+def idempotency_key_problems(value: Any, path: str = "idempotency_key") -> list:
     """Problems with a write tool's `idempotency_key`, which the dispatcher consumes before it reads the schema.
+    `path` names where the key arrived: the argument, or (IDEMPOTENCY_HEADER) the X-Idempotency-Key header,
+    which is held to the same rule - it used to be cut to 128 characters, so two different long keys sharing
+    a 128-character prefix were claimed as one.
 
     [] for a usable key and for `null` (not given). A key of any other JSON type is refused - it used to be
     turned into text with str(), and a falsy one (0, false, []) silently switched the retry contract OFF on a
@@ -289,14 +295,14 @@ def idempotency_key_problems(value: Any) -> list:
     if value is None:
         return []
     if not isinstance(value, str):
-        return [Problem(path="idempotency_key", expected="string", got=json_type(value),
+        return [Problem(path=path, expected="string", got=json_type(value),
                         detail=_GOT[json_type(value)])]
     if not value.strip():
-        return [Problem(path="idempotency_key", expected="string", got="string", detail="an empty string",
+        return [Problem(path=path, expected="string", got="string", detail="an empty string",
                         kind="value", text=f"must be a non-empty string of at most {IDEMPOTENCY_KEY_MAX} "
                                            f"characters, got an empty string")]
     if len(value) > IDEMPOTENCY_KEY_MAX:
-        return [Problem(path="idempotency_key", expected="string", got="string",
+        return [Problem(path=path, expected="string", got="string",
                         detail=f"a string of {len(value)} characters", kind="value",
                         text=f"must be a non-empty string of at most {IDEMPOTENCY_KEY_MAX} characters, got "
                              f"one of {len(value)}")]

@@ -1261,7 +1261,17 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
                           and len(_v) <= _argtypes.IDEMPOTENCY_KEY_MAX) else None
     if not idem_key:
         _hv = (headers or {}).get("x-idempotency-key", "")
-        idem_key = str(_hv)[:128] if _hv else None
+        # THE HEADER IS THE SAME KEY AND HELD TO THE SAME RULE (second review, 2026-10-04). It used to be cut to
+        # its first 128 characters, so two different 129-character keys sharing a 128-character prefix were
+        # claimed as one and the second send was answered with the first one's receipt. Refused instead.
+        if _hv and name in _WRITE_TOOLS_REQUIRING_AUTH:
+            _hv_problems = _argtypes.idempotency_key_problems(_hv, path=_argtypes.IDEMPOTENCY_HEADER)
+            if _hv_problems:
+                raise _ArgumentTypeError(
+                    _argtypes.explain(name, _hv_problems,
+                                      hint="It is the retry key: send one of your own, or leave the header out."),
+                    name, _hv_problems)
+        idem_key = str(_hv) if _hv else None
 
     _scope: Optional[str] = None
     if idem_key and name in _WRITE_TOOLS_REQUIRING_AUTH:
@@ -1275,6 +1285,10 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
                 _scope = "tok_" + _hl.sha256(_raw_tok.encode()).hexdigest()[:16]
 
     if _scope and idem_key:
+        # NOR IS A KEY HELD FOR A BODY WHOSE `arguments` IS NOT AN OBJECT: that was refused only after the claim
+        # was taken and then released, and for that moment a retry of the same key was told "in progress" (and
+        # a failing claim backend could pre-empt the argument error). Same refusal, same words, earlier.
+        _require_arguments_object(arguments)
         # THE TYPE GUARD RUNS BEFORE THE CLAIM. A call that is going to be refused for a wrong-typed argument
         # used to take the key first and release it when the guard raised: for that moment a retry of the
         # SAME key was told "in progress" by a call that was never going to run. The guard is repeated in
@@ -1350,6 +1364,20 @@ async def _h_tools_call(params: dict, headers: Optional[dict] = None) -> dict:
     return await _h_tools_call_impl(params, headers)
 
 
+def _require_arguments_object(arguments: Any) -> dict:
+    """The `arguments` of a tools/call as the dict every handler reads. An empty value (`[]`, `0`, `""`, `false`,
+    absent) has always meant "no parameters" and still does; anything else that is not a JSON object is the
+    caller's mistake and is answered as one - once, in these words, whether it is caught before the idempotency
+    claim or in the impl."""
+    arguments = arguments or {}
+    if not isinstance(arguments, dict):
+        raise _ParamError(
+            f"'arguments' must be a JSON object, got "
+            f"{type(arguments).__name__}. Pass the tool's parameters as named "
+            f"fields - see the inputSchema from tools/list.")
+    return arguments
+
+
 def _require_tool_name(name: Any) -> None:
     """The `name` of a tools/call must be a string. Anything else (a list, an object, a number) used to reach a
     set or dict lookup keyed on it and raise "unhashable type" as a -32603 "Internal error" on every narrow
@@ -1381,11 +1409,7 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     # anonymously. I had claimed in a commit message that only an authenticated
     # caller could reach it; that was wrong, and an external reviewer was right
     # to check rather than believe it.
-    if not isinstance(arguments, dict):
-        raise _ParamError(
-            f"'arguments' must be a JSON object, got "
-            f"{type(arguments).__name__}. Pass the tool's parameters as named "
-            f"fields - see the inputSchema from tools/list.")
+    arguments = _require_arguments_object(arguments)
 
     # THE CHECK THAT MAKES A NARROW DOOR REAL. A profile that lists four tools
     # but executes twenty is a wide server wearing a small sign.
@@ -2689,12 +2713,14 @@ async def _h_resources_read(params: dict) -> dict:
                     "3. If empty AND the user can supply a URL, fall through to `import_booking_url`\n\n"
                     "## When sending an outbound message\n"
                     "`send_message` supports five `message_type` values: transactional, "
-                    "reminder, follow_up, notification, marketing. Marketing requires a "
-                    "valid `consent_record_id` referencing a recorded opt-in in the "
-                    "consent_store; the compliance gate verifies at send time and rejects "
-                    "any marketing send without recorded consent (TCPA / GDPR / CASL where "
+                    "reminder, follow_up, notification, marketing. Marketing on SMS, voice, "
+                    "WhatsApp and non-US email requires a recorded opt-in in the "
+                    "consent_store; the compliance gate verifies it at send time and rejects "
+                    "any such marketing send without one (TCPA / GDPR / CASL where "
                     "those statutes apply, the service's own opt-in default everywhere else, "
-                    "the Gulf states included). Cold outreach, drip campaigns, bulk lists, "
+                    "the Gulf states included). US marketing email follows CAN-SPAM opt-out "
+                    "rules: no prior opt-in is required, and a recorded opt-out is honored. "
+                    "Cold outreach, drip campaigns, bulk lists, "
                     "and A/B sends are out of scope and rate-limited regardless.\n"
                     "1. (optional) `POST /compliance/check` to preview legality for the jurisdiction\n"
                     "2. `send_message(...)` — gate runs again at send time\n"
@@ -2765,7 +2791,7 @@ async def _h_prompts_list(params: dict) -> dict:
                 ),
                 "arguments": [
                     {"name": "recipient", "description": "Phone (E.164) or email of the SMB the consumer named, or the consumer themselves for a transactional confirmation.", "required": True},
-                    {"name": "message_type", "description": "transactional | marketing | reminder | follow_up | notification. Marketing requires a valid consent_record_id; the gate verifies and rejects unrecorded consent.", "required": True},
+                    {"name": "message_type", "description": "transactional | marketing | reminder | follow_up | notification. Marketing needs a recorded opt-in, except US marketing email (CAN-SPAM opt-out rules); the gate rejects a send without the opt-in its rule needs.", "required": True},
                     {"name": "country_code", "description": "ISO 3166-1 alpha-2 (e.g. 'US', 'DE'). Auto-inferred from phone if omitted.", "required": False},
                 ],
             },

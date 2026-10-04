@@ -110,7 +110,7 @@
   },
   {
     "name": "send_message",
-    "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR and CASL where modeled; the service's own opt-in default for every other country, the Gulf included): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
+    "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules.",
     "inputSchema": {
       "type": "object",
       "required": [
@@ -146,7 +146,7 @@
         },
         "message_type": {
           "type": "string",
-          "description": "Intent tag for the message. Five permitted types. 'marketing' is allowed only when paired with a valid consent_record_id; the compliance gate verifies the consent at send time and rejects (compliance_violation receipt) if it's missing, expired, or revoked.",
+          "description": "'marketing' needs recorded opt-in, except US email (CAN-SPAM opt-out rules). Five types. The gate checks the opt-in at send time and rejects the send (compliance_violation receipt) if it is missing, expired, or revoked.",
           "enum": [
             "transactional",
             "marketing",
@@ -716,7 +716,7 @@
         },
         "message_type": {
           "type": "string",
-          "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+          "description": "One of transactional, marketing, reminder, follow_up, notification (any case). Any other value is refused. 'marketing' triggers the consent checks. Defaults to transactional.",
           "default": "transactional"
         },
         "country_code": {

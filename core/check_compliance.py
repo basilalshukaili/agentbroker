@@ -62,6 +62,7 @@ from core.models import (
 )
 from compliance.jev_advisory import get_restricted_category_advisory
 from compliance.jurisdiction_rules import describe_resolved
+from compliance.message_type import canonical_message_type, refusal_sentence
 from compliance.number_jurisdiction import could_be_us, jurisdiction_label, resolve_jurisdiction
 from compliance.remediation import remediation_for as _remediation_for_shared
 
@@ -213,9 +214,12 @@ def _ruleset_evidence(country_code, state_code, resolution=None) -> dict:
     # A solicitation whose number and country_code contradict each other was refused WITHOUT applying any rule
     # set; the receipt must not claim the international default decided it.
     undecided = resolution is not None and resolution.contradicts and resolution.country is None
-    rules = _jr.infer_jurisdiction(applied, state_code)
+    # The same choice the gate made: an environment default jurisdiction is not applied to a number that rules
+    # the US out (a +7 number), so the evidence names the rule set that actually decided.
+    env_default = not (resolution is not None and _jr.rules_out_the_us(resolution))
+    rules = _jr.infer_jurisdiction(applied, state_code, env_default)
     described = ({"basis": "undecided", "statutes_modeled": []} if undecided
-                 else _jr.describe_rule_set(applied, state_code))
+                 else _jr.describe_rule_set(applied, state_code, env_default))
     return {
         "gate": "compliance.pre_check (preview mode: decision only, no send, "
                 "no audit-log write)",
@@ -347,6 +351,16 @@ async def handle_check_compliance(
             f"channel must be one of {list(_VALID_CHANNELS)} (got '{channel}'). "
             "Omit it to auto-infer sms/email from the recipient_id."
         )
+    # THE TYPE OF THE MESSAGE IS READ ONCE, HERE, AND THE ANSWER REPORTS THE ONE IT JUDGED (second review,
+    # 2026-10-04). "Marketing", "MARKETING" and " marketing" used to slip past the consent branch, and any
+    # string that is not a message type ("promotional") was read as not-marketing and previewed as permitted
+    # for a send the real path refuses. A known type is lower-cased and trimmed; anything else is refused.
+    if message_type is None:
+        message_type = "transactional"
+    canonical_type = canonical_message_type(message_type)
+    if canonical_type is None:
+        return _bad_input(refusal_sentence(message_type))
+    message_type = canonical_type
 
     # --- run the identical gate, in preview mode (no send, no audit write) --
     from compliance.pre_check import pre_check
