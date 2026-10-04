@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -317,11 +319,81 @@ class OutcomeStore:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
+                # SNAPSHOT THE RECORD NOW, NOT WHEN THE TASK RUNS.
+                #
+                # _supabase_upsert reads record["status"] when the task finally runs, and
+                # a task does not run until its caller next yields. set_pending and the
+                # set_complete after it (core/schedule_appointment.py, failed-enqueue
+                # branch) are two synchronous calls in a row, so by then the shared record
+                # already said 'failure': BOTH writes went out labelled 'failure', the first
+                # with every other column empty. If the two HTTP calls then landed in the
+                # opposite order, the receipt's reason and result were gone, and no ordering
+                # rule in the database could tell that write from a real final one - the
+                # rule (migrations/spine/012_operations_upsert_fix.sql) only works on a write
+                # that says what it was when it was made.
+                # A shallow copy is enough: status and operation_type are strings.
                 asyncio.ensure_future(
-                    _supabase_upsert(operation_id, record, outcome, tool, agent_id)
+                    _supabase_upsert(operation_id, dict(record), outcome, tool, agent_id)
                 )
         except Exception:  # noqa: BLE001
             pass
+
+
+# ---------------------------------------------------------------------------
+# What the durable write sends must be something jsonb ACCEPTS
+# ---------------------------------------------------------------------------
+# A Python dict can hold things the database refuses: a NUL character (22P05), a lone
+# surrogate (22P02), NaN and Infinity (22P02). A refused call used to lose the WHOLE
+# durable record - status, reason and owner included - not just the offending field,
+# and the cancellation receipt echoes a caller-supplied field, so a caller controls one of
+# these for its own operation. (Self-inflicted only; no cross-agent effect was found.)
+# These helpers clean the value before it is sent; _supabase_upsert drops the result,
+# keeping the row, when it cannot be made into JSON at all.
+
+# PostgREST reports a data exception (SQLSTATE class 22) as {"code":"22xxx",...}, and rpc()
+# puts the first 400 characters of that body into its error text.
+_DATA_EXCEPTION = re.compile(r'"code"\s*:\s*"22[0-9A-Z]{3}"')
+
+
+def _clean_text(value: Any) -> Any:
+    """A str with no U+0000 and no lone surrogate; anything else (None, a number) unchanged."""
+    if not isinstance(value, str):
+        return value
+    if "\x00" in value:
+        value = value.replace("\x00", "")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        # A lone surrogate becomes U+FFFD; an adjacent high+low pair becomes the one character it encodes.
+        value = value.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return value
+
+
+def _json_safe(value: Any) -> Any:
+    """The same structure with every string cleaned and every NaN / Infinity turned into None."""
+    if isinstance(value, str):
+        return _clean_text(value)
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {(_clean_text(k) if isinstance(k, str) else k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def _stringify(value: Any) -> str:
+    return _clean_text(str(value))
+
+
+def _result_json_text(outcome: dict) -> str:
+    """The receipt as JSON text that jsonb will take. Raises (ValueError, RecursionError, TypeError) for a
+    value that cannot be serialised at all - a cycle, say - and the caller then writes the row without it."""
+    return json.dumps(_json_safe(outcome), default=_stringify, allow_nan=False)
+
+
+def _is_data_exception(exc: BaseException) -> bool:
+    return bool(_DATA_EXCEPTION.search(str(exc)))
 
 
 async def _supabase_upsert(
@@ -345,7 +417,6 @@ async def _supabase_upsert(
     operation_id + its receipt fields) -- never an arbitrary table/row.
     """
     try:
-        import json as _json
         from storage.supabase_client import rpc
         # FIX (quota strip, belt-and-suspenders): strip the transient per-call
         # `quota` block from the serialised result even if the caller somehow
@@ -355,22 +426,31 @@ async def _supabase_upsert(
             {k: v for k, v in outcome.items() if k not in _EPHEMERAL_KEYS}
             if outcome else None
         )
+        result_text: Optional[str] = None
+        if persisted_outcome:
+            try:
+                result_text = _result_json_text(persisted_outcome)
+            except Exception as exc:  # noqa: BLE001 - a cycle, a too-deep value, an odd key
+                # The result cannot be made into JSON at all. Keep the ROW - status,
+                # reason, appointment and owner are what a cancellation and a later
+                # get_status read - and drop only the part that cannot be kept.
+                logger.warning(
+                    "outcome_store_result_unserialisable id=%s err=%s -- recording the "
+                    "row without its result", operation_id, type(exc).__name__)
         payload = {
             "p_operation_id": operation_id,
-            "p_tool": tool or record.get("operation_type") or "unknown",
-            "p_status": record.get("status", "unknown"),
-            "p_reason_code": (outcome or {}).get("reason_code"),
+            "p_tool": _clean_text(tool or record.get("operation_type") or "unknown"),
+            "p_status": _clean_text(record.get("status", "unknown")),
+            "p_reason_code": _clean_text((outcome or {}).get("reason_code")),
             # THE OTHER KEY A CANCELLATION IS LOOKED UP BY. A cancel caller
             # holds the provider's own booking id, never our operation_id --
             # so get_appointment_owner_async (above) has to find this row by
             # THIS column, not by operation_id. Only ever populated for a
             # confirmed booking (result.appointment_id is only ever set on
             # that outcome shape); every other row keeps this NULL.
-            "p_appointment_id": ((outcome or {}).get("result") or {}).get("appointment_id"),
-            "p_result_json": (
-                _json.dumps(persisted_outcome, default=str) if persisted_outcome else None
-            ),
-            "p_agent_id": agent_id,
+            "p_appointment_id": _clean_text(((outcome or {}).get("result") or {}).get("appointment_id")),
+            "p_result_json": result_text,
+            "p_agent_id": _clean_text(agent_id),
         }
         # CHECK THE RESULT. The old upsert_row returned None on failure and
         # could not raise, so the handler below was dead code - and a lost
@@ -381,7 +461,20 @@ async def _supabase_upsert(
         # docstring: "a store failure never breaks the tool call") -- so the
         # exception is still caught here, just never silently discarded
         # without a warning log.
-        written = await rpc("operations_upsert", payload)
+        try:
+            written = await rpc("operations_upsert", payload)
+        except RuntimeError as exc:
+            # A DATA EXCEPTION (SQLSTATE class 22) means the database refused something about the
+            # VALUES, and the result is the only free-form one. Try ONCE more without it, so status,
+            # reason, appointment and owner still land. Nothing else is retried: not a permission
+            # refusal (42501 - that is the case where a second call would be a second attempt), not a
+            # transport failure, not a timeout.
+            if result_text is None or not _is_data_exception(exc):
+                raise
+            logger.warning(
+                "outcome_store_result_refused id=%s err=%s -- retrying once without the "
+                "result", operation_id, exc)
+            written = await rpc("operations_upsert", {**payload, "p_result_json": None})
         if not written:
             logger.warning(
                 "outcome_store_persist_failed id=%s -- the durable record was "
