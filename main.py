@@ -786,7 +786,8 @@ async def mcp_profile_endpoint(profile: str, request: Request):
             status_code=404,
             detail={
                 "error": f"no such capability endpoint: {profile}",
-                "available": sorted(profiles.PROFILES),
+                # LISTED doors only: the ChatGPT door is for one directory and is not advertised.
+                "available": sorted(profiles.listed_profiles()),
                 "full_server": "/mcp",
             },
         )

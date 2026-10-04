@@ -117,7 +117,7 @@ def test_every_declared_profile_is_routable(profile):
     assert "/" not in profile, f"{profile} contains a slash and cannot be a path segment"
 
 
-@pytest.mark.parametrize("profile", sorted(profiles.PROFILES))
+@pytest.mark.parametrize("profile", sorted(profiles.listed_profiles()))
 def test_every_profile_is_reachable_on_the_canonical_host(profile):
     """A door live on the origin and 404 on hatchloop.dev is not a door.
 
@@ -154,8 +154,9 @@ def test_the_doors_are_advertised_where_an_agent_actually_looks():
     eps = get_mcp_descriptor().get("capability_endpoints", [])
     assert eps, "the capability doors are not advertised in the MCP descriptor"
     named = {e["name"] for e in eps}
-    assert named == set(profiles.PROFILES), (
-        f"descriptor advertises {named}, profiles define {set(profiles.PROFILES)}")
+    # LISTED doors: the ChatGPT door is for one directory and is deliberately not advertised here.
+    assert named == set(profiles.listed_profiles()), (
+        f"descriptor advertises {named}, profiles list {set(profiles.listed_profiles())}")
 
 
 def test_the_advertised_tool_counts_are_derived_not_typed():
@@ -202,6 +203,16 @@ def test_a_door_introduces_itself_as_itself(profile):
     n = len(profiles.tools_for(profile))
     assert f"{n} tools" in r["result"]["instructions"], (
         "the handshake does not state this door's own tool count")
+
+
+def test_a_wrong_door_is_told_about_the_listed_doors_only():
+    """The 404 for an unknown door names the alternatives; the ChatGPT door is not one of the doors we advertise."""
+    from fastapi.testclient import TestClient
+    import main
+    r = TestClient(main.app).post("/mcp/no-such-door", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert r.status_code == 404
+    available = r.json()["detail"]["available"]
+    assert available == sorted(profiles.listed_profiles()) and "chatgpt" not in available
 
 
 def test_the_full_server_still_introduces_itself_as_the_full_server():

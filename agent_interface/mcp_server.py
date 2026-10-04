@@ -487,6 +487,7 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
         from agent_interface.key_state import classify_key, auth_warning
         from core.caller_context import CALLER_IP, REQUEST_OBSERVATION
         from core.client_ip import first_hop
+        from agent_interface import profiles as _pf
 
         h = obs.headers or {}
         is_notification = obs.outcome == "notification"
@@ -495,7 +496,8 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
 
         status = classify_key(h.get("x-agent-identity", ""))
         warning = auth_warning(status)
-        if warning:
+        # Not on the ChatGPT door: the warning links to where keys are issued and the door has no keys.
+        if warning and not _pf.is_no_commerce(profile):
             _attach_auth_warning(response, method, warning)
 
         ua = h.get("user-agent", "")
@@ -1007,6 +1009,17 @@ async def _h_initialize(params: dict) -> dict:
         except (KeyError, _profiles.ProfileError):
             profile = None
 
+    if profile and _profiles.is_no_commerce(profile):
+        # THE CHATGPT DOOR: no pricing, no mention of keys, write operations or a wider server, and tools only
+        # (resources/read would hand over the manifest's cost_model, prompts/get the preview_cost recipe).
+        from agent_interface import no_commerce as _nc
+        return {
+            "protocolVersion": negotiate_protocol_version(params),
+            "serverInfo": {"name": profile, "version": SERVER_VERSION},
+            "capabilities": {"tools": {"listChanged": False}},
+            "instructions": _nc.instructions(spec, names),
+        }
+
     if profile:
         return {
             "protocolVersion": negotiate_protocol_version(params),
@@ -1134,6 +1147,12 @@ async def _h_tools_list(params: dict) -> dict:
     `_profile` absent means the full server, byte-identical to before."""
     from agent_interface import profiles as _profiles
     allowed = _profiles.tools_for(params.get("_profile"))
+    if _profiles.is_no_commerce(params.get("_profile")):
+        # The ChatGPT door lists its tools from agent_interface/no_commerce.py: no cost tag, full input
+        # descriptions, a title, an outputSchema and `securitySchemes: noauth` - and none of the annotations
+        # below, which would add a Connect sign-in (oauth2) to tools that need no account.
+        from agent_interface import no_commerce as _nc
+        return {"tools": _nc.tools(allowed, get_full_manifest().get("operations", []))}
     tools = _build_tool_list()
     if allowed is not None:
         tools = [t for t in tools if t.get("name") in allowed]
@@ -1288,10 +1307,20 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
     _profile = params.get("_profile")
     from agent_interface import profiles as _profiles
     if not _profiles.allows(_profile, name):
+        if _profiles.is_no_commerce(_profile):
+            # No pointer to the full server: its tools and its pages are exactly what this door must not sell.
+            from agent_interface import no_commerce as _nc
+            raise _ParamError(_nc.not_available_message(_profiles.tools_for(_profile)))
         raise _ParamError(
             f"'{name}' is not available on this endpoint. This is the "
             f"'{_profile}' server, which exposes only its own tools. The full "
             f"server with every tool is at https://hatchloop.dev/mcp/agent-broker")
+
+    if _profiles.is_no_commerce(_profile):
+        # THE CHATGPT DOOR leaves here, before the channel gate, the data-tool bypass, the x402 gate, the credits
+        # rail and the data-quota gate below: none of them may run for a ChatGPT caller, because each can answer
+        # with a price or a link to a page that sells credits (agent_interface/no_commerce.py).
+        return await _no_commerce_call(name, arguments, params, headers or {})
 
     op = get_operation(name)
     if not op:
@@ -1522,6 +1551,28 @@ async def _h_tools_call_impl(params: dict, headers: Optional[dict] = None) -> di
         ],
         "isError": receipt.get("status") == "failure",
     }
+
+
+async def _no_commerce_call(name: str, arguments: dict, params: dict, headers: dict) -> dict:
+    """tools/call on the ChatGPT door.
+
+    A SEPARATE PATH, not a set of `if profile` checks inside the billing code: the rails in _h_tools_call_impl
+    (x402, credits, data quota) are exactly what this door must never reach, and a check inside each of them is a
+    check somebody forgets in the fourth. Order matters: a request refused at the boundary (an x402 attachment)
+    runs nothing and spends none of the caller's ceiling; only a call that will run is counted."""
+    from agent_interface import no_commerce as _nc
+    if not get_operation(name):
+        raise _UnknownToolError("Unknown tool.", tool_name=name)
+    if _nc.carries_payment_attachment(params.get("_meta")):
+        return _nc.refuse_payment_attachment()
+    from core.caller_context import CALLER_IP
+    from core.client_ip import first_hop
+    ip = CALLER_IP.get() or first_hop(headers.get("x-forwarded-for") or headers.get("x-real-ip") or "")
+    over = _nc.consume_ceiling(ip)
+    if over is not None:
+        return over
+    receipt = await _dispatch_and_label(name, arguments, headers)
+    return _nc.tool_result(receipt)
 
 
 def _build_send_message_request(args: dict):
@@ -2463,7 +2514,16 @@ async def _dispatch_operation(
 # Method: resources/list & resources/read
 # ---------------------------------------------------------------------------
 
+def _on_no_commerce_door(params: Any) -> bool:
+    """Whether this request came through the ChatGPT door (the profile is injected from the route, never read from
+    the caller's own payload)."""
+    from agent_interface import profiles as _profiles
+    return isinstance(params, dict) and _profiles.is_no_commerce(params.get("_profile"))
+
+
 async def _h_resources_list(params: dict) -> dict:
+    if _on_no_commerce_door(params):
+        return {"resources": []}
     return {
         "resources": [
             {
@@ -2501,6 +2561,9 @@ async def _h_resources_list(params: dict) -> dict:
 
 
 async def _h_resources_read(params: dict) -> dict:
+    if _on_no_commerce_door(params):
+        # agent-broker://manifest carries every operation's cost_model; this door has no resources.
+        raise _ParamError("Unknown resource URI.")
     uri = params.get("uri")
     # Accept both legacy `smb-broker://` and canonical `agent-broker://` schemes
     norm = uri.replace("smb-broker://", "agent-broker://", 1) if isinstance(uri, str) else uri
@@ -2596,6 +2659,8 @@ async def _h_resources_read(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _h_prompts_list(params: dict) -> dict:
+    if _on_no_commerce_door(params):
+        return {"prompts": []}
     return {
         "prompts": [
             {
@@ -2667,6 +2732,8 @@ async def _h_prompts_list(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def _h_prompts_get(params: dict) -> dict:
+    if _on_no_commerce_door(params):
+        raise _ParamError("Unknown prompt name.")
     name = params.get("name")
     args = params.get("arguments", {}) or {}
     if name == "book_from_any_url":
@@ -2741,7 +2808,8 @@ async def _h_discover(params: dict) -> dict:
     profile = params.get("_profile") if isinstance(params, dict) else None
     intro = await _h_initialize({"_profile": profile} if profile else {})
     return _m2026.build_discover_result(
-        intro["serverInfo"], intro.get("instructions"), SUPPORTED_PROTOCOL_VERSIONS)
+        intro["serverInfo"], intro.get("instructions"), SUPPORTED_PROTOCOL_VERSIONS,
+        capabilities=intro.get("capabilities") if _on_no_commerce_door(params) else None)
 
 
 async def _h_resources_templates_list(params: dict) -> dict:

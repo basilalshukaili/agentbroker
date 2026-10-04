@@ -1,0 +1,54 @@
+{
+ "tool": "map_trade_restriction",
+ "arguments": {
+  "product": "laptops",
+  "destination_country": "DE",
+  "parties": [
+   "Party 0",
+   "Party 1",
+   "Party 2",
+   "Party 3",
+   "Party 4",
+   "Party 5",
+   "Party 6",
+   "Party 7",
+   "Party 8",
+   "Party 9",
+   "Party 10",
+   "Party 11",
+   "Party 12",
+   "Party 13",
+   "Party 14",
+   "Party 15",
+   "Party 16",
+   "Party 17",
+   "Party 18",
+   "Party 19",
+   "Party 20",
+   "Party 21",
+   "Party 22",
+   "Party 23",
+   "Party 24"
+  ]
+ },
+ "receipt": {
+  "operation_id": "95b5984e-5bd1-4478-8ffe-4a6182eb2b46",
+  "status": "failure",
+  "reason_code": "bad_input",
+  "human_message": "25 parties were given; this tool screens at most 20 per call so one request cannot occupy the service. Split the list across calls - each call screens every party it is given, completely. Nothing was screened on this call and nothing was charged.",
+  "result": null,
+  "cost": {
+   "amount": 0.0,
+   "currency": "USD",
+   "basis": "free"
+  },
+  "latency_ms": 0,
+  "channel_used": null,
+  "channel_fallback_chain": [],
+  "estimated_completion_time": null,
+  "next_actions": [],
+  "retriable": false,
+  "trace_id": null,
+  "untrusted_content": null
+ }
+}

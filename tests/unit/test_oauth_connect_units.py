@@ -116,8 +116,11 @@ def test_every_endpoint_the_metadata_advertises_exists():
 def test_discovery_is_served_for_every_door_and_nothing_else():
     c = TestClient(main.app, base_url="https://api.hatchloop.dev")
     from agent_interface import profiles
-    for door in profiles.PROFILES:
+    for door in profiles.oauth_profiles():
         assert c.get(f"/.well-known/oauth-protected-resource/mcp/{door}").json()["resource"].endswith(f"/mcp/{door}")
+    # the anonymous ChatGPT door has no sign-in, so it publishes no protected-resource document
+    assert set(profiles.PROFILES) - set(profiles.oauth_profiles()) == {"chatgpt"}
+    assert c.get("/.well-known/oauth-protected-resource/mcp/chatgpt").status_code == 404
     assert c.get("/.well-known/oauth-protected-resource/mcp").json()["resource"] == "https://api.hatchloop.dev/mcp"
     for nothing in ("evil", "mcp/not-a-door", "ops/find_business", "mcp/agent-broker/extra", "..%2Fetc"):
         assert c.get(f"/.well-known/oauth-protected-resource/{nothing}").status_code == 404, nothing

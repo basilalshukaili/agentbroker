@@ -340,12 +340,16 @@ def discover_capabilities() -> dict:
     }
 
 
-def build_discover_result(info: dict, instructions: Optional[str], legacy_versions: Sequence[str]) -> dict:
-    """The `server/discover` result. Public and cacheable: it says nothing about who is asking."""
+def build_discover_result(info: dict, instructions: Optional[str], legacy_versions: Sequence[str],
+                          capabilities: Optional[dict] = None) -> dict:
+    """The `server/discover` result. Public and cacheable: it says nothing about who is asking.
+
+    `capabilities` is what the endpoint declared in `initialize` when it declares fewer than the default (the
+    ChatGPT door serves tools only); omitted, it is the default every other endpoint has always answered."""
     result = {
         "resultType": "complete",
         "supportedVersions": all_versions(legacy_versions),
-        "capabilities": discover_capabilities(),
+        "capabilities": capabilities if capabilities is not None else discover_capabilities(),
         "_meta": {META_SERVER_INFO: dict(info)},
         "ttlMs": CACHE_TTL_MS["server/discover"],
         "cacheScope": "public",

@@ -488,7 +488,9 @@ def get_mcp_descriptor() -> dict:
                 "description": spec["description"],
                 "tool_count": len(profiles.tools_for(pid)),
             }
-            for pid, spec in sorted(profiles.PROFILES.items())
+            # LISTED doors only: the ChatGPT door (profiles `listed: False`) is for one directory and is not
+            # advertised here, which would present a second server under a second name.
+            for pid, spec in profiles.listed_profiles().items()
         ],
     }
 
@@ -626,7 +628,7 @@ def get_llms_txt() -> str:
     ] + [
         f"- `{BASE_URL}/mcp/{pid}` - {spec['description']} "
         f"({len(profiles.tools_for(pid))} tools)"
-        for pid, spec in sorted(profiles.PROFILES.items())
+        for pid, spec in profiles.listed_profiles().items()
     ] + [
         f"- `{BASE_URL}/mcp/agent-broker` - everything ({len(get_full_manifest().get('operations', []))} tools)",
         "",

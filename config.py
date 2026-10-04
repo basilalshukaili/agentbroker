@@ -271,6 +271,12 @@ FREE_DATA_QUOTA_PER_DAY = _env_int("FREE_DATA_QUOTA_PER_DAY", 500)
 # Daily free quota for anonymous callers (tracked by sha256(ip)+date in Supabase,
 # best-effort: fail-open when Supabase is unavailable or IP is unknown).
 ANON_DATA_QUOTA_PER_DAY = _env_int("ANON_DATA_QUOTA_PER_DAY", 100)
+# The ChatGPT-only door (/mcp/chatgpt, agent_interface/no_commerce.py) is NOT subject to either quota above: nothing
+# on it may sell or price, so it has no allowance to run out of and no upgrade to point at. Its one limit is an ABUSE
+# ceiling per network address, answered with the limit and the reset time and no link. It is two orders of magnitude
+# above the anonymous quota because ChatGPT's requests come from a small set of published addresses, so one address
+# can stand for every ChatGPT user at once. 0 turns it off.
+CHATGPT_DOOR_DAILY_CEILING = _env_int("CHATGPT_DOOR_DAILY_CEILING", 20000)
 
 # ---------------------------------------------------------------------------
 # x402 — agent-native USDC micropayments (Coinbase CDP facilitator + Bazaar)
