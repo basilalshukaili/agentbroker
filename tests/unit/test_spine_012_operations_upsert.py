@@ -87,6 +87,15 @@ def problems(sql: str, columns: set) -> list:
         v = values[cols.index("result_json")]
         if "p_result_json" in v and "jsonb" not in v.lower():
             out.append("passes the text p_result_json into the jsonb column result_json without a cast")
+        elif re.fullmatch(r"\w+", v) and v.lower() != "null":
+            # The value goes in through a plpgsql variable, so follow it. Judging only the VALUES entry let
+            # `v_json text` + `::text` through: a mutant the real-database tests catch and this test did not.
+            decl = re.search(rf"\b{re.escape(v)}\s+(\w+)\s*;", code, re.IGNORECASE)
+            if not decl or decl.group(1).lower() != "jsonb":
+                out.append(f"result_json is fed from the variable {v!r}, which is not declared jsonb")
+            assign = re.search(rf"\b{re.escape(v)}\s*:=\s*(.*?);", code, re.IGNORECASE | re.DOTALL)
+            if not assign or "::jsonb" not in assign.group(1).lower().replace(" ", ""):
+                out.append(f"the variable {v!r} that feeds result_json is not assigned through a ::jsonb cast")
     return out
 
 
@@ -129,3 +138,75 @@ def test_grants_keep_the_boundary():
                      r"service_role", code)
     assert re.search(r"grant execute on function public\.operations_upsert\([^)]*\)\s+to anon, service_role", code)
     assert "authenticated" not in code.split("grant execute", 1)[1]
+
+
+def rule_problems(sql: str) -> list:
+    """What is missing from the rules the function enforces. The behaviour itself is proven against a real PostgreSQL
+    in test_spine_012_operations_upsert_pg.py (opt-in: OAUTH_PG_TESTS=1); this is the guard that runs everywhere."""
+    code = re.sub(r"\s+", " ", _strip_comments(sql).lower())
+    in_progress = "('pending', 'executing', 'pending_async')"
+    out = []
+    for fragment, why in [
+        # arrival order
+        (f"operations.status in {in_progress} or excluded.status not in {in_progress}",
+         "no arrival-order rule: a late in-progress write may replace a final row"),
+        ("agent_id = coalesce(excluded.agent_id, operations.agent_id)",
+         "a write that carries no owner clears the owner"),
+        ("appointment_id = coalesce(excluded.appointment_id, operations.appointment_id)",
+         "a write that carries no appointment id clears it"),
+        ("if not found then select * into v_row from operations where operation_id = p_operation_id",
+         "a skipped update answers NULL, which the service logs as a failed write"),
+        # who may write which row
+        ("operations.agent_id is null or excluded.agent_id is null or operations.agent_id = excluded.agent_id",
+         "no owner rule: any agent may overwrite a row that belongs to another"),
+        ("v_row.agent_id is not null and p_agent_id is not null and v_row.agent_id <> p_agent_id",
+         "a write refused for its owner is not told so (it would be skipped without an error)"),
+        ("using errcode = '42501'",
+         "a refused write does not raise insufficient_privilege"),
+        ("o.appointment_id = p_appointment_id and o.operation_id <> p_operation_id "
+         "and o.agent_id is distinct from p_agent_id",
+         "an agent can claim an appointment id another agent already recorded"),
+        ("pg_advisory_xact_lock(hashtextextended(",
+         "two agents claiming one appointment id at the same moment are not serialised"),
+        # the apply itself
+        ("set local lock_timeout = '3s'",
+         "the apply can queue every reader behind it: no lock_timeout"),
+    ]:
+        if fragment not in code:
+            out.append(why)
+    return out
+
+
+def test_old_definition_has_none_of_the_rules():
+    assert len(rule_problems(OLD_DEFINITION)) == 10
+
+
+def test_migration_012_has_every_rule():
+    assert rule_problems(MIGRATION.read_text(encoding="utf-8")) == []
+
+
+def test_the_refusal_names_no_agent():
+    """The error text goes back to whoever called the function; it must not say who the owner is."""
+    code = _strip_comments(MIGRATION.read_text(encoding="utf-8"))
+    messages = re.findall(r"raise exception\s+'([^']*)'(.*?);", code, re.IGNORECASE | re.DOTALL)
+    refusals = [(m, args) for m, args in messages if "42501" in args]
+    assert refusals, "no refusal found"
+    for message, args in refusals:
+        params = args.split("using")[0]          # what is substituted into the message
+        assert "v_row" not in params and "p_agent_id" not in params and "operations." not in params, (message, args)
+
+
+def test_lock_timeout_is_the_first_statement():
+    """It must come before the `alter table`: the lock request is the first thing that can queue."""
+    code = _strip_comments(MIGRATION.read_text(encoding="utf-8")).lower()
+    assert code.index("set local lock_timeout") < code.index("alter table")
+
+
+def test_the_cast_detector_follows_the_variable_the_value_goes_through():
+    sql = MIGRATION.read_text(encoding="utf-8")
+    assert problems(sql, LIVE_COLUMNS) == []
+    as_text = sql.replace("v_json jsonb;", "v_json text;").replace("::jsonb", "::text")
+    assert as_text != sql
+    assert any("not declared jsonb" in p for p in problems(as_text, LIVE_COLUMNS))
+    cast_to_text = sql.replace("::jsonb", "::text")          # declared jsonb, but assigned through a text cast
+    assert any("::jsonb cast" in p for p in problems(cast_to_text, LIVE_COLUMNS))

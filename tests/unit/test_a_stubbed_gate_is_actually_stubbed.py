@@ -857,6 +857,24 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "targets core.capture_lead.handle_capture_lead's deferred rpc import "
         "(leads_insert_or_get) via TestPartialNotChargeable; this file never "
         "references billing.credits or run_metered_tool.",
+    # Added for migration spine/012 (operations_upsert, 2026-10-04). Both files drive
+    # storage.outcome_store.OutcomeStore directly - set_pending / set_executing /
+    # set_complete / set_complete_durable / get_async / get_appointment_owner_async - whose
+    # _supabase_upsert, _supabase_fetch and _supabase_fetch_by_appointment_id each do
+    # `from storage.supabase_client import rpc` INSIDE the function body (deferred), not
+    # billing/credits.py:35's eager import of the same name. Traced 2026-10-04 with grep:
+    # neither file references billing, credits or run_metered_tool, and no call in them
+    # authenticates an agent or a funded credit account. The second file's patch swaps in a
+    # PgRpc that talks to a throwaway PostgreSQL in place of the HTTP hop.
+    ("tests/unit/test_outcome_store_write_snapshot.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store._supabase_upsert's deferred rpc import, driven "
+        "through OutcomeStore and by calling it directly; this file never references billing.credits or "
+        "run_metered_tool.",
+    ("tests/unit/test_spine_012_operations_upsert_pg.py", "storage.supabase_client.rpc"):
+        "targets storage.outcome_store._supabase_upsert/_supabase_fetch/"
+        "_supabase_fetch_by_appointment_id's deferred rpc imports, driven through "
+        "OutcomeStore directly against a throwaway PostgreSQL; this file never "
+        "references billing.credits or run_metered_tool.",
 }
 
 
