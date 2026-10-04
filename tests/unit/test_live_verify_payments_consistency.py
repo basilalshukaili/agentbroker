@@ -15,6 +15,17 @@ TWO RULES THE FIRST VERSION BROKE (review of feat/x402-honesty-20261004, F1 and 
   * The tool descriptions are judged per tool, against the descriptor. The old fixture listed the quota tag
     "[free in quota, then $0.02/call]" as the honest all-off state, so the contradiction the live server had
     (a quota promised while the descriptor said it is not enforced) could not be seen.
+
+THIRD REVIEW (same branch) widened it again, and every addition below has a test that fails without it:
+
+  * A quota tag next to "not charged" (metering on, no rail) is wrong: a call past the quota is REFUSED.
+  * Credits wording and quota wording are scanned on EVERY surface (/keys/request, the MCP initialize
+    instructions, every tool description), not only the auth_required text and the tags.
+  * A /.well-known/x402 that answers 200 with a body that is not a usable document is a problem, and so is one
+    that prices the data tools while they are free.
+  * The refusal is judged by its error code and structured guidance, not by a numbered "Option 1" (a server with
+    no checkout URL correctly numbers nothing).
+  * The site's /pricing page must not link a credit-package purchase while credits is not a listed rail.
 """
 from __future__ import annotations
 
@@ -30,8 +41,28 @@ sys.path.insert(0, os.path.join(AB, "scripts"))
 import live_verify_release as L  # noqa: E402
 
 NOT_CHARGED = "not charged while no payment rail is on"
+REFUSED = "refused until the quota resets"
 OFF = {"status": "not_enabled", "rails": [], "premium_data_quota_enforced": False,
        "note": "No payment rail is switched on at this time"}
+RECEIVER = "0x" + "ab" * 20
+INSTRUCTIONS = "SMB Transaction & Communication Broker. 14 of the 23 tools need no key at all (11 always free, 3 free and unmetered at this time)."
+PRICING_OK = "<html><title>Pricing</title><body>Read tools are free. Credit packages are not on sale yet.</body></html>"
+PRICING_SELLING = ('<html><meta name="description" content="Buy credits for write actions">'
+                   '<a href="/portal?package=starter">Starter</a><a href="/portal?package=growth">Growth</a></html>')
+
+
+def _auth(message):
+    """The auth_required refusal as check_payments serialises it: the message AND the structured guidance."""
+    return json.dumps({"human_message": message, "how_to_resolve": {"free_key": {"url": "https://x"}}})
+
+
+def _x402_doc(*, premium=False, **over):
+    prices = {"capture_lead": "0.05", "send_message": "0.02"}
+    if premium:
+        prices.update({"screen_sanctions": "0.02", "verify_company_record": "0.02", "map_trade_restriction": "0.02"})
+    doc = {"payTo": RECEIVER, "network": "eip155:8453", "resources": ["https://api.example/mcp"], "pricesUsd": prices}
+    doc.update(over)
+    return json.dumps(doc)
 
 
 def _tools(**over):
@@ -54,11 +85,16 @@ def _state(**over):
     s = {
         "descriptor": dict(OFF),
         "x402_status": 404,
+        "x402_text": "{}",
         "tools_status": 200,
         "tool_descriptions": _tools(),
-        "auth_text": "auth_required ... Option 1 (free): get a verified free key",
+        "instructions_text": INSTRUCTIONS,
+        "auth_error_code": "auth_required",
+        "auth_text": _auth("auth_required ... Option 1 (free): get a verified free key"),
         "keys_status": 200,
         "keys_text": "Email hello@hatchloop.dev for a key provisioned by hand",
+        "pricing_status": 200,
+        "pricing_text": PRICING_OK,
         "screen_sanctions_cost_usd": 0.0,
     }
     s.update(over)
@@ -95,7 +131,7 @@ def test_status_must_agree_with_rails():
 
 def test_x402_is_offered_nowhere_when_it_is_not_a_rail():
     for field, value in (("tool_descriptions", _tools(send_message="Send. [or pay per call: x402, USDC on Base]")),
-                         ("auth_text", "Option 1 (free) Option 2 (pay per call, no signup): attach an x402 payment"),
+                         ("auth_text", _auth("Option 1 (free) Option 2 (pay per call, no signup): attach an x402 payment")),
                          ("keys_text", "Pay per call with x402 (USDC on Base)"),
                          ("x402_status", 200)):
         problems = _problems(**{field: value})
@@ -106,8 +142,8 @@ def _x402_on_state(**over):
     """x402 is the one live rail, metering off: the three data tools must NOT carry the mention."""
     tools = _tools(send_message=f"Send. [from $0.02/call, variable] [or pay per call: x402, USDC on Base]",
                    capture_lead="Capture. [$0.05/per_call] [or pay per call: x402, USDC on Base]")
-    s = _state(descriptor=_rail("x402"), x402_status=200, tool_descriptions=tools,
-               auth_text="Option 1 (free) Option 2 (pay per call, no signup): attach an x402 payment",
+    s = _state(descriptor=_rail("x402"), x402_status=200, x402_text=_x402_doc(), tool_descriptions=tools,
+               auth_text=_auth("Option 1 (free) Option 2 (pay per call, no signup): attach an x402 payment"),
                keys_text="Pay per call with x402 (USDC on Base)")
     s.update(over)
     return s
@@ -116,7 +152,7 @@ def _x402_on_state(**over):
 def test_x402_as_a_rail_needs_its_discovery_document_and_its_text():
     assert L.payments_problems(**_x402_on_state()) == []
     assert L.payments_problems(**_x402_on_state(x402_status=404)), "rail on but /.well-known/x402 is missing"
-    assert L.payments_problems(**_x402_on_state(auth_text="auth_required Option 1 (free)")), (
+    assert L.payments_problems(**_x402_on_state(auth_text=_auth("auth_required Option 1 (free)"))), (
         "rail on but the error text does not offer it")
 
 
@@ -135,7 +171,8 @@ def test_x402_on_metering_on_the_data_tools_must_offer_it():
     tools = _tools(send_message="Send. [from $0.02/call, variable] [or pay per call: x402, USDC on Base]",
                    capture_lead="Capture. [$0.05/per_call] [or pay per call: x402, USDC on Base]",
                    screen_sanctions=quota, verify_company_record=quota, map_trade_restriction=quota)
-    ok = _x402_on_state(descriptor=_rail("x402", quota=True), tool_descriptions=tools, screen_sanctions_cost_usd=0.02)
+    ok = _x402_on_state(descriptor=_rail("x402", quota=True), tool_descriptions=tools, screen_sanctions_cost_usd=0.02,
+                        x402_text=_x402_doc(premium=True))
     assert L.payments_problems(**ok) == []
     tools2 = dict(tools, screen_sanctions="Screen. [free in quota, then $0.02/call]")
     assert any("screen_sanctions" in p for p in L.payments_problems(**dict(ok, tool_descriptions=tools2)))
@@ -144,12 +181,14 @@ def test_x402_on_metering_on_the_data_tools_must_offer_it():
 # ---------------------------------------------------------------- credits
 
 def test_credits_text_follows_the_credits_rail():
-    off_but_offered = _problems(auth_text="Option 1 (free) Option 2 (credits): buy a credit package")
+    off_but_offered = _problems(auth_text=_auth("Option 1 (free) Option 2 (credits): buy a credit package"))
     assert any("credits" in p for p in off_but_offered)
     on = _rail("credits")
     plain = _tools(capture_lead="Capture. [$0.05/per_call]", send_message="Send. [from $0.02/call, variable]")
     base = dict(descriptor=on, tool_descriptions=plain)
-    assert L.payments_problems(**_state(**base, auth_text="Option 1 (free) Option 2 (credits): buy a credit package")) == []
+    assert L.payments_problems(
+        **_state(**base, auth_text=_auth("Option 1 (free) Option 2 (credits): buy a credit package"),
+                 pricing_text=PRICING_SELLING)) == [], "credits on: the pricing page may sell packages"
     assert L.payments_problems(**_state(**base)), "rail on but the error text never offers credits"
 
 
@@ -159,7 +198,7 @@ def test_preview_cost_must_match_whether_the_quota_is_enforced():
     # metering off -> the three premium tools cost nothing, and the descriptor says so
     assert _problems(screen_sanctions_cost_usd=0.02)
     # metering on -> they carry the price, and the descriptor says so
-    quota = "[free in quota, then $0.02/call, " + NOT_CHARGED + "]"
+    quota = "[free in quota, then " + REFUSED + "]"
     on = dict(descriptor=_rail(quota=True),
               tool_descriptions=_tools(screen_sanctions="S. " + quota, verify_company_record="V. " + quota,
                                        map_trade_restriction="M. " + quota))
@@ -181,7 +220,7 @@ def test_a_priced_tool_quoted_as_charged_while_no_rail_is_on_is_caught():
     problems = _problems(tool_descriptions=_tools(capture_lead="Capture. [$0.05/per_call]"))
     assert any("capture_lead" in p and "charged" in p for p in problems), problems
     # and the opposite: a rail is on but the tool still says it is not charged
-    on = dict(descriptor=_rail("credits"), auth_text="Option 1 (free) Option 2 (credits): buy a credit package",
+    on = dict(descriptor=_rail("credits"), auth_text=_auth("Option 1 (free) Option 2 (credits): buy a credit package"),
               tool_descriptions=_tools(capture_lead=f"Capture. [$0.05/per_call, {NOT_CHARGED}]",
                                        send_message="Send. [from $0.02/call, variable]"))
     assert any("capture_lead" in p and "charged" in p for p in _problems(**on)), _problems(**on)
@@ -224,7 +263,8 @@ def test_agreement_is_not_truth_so_the_expected_rails_can_be_asserted():
     operator's expectation (what was staged) can catch that."""
     plain = _tools(capture_lead="Capture. [$0.05/per_call]", send_message="Send. [from $0.02/call, variable]")
     credits_everywhere = _state(descriptor=_rail("credits"), tool_descriptions=plain,
-                                auth_text="Option 1 (free) Option 2 (credits): buy a credit package")
+                                auth_text=_auth("Option 1 (free) Option 2 (credits): buy a credit package"),
+                                pricing_text=PRICING_SELLING)
     assert L.payments_problems(**credits_everywhere) == [], "internally consistent"
     problems = L.payments_problems(**credits_everywhere, expect_rails=[])
     assert problems and any("expected" in p for p in problems)
@@ -267,6 +307,8 @@ class _Server:
             return 404, {}, "{}"
         if path == "/keys/request":
             return 200, {}, json.dumps({"no_email_available": {"alternative": "Email hello@hatchloop.dev"}})
+        if path == "/pricing":
+            return 200, {}, PRICING_OK
         raise AssertionError(f"unexpected GET {path}")
 
     def rpc(self, url, method, params=None, **kw):
@@ -277,6 +319,8 @@ class _Server:
         if method == "tools/list":
             tools = [{"name": n, "description": d} for n, d in _tools().items()]
             return 200, {}, {"result": {"tools": tools}}
+        if method == "initialize":
+            return 200, {}, {"result": {"instructions": INSTRUCTIONS}}
         if key == "tools/call:send_message":
             body = {"error_code": "auth_required", "human_message": "Option 1 (free): get a key",
                     "how_to_resolve": {"free_key": "x"}}
@@ -298,7 +342,7 @@ def server(monkeypatch):
 
 
 def _check(**ctx):
-    return L.check_payments({"base": "https://api.example", **ctx})
+    return L.check_payments({"base": "https://api.example", "site": "https://api.example", **ctx})
 
 
 def test_check_payments_passes_against_an_honest_stubbed_server(server):
@@ -312,9 +356,11 @@ def test_check_payments_reads_every_surface_it_judges(server):
     s = server()
     _check()
     asked = " ".join(str(c[1]) for c in s.calls)
-    for need in ("/.well-known/mcp.json", "/.well-known/x402", "/keys/request", "send_message", "preview_cost"):
+    for need in ("/.well-known/mcp.json", "/.well-known/x402", "/keys/request", "send_message", "preview_cost",
+                 "/pricing"):
         assert need in asked, need
     assert "tools/list" in [c[0] for c in s.calls]
+    assert "initialize" in [c[0] for c in s.calls], "the MCP initialize instructions are judged too"
 
 
 @pytest.mark.parametrize("over,needle", [
@@ -362,3 +408,173 @@ def test_the_report_says_whether_the_committed_edge_snapshot_is_in_step(server):
     res = _check()
     assert res["edge_snapshot_payments_in_step"] is False
     assert res["ok"] is False or not any("snapshot" in p for p in res["problems"]), "informational, not a gate"
+
+
+# ================================================================ third review: what the check now sees
+
+def test_the_quota_tag_next_to_not_charged_is_caught():
+    """THE FINDING (P2 #5). With the quota enforced and no rail on, "[free in quota, then $0.02/call, not charged
+    while no payment rail is on]" tells an agent that calls past the quota carry on, uncharged. They are refused."""
+    wrong = f"[free in quota, then $0.02/call, {NOT_CHARGED}]"
+    on = dict(descriptor=_rail(quota=True), screen_sanctions_cost_usd=0.02,
+              tool_descriptions=_tools(screen_sanctions="S. " + wrong, verify_company_record="V. " + wrong,
+                                       map_trade_restriction="M. " + wrong))
+    problems = _problems(**on)
+    assert any("screen_sanctions" in p and "tag says 'not charged'" in p for p in problems), problems
+
+
+def test_a_quota_tag_that_quotes_a_price_with_no_rail_is_caught():
+    bare = "[free in quota, then $0.02/call]"
+    on = dict(descriptor=_rail(quota=True), screen_sanctions_cost_usd=0.02,
+              tool_descriptions=_tools(screen_sanctions="S. " + bare, verify_company_record="V. " + bare,
+                                       map_trade_restriction="M. " + bare))
+    assert any("screen_sanctions" in p and "refused" in p for p in _problems(**on))
+
+
+def test_a_rail_on_with_the_quota_enforced_must_price_the_overage_not_refuse_it():
+    refused = f"[free in quota, then {REFUSED}]"
+    priced = "[free in quota, then $0.02/call]"
+    base = dict(descriptor=_rail("credits", quota=True), screen_sanctions_cost_usd=0.02,
+                auth_text=_auth("Option 1 (free) Option 2 (credits): buy a credit package"),
+                pricing_text=PRICING_SELLING)
+    plain = dict(capture_lead="Capture. [$0.05/per_call]", send_message="Send. [from $0.02/call, variable]")
+    ok = _state(**base, tool_descriptions=_tools(**plain, screen_sanctions="S. " + priced,
+                                                 verify_company_record="V. " + priced,
+                                                 map_trade_restriction="M. " + priced))
+    assert L.payments_problems(**ok) == []
+    bad = dict(ok, tool_descriptions=_tools(**plain, screen_sanctions="S. " + refused,
+                                            verify_company_record="V. " + priced,
+                                            map_trade_restriction="M. " + priced))
+    assert any("screen_sanctions" in p and "priced" in p for p in L.payments_problems(**bad))
+
+
+# ---------------------------------------------------------------- quota and credits wording on every surface
+
+@pytest.mark.parametrize("field,text", [
+    ("keys_text", "14 of the 23 tools work with no key (11 always free, 3 free within a daily quota)"),
+    ("instructions_text", "the 23 tools need no key at all (11 always free, 3 free within a daily quota)"),
+])
+def test_a_quota_promise_on_any_surface_while_the_quota_is_not_enforced_is_caught(field, text):
+    """THE FINDING (P2 #1 / P3 #7). Only the exact 'free in quota' tag was looked for, and only on the three
+    data tools, so /keys/request and the initialize instructions could promise a quota that does not exist."""
+    problems = _problems(**{field: text})
+    assert any("promises a quota" in p for p in problems), problems
+
+
+def test_a_quota_promise_in_another_tool_description_is_caught_but_check_quotas_own_words_are_not():
+    honest = _tools(check_quota="Returns the caller's quota state: the daily limit and when the quota resets.")
+    assert _problems(tool_descriptions=honest) == [], "check_quota's description is true in every state"
+    bad = _tools(find_business="Search. Free within the daily quota. [free, no key]")
+    assert any("promises a quota" in p for p in _problems(tool_descriptions=bad))
+
+
+@pytest.mark.parametrize("field,text", [
+    ("keys_text", "Buy credits at hatchloop.dev/pricing for no daily cap"),
+    ("instructions_text", "Top up credits at https://hatchloop.dev/pricing"),
+    ("tool_descriptions", _tools(send_message="Send. Credit packages from $9. [from $0.02/call, variable, " + NOT_CHARGED + "]")),
+])
+def test_an_offer_of_credits_on_any_surface_while_credits_is_not_a_rail_is_caught(field, text):
+    problems = _problems(**{field: text})
+    assert any("offers credits" in p for p in problems), problems
+
+
+def test_check_quotas_tier_words_are_not_an_offer_of_credits():
+    tools = _tools(check_quota="Returns the tier (free / credits / unlimited) and when the quota resets.")
+    assert _problems(tool_descriptions=tools) == []
+
+
+# ---------------------------------------------------------------- the x402 document body
+
+def test_x402_listed_with_a_200_that_is_not_a_usable_document_is_caught():
+    """THE FINDING (P3 #7). The body was discarded, so an HTML error page served with status 200 passed."""
+    for body, needle in (("<html>Bad gateway</html>", "not JSON"), ("[1, 2]", "not a JSON object"), ("{}", "payTo")):
+        problems = L.payments_problems(**_x402_on_state(x402_text=body))
+        assert any(needle in p for p in problems), (body, problems)
+    wrong_net = L.payments_problems(**_x402_on_state(x402_text=_x402_doc(network="solana:mainnet")))
+    assert any("eip155" in p for p in wrong_net)
+    bad_addr = L.payments_problems(**_x402_on_state(x402_text=_x402_doc(payTo="0xdeadbeef")))
+    assert any("payTo" in p for p in bad_addr)
+    no_res = L.payments_problems(**_x402_on_state(x402_text=_x402_doc(resources=[])))
+    assert any("resources" in p for p in no_res)
+    no_prices = L.payments_problems(**_x402_on_state(x402_text=_x402_doc(pricesUsd={})))
+    assert any("prices" in p for p in no_prices)
+
+
+def test_the_x402_document_must_not_price_the_data_tools_while_they_are_free():
+    """THE FINDING (P2 #2, seen from outside): x402 on, metering off: the document listed them at $0.02."""
+    problems = L.payments_problems(**_x402_on_state(x402_text=_x402_doc(premium=True)))
+    assert any("screen_sanctions" in p and "free" in p for p in problems), problems
+
+
+def test_the_x402_document_must_price_the_data_tools_while_their_quota_is_enforced():
+    quota = "Screen. [free in quota, then $0.02/call] [or pay per call: x402, USDC on Base]"
+    tools = _tools(send_message="Send. [from $0.02/call, variable] [or pay per call: x402, USDC on Base]",
+                   capture_lead="Capture. [$0.05/per_call] [or pay per call: x402, USDC on Base]",
+                   screen_sanctions=quota, verify_company_record=quota, map_trade_restriction=quota)
+    state = _x402_on_state(descriptor=_rail("x402", quota=True), tool_descriptions=tools, screen_sanctions_cost_usd=0.02)
+    assert any("does not price" in p for p in L.payments_problems(**dict(state, x402_text=_x402_doc())))
+    assert L.payments_problems(**dict(state, x402_text=_x402_doc(premium=True))) == []
+
+
+# ---------------------------------------------------------------- the refusal is judged by code and guidance
+
+def test_a_refusal_with_no_numbered_options_is_not_a_failure():
+    """THE FINDING (P3 #8, a false positive). With no checkout URL configured the server correctly answers
+    'Get a free API key at ...' and numbers nothing. That honest server used to fail the check."""
+    unnumbered = _auth("auth_required for tool 'send_message': Get a free API key at https://x (100 ops/day).")
+    assert "Option 1" not in unnumbered
+    assert _problems(auth_text=unnumbered) == []
+
+
+def test_a_refusal_with_the_wrong_code_or_no_guidance_is_a_problem():
+    assert any("auth_required" in p for p in _problems(auth_error_code="rate_limited"))
+    assert any("auth_required" in p for p in _problems(auth_error_code=None))
+    assert any("free_key" in p for p in _problems(auth_text=json.dumps({"human_message": "Option 1 (free)"})))
+
+
+def test_the_initialize_instructions_are_required_evidence():
+    problems = _problems(instructions_text="")
+    assert any("initialize" in p for p in problems), problems
+
+
+# ---------------------------------------------------------------- the site's pricing page (finding P1)
+
+def test_a_pricing_page_that_links_package_purchases_while_credits_is_off_is_caught():
+    """THE FINDING (P1). hatchloop.dev/pricing carried 12 /portal?package= links and 'Buy credits for write
+    actions' while CREDITS_ENABLED was off: a purchase mints a key and grants nothing."""
+    problems = _problems(pricing_text=PRICING_SELLING)
+    assert any("/pricing" in p and "portal?package=" in p for p in problems), problems
+    assert any("Buy credits" in p for p in problems), problems
+
+
+def test_a_pricing_page_may_sell_packages_once_credits_is_a_rail():
+    plain = _tools(capture_lead="Capture. [$0.05/per_call]", send_message="Send. [from $0.02/call, variable]")
+    state = _state(descriptor=_rail("credits"), tool_descriptions=plain, pricing_text=PRICING_SELLING,
+                   auth_text=_auth("Option 1 (free) Option 2 (credits): buy a credit package"))
+    assert L.payments_problems(**state) == []
+
+
+@pytest.mark.parametrize("status,text", [(500, ""), (404, "<html>no</html>"), (200, "   ")])
+def test_an_unreadable_pricing_page_is_a_problem_not_a_pass(status, text):
+    problems = _problems(pricing_status=status, pricing_text=text)
+    assert any("/pricing" in p for p in problems), problems
+
+
+def test_check_payments_fails_end_to_end_on_a_selling_pricing_page(server):
+    server(**{"/pricing": (200, {}, PRICING_SELLING)})
+    res = _check(expect_rails=[])
+    assert res["ok"] is False
+    assert any("/pricing" in p for p in res["problems"]), res["problems"]
+    assert res["pricing_page_status"] == 200 and res["pricing_page_purchase_links"] == 2
+
+
+def test_check_payments_reads_the_site_host_for_the_pricing_page(server):
+    s = server()
+    L.check_payments({"base": "https://api.example", "site": "https://api.example"})
+    assert ("GET", "https://api.example/pricing") in s.calls
+
+
+def test_check_payments_passes_with_every_new_surface_honest(server):
+    server()
+    res = _check(expect_rails=[])
+    assert res["ok"] is True, res["problems"]

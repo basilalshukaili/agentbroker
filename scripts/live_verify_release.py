@@ -22,9 +22,11 @@ What it checks, in this order (each is a function returning {ok, ...evidence}; n
   labels         tools/list carries the [beta]/[limited] markers the readiness table says, and the keyless count is the
                  one the manifests print.
   retired        the six retired doors answer MCP with a tombstone on the site host, and GET is 410.
-  payments       the payment claims agree: the descriptor's status and rails, /.well-known/x402, the tool descriptions,
-                 the auth_required options, /keys/request and preview_cost for a premium data tool tell one story
-                 (nothing offers a rail the descriptor does not list; every listed rail is offered).
+  payments       the payment claims agree: the descriptor's status and rails, /.well-known/x402 (and its body), the tool
+                 descriptions, the MCP initialize instructions, the auth_required refusal, /keys/request, the site's
+                 /pricing page and preview_cost for a premium data tool tell one story (nothing offers a rail the
+                 descriptor does not list; every listed rail is offered; no credit package is for sale while credits is
+                 not a rail; no quota is promised while it is not enforced).
 
 Exit 0 only when every requested check passes. Calls place no paid operation and send no message to a person.
 """
@@ -466,21 +468,65 @@ def check_retired(ctx: dict) -> dict:
 
 # The three premium data tools: answered free before any billing branch while DATA_METERING_ENABLED is off.
 _PREMIUM_DATA_TOOLS = ("screen_sanctions", "verify_company_record", "map_trade_restriction")
-# A cost tag in a tool description that quotes a price: "[$0.05/per_call...]", "[from $0.02/call...]",
-# "[free in quota, then $0.02/call...]".
-_PRICE_TAG = re.compile(r"\[(?:\$|from \$|free in quota, then \$)[^\]]*\]")
+# A cost tag in a tool description that quotes a price: "[$0.05/per_call...]", "[from $0.02/call...]". The premium
+# data tools' quota tag ("[free in quota, then ...]") is judged on its own below: what follows "then" depends on
+# whether any rail can charge it.
+_PRICE_TAG = re.compile(r"\[(?:\$|from \$)[^\]]*\]")
+_QUOTA_TAG = re.compile(r"\[free in quota[^\]]*\]")
+# A quota promise in prose or in a tag. Deliberately narrow: check_quota's description says "when the quota resets"
+# and that is true in every state.
+_QUOTA_PROMISE = re.compile(r"(?i)free in quota|free within (?:a|the) daily quota|up to (?:a|the) daily quota|"
+                            r"within (?:a|the) daily quota")
+# An offer of credits: a numbered option, "buy credits", a credit package.
+_CREDITS_OFFER = re.compile(r"(?i)\(credits\)|buy credits|top up credits|credit packages?")
+# The credit-package purchase links on the site's /pricing page (they lead to the portal's checkout).
+_PURCHASE_LINK = re.compile(r"portal\?package=[a-z]+")
+_EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 
 
-def payments_problems(*, descriptor: dict, x402_status: int, tools_status: int, tool_descriptions: dict,
-                      auth_text: str, keys_status: int, keys_text: str,
+def _problems_in_x402_document(text: str, *, quota) -> list:
+    """/.well-known/x402 answered 200 while x402 is a listed rail: is the body a usable document, and does it
+    price exactly the tools the gate charges for? (An HTML error page with status 200 used to pass.)"""
+    try:
+        doc = json.loads(text)
+    except (ValueError, TypeError):
+        return ["/.well-known/x402 answered 200 but its body is not JSON"]
+    if not isinstance(doc, dict):
+        return ["/.well-known/x402 answered 200 but its body is not a JSON object"]
+    problems: list = []
+    if not _EVM_ADDRESS.fullmatch(str(doc.get("payTo", ""))):
+        problems.append("/.well-known/x402 carries no payTo address of the form 0x + 40 hex digits")
+    if not str(doc.get("network", "")).startswith("eip155:"):
+        problems.append("/.well-known/x402 names no eip155 network")
+    resources = doc.get("resources")
+    if not (isinstance(resources, list) and resources and all(isinstance(r, str) and r for r in resources)):
+        problems.append("/.well-known/x402 lists no resources")
+    prices = doc.get("pricesUsd")
+    if not (isinstance(prices, dict) and prices):
+        problems.append("/.well-known/x402 lists no prices")
+    elif isinstance(quota, bool):
+        for name in _PREMIUM_DATA_TOOLS:
+            if not quota and name in prices:
+                problems.append(f"/.well-known/x402 prices {name} while premium_data_quota_enforced is false: "
+                                "that tool is answered free before any payment is read")
+            if quota and name not in prices:
+                problems.append(f"/.well-known/x402 does not price {name} although its quota is enforced")
+    return problems
+
+
+def payments_problems(*, descriptor: dict, x402_status: int, x402_text: str, tools_status: int,
+                      tool_descriptions: dict, instructions_text: str, auth_error_code: Optional[str],
+                      auth_text: str, keys_status: int, keys_text: str, pricing_status: int, pricing_text: str,
                       screen_sanctions_cost_usd: Optional[float], expect_rails: Optional[list] = None) -> list:
     """Do the server's claims about how to pay tell ONE story? Pure, so it is tested without a network.
 
     The switches (CREDITS_ENABLED, DATA_METERING_ENABLED, X402_ENABLED) cannot be read from outside, but every
-    surface that mentions them can: the descriptor's rails and status, /.well-known/x402, each tool description,
-    the auth_required text, /keys/request, and preview_cost for a premium data tool. If the descriptor says no
-    rail is on, nothing else may offer one; if it says a rail is on, the rest must offer it; if it says the daily
-    quota is not enforced, no tool may promise one; and while no rail is on no price may be quoted as a charge.
+    surface that mentions them can: the descriptor's rails and status, /.well-known/x402 (its body too), each tool
+    description, the MCP initialize instructions, the auth_required text, /keys/request, the site's /pricing page
+    and preview_cost for a premium data tool. If the descriptor says no rail is on, nothing else may offer one; if
+    it says a rail is on, the rest must offer it; if it says the daily quota is not enforced, no surface may
+    promise one; while no rail is on no price may be quoted as a charge; and a credit package is for sale only
+    while credits is a listed rail.
 
     EVIDENCE THAT CANNOT BE READ IS A PROBLEM, NEVER A PASS. Every argument is required and keyword-only: a
     surface that answered 500, an empty tools/list, an unreadable preview_cost all used to become "" or None and
@@ -490,7 +536,7 @@ def payments_problems(*, descriptor: dict, x402_status: int, tools_status: int, 
     while CREDITS_ENABLED was off). `expect_rails`, when the operator passes it (--expect-rails), is the intended
     state taken from what was staged for the container; the descriptor must name exactly those rails.
     """
-    from billing.switches import NOT_CHARGED
+    from billing.switches import NOT_CHARGED, QUOTA_REFUSED
     status, rails = descriptor.get("status"), descriptor.get("rails")
     if not status or not isinstance(rails, list):
         return ["payments.status / payments.rails are missing from /.well-known/mcp.json"]
@@ -512,20 +558,30 @@ def payments_problems(*, descriptor: dict, x402_status: int, tools_status: int, 
     if keys_status != 200 or not (keys_text or "").strip():
         problems.append(f"/keys/request did not answer 200 with guidance (HTTP {keys_status}), so its text could "
                         "not be judged")
-    if "Option 1" not in (auth_text or ""):
-        problems.append("the auth_required text carries no option list (an anonymous send_message was not refused "
-                        "for identity), so the offered options could not be read")
+    if not (instructions_text or "").strip():
+        problems.append("the MCP initialize answer carried no instructions, so its payment and quota wording "
+                        "could not be judged")
+    # The refusal is judged by its code and its structured guidance, never by a numbered "Option 1": when no
+    # checkout URL is configured the server correctly says "Get a free API key at ..." and numbers nothing.
+    if auth_error_code != "auth_required":
+        problems.append(f"an anonymous send_message was not refused with auth_required (error_code "
+                        f"{auth_error_code!r}), so the offered options could not be read")
+    elif '"free_key"' not in (auth_text or ""):
+        problems.append("the auth_required refusal carries no how_to_resolve.free_key guidance, so the offered "
+                        "options could not be read")
     tools_text = " ".join(str(d) for d in descs.values())
 
     def says_x402(text: str) -> bool:
         return "x402" in (text or "").lower()
 
     surfaces = (("a tool description", tools_text), ("the auth_required text", auth_text),
-                ("/keys/request", keys_text))
+                ("/keys/request", keys_text), ("the MCP initialize instructions", instructions_text))
     if x402_on:
         if x402_status != 200:
             problems.append(f"x402 is a listed rail but /.well-known/x402 answered {x402_status}")
-        for label, text in surfaces:
+        else:
+            problems.extend(_problems_in_x402_document(x402_text, quota=quota))
+        for label, text in surfaces[:3]:   # the initialize instructions carry no payment guidance either way
             if not says_x402(text):
                 problems.append(f"x402 is a listed rail but {label} never offers it")
     else:
@@ -539,8 +595,22 @@ def payments_problems(*, descriptor: dict, x402_status: int, tools_status: int, 
     offers_credits = "(credits)" in (auth_text or "") or "credit package" in (auth_text or "").lower()
     if credits_on and not offers_credits:
         problems.append("credits is a listed rail but the auth_required text never offers credits")
-    if not credits_on and offers_credits:
-        problems.append("the auth_required text offers credits while credits is not a listed rail")
+    if not credits_on:
+        for label, text in surfaces:
+            if _CREDITS_OFFER.search(text or ""):
+                problems.append(f"{label} offers credits while credits is not a listed rail")
+
+    # ---- the site's pricing page: a credit package is for sale only while credits is a rail
+    if pricing_status != 200 or not (pricing_text or "").strip():
+        problems.append(f"the site's /pricing page did not answer 200 (HTTP {pricing_status}), so its purchase links "
+                        "could not be judged")
+    elif not credits_on:
+        links = sorted(set(_PURCHASE_LINK.findall(pricing_text)))
+        if links:
+            problems.append(f"the site's /pricing page links credit-package purchases {links} while credits is not a "
+                            "listed rail: a purchase would mint a key and grant no credits")
+        if re.search(r"(?i)buy credits", pricing_text):
+            problems.append("the site's /pricing page says 'Buy credits' while credits is not a listed rail")
 
     # ---- the premium data tools: the quota, and the x402 mention, per tool
     cost = screen_sanctions_cost_usd
@@ -565,12 +635,36 @@ def payments_problems(*, descriptor: dict, x402_status: int, tools_status: int, 
             if not quota and tagged:
                 problems.append(f"{name}: tools/list promises a quota ('free in quota') while "
                                 "premium_data_quota_enforced is false")
+            if tagged and quota:
+                # Past the quota the call is refused while no rail can charge it, and priced once one can. "Not
+                # charged" next to a quota reads as "the call carries on, free", which it does not.
+                m = _QUOTA_TAG.search(d)
+                tag = m.group(0) if m else ""
+                quotes_price = "then $" in tag
+                if NOT_CHARGED in tag:
+                    problems.append(f"{name}: the quota tag says 'not charged' but a call past the quota is refused "
+                                    f"({tag})")
+                elif not rails and (quotes_price or QUOTA_REFUSED not in tag):
+                    problems.append(f"{name}: no payment rail is on, so a call past the quota is refused, but the "
+                                    f"tag says {tag!r}")
+                elif rails and (not quotes_price or QUOTA_REFUSED in tag):
+                    problems.append(f"{name}: {rails} is a live rail, so a call past the quota is priced, but the "
+                                    f"tag says {tag!r}")
             if x402_on and not quota and says_x402(d):
                 problems.append(f"{name}: tools/list offers x402, but while the quota is not enforced this tool is "
                                 "answered free before any payment is read")
             if x402_on and quota and not says_x402(d):
                 problems.append(f"{name}: x402 is a listed rail and the quota is enforced, but tools/list does not "
                                 "offer x402 on it")
+        # A promise of a quota anywhere else while the descriptor says there is none.
+        if not quota:
+            others = " ".join(str(d) for n, d in descs.items() if n not in _PREMIUM_DATA_TOOLS)
+            for label, text in (("a tool description", others), ("/keys/request", keys_text),
+                                ("the MCP initialize instructions", instructions_text)):
+                m = _QUOTA_PROMISE.search(text or "")
+                if m:
+                    problems.append(f"{label} promises a quota ({m.group(0)!r}) while premium_data_quota_enforced "
+                                    "is false")
 
     # ---- a quoted price is a charge only while a rail can charge it
     for name, d in sorted(descs.items()):
@@ -608,8 +702,13 @@ def check_payments(ctx: dict) -> dict:
         descriptor = (json.loads(dtext).get("payments") or {}) if ds == 200 else {}
     except (ValueError, AttributeError):
         descriptor = {}
-    xs, _, _ = http("GET", base + "/.well-known/x402")
+    xs, _, x402_text = http("GET", base + "/.well-known/x402")
     ts, _, tl = rpc(base + "/mcp", "tools/list")
+    _, _, init = rpc(base + "/mcp", "initialize", {"protocolVersion": LEGACY_V, "capabilities": {},
+                                                     "clientInfo": {"name": "hatchloop-live-verify", "version": "1"}})
+    instructions = str((((init or {}).get("result") or {}).get("instructions")) or "") if isinstance(init, dict) else ""
+    site = ctx.get("site") or "https://hatchloop.dev"
+    ps, _, pricing_text = http("GET", site + "/pricing")
     listed = (((tl or {}).get("result") or {}).get("tools") or []) if isinstance(tl, dict) else []
     tool_descriptions = {str(t.get("name")): str(t.get("description", "")) for t in listed if isinstance(t, dict)}
     _, _, auth = rpc(base + "/mcp", "tools/call", {"name": "send_message", "arguments": {}})
@@ -618,16 +717,16 @@ def check_payments(ctx: dict) -> dict:
     ks, _, keys_text = http("GET", base + "/keys/request")
     _, _, pc = rpc(base + "/mcp", "tools/call", {"name": "preview_cost", "arguments": {"operation": "screen_sanctions"}})
     cost = tool_body(pc).get("estimated_cost_usd")
-    problems = payments_problems(descriptor=descriptor, x402_status=xs, tools_status=ts,
-                                 tool_descriptions=tool_descriptions, auth_text=auth_text, keys_status=ks,
-                                 keys_text=keys_text if ks == 200 else "", screen_sanctions_cost_usd=cost,
-                                 expect_rails=ctx.get("expect_rails"))
-    if auth_body.get("error_code") != "auth_required":
-        problems.append(f"an anonymous send_message was not refused for identity (error_code {auth_body.get('error_code')!r}), "
-                        "so the offered options could not be read")
+    problems = payments_problems(descriptor=descriptor, x402_status=xs, x402_text=x402_text if xs == 200 else "",
+                                 tools_status=ts, tool_descriptions=tool_descriptions,
+                                 instructions_text=instructions, auth_error_code=auth_body.get("error_code"),
+                                 auth_text=auth_text, keys_status=ks, keys_text=keys_text if ks == 200 else "",
+                                 pricing_status=ps, pricing_text=pricing_text if ps == 200 else "",
+                                 screen_sanctions_cost_usd=cost, expect_rails=ctx.get("expect_rails"))
     return check(ds == 200 and not problems, status=descriptor.get("status"), rails=descriptor.get("rails"),
                  premium_data_quota_enforced=descriptor.get("premium_data_quota_enforced"), x402_discovery_status=xs,
-                 tools_listed=len(tool_descriptions), keys_request_status=ks,
+                 tools_listed=len(tool_descriptions), keys_request_status=ks, pricing_page_status=ps,
+                 pricing_page_purchase_links=len(_PURCHASE_LINK.findall(pricing_text)) if ps == 200 else None,
                  edge_snapshot_payments_in_step=edge_snapshot_payments_in_step(descriptor),
                  screen_sanctions_preview_usd=cost, problems=problems)
 
