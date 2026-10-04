@@ -354,10 +354,14 @@ def test_the_privacy_policy_names_the_openstreetmap_services_that_receive_locati
     html = render_privacy()
     assert "OpenStreetMap Foundation" in html and "Nominatim" in html
     assert "Overpass" in html and "find_business" in html
-    section7 = html.split("7. Sub-processors", 1)[1].split("8. Retention", 1)[0]
-    assert "OpenStreetMap Foundation" in section7 and "Overpass" in section7
-    section2 = html.split("2. What we collect", 1)[1].split("3. What we never collect", 1)[0]
-    assert "Location text" in section2
+    # The page was restructured on 2026-10-04: what each lookup tool sends where is section 3, and the
+    # providers are section 6. The recipients, the server's own IP address and the "treat it as public"
+    # warning must all be in the section about lookup tools, and the recipients repeated among the providers.
+    section3 = html.split("3. Lookup tools", 1)[1].split("4. How we use it", 1)[0]
+    assert "OpenStreetMap Foundation" in section3 and "Overpass" in section3
+    assert "IP address" in section3 and "Treat that field as public" in section3
+    section6 = html.split("6. Who else receives data", 1)[1].split("7. Where data is processed", 1)[0]
+    assert "OpenStreetMap" in section6
 
 
 # ---------------------------------------------------------------------------

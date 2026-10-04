@@ -562,25 +562,23 @@ def render_terms() -> str:
     body = f"""
 <article class="legal">
   <h1>Terms of Service</h1>
-  <p class="updated">Last updated: 29 April 2026.</p>
+  <p class="updated">Last updated: 4 October 2026.</p>
+  <p class="updated">Changed in this version: section 2 (service description) now describes the service as it runs today, including what each tool does and does not do, the readiness labels and Arabic-name screening, and the date above. Sections 1 and 3 to 13 are unchanged from the version of 29 April 2026.</p>
 
   <h2>1. Acceptance</h2>
   <p>By using {BRAND} (the &ldquo;Service&rdquo;), you agree to these Terms.
   If you do not agree, do not use the Service.</p>
 
   <h2>2. Service description &amp; scope</h2>
-  <p>The Service is a Model Context Protocol (MCP) server that lets AI agents
-  discover, verify, communicate with, schedule with, and transact with small
-  and mid-sized businesses. It supports five message types (transactional,
-  marketing, reminder, follow_up, notification) over WhatsApp, SMS, email and
-  voice; live booking execution via Cal.com, with eleven further booking
-  platforms recognised for import (Calendly, Doctolib, Booksy, Fresha,
-  OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity);
-  and compliance screening against live registries (GLEIF, SEC EDGAR, the OFAC
-  SDN list, the EU Consolidated list and the UK Sanctions List). The UN
-  consolidated list is NOT screened - it carries no licence permitting
-  commercial redistribution, and screen_sanctions says so in its own
-  output.</p>
+  <p>The Service is HatchLoop&rsquo;s AgentBroker, a Model Context Protocol (MCP) server and API operated by {LEGAL_ENTITY}. It gives AI agents tools to check and find businesses and, on the channels that are enabled, to message them and book with them. The published tool list, with each tool&rsquo;s description and whether it is available on the current deployment, is served by the Service&rsquo;s MCP endpoint (<code>https://hatchloop.dev/mcp/agent-broker</code>, method <code>tools/list</code>) and summarised in the <a href="https://hatchloop.dev/docs/">documentation</a>. At the date above the tools are:</p>
+  <ul>
+    <li><strong>Company and sanctions checks.</strong> <code>verify_company_record</code> looks a company up in the GLEIF global LEI registry and in SEC EDGAR. <code>screen_sanctions</code> screens a name against the OFAC SDN list, the EU consolidated list and the UK Sanctions List; a name written in Arabic script is read as well and compared with the Arabic-script names the EU and UK lists publish, and a name that only sounds like a listed one is returned as an unverified candidate for a person to check, never as a match. <code>map_trade_restriction</code> screens a destination and parties for cross-border trade restrictions. <code>lookup_us_contracts</code> searches US federal contract awards through the public USAspending.gov API.</li>
+    <li><strong>Business discovery.</strong> <code>find_business</code> finds businesses near a place using OpenStreetMap data, and <code>verify_business</code> looks businesses up in the Service&rsquo;s own supply network.</li>
+    <li><strong>Messaging and booking.</strong> <code>send_message</code> and <code>send_transactional_confirmation</code> send messages on the channels enabled on the current deployment, which are WhatsApp and email. SMS and voice calling (<code>call_business</code>) are listed but are not enabled on the current deployment, and those tools say so in their own responses. <code>handle_inbound</code> classifies a reply by keyword rules and <code>get_conversation</code> reads a conversation. <code>capture_lead</code> records a lead in the Service&rsquo;s own lead funnel and does not notify the business. <code>escalate_to_human</code> writes a ticket to the Service&rsquo;s operator queue; it sends no notification and makes no response-time commitment. <code>schedule_appointment</code> books through Cal.com when a business&rsquo;s booking link is connected to the Service&rsquo;s Cal.com account; otherwise it reports that it cannot, and does not invent a booking.</li>
+    <li><strong>Utility tools.</strong> <code>preview_cost</code>, <code>check_quota</code>, <code>check_compliance</code>, <code>check_booking_link</code>, <code>import_booking_url</code>, <code>get_status</code>, <code>get_outcome</code>, <code>self_test</code> and <code>mint_key</code>.</li>
+  </ul>
+  <p>A tool that has a limit carries a readiness label in its description: <em>beta</em> (it works, with a limit on what you can rely on), <em>limited</em> (it works for a narrow set of inputs and fails honestly for the rest) or <em>unavailable</em> (the current deployment lacks what it needs). The sentence in the tool&rsquo;s metadata says what the limit is; read it before relying on the tool.</p>
+  <p>Screening and lookup results are informational. Each response names the public lists and registries it used and the ones it did not (the UN consolidated list, for example, is NOT screened), and those sources can be incomplete or out of date. A result is not legal advice, not a clearance and not a compliance determination, and &ldquo;no match&rdquo; is not a finding that a person or company is free of sanctions or restrictions. Prices and free daily allowances are published on the <a href="https://hatchloop.dev/pricing/">pricing</a> page, refunds on the <a href="https://hatchloop.dev/refund">refund</a> page, and how data is handled in the <a href="https://hatchloop.dev/privacy/">privacy policy</a>.</p>
   <p>Every outbound communication routes through a non-bypassable compliance
   gate that enforces TCPA / GDPR / CASL / PDPL rules across 26 jurisdictions.
   Marketing messages require a verified opt-in <code>consent_record_id</code>
@@ -686,111 +684,119 @@ def render_privacy() -> str:
     body = f"""
 <article class="legal">
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 29 April 2026.</p>
+  <p class="updated">Last updated: 4 October 2026.</p>
+  <p class="updated">Changed in this version: where the service is hosted (our own server, not Vercel, Render, Supabase or Cloudflare; Vercel now only hosts our DNS records), who else receives data, what the usage log holds, where the text you send to lookup tools goes and what is kept in memory, how long things are kept, and the sign-in that AI assistants use (&ldquo;Connect&rdquo;): its cookie, what it stores and what it sends to Resend. The previous version of this page was dated 29 April 2026.</p>
 
   <h2>1. Who we are</h2>
-  <p>{LEGAL_ENTITY}. Privacy contact:
-     <a href="mailto:{PRIVACY_EMAIL}">{PRIVACY_EMAIL}</a>.</p>
+  <p>HatchLoop and AgentBroker are products of <strong>{LEGAL_ENTITY}</strong>. Techmate is the legal entity behind this site and the data controller for everything described below; HatchLoop is the name of the product, not a separate company.</p>
+  <p>This policy covers the website hatchloop.dev and the AgentBroker service at hatchloop.dev and api.hatchloop.dev: an MCP server and API that lets AI agents check and find businesses and, on the channels that are enabled, message and book with them. Contact for anything in this policy: <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.</p>
 
   <h2>2. What we collect</h2>
+  <p><strong>When you visit hatchloop.dev or call the API.</strong></p>
   <ul>
-    <li><strong>Account data:</strong> agent identity tokens, billing email,
-        company name (if provided).</li>
-    <li><strong>Operational metadata:</strong> request timestamps, operation
-        names, response codes, latency. Used for billing, abuse prevention,
-        and debugging.</li>
-    <li><strong>Location text sent to <code>find_business</code>:</strong>
-        the city, postal code or address your agent asks us to search near,
-        and the search area, are sent to public OpenStreetMap services (see
-        section 7) to find businesses. Treat that field as public: do not put
-        a private person&rsquo;s home address in it.</li>
-    <li><strong>Business data passed by your agent:</strong> phone numbers
-        and email addresses are <strong>never stored in plaintext</strong>;
-        we keep only an HMAC-SHA256 hash for compliance audit. Free-text
-        message bodies are retained for 30 days at most, then deleted.</li>
+    <li>Our web server keeps an access log of every request: time, IP address, the address requested (with session tokens and key parameters removed), user agent, response status and size. API key headers are replaced with a placeholder before anything is written.</li>
+    <li>We measure visits with Umami, which runs on our own server and not at an analytics company. It sets no cookies. It records the page address, referrer, page title, browser, operating system, device type, screen size, language and approximate location (country, region, city). Its database has no field for your IP address.</li>
+    <li>Every page asks our API whether you are signed in, which is a request to our server like any other. We set a cookie only when you sign in: the sign-in session cookie (<code>hl_portal</code>, 30 days) after you sign in to the portal, and one short-lived cookie while you connect an AI assistant (see &ldquo;Connecting an assistant&rdquo; below). Your browser also remembers, in local storage, which credit package you chose while signing in.</li>
+  </ul>
+  <p><strong>When your agent calls a tool.</strong> For each call the usage log records:</p>
+  <ul>
+    <li>the time, the type of request (such as <code>tools/call</code>), the tool name (or the name asked for, if it is not one of ours), the outcome and status, and how long it took;</li>
+    <li>the door of the service that was called (such as <code>agent-broker</code>) and the protocol version;</li>
+    <li>the client name and version your software reports;</li>
+    <li>whether a key was used, its state and its identifier (for a free key, a short code derived from a hash of your email address; for a paid account, your Polar customer identifier);</li>
+    <li>the names of the arguments you sent, never their values, and a short one-way hash of the arguments;</li>
+    <li>a short one-way hash of your IP address, and your user agent;</li>
+    <li>a label we derive from the call: a registry crawler, a caller with no key, or a caller with a key.</li>
+    <li>The values you pass to lookup and screening tools (a company name, a person&rsquo;s name, a place) are not written to the usage log and are not saved in the database; section 3 says what is held in memory. Tools that change state (sending a message, capturing a lead, booking, escalating) store a record of the operation, described under &ldquo;Messaging&rdquo; below.</li>
+    <li>A billing record of each charge: the tool, the amount, the status, the time and your key identifier.</li>
+  </ul>
+  <p><strong>Keys, sign-in and payments.</strong></p>
+  <ul>
+    <li>If you request a free key we store your email address (lower-cased), a verification token with an expiry (deleted once you use the link), and the key we issue to you.</li>
+    <li>Sign-in to the portal is by an emailed link; there are no passwords. We keep your email, your plan, your credit balance and the ledger of credits granted and spent.</li>
+    <li>Card payments are handled by Polar as merchant of record. We receive your email address, the order and the amount. We never see or store card numbers. When credits are bought we also keep a SHA-256 hash of the buyer&rsquo;s email address next to the Polar customer identifier and the plan, so that an assistant connected with the same address can spend them.</li>
+  </ul>
+  <p><strong>Connecting an assistant (&ldquo;Connect&rdquo;).</strong> Some AI assistants open a sign-in page on api.hatchloop.dev so that you can use the tools that need an account. What that records:</p>
+  <ul>
+    <li>The page asks for your email address and we email you a one-time link, valid for 15 minutes. We use the address to send that one message and do not store it. We keep a SHA-256 hash of it, so that the same address reaches the same account next time, and a masked hint such as <code>j***@gmail.com</code> for the confirmation page.</li>
+    <li>We keep the sign-in itself (the app that asked, the address it returns to and the permission requested) and SHA-256 hashes of the link, the authorisation code and the refresh token we give the assistant, never the values. An access token lasts one hour. A refresh token lasts 30 days, is replaced each time it is used and ends at the latest 90 days after you signed in.</li>
+    <li>While you sign in we set one cookie, <code>hl_oauth_</code> followed by the sign-in&rsquo;s identifier. It lasts 15 minutes, is sent only to the sign-in pages (<code>/oauth</code>) and proves that the browser that opened the page is the one that started the sign-in. Signing in needs it.</li>
+    <li>To learn who an app is, our server fetches the app&rsquo;s published client-metadata document from the web address that identifies it; that request carries our server&rsquo;s address and nothing about you. An app that registers itself with us is kept with its name, its return addresses and a short hash of its network address.</li>
+    <li>Abuse limits count sign-in attempts per network address and per hashed email address, in the server&rsquo;s memory only.</li>
+  </ul>
+  <p><strong>Forms and email.</strong></p>
+  <ul>
+    <li>The feedback form stores the note you type and your browser&rsquo;s user agent. The waitlist forms store your email address, the page you used and an optional note. Neither is sent to anyone else.</li>
+    <li>Email you send to hello@hatchloop.dev is received by our email-forwarding provider and delivered to a Gmail mailbox read by our team.</li>
   </ul>
 
-  <h2>3. What we never collect</h2>
+  <h2>3. Lookup tools: where the text you send goes</h2>
   <ul>
-    <li>End-user payment card details &mdash; Polar holds these on its PCI&#8209;DSS
-        Level 1 infrastructure; we receive only a redacted token.</li>
-    <li>Biometric or special-category data.</li>
-    <li>Recordings of voice calls (Vapi-side retention is configurable; we
-        do not pull them into our systems).</li>
+    <li><code>screen_sanctions</code> and the party screening inside <code>map_trade_restriction</code> compare the name with copies of the OFAC, EU and UK sanctions lists that we download from their publishers and hold on our server. The name is not sent to the publishers or to anyone else.</li>
+    <li><code>verify_company_record</code> sends the company name (and country, if given) to the GLEIF LEI registry (api.gleif.org). For US public companies it downloads the SEC&rsquo;s public company file and matches the name on our server.</li>
+    <li><code>lookup_us_contracts</code> sends the company name to the USAspending.gov public API (api.usaspending.gov).</li>
+    <li><code>find_business</code> sends the place text you give it (up to 200 characters), the search area and the business category to the public OpenStreetMap services: Nominatim for geocoding, run by the OpenStreetMap Foundation (nominatim.openstreetmap.org), and the public Overpass API for businesses, which has its own operator (overpass-api.de). They also receive our server&rsquo;s IP address. Treat that field as public and do not put a private person&rsquo;s home address in it. The server remembers a place for up to 7 days and the businesses found there for 6 hours, so that a repeat costs the public servers nothing. The map data is &copy; OpenStreetMap contributors, available under the ODbL.</li>
+    <li><code>import_booking_url</code> fetches the booking page address you give it, from our server.</li>
+    <li>The Retail Broker at hatchloop.dev/retail forwards a visitor&rsquo;s product search to the public catalogue endpoints of the stores it searches.</li>
+  </ul>
+  <p>Some of this is held in the server&rsquo;s memory only, never in the database: the places and results above, and, so that the sanctions screen is fast, its analysis of recently screened names and name parts. A restart of the service empties all of it.</p>
+  <p>The service does not send tool inputs, messages or personal data to any AI model provider. HatchLoop is operated with the help of AI assistants, and the people and assistants who operate it can read the records described in this policy.</p>
+
+  <h2>4. How we use it</h2>
+  <p>To provide and bill the service, run the compliance gate (including opt-outs), prevent abuse and keep the service reliable. We do <strong>not</strong> sell personal data and we do not use message content for advertising. The legal bases we rely on, where GDPR or UK GDPR applies, are contract (delivering the service you asked for), legitimate interests (abuse prevention, security logging, reliability) and legal obligation (tax records and regulatory disclosures).</p>
+
+  <h2>5. Messaging</h2>
+  <p>Messaging tools work on the channels enabled on the current deployment, which are WhatsApp and email. SMS and voice calling are not enabled, and nothing is sent to an SMS or voice provider. When your agent sends a message we process its content and the recipient&rsquo;s identifier to deliver it and to run the compliance gate (TCPA, GDPR, CASL and PDPL checks, consent and opt-out enforcement). Replying <strong>STOP</strong> on a channel, including WhatsApp, records an opt-out that blocks further messages to you on that channel.</p>
+  <p>What these tools store:</p>
+  <ul>
+    <li>The compliance audit log keeps a SHA-256 hash of each recipient identifier, with the channel, the decision and the reason, and no plaintext identifier.</li>
+    <li>Other records hold identifiers in readable form: opt-outs (the recipient and the channel), leads your agent captures (name, phone, email, notes), conversation records (the numbers involved and the message text) and replies received on WhatsApp (sender number, profile name and text), which are kept so the requesting agent can read them.</li>
+    <li>Receipts of operations that change state, which can include the free text your agent supplied, and the ticket that a human escalation writes to our operator queue (the reason, the recommended next step your agent wrote and your key identifier).</li>
   </ul>
 
-  <h2>4. How we use the data</h2>
+  <h2>6. Who else receives data</h2>
+  <p><strong>Providers we use to run the service.</strong></p>
   <ul>
-    <li>To deliver the Service you requested.</li>
-    <li>To bill you accurately. Every operation returns an itemised receipt
-        showing what was charged and why; call <code>preview_cost</code>
-        (free) to see the price before you commit.</li>
-    <li>To prove compliance with TCPA, GDPR, CASL, PDPL, and equivalents on
-        request from a regulator or recipient.</li>
-    <li>To detect abuse and enforce the Terms of Service.</li>
+    <li><strong>Hostinger</strong> (Hostinger International Limited) rents us the virtual server that runs the website, the API, the database and its backups.</li>
+    <li><strong>Vercel</strong> hosts the DNS records (the name servers) for hatchloop.dev. It does not serve the site or carry its traffic.</li>
+    <li><strong>Resend</strong> sends our email: sign-in links, key verification, billing notices, and email sent through the messaging tools. It receives the recipient address, the subject and the text of each message. For Connect that is the address you typed on the sign-in page and a message that names the app asking to connect, says where it will return to and carries the one-time link.</li>
+    <li><strong>Polar</strong> is the merchant of record for card payments, and receives your email and order details.</li>
+    <li><strong>Forward Email</strong> and <strong>Google (Gmail)</strong> receive and hold the email you send to our contact address.</li>
+    <li><strong>Telegram</strong> receives internal purchase alerts for our team, in which the customer&rsquo;s email address is masked. The Telegram Mini App page at hatchloop.dev/app loads a script from telegram.org.</li>
   </ul>
-
-  <h2>5. Legal bases (GDPR / UK GDPR)</h2>
+  <p><strong>Providers involved only in particular cases.</strong></p>
   <ul>
-    <li><strong>Contract:</strong> processing necessary to deliver the
-        Service you signed up for.</li>
-    <li><strong>Legitimate interests:</strong> abuse prevention,
-        security logging, service improvement.</li>
-    <li><strong>Legal obligation:</strong> tax records, regulatory disclosures.</li>
+    <li><strong>Meta</strong> (WhatsApp Business Platform) carries WhatsApp messages and receives the recipient&rsquo;s number and the text. Meta&rsquo;s own terms and privacy policy also apply to that channel.</li>
+    <li><strong>Cal.com</strong> receives the attendee&rsquo;s name, email address and notes when a booking is made.</li>
+    <li><strong>Render</strong> runs only a redirect from our former address (smb-broker.onrender.com) to api.hatchloop.dev. A client that still uses the old address sends its first request there, so Render sees that request.</li>
   </ul>
+  <p><strong>Public sources</strong> that receive the text you ask us to look up are listed in section 3: GLEIF, OpenStreetMap services, USAspending.gov and the stores searched by the Retail Broker.</p>
+  <p><strong>Integrations that exist but are switched off</strong> and receive nothing: SMS (Twilio), voice calls (Vapi) and on-chain payments (Coinbase).</p>
 
-  <h2>6. International transfers</h2>
-  <p>Our application is hosted in Frankfurt, Germany (EU). Sub-processors
-  may store data in the United States (Twilio, Resend, Polar, Cal.com).
-  Where required, we rely on EU Standard Contractual Clauses and the
-  Data Privacy Framework.</p>
+  <h2>7. Where data is processed</h2>
+  <p>The server is in Kuala Lumpur, Malaysia. We operate from Oman, and the database backups are also copied to a company computer. The providers in section 6 process data in their own locations, which include the United States and Europe.</p>
 
-  <h2>7. Sub-processors</h2>
+  <h2>8. How long we keep it</h2>
   <ul>
-    <li><strong>Render</strong> (Frankfurt) &mdash; application hosting.</li>
-    <li><strong>OpenStreetMap Foundation</strong> (Nominatim geocoding,
-        nominatim.openstreetmap.org) and the operator of the public
-        <strong>Overpass API</strong> (overpass-api.de) &mdash; receive the
-        location text and search area from <code>find_business</code>, plus
-        our server&rsquo;s IP address, to resolve a place and list nearby
-        businesses. Their data is &copy; OpenStreetMap contributors (ODbL).</li>
-    <li><strong>Twilio</strong> &mdash; SMS / voice carrier.</li>
-    <li><strong>Vapi</strong> &mdash; voice AI agent fallback.</li>
-    <li><strong>Resend</strong> &mdash; transactional email delivery.</li>
-    <li><strong>Cal.com</strong> &mdash; calendar API for booking flows.</li>
-    <li><strong>Polar</strong> &mdash; Merchant of Record for billing.</li>
-  </ul>
-
-  <h2>8. Retention</h2>
-  <ul>
-    <li>Operational logs: 90 days.</li>
-    <li>Free-text message bodies: 30 days.</li>
-    <li>Compliance hashes: 7 years (statute of limitations for TCPA).</li>
-    <li>Billing records: 7 years (Omani tax law).</li>
+    <li>Web server access logs are kept in rotating files limited by size (20 MB a file, 10 files per site), which at current traffic is a matter of days. The server&rsquo;s system journal keeps at most 7 days.</li>
+    <li>Database backups are written every 12 hours and kept for 30 days, on the server and on that company computer.</li>
+    <li>Connect sign-ins, authorisation codes and refresh tokens expire on their own (see section 2). Expired sign-ins and codes, and refresh tokens past their 90-day limit, are deleted at least a day later, a few at a time whenever a new sign-in starts, so they can remain for some time after that.</li>
+    <li>We do not yet delete the other records described above on a fixed schedule. Usage, billing and compliance audit records are kept so that we can bill, prevent abuse and show what the compliance gate decided; account records, the apps that registered themselves and the link between a hashed email address and a paid account are kept while the account or the service exists; opt-outs are kept indefinitely because that is what makes them enforceable.</li>
+    <li>To have your records deleted, email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>; we respond within 30 days. Billing and tax records can only be deleted where the law allows it.</li>
   </ul>
 
   <h2>9. Your rights</h2>
-  <p>You may request access, correction, deletion, restriction, or
-  portability of your data. EU/UK residents may also lodge a complaint
-  with their supervisory authority. Email
-  <a href="mailto:{PRIVACY_EMAIL}">{PRIVACY_EMAIL}</a> &mdash; we respond
-  within 30 days.</p>
+  <p>You may ask for access to, correction, deletion, restriction or portability of your data. Residents of the EU and UK may also complain to their supervisory authority. We do not sell personal information, including for California residents. Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>; we respond within 30 days.</p>
 
-  <h2>10. CCPA notice (California residents)</h2>
-  <p>We do not sell personal information. You may request what we hold
-  about you and ask for deletion at the address above.</p>
+  <h2>10. Children</h2>
+  <p>The service is for adults (see the Terms of Service) and is not directed at children. We do not knowingly collect data from them.</p>
 
-  <h2>11. Children</h2>
-  <p>The Service is not directed at children under 16. We do not
-  knowingly collect data from them.</p>
-
-  <h2>12. Changes</h2>
-  <p>Material changes to this policy will be announced on this page at
-  least 30 days before they take effect.</p>
+  <h2>11. Changes</h2>
+  <p>We will update this page when our practices change and adjust the date above. Material changes will be noted on this page.</p>
 </article>
 """
     return page("Privacy Policy", body, active="privacy",
-                description=f"{BRAND} privacy policy. PII stored as SHA-256 hash only. EU-hosted.")
+                description=f"{BRAND} privacy policy: what is collected, who receives it, where it is processed and how long it is kept.")
 
 
 # ---------------------------------------------------------------------------
