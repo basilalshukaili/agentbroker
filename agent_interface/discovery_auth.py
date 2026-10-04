@@ -77,23 +77,41 @@ def protocol_versions() -> dict:
     }
 
 
+# How a registration style from `oauth_block()["client_registration"]` reads in a sentence. A style the router
+# advertises that is not in this table is named as it is, never dropped.
+_REGISTRATION_PHRASES = {
+    "client_id_metadata_document": "with a Client ID Metadata Document",
+    "dynamic_client_registration": "by dynamic registration",
+}
+
+
 def llms_txt_sign_in_lines(base_url: str) -> list:
-    """The /llms.txt paragraph about the sign-in, or [] when it is switched off."""
+    """The /llms.txt paragraph about the sign-in, or [] when it is switched off.
+
+    The registration styles and the PKCE methods are read from the block, which reads them from the router's metadata:
+    a router that drops dynamic registration, or moves PKCE off S256, changes this paragraph with it.
+
+    "Free" is not "keyless" (core/tool_auth.py): two tools cost nothing and still refuse an anonymous call. So the
+    paragraph names the tools that need an account and says of every other tool that it works without one."""
     block = oauth_block()
     if block is None:
         return []
     needs = ", ".join(f"`{t}`" for t in block["tools_that_need_an_account"])
+    styles = " or ".join(_REGISTRATION_PHRASES.get(r, f"as `{r}`") for r in block["client_registration"])
+    registers = f"registers {styles}, " if styles else ""
+    methods = ", ".join(f"`{m}`" for m in block["code_challenge_methods"])
+    flow = "runs the authorization-code flow" + (f" with PKCE ({methods})" if methods else "")
     return [
         "### Sign in with OAuth (MCP authorization)",
         "",
         "A client that supports MCP authorization can get a key without anyone handling one. It discovers "
         f"`{block['protected_resource_metadata_url']}` (RFC 9728), reads the authorization server from it "
-        f"(`{block['authorization_server_metadata_url']}`, RFC 8414), registers with a Client ID Metadata Document "
-        "or by dynamic registration, and runs the authorization-code flow with PKCE (`S256`). The person is asked "
+        f"(`{block['authorization_server_metadata_url']}`, RFC 8414), {registers}and {flow}. The person is asked "
         "for an email address and presses Confirm on a one-time link we send there; there is no password. The access "
         f"token is an Agent-Identity key, so it also works as `Authorization: Bearer <token>` at `{base_url}/mcp`.",
         "",
-        f"Tools that need an account: {needs}. The free tools never need a sign-in. "
+        f"Tools that need an account: {needs}. Every other tool works without a key or a sign-in "
+        "(the premium data tools within a daily quota). "
         "Sign-in and the key-by-email path above give the same kind of key.",
         "",
     ]

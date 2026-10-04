@@ -539,7 +539,10 @@ def get_server_card() -> dict:
         "required": False,
         "schemes": ["bearer"],
         "header": "X-Agent-Identity",
-        "note": "The free tools need no key and no sign-in; a tool that needs an account refuses an anonymous call.",
+        # "free" is not "keyless" (core/tool_auth.py): two tools cost nothing and still refuse an anonymous call, and the
+        # tools list below marks them requiresKey. The note speaks of that field, not of price.
+        "note": ("A tool marked requiresKey refuses an anonymous call; every other tool works without a key or a "
+                 "sign-in (the premium data tools within a daily quota)."),
     }
     oauth = discovery_auth.oauth_block()
     if oauth is not None:

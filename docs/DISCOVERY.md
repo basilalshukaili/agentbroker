@@ -31,7 +31,7 @@ makes a claim while doing it, which is the opposite of what a directory score me
 |---|---|---|---|
 | `/.well-known/mcp/server-card.json` | always (SEP-1649 draft shape, derived) | | origin deploy |
 | `/.well-known/glama.json` | `GLAMA_CLAIM_TOKEN` is set and well formed | 404 | origin deploy **and the founder's token** |
-| `/.well-known/x402.json` | `/.well-known/x402` is (same bytes) | 404 | origin deploy, **and** branch `feat/x402-advertise-20261003` for the document itself |
+| `/.well-known/x402.json` | `/.well-known/x402` is (the same answer: its own handler is run) | 404, the primary's own | origin deploy, **and** branch `feat/x402-advertise-20261003` for the document itself |
 | `/.well-known/mpp`, `/.well-known/payment-manifest` | never | 404 | nothing: we implement neither |
 | OAuth block in `mcp.json`, the discovery card, `llms.txt`, the card | `OAUTH_CONNECT_ENABLED` is not off | omitted | origin deploy |
 
@@ -56,10 +56,19 @@ and is unchanged.
 
 ### x402.json
 
-The same document as `/.well-known/x402`, byte for byte, or 404 whenever that is. Its one writer is
-`billing.x402_gate.discovery_document` (branch `feat/x402-advertise-20261003`), which returns nothing unless the gate
-accepts payment. On a build without that function the alias is a 404, and it starts answering the moment that branch is
-merged, with no further change. `mpp` and `payment-manifest` are deliberately not aliased.
+The same answer as `/.well-known/x402`: the 200 document byte for byte, and the 404 body as well. The alias builds nothing: it
+runs the primary route's own handler (`well_known_x402` in `main.py`, added by branch `feat/x402-advertise-20261003`, which asks
+`billing.x402_gate.discovery_document` and raises a 404 unless the gate accepts payment), so there is one writer of both
+answers and they cannot differ. On a build with no such route there is nothing to alias; the answer is the framework's own 404,
+which is also what `/.well-known/x402` answers there, so the two still match. It starts answering the moment that branch is
+merged, with no further change. If the handler fails for a reason of its own the alias is a 404 and the log records the
+exception TYPE only (never its message). `mpp` and `payment-manifest` are deliberately not aliased.
+
+An earlier version of the alias called `discovery_document` itself and answered its own `{"detail": "Not Found"}` for the 404
+case. In a scratch merge with the x402 branch the primary's 404 body names the host, so the two differed, and the live
+verifier (which compared bytes) failed a correct system. Found in review on 2026-10-04; the tests now register the primary
+route exactly as that branch writes it and compare status and bytes unconditionally, in every state, and the verifier
+compares bytes only where there is a document (two 404s are the same answer whatever their bodies say).
 
 ## Release 1 reaches the other documents
 
@@ -69,12 +78,37 @@ still said "get a key by email" and named no protocol version. They now carry on
 the router's metadata; the tools that need an account from `core/tool_auth.py`) and the protocol versions (the list
 `server/discover` answers, split into the modern era and the legacy era that opens with `initialize`).
 
+Which document carries which: the sign-in is in `/.well-known/mcp.json` (`auth.oauth2`), the discovery card
+`/.well-known/agent-service` (`auth.oauth2`), the server card and `/llms.txt`; the protocol versions are in
+`/.well-known/mcp.json` (`protocol_versions`), the server card and `/llms.txt`. **The discovery card carries the sign-in only:
+it has no protocol-version field**, and `live_verify_discovery.py --only documents` does not look for one there.
+
+The sentences added to the card and to `/llms.txt` say "a tool marked `requiresKey`" and "every other tool", never "the free
+tools": free (costs nothing) and keyless (needs no key) are different sets (`core/tool_auth.py`), and two tools are in the
+first but not the second (`get_conversation`, `import_booking_url`).
+
 Deliberately **not** done, because it would be a claim the system cannot back: no document names Claude, ChatGPT, Grok or
 Muse (docs/OAUTH-CONNECT.md "Not done here": nothing is quoted about an assistant before it has been walked through live),
 and the generated registry files (`server.json`, `smithery.yaml`, `glama.json`, `registry/*`) are unchanged, because the
 registry schema has no place for OAuth and their counts were re-checked against the running server (23 tools, 14 usable
 without a key). The edge snapshot `edge/src/snapshots/mcp.json` was regenerated with
 `scripts/refresh_edge_snapshots.py --local-routes mcp.json`; the edge worker is not in the live path.
+
+**Before the edge worker is ever put in the path:** the snapshot is compiled with `OAUTH_CONNECT_ENABLED` at its default (on)
+and carries `auth.oauth2` and `protocol_versions` as static text, and the worker serves its embedded snapshot when its KV is
+empty. If it were in the path while the origin ran with `OAUTH_CONNECT_ENABLED=0`, it would advertise a sign-in the origin
+answers 404 for. Either compile the snapshot per switch state, or have the refresh script refuse to compile `oauth2` unless
+the target deployment's switch is on. Today public GETs to `api.hatchloop.dev/.well-known/mcp.json`, `/llms.txt` and
+`/.well-known/agent-service` carry no `x-edge-source` header (only `Via: Caddy`), so the worker is not serving them.
+
+### OAUTH_ISSUER must equal PUBLIC_BASE_URL
+
+The card's `protected_resource_metadata_url` is built from the OAuth issuer; its `transport.endpoint` is built from the public
+base URL. They are the same host in every deployment so far (`OAUTH_ISSUER` is unset and defaults to the API host), and the
+release-1 401 challenge builds its metadata URL from the issuer by the same design. A deployment that set `OAUTH_ISSUER` to a
+different host would publish a protected-resource document whose `resource` differs from the URL the card tells a client to
+connect to, which RFC 9728 says to refuse. Treat setting them apart as a conscious change that moves the card with it;
+`test_the_cards_sign_in_url_is_on_the_host_it_tells_a_client_to_connect_to` fails the day the defaults stop matching.
 
 ## The site-host decision: Caddy route, not a Next.js rewrite change
 
@@ -102,7 +136,9 @@ straight to the container with Host intact. **Caddy**, because it is the way thi
 (`mcp_direct`, `mcp_retired`: one installer, one probe list, automatic restore on failure, a rollback that needs no site
 deploy); the site is a separate repository that auto-deploys its working tree every 30 minutes, so an edit there ships on a
 timer instead of as a decision; it removes the Next.js hop from discovery (the hop that returned 502 whenever the site
-restarted, before `mcp_direct`); and the origin learns the host from the one header a query string cannot forge.
+restarted, before `mcp_direct`); and with Host left alone the origin sees the host the client actually asked on. (It builds
+`resource` from that Host, or from a `?host=` hint which it honours first; either way only from a closed list of known hosts,
+so nothing a caller sends can name a host that is not ours. The 401 challenge uses the hint on purpose.)
 
 Scope is the protected-resource family only (`/.well-known/oauth-protected-resource` and `/*` under it): the only discovery
 document that depends on Host. Every other `/.well-known/*` path is Host-independent and keeps going through the rewrite, which
@@ -146,4 +182,6 @@ checks the file from outside. Until then 404 is correct and the 67-a-day checker
   protected-resource document is how a client finds the issuer.
 * The A2A card still declares `streaming` and `pushNotifications` that `message/send` does not honour (verdict item A6).
 * The site's own `/llms.txt` and `/llms-install.md` are Next.js routes in the site repository, not this origin.
+* An older sentence in this origin's `/llms.txt` install paragraph ("no key is needed for the free tools") predates this
+  branch and carries the same free/keyless ambiguity; it is outside this item and was left as it is.
 * "Tolerate junk after `/mcp/agent-broker`": those are pageviews on the site, answered by Next.js.

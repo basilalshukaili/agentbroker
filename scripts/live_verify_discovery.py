@@ -17,7 +17,8 @@ secret. Exit 0 only when every requested check passes.
                    the server speaks, and say the same thing as the card.
   glama            /.well-known/glama.json is either a 404 (no claim token is configured: honest) or exactly
                    {"$schema", "claim"} with a well-formed token, on both hosts.
-  x402             /.well-known/x402.json is the same answer as /.well-known/x402: both 404, or both 200 and byte-identical.
+  x402             /.well-known/x402.json is the same answer as /.well-known/x402: the same status, and byte-identical
+                   where that status is 200 (two 404s are the same answer whatever their bodies say).
   not_implemented  mpp and payment-manifest stay 404: protocols we do not implement are not aliased to anything.
 """
 from __future__ import annotations
@@ -211,7 +212,10 @@ def check_x402(ctx: dict) -> dict:
     for label, host in (("api", ctx["base"]), ("site", ctx["site"])):
         a = http("GET", f"{host}/.well-known/x402")
         b = http("GET", f"{host}/.well-known/x402.json")
-        rows[label] = {"x402": a[0], "x402_json": b[0], "identical": a[3] == b[3] and a[0] == b[0]}
+        # What a scanner acts on: the status always, and the bytes where there is a document. A 404 carries no claim,
+        # so two 404s are the same answer whatever their bodies say (the primary names the host, the framework does not).
+        identical = a[0] == b[0] and (a[0] != 200 or a[3] == b[3])
+        rows[label] = {"x402": a[0], "x402_json": b[0], "identical": identical}
     ok = all(r["identical"] and r["x402"] in (200, 404) for r in rows.values())
     return check(ok, rows=rows, note="404 on both is correct while the rail is off or this build has no x402 document")
 
@@ -241,9 +245,16 @@ def main(argv: list) -> int:
         print(f"unknown check(s): {', '.join(unknown)}")
         return 2
     ctx = {"base": args.base.rstrip("/"), "site": args.site.rstrip("/")}
-    ctx["doors"] = _doors(ctx["base"])
+    doors_error = ""
+    try:
+        ctx["doors"] = _doors(ctx["base"])
+    except Exception as exc:  # noqa: BLE001 - an unreachable host is a failed check with its reason, not a traceback
+        ctx["doors"] = []
+        doors_error = f"{type(exc).__name__}: {exc}"[:300]
     receipt: dict = {"checked_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "base": ctx["base"], "site": ctx["site"],
                      "doors": ctx["doors"], "results": {}}
+    if doors_error:
+        receipt["doors_error"] = doors_error
     for name in wanted:
         t0 = time.time()
         try:

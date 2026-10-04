@@ -166,7 +166,7 @@ def test_the_card_describes_the_sign_in_from_the_oauth_router_not_from_a_copy(cl
     assert asm.json()["client_id_metadata_document_supported"] is True and "registration_endpoint" in asm.json()
     assert oauth["tools_that_need_an_account"] == sorted(tool_auth.TOOLS_REQUIRING_KEY)
     assert card["authentication"]["header"] == "X-Agent-Identity"
-    assert card["authentication"]["required"] is False, "the free tools need no sign-in at all"
+    assert card["authentication"]["required"] is False, "the keyless tools need no sign-in at all"
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,66 @@ def test_llms_txt_explains_the_sign_in_and_the_new_handshake(client):
 def test_llms_txt_keeps_the_key_by_email_path_beside_the_sign_in(client):
     text = client.get("/llms.txt").text
     assert "POST https://api.hatchloop.dev/keys/request" in text and "X-Agent-Identity" in text
+
+
+def _sign_in_section(client) -> str:
+    return client.get("/llms.txt").text.split("Sign in with OAuth", 1)[1].split("\n## ", 1)[0]
+
+
+def test_the_new_sentences_never_equate_free_with_keyless(client):
+    """core/tool_auth.py: "Free and keyless are NOT the same set, and conflating them is its own bug". Two tools cost
+    nothing and still refuse an anonymous call, so a sentence that says "the free tools need no key" is false of them,
+    and the card (which marks both requiresKey) would contradict its own note."""
+    costs_nothing_needs_key = sorted(o["name"] for o in tool_auth._ops()
+                                     if tool_auth._basis(o) == "free" and tool_auth.requires_key(o["name"]))
+    assert costs_nothing_needs_key, "the premise of this test: some tool is free AND needs a key"
+    card = client.get(CARD).json()
+    for name, text in (("card note", card["authentication"]["note"]), ("llms.txt sign-in", _sign_in_section(client))):
+        assert not re.search(r"\bfree tools?\b", text, re.I), f"{name} says 'free tools': {text!r}"
+    keyed = {t["name"] for t in card["tools"] if t["requiresKey"]}
+    assert set(costs_nothing_needs_key) <= keyed, "the card marks them requiresKey, so its note must be able to say so"
+    # and the referent of what the llms.txt paragraph does say is the one set tool_auth publishes
+    assert tool_auth.usable_without_key() + tool_auth.needs_key() == tool_auth.total_tools()
+
+
+def test_the_llms_txt_sign_in_names_the_methods_the_router_advertises_not_a_typed_list(client, monkeypatch):
+    """The prose is read from the same metadata the block is, so a router that drops dynamic registration or moves
+    PKCE off S256 changes the paragraph with it instead of leaving it true only by coincidence."""
+    from agent_interface.oauth import router as oauth_router
+    real = oauth_router.authorization_server_metadata
+    default = _sign_in_section(client)
+    assert "Client ID Metadata Document" in default and "dynamic registration" in default and "`S256`" in default
+
+    def only_plain_no_registration():
+        m = dict(real())
+        m.pop("registration_endpoint", None)
+        m["client_id_metadata_document_supported"] = False
+        m["code_challenge_methods_supported"] = ["plain"]
+        return m
+    monkeypatch.setattr(oauth_router, "authorization_server_metadata", only_plain_no_registration)
+    text = _sign_in_section(client)
+    assert "S256" not in text and "`plain`" in text
+    assert "dynamic registration" not in text and "Client ID Metadata Document" not in text
+
+    def only_dynamic():
+        m = dict(real())
+        m["client_id_metadata_document_supported"] = False
+        return m
+    monkeypatch.setattr(oauth_router, "authorization_server_metadata", only_dynamic)
+    text = _sign_in_section(client)
+    assert "dynamic registration" in text and "Client ID Metadata Document" not in text
+
+
+def test_the_cards_sign_in_url_is_on_the_host_it_tells_a_client_to_connect_to(client):
+    """OAUTH_ISSUER and PUBLIC_BASE_URL are the same host today and the card derives its protected-resource URL from the
+    first and its endpoint from the second. Pinned, not assumed: a deployment that separates them would hand a client
+    a `resource` that differs from the URL it connected to (RFC 9728 says refuse), so it must be a conscious change
+    (docs/DISCOVERY.md, "OAUTH_ISSUER must equal PUBLIC_BASE_URL")."""
+    from agent_interface.oauth import settings
+    card = client.get(CARD).json()
+    assert settings.issuer() == BASE
+    assert card["transport"]["endpoint"] == f"{settings.issuer()}/mcp"
+    assert card["authentication"]["oauth2"]["protected_resource_metadata_url"].startswith(settings.issuer() + "/")
 
 
 def test_with_the_sign_in_switched_off_no_document_mentions_it(client, monkeypatch):
@@ -292,39 +352,111 @@ def test_the_token_is_an_optional_variable_a_deploy_does_not_require():
 # ---------------------------------------------------------------------------
 
 DOC = {"version": 1, "x402Version": 2, "resources": ["https://api.hatchloop.dev/mcp"], "payTo": "0xabc"}
+X402 = "/.well-known/x402"
+X402_JSON = "/.well-known/x402.json"
 
 
-def test_the_alias_serves_the_x402_document_byte_for_byte(client, monkeypatch):
+@pytest.fixture
+def primary_route():
+    """The route feat/x402-advertise-20261003 (and feat/x402-honesty-20261004) add to main.py, registered here exactly
+    as they write it: it asks billing.x402_gate.discovery_document() and raises a 404 whose detail names the host.
+    This base has no such route, so the tests that need the integrated state register it and take it away again."""
+    from fastapi import HTTPException
+    from billing import x402_gate
+
+    async def well_known_x402():
+        doc = x402_gate.discovery_document()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="x402 is not enabled on this host")
+        return doc
+
+    main.app.add_api_route(X402, well_known_x402, methods=["GET"], include_in_schema=False)
+    route = main.app.router.routes[-1]
+    yield route
+    main.app.router.routes.remove(route)
+
+
+def _pair(client):
+    return client.get(X402), client.get(X402_JSON)
+
+
+def test_the_alias_serves_the_x402_document_byte_for_byte(client, monkeypatch, primary_route):
     from billing import x402_gate
     monkeypatch.setattr(x402_gate, "discovery_document", lambda: dict(DOC), raising=False)
-    r = client.get("/.well-known/x402.json")
-    assert r.status_code == 200 and r.json() == DOC
-    assert r.headers["content-type"].startswith("application/json")
-    assert client.head("/.well-known/x402.json").status_code == 200
-    primary = client.get("/.well-known/x402")
-    if primary.status_code == 200:                       # present once feat/x402-advertise-20261003 is merged
-        assert primary.content == r.content, "the alias and the document it aliases must never differ"
+    primary, alias = _pair(client)
+    assert primary.status_code == 200 and alias.status_code == 200 and alias.json() == DOC
+    assert alias.content == primary.content, "the alias and the document it aliases must never differ"
+    assert alias.headers["content-type"] == primary.headers["content-type"]
+    assert client.head(X402_JSON).status_code == 200
 
 
-def test_the_alias_is_a_404_whenever_the_document_is_none(client, monkeypatch):
+def test_the_alias_is_the_primarys_own_404_byte_for_byte_when_the_rail_is_off(client, monkeypatch, primary_route):
+    """The 404 case is part of the claim ("the same document as /.well-known/x402, or 404 whenever that is"). The
+    integrated primary answers {"detail": "x402 is not enabled on this host"}; a different body on the alias is a
+    second writer of the same answer, which is exactly what the live verifier would then fail on."""
     from billing import x402_gate
     monkeypatch.setattr(x402_gate, "discovery_document", lambda: None, raising=False)
-    assert client.get("/.well-known/x402.json").status_code == 404
+    primary, alias = _pair(client)
+    assert primary.status_code == 404 and primary.json() == {"detail": "x402 is not enabled on this host"}, (
+        "the fixture must be the sibling branch's route, or this test proves nothing")
+    assert alias.status_code == 404
+    assert alias.content == primary.content, f"alias {alias.content!r} != primary {primary.content!r}"
 
 
-def test_the_alias_is_a_404_on_a_build_that_has_no_x402_document(client, monkeypatch):
+def test_the_alias_is_the_same_404_on_a_build_with_no_primary_route(client, monkeypatch):
+    """This base: there is no /.well-known/x402 route at all, so the primary answers the framework's own 404."""
+    primary, alias = _pair(client)
+    assert primary.status_code == 404 and alias.status_code == 404
+    assert alias.content == primary.content
+
+
+def test_the_alias_never_serves_a_document_the_primary_does_not(client, monkeypatch):
+    """A discovery_document() function with no route behind it is not a published document: the alias answers
+    whatever the primary path answers, so it can never be a 200 where /.well-known/x402 is a 404."""
     from billing import x402_gate
-    monkeypatch.delattr(x402_gate, "discovery_document", raising=False)
-    assert client.get("/.well-known/x402.json").status_code == 404
+    monkeypatch.setattr(x402_gate, "discovery_document", lambda: dict(DOC), raising=False)
+    primary, alias = _pair(client)
+    assert primary.status_code == 404 and alias.status_code == 404
+    assert alias.content == primary.content
 
 
-def test_a_document_that_cannot_be_built_is_a_404_not_a_500(client, monkeypatch):
+def test_the_alias_answers_what_the_primary_does_whatever_the_state(client, monkeypatch, primary_route):
+    """The invariant itself, over every state the document can be in: status and bytes equal."""
+    from billing import x402_gate
+    for build in (lambda: dict(DOC), lambda: None):
+        monkeypatch.setattr(x402_gate, "discovery_document", build, raising=False)
+        primary, alias = _pair(client)
+        assert (alias.status_code, alias.content) == (primary.status_code, primary.content)
+
+
+def test_a_document_that_cannot_be_built_is_a_404_not_a_500(client, monkeypatch, primary_route):
     from billing import x402_gate
 
     def boom():
         raise RuntimeError("config unreadable")
     monkeypatch.setattr(x402_gate, "discovery_document", boom, raising=False)
-    assert client.get("/.well-known/x402.json").status_code == 404
+    assert client.get(X402_JSON).status_code == 404
+
+
+def test_a_failing_document_is_logged_by_type_never_by_message(client, monkeypatch, primary_route, caplog):
+    """The rule for this module is length only, never the value (the glama warning obeys it): a builder that raises
+    with something private in its message must not put it in the log, and no traceback carries it either."""
+    import logging
+    from billing import x402_gate
+    marker = "SYNTHETIC_PRIVATE_MARKER"
+
+    def boom():
+        raise RuntimeError(marker)
+    monkeypatch.setattr(x402_gate, "discovery_document", boom, raising=False)
+    with caplog.at_level(logging.DEBUG, logger="smb_broker.discovery"):
+        assert client.get(X402_JSON).status_code == 404
+    mine = [r for r in caplog.records if r.name == "smb_broker.discovery"]
+    assert mine, "the failure must still be logged: a discovery file that fails silently is its own problem"
+    assert any("x402_discovery_document_failed" in r.getMessage() and "RuntimeError" in r.getMessage() for r in mine)
+    for r in mine:
+        assert marker not in r.getMessage() and marker not in str(r.args)
+        assert r.exc_info is None, "no traceback: it prints the exception message"
+    assert marker not in caplog.text
 
 
 def test_payment_manifests_we_do_not_implement_stay_404(client):

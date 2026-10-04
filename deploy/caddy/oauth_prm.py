@@ -29,7 +29,9 @@ document family from Caddy straight to the container with Host intact. Caddy, be
   * it takes the Next.js hop out of discovery: that hop returned 502s whenever the site restarted (0.26% of MCP POSTs, at
     :27-:28 and :57-:58 past the hour, before mcp_direct), and a Connect that fails at the first request looks like a
     server that does not exist;
-  * the origin learns the host from the one header that cannot be forged by a query string.
+  * left alone, Host is the host the client actually asked on. The origin builds `resource` from it (or from a `?host=`
+    hint, which it honours first), and in both cases only from a closed list of known hosts
+    (agent_interface/oauth/resources.py), so nothing a caller sends can name a host that is not ours.
 
 SCOPE IS ONE DOCUMENT FAMILY, on purpose. The protected-resource document is the only discovery document that depends
 on Host. Every other /.well-known/* path (mcp.json, agent-card.json, the authorization-server metadata, the glama and

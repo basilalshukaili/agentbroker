@@ -16,9 +16,12 @@ would silence the scanner and make a claim in doing it, which is the opposite of
   /.well-known/mcp/server-card.json  An MCP server card (SEP-1649, a DRAFT: not part of the 2026-07-28 revision, whose
                                    `server/discover` is the in-protocol answer). Built from the same sources as the
                                    handshake and tools/list (agent_interface/well_known.get_server_card).
-  /.well-known/x402.json           The same document as /.well-known/x402, byte for byte, or 404 while that is. The one
-                                   writer is billing.x402_gate.discovery_document (branch feat/x402-advertise-20261003):
-                                   on a build without it this is a 404, and it lights up when that function exists.
+  /.well-known/x402.json           The same ANSWER as /.well-known/x402: status and bytes, the 200 document and the 404
+                                   body alike, because the alias does not build anything - it runs the primary route's own
+                                   handler (the route feat/x402-advertise-20261003 adds to main.py, which asks
+                                   billing.x402_gate.discovery_document). On a build with no such route there is nothing to
+                                   alias and the answer is the framework's own 404, which is also what the primary path
+                                   answers there. It lights up when that route exists, and never before it.
                                    `mpp` and `payment-manifest` are probed too (about 100 times in four days) and are
                                    deliberately NOT aliased: we implement neither, and an answer would be a claim.
 """
@@ -29,8 +32,9 @@ import os
 import re
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from fastapi.routing import APIRoute
 
 log = logging.getLogger("smb_broker.discovery")
 
@@ -39,6 +43,8 @@ router = APIRouter()
 GLAMA_SCHEMA = "https://glama.ai/mcp/schemas/connector.json"
 # Glama's published shape: the prefix and exactly 32 characters of [A-Za-z0-9_-].
 _GLAMA_TOKEN = re.compile(r"^glama_claim_[A-Za-z0-9_-]{32}$")
+
+X402_PRIMARY_PATH = "/.well-known/x402"
 
 _PUBLIC = {"Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*"}
 _warned_malformed = False
@@ -80,21 +86,28 @@ async def server_card():
     return JSONResponse(get_server_card(), headers=_PUBLIC)
 
 
-def x402_document() -> Optional[dict]:
-    """The document /.well-known/x402 serves, or None when this host does not take x402 payment (or this build has
-    no such document). Never built here: a second builder is a second place to disagree about the address."""
-    try:
-        from billing import x402_gate
-        build = getattr(x402_gate, "discovery_document", None)
-        return build() if callable(build) else None
-    except Exception:                                      # noqa: BLE001 - a discovery file must not 500
-        log.exception("x402_discovery_document_failed")
-        return None
+def _x402_primary_route(app) -> Optional[APIRoute]:
+    """The app's own GET route for /.well-known/x402, or None on a build that has none."""
+    for route in app.router.routes:
+        if isinstance(route, APIRoute) and route.path == X402_PRIMARY_PATH and "GET" in route.methods:
+            return route
+    return None
 
 
 @router.api_route("/.well-known/x402.json", methods=["GET", "HEAD"], include_in_schema=False)
-async def x402_alias():
-    doc = x402_document()
-    if doc is None:
-        return _not_found()
-    return JSONResponse(doc)
+async def x402_alias(request: Request):
+    """The same answer as /.well-known/x402, by running that route's own handler rather than building a document
+    here: one writer for the 200 body AND the 404 body, so the two can never be told apart (the live verifier
+    compares them, and a second writer of a 404 detail is how it failed a correct system). With no primary route
+    there is nothing to alias, and the answer is the one the primary path gets from the framework."""
+    primary = _x402_primary_route(request.app)
+    if primary is None:
+        raise HTTPException(status_code=404)
+    try:
+        return await primary.get_route_handler()(request)
+    except HTTPException:
+        raise                                              # the primary's own 404 (or any status it chose), unchanged
+    except Exception as exc:                               # noqa: BLE001 - a discovery file must not 500
+        # The type only, never the message or a traceback: what a builder says in an exception is not ours to log.
+        log.error("x402_discovery_document_failed type=%s", type(exc).__name__)
+        raise HTTPException(status_code=404)
