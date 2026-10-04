@@ -1,0 +1,154 @@
+{
+ "tool": "screen_sanctions",
+ "arguments": {
+  "name": "Acme Widgets Ltd"
+ },
+ "receipt": {
+  "operation_id": "26746faf-e7db-44c3-b95f-3ae7811d1bd6",
+  "status": "success",
+  "reason_code": "partial_screening",
+  "human_message": "No matches on the screened lists for 'Acme Widgets Ltd'. Screened: OFAC-SDN (US Treasury Specially Designated Nationals, published by sanctionslistservice.ofac.treas.gov; fetched fresh). NOTE: this screen matches on exact name-token equality only, so a variant spelling, transliteration, or a missing or extra middle name can read as clean. Treat this as 'nothing matched the name as written', not as 'this party is not sanctioned'.. NOTE: some sources were unavailable -- screening may be incomplete.",
+  "result": {
+   "matched": false,
+   "screening_status": "partial",
+   "matches": [],
+   "lists_screened": [
+    "OFAC-SDN (US Treasury Specially Designated Nationals, published by sanctionslistservice.ofac.treas.gov; fetched fresh)"
+   ],
+   "sources_queried": [
+    "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV",
+    "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ALT.CSV",
+    "EU-CONSOLIDATED (European Commission financial sanctions) (local index, age unknown)",
+    "UK-SANCTIONS (FCDO UK Sanctions List) (local index, age unknown)"
+   ],
+   "screened_at": "2026-10-04T02:55:05Z",
+   "disclaimer": "Informational screening only, not legal advice; confirm against the official source before acting on any result. Negative results do not guarantee the party is not sanctioned on lists not queried.",
+   "sources_unavailable": [
+    "EU-CONSOLIDATED (European Commission financial sanctions) (could not read when this index was last refreshed, so its age cannot be checked against the 7-day limit; NOT screened on this call)",
+    "UK-SANCTIONS (FCDO UK Sanctions List) (could not read when this index was last refreshed, so its age cannot be checked against the 7-day limit; NOT screened on this call)"
+   ],
+   "compliance_receipt": {
+    "payload": {
+     "receipt_version": "agentbroker-compliance-receipt/1",
+     "issuer": {
+      "service": "AgentBroker",
+      "domain": "hatchloop.dev",
+      "service_version": "0.2.13"
+     },
+     "tool": "screen_sanctions",
+     "operation_id": "26746faf-e7db-44c3-b95f-3ae7811d1bd6",
+     "issued_at": "2026-10-04T02:55:06Z",
+     "asserts": "AgentBroker screened the name recorded here against the sanctions list copies described in evidence.data_provenance, at the instant recorded here, using the matching method recorded here, and returned the outcome recorded here. Every field is a statement about what this service did, not about the party screened.",
+     "does_not_assert": [
+      "It does NOT assert that the subject is not sanctioned. A 'clean' outcome means the lists named in evidence.lists_screened returned no confirmed match against the copies whose ages are recorded here. That is all it means.",
+      "It does not assert coverage of any list absent from evidence.lists_screened. The UN Consolidated List is never screened, and PEP databases, adverse media, export-control party lists and internal watchlists are outside this tool entirely.",
+      "It does not assert that the list copies matched the publishers' live lists at the moment of screening. It records how old each copy was so that judgement stays with you.",
+      "It does not assert identity. A match is a NAME similarity produced by an uncalibrated matcher with no name-frequency data behind it - not a determination that your counterparty is the listed party - and a non-match does not rule out an alias, transliteration or spelling that does not appear in the copies screened.",
+      "It is not legal advice, not a KYC/AML clearance, and not a sanctions determination by any authority."
+     ],
+     "subject": {
+      "name_screened": "Acme Widgets Ltd",
+      "country_hint": null,
+      "entity_type_hint": null
+     },
+     "inputs_sha256": "sha256:0735a21001421a7c43fc1a3f7a450a86840e2429014e53f196bda39ef37370fa",
+     "inputs_binding": "sha256 over the canonical bytes of the RESOLVED tool arguments (after defaults and inference), keyed by the tool's own parameter names, using canonical_form below.",
+     "evidence": {
+      "screened_at": "2026-10-04T02:55:05Z",
+      "data_provenance": [
+       {
+        "list": "OFAC-SDN",
+        "publisher": "US Department of the Treasury, Office of Foreign Assets Control",
+        "sources": [
+         "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV",
+         "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ALT.CSV"
+        ],
+        "licence": "US Government work, public domain",
+        "screened_on_this_call": true,
+        "copy_fetched_hours_ago": 0,
+        "refresh_state": "refreshed_within_ttl",
+        "refresh_ttl_hours": 6,
+        "max_copy_age_days": 7
+       },
+       {
+        "list": "EU-CONSOLIDATED",
+        "publisher": "European Commission",
+        "source": "https://webgate.ec.europa.eu/fsd/fsf/public/files/csvFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw",
+        "licence": "European Commission open-data licence (commercial reuse permitted)",
+        "screened_on_this_call": false,
+        "index_refreshed_on": null,
+        "index_age_days": null,
+        "max_index_age_days": 7,
+        "within_freshness_limit": null
+       },
+       {
+        "list": "UK-SANCTIONS",
+        "publisher": "UK Foreign, Commonwealth & Development Office",
+        "source": "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv",
+        "licence": "Open Government Licence v3.0",
+        "screened_on_this_call": false,
+        "index_refreshed_on": null,
+        "index_age_days": null,
+        "max_index_age_days": 7,
+        "within_freshness_limit": null
+       },
+       {
+        "list": "UN-CONSOLIDATED (UN Security Council)",
+        "publisher": "United Nations Security Council",
+        "screened_on_this_call": false,
+        "reason_not_screened": "No open licence permitting commercial redistribution, so AgentBroker never screens this list. A permanent boundary of the service, not an outage on this call."
+       }
+      ],
+      "lists_screened": [
+       "OFAC-SDN (US Treasury Specially Designated Nationals, published by sanctionslistservice.ofac.treas.gov; fetched fresh)"
+      ],
+      "sources_queried": [
+       "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV",
+       "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ALT.CSV",
+       "EU-CONSOLIDATED (European Commission financial sanctions) (local index, age unknown)",
+       "UK-SANCTIONS (FCDO UK Sanctions List) (local index, age unknown)"
+      ],
+      "sources_unavailable": [
+       "EU-CONSOLIDATED (European Commission financial sanctions) (could not read when this index was last refreshed, so its age cannot be checked against the 7-day limit; NOT screened on this call)",
+       "UK-SANCTIONS (FCDO UK Sanctions List) (could not read when this index was last refreshed, so its age cannot be checked against the 7-day limit; NOT screened on this call)"
+      ],
+      "matching_method": "Exact normalised token-set equality, order-insensitive, and UNCALIBRATED: no name-frequency data, so a partial overlap is never asserted as a finding. Entries sharing some but not all of the query's words are returned as unverified candidates.",
+      "outcome": {
+       "screening_status": "partial",
+       "reason_code": "partial_screening",
+       "confirmed_matches": 0,
+       "unverified_candidates": 0,
+       "confirmed_match_names": []
+      }
+     },
+     "canonical_form": "json.dumps(payload, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=True, allow_nan=False).encode(\"utf-8\")",
+     "response_sha256": "sha256:b2b8a92ee7c5a224cb705a9b07b12f42a24c4ae5a44f3f36d18565c2965b90f0",
+     "response_binding": "sha256 over the canonical bytes of this call's result payload with the 'compliance_receipt' key removed. Recompute it over the response you stored to prove the receipt and the answer belong together."
+    },
+    "integrity": {
+     "payload_sha256": "sha256:90b3f252186e3dc7bb69eadac349eafef59a6ae41019b52b5fd13ff48791777f",
+     "signature_algorithm": null,
+     "signature": null,
+     "key_id": null,
+     "public_key_ed25519_hex": null,
+     "signature_status": "unsigned",
+     "unsigned_reason": "no_signing_key_configured",
+     "what_this_proves": "NOT SIGNED. No signing key is configured on the issuing service, so this receipt carries an integrity hash only. The hash binds these fields to each other and to the response, and detects accidental corruption or a partial copy - it does NOT prove the receipt came from AgentBroker, and anyone who edits the payload can recompute it. Treat this as a self-recorded log entry, not as evidence against a third party."
+    }
+   }
+  },
+  "cost": {
+   "amount": 0.0,
+   "currency": "USD",
+   "basis": "free"
+  },
+  "latency_ms": 359,
+  "channel_used": null,
+  "channel_fallback_chain": [],
+  "estimated_completion_time": null,
+  "next_actions": [],
+  "retriable": false,
+  "trace_id": null,
+  "untrusted_content": null
+ }
+}

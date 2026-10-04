@@ -56,6 +56,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from core import input_limits as _limits
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 
 # ---------------------------------------------------------------------------
@@ -367,9 +368,28 @@ async def handle_map_trade_restriction(
             trace_id=trace_id,
         )
 
+    parties_list: list[str] = [p for p in (parties or []) if p and str(p).strip()]
+    # Refuse the whole call, never screen a cut-down name: a party cut at the limit is a different party, and a
+    # screen of it would read as a screen of the one the caller named. Nothing is screened until every field passes.
+    too_long = (_limits.too_long("product", product_clean, _limits.MAX_PRODUCT_CHARS)
+                or _limits.too_long("origin_country", origin_country, _limits.MAX_COUNTRY_CHARS)
+                or _limits.too_long("hs_code", hs_code, _limits.MAX_HS_CODE_CHARS)
+                or next((m for m in (_limits.too_long("party name", p, _limits.MAX_NAME_CHARS)
+                                     for p in parties_list) if m), None))
+    if too_long:
+        return OutcomeReceipt(
+            operation_id=op_id,
+            status=OperationStatus.FAILURE,
+            reason_code="bad_input",
+            human_message=too_long,
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            retriable=False,
+            trace_id=trace_id,
+        )
+
     origin_clean = origin_country.strip().upper() if origin_country else None
     hs_code_clean = hs_code.strip() if hs_code else None
-    parties_list: list[str] = [p for p in (parties or []) if p and str(p).strip()]
 
     # Bound the fan-out. Each party runs a full concurrent sanctions screen
     # (network + a CPU-heavy CSV scan), and this tool is free and keyless -

@@ -22,8 +22,10 @@ FULL_SERVER_ORIGIN_PATH = "mcp"               # the same server at the origin
 
 
 def _doors() -> tuple:
+    # Not every door: the ChatGPT door (profiles `oauth: False`) is anonymous and must not publish protected-resource
+    # metadata, which would invite a Connect sign-in for tools that need no account.
     from agent_interface import profiles
-    return tuple(sorted(profiles.PROFILES))
+    return profiles.oauth_profiles()
 
 
 def _origins() -> frozenset:

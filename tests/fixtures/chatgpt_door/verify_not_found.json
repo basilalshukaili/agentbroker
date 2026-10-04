@@ -1,0 +1,37 @@
+{
+ "tool": "verify_company_record",
+ "arguments": {
+  "name": "zzz nonexistent company xyz",
+  "country": "US"
+ },
+ "receipt": {
+  "operation_id": "c31597a9-b900-40dc-bae0-a5f04ca4e51e",
+  "status": "success",
+  "reason_code": "not_found",
+  "human_message": "No registry record found for 'zzz nonexistent company xyz' in US. Searched: GLEIF global entity registry, SEC EDGAR. The company may not be a legal entity registered with these free registries.",
+  "result": {
+   "status": "not_found",
+   "queried_name": "zzz nonexistent company xyz",
+   "queried_country": "US",
+   "queried_lei": null,
+   "sources_queried": [
+    "https://api.gleif.org/api/v1/lei-records?filter%5Bentity.legalName%5D=zzz+nonexistent+company+xyz&filter%5Bentity.legalAddress.country%5D=US&page%5Bsize%5D=5",
+    "https://www.sec.gov/files/company_tickers.json"
+   ],
+   "sources_unavailable": []
+  },
+  "cost": {
+   "amount": 0.0,
+   "currency": "USD",
+   "basis": "free"
+  },
+  "latency_ms": 2186,
+  "channel_used": null,
+  "channel_fallback_chain": [],
+  "estimated_completion_time": null,
+  "next_actions": [],
+  "retriable": false,
+  "trace_id": null,
+  "untrusted_content": null
+ }
+}

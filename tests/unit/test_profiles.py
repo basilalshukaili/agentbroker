@@ -121,7 +121,12 @@ def test_every_door_is_materially_lighter_than_the_monolith(profile):
         f"be worth a separate door")
 
 
-@pytest.mark.parametrize("profile", sorted(profiles.PROFILES))
+# A door may opt out of the orientation tools (the ChatGPT door does: preview_cost is a price list and OpenAI does not
+# allow one in a listed plugin; see tests/unit/test_chatgpt_free_door.py). Every other door keeps all four.
+_ORIENTED = sorted(p for p, spec in profiles.PROFILES.items() if spec.get("orientation", True))
+
+
+@pytest.mark.parametrize("profile", _ORIENTED)
 def test_every_door_carries_the_orientation_tools(profile):
     """Whichever door an agent came through it must be able to ask what a call
     cost, poll an async operation, and check we are alive."""
@@ -159,13 +164,18 @@ def test_each_description_fits_the_registry_cap(profile):
     assert len(d) <= 100, f"{profile}: {len(d)} chars"
 
 
-@pytest.mark.parametrize("profile", sorted(profiles.PROFILES))
+@pytest.mark.parametrize("profile", sorted(profiles.listed_profiles()))
 def test_each_name_carries_the_words_an_agent_would_search(profile):
     """The whole reason these exist: registry search matches names. A profile
     named for our brand instead of its capability is invisible again."""
     assert "hatchloop" not in profile.lower()
     assert "broker" not in profile.lower()
     assert len(profile.split("-")) >= 2
+
+
+def test_only_the_chatgpt_door_opts_out_of_the_orientation_tools():
+    """The opt-out is a flag on one door, not a default: a new door that forgets it still carries all four."""
+    assert sorted(set(profiles.PROFILES) - set(_ORIENTED)) == ["chatgpt"]
 
 
 def test_an_unknown_profile_is_refused_not_silently_widened():

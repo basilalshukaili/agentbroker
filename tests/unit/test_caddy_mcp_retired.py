@@ -127,7 +127,9 @@ def test_the_installer_works_the_second_change_through_the_same_flow():
         change = "direct"
 
     mod2, names2 = inst._change(Direct())
-    assert mod2 is md and names2 == sorted(profiles.PROFILES)
+    # The LISTED doors: the ChatGPT door is submitted on api.hatchloop.dev and is not routed on the site (the block is
+    # already applied on the box, so a longer list would not route it, only make `verify` probe a URL nobody serves).
+    assert mod2 is md and names2 == sorted(profiles.listed_profiles())
 
     class FakeConn:
         def __init__(self, text):

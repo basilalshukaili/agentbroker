@@ -461,17 +461,25 @@ def test_recall_through_the_whole_pipeline_over_the_fixture(world):
 
 @pytest.mark.parametrize("hostile", [
     "‏‫أيمن الظواهري‬",   # bidi marks
-    "محمد " * 120,                       # far longer than any name
+    "محمد " * 120,                       # far longer than any name: REFUSED (core/input_limits.py), see below
+    "محمد " * 55,                        # as long as a name may be (275 characters) and still screened
     "ا",                                                # one letter
     "١٢٣٤",                              # Arabic-Indic digits only
     "@@@ الظواهري ###",
     "Zawahiri الظواهري",   # both scripts
     "ــــ",                              # tatweel only
-    "Ayman al-Zawahiri " * 40,                               # long Latin, Arabic structure
+    "Ayman al-Zawahiri " * 40,                               # long Latin, Arabic structure: refused (over the limit)
+    "Ayman al-Zawahiri " * 16,                               # the same, as long as a name may be (288) and screened
     "أيمن\u0000الظواهري",   # NUL inside
 ])
 def test_hostile_input_never_crashes_and_an_arabic_query_is_never_clean(world, hostile):
     r = world.screen(hostile)
+    from core import input_limits
+    if len(hostile.strip()) > input_limits.MAX_NAME_CHARS:
+        # Longer than any name is REFUSED before anything runs, never truncated and never answered "clean": a refusal
+        # is neither a crash nor a clean screen, which is all this test exists to rule out.
+        assert world.receipt.reason_code == "bad_input" and not r
+        return
     assert r.get("screening_status") in ("hit", "candidates", "partial", "not_screened",
                                          "clean"), r.get("screening_status")
     if ss._ar.has_arabic_script(hostile):

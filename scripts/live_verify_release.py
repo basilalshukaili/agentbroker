@@ -3,7 +3,7 @@
 
     python scripts/live_verify_release.py --expect-commit <sha> [--base https://api.hatchloop.dev]
                                            [--site https://hatchloop.dev] [--env-file PATH] [--out receipt.json]
-                                           [--only health,mcp2026,legacy,oauth,sanctions,find_business,labels,retired,payments]
+                                           [--only health,mcp2026,legacy,oauth,sanctions,find_business,labels,retired,payments,chatgpt_door]
 
 What it checks, in this order (each is a function returning {ok, ...evidence}; nothing here prints a secret):
 
@@ -27,6 +27,10 @@ What it checks, in this order (each is a function returning {ok, ...evidence}; n
                  /pricing page and preview_cost for a premium data tool tell one story (nothing offers a rail the
                  descriptor does not list; every listed rail is offered; no credit package is for sale while credits is
                  not a rail; no quota is promised while it is not enforced).
+  chatgpt_door   /mcp/chatgpt (the ChatGPT-only door, agent_interface/no_commerce.py): three tools, a title, an
+                 outputSchema, explicit annotations and `noauth` on each, no pricing or credit wording anywhere it can be
+                 read, no resources or prompts, x402 refused, results without session or timing metadata, not
+                 advertised in llms.txt, no OAuth metadata. Runs one made-up-name screening; never exhausts the ceiling.
 
 Exit 0 only when every requested check passes. Calls place no paid operation and send no message to a person.
 """
@@ -729,11 +733,158 @@ def check_payments(ctx: dict) -> dict:
                  pricing_page_purchase_links=len(_PURCHASE_LINK.findall(pricing_text)) if ps == 200 else None,
                  edge_snapshot_payments_in_step=edge_snapshot_payments_in_step(descriptor),
                  screen_sanctions_preview_usd=cost, problems=problems)
+def check_chatgpt_door(ctx: dict) -> dict:
+    """The deployed ChatGPT door is what the tests say it is. Nothing here sells, buys or sends anything."""
+    from agent_interface import no_commerce
+    url = ctx["base"] + "/mcp/chatgpt"
+    three = {"screen_sanctions", "verify_company_record", "map_trade_restriction"}
+    problems: list = []
+
+    def scan(label: str, obj: Any) -> None:
+        for s in _strings(obj):
+            m = no_commerce.FORBIDDEN_RE.search(s)
+            if m:
+                problems.append(f"{label}: {m.group(0)!r} in {s[max(0, m.start() - 30):m.end() + 30]!r}")
+
+    st, _, init = rpc(url, "initialize", {"protocolVersion": LEGACY_V, "capabilities": {},
+                                          "clientInfo": {"name": "live-verify", "version": "1"}})
+    res = (init or {}).get("result") or {}
+    if st != 200 or (res.get("serverInfo") or {}).get("name") != "chatgpt":
+        problems.append(f"initialize: status {st}, serverInfo {(res.get('serverInfo') or {}).get('name')!r}")
+    if set(res.get("capabilities") or {}) != {"tools"}:
+        problems.append(f"initialize declares {sorted(res.get('capabilities') or {})}, not tools only")
+    scan("initialize", init)
+
+    st, _, disc = rpc(url, "server/discover", {"_meta": {M + "protocolVersion": V}},
+                      headers={"MCP-Protocol-Version": V, "Mcp-Method": "server/discover"})
+    dres = (disc or {}).get("result") or {}
+    if st != 200 or ((dres.get("_meta") or {}).get(M + "serverInfo") or {}).get("name") != "chatgpt" \
+            or set(dres.get("capabilities") or {}) != {"tools"}:
+        problems.append(f"server/discover: status {st}, declares {sorted(dres.get('capabilities') or {})}")
+    scan("server/discover", disc)
+
+    st, _, tl = rpc(url, "tools/list")
+    tools = ((tl or {}).get("result") or {}).get("tools") or []
+    if st != 200 or {t.get("name") for t in tools} != three:
+        problems.append(f"tools/list names {sorted(t.get('name') for t in tools)}")
+    # EXACT values, not "is a bool": a door that said readOnlyHint false and destructiveHint true would have passed.
+    want_hints = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True}
+    for t in tools:
+        a = t.get("annotations") or {}
+        if not (isinstance(t.get("title"), str) and t.get("outputSchema")
+                and all(a.get(h) is v for h, v in want_hints.items())
+                and t.get("securitySchemes") == [{"type": "noauth"}]):
+            problems.append(f"{t.get('name')}: missing title/outputSchema/exact annotations/noauth "
+                            f"(hints {[a.get(h) for h in want_hints]})")
+    from core import input_limits as lim
+    by_name = {t.get("name"): t for t in tools}
+    declared = ((by_name.get("screen_sanctions") or {}).get("inputSchema") or {}).get("properties") or {}
+    if (declared.get("name") or {}).get("maxLength") != lim.MAX_NAME_CHARS:
+        problems.append("screen_sanctions does not declare the name length limit the handler enforces")
+    for t in tools:
+        if str(t.get("description", "")).rstrip().endswith("\u2026"):
+            problems.append(f"{t.get('name')}: description is cut off")
+    scan("tools/list", tl)
+
+    for method, params, empty in (("resources/list", None, "resources"), ("prompts/list", None, "prompts")):
+        _, _, d = rpc(url, method, params)
+        if ((d or {}).get("result") or {}).get(empty) != []:
+            problems.append(f"{method} is not empty")
+    _, _, d = rpc(url, "resources/read", {"uri": "agent-broker://manifest"})
+    if "error" not in (d or {}) or "cost_model" in json.dumps(d or {}):
+        problems.append("resources/read of the manifest was not refused")
+
+    _, _, d = rpc(url, "tools/call", {"name": "preview_cost", "arguments": {}})
+    if "error" not in (d or {}):
+        problems.append("a tool outside the door was not refused")
+    scan("refusal", d)
+
+    _, _, d = rpc(url, "preview_cost https://hatchloop.dev/pricing", {})
+    if ((d or {}).get("error") or {}).get("message") != no_commerce.METHOD_NOT_FOUND:
+        problems.append("an unknown method was not answered in the door's own words")
+    scan("unknown method", d)
+
+    # An over-long name is refused before anything runs (nothing is looked up, nothing is echoed).
+    _, _, d = rpc(url, "tools/call", {"name": "screen_sanctions", "arguments": {"name": "a" * (lim.MAX_NAME_CHARS + 1)}})
+    body = tool_body(d)
+    if body.get("reason_code") != "bad_input" or "aaaa" in json.dumps(body):
+        problems.append(f"an over-long name was not refused as bad_input (reason_code {body.get('reason_code')!r})")
+    scan("over-long input", d)
+
+    # The FULL server must not let a caller pick the door by writing `_profile` in its own request.
+    _, _, d = rpc(ctx["base"] + "/mcp", "tools/list", {"_profile": "chatgpt"})
+    full = {t.get("name") for t in (((d or {}).get("result") or {}).get("tools") or [])}
+    if full <= three:
+        problems.append(f"/mcp let a request choose the ChatGPT door: it listed only {sorted(full)}")
+
+    _, _, d = rpc(url, "tools/call", {"name": "screen_sanctions", "arguments": {"name": "Zzyzx Holdings Quuxland Ltd"},
+                                      "_meta": {"x402/payment": "x"}})
+    body = tool_body(d)
+    if body.get("reason_code") != "request_metadata_not_used":
+        problems.append(f"an x402 attachment was not refused (reason_code {body.get('reason_code')!r})")
+    scan("x402 refusal", d)
+
+    st, _, d = rpc(url, "tools/call", {"name": "screen_sanctions", "arguments": {"name": "Zzyzx Holdings Quuxland Ltd"}})
+    r = (d or {}).get("result") or {}
+    body = tool_body(d)
+    leaky = {"operation_id", "trace_id", "latency_ms", "cost", "compliance_receipt", "next_actions", "channel_used"}
+    found = leaky & set(_keys(body))
+    if st != 200 or r.get("isError") or found or r.get("structuredContent") != body or not body.get("result"):
+        problems.append(f"result: status {st}, isError {r.get('isError')}, leaked keys {sorted(found)}, "
+                        f"structuredContent equal {r.get('structuredContent') == body}")
+    scan("result", body)
+    # The official client SDKs throw when structuredContent does not satisfy the outputSchema the tool declared.
+    try:
+        import jsonschema
+    except ImportError:
+        problems.append("structuredContent was NOT validated against the outputSchema: the jsonschema package is "
+                        "not installed here (a check that cannot run is not a pass)")
+    else:
+        schema = (by_name.get("screen_sanctions") or {}).get("outputSchema")
+        try:
+            jsonschema.validate(r.get("structuredContent"), schema)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"structuredContent does not satisfy the declared outputSchema: {str(exc)[:160]}")
+
+    gs, _, _ = http("GET", url)
+    if gs != 405:
+        problems.append(f"GET {url} answered {gs}, not 405")
+    os_, _, _ = http("GET", ctx["base"] + "/.well-known/oauth-protected-resource/mcp/chatgpt")
+    if os_ != 404:
+        problems.append(f"oauth protected-resource metadata for the door answered {os_}, not 404")
+    ls, _, llms = http("GET", ctx["base"] + "/llms.txt")
+    if ls != 200:
+        problems.append(f"/llms.txt answered {ls}, so 'the door is not advertised there' was not checked")
+    elif "/mcp/chatgpt" in llms:
+        problems.append("the door is advertised in llms.txt")
+    return check(not problems, problems=problems[:12], tools=sorted(t.get("name") for t in tools))
+
+
+def _strings(obj: Any):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k)
+            yield from _strings(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _strings(v)
+
+
+def _keys(obj: Any):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield k
+            yield from _keys(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _keys(v)
 
 
 CHECKS: dict = {"health": check_health, "mcp2026": check_mcp2026, "legacy": check_legacy, "oauth": check_oauth,
                 "sanctions": check_sanctions, "find_business": check_find_business, "labels": check_labels,
-                "retired": check_retired, "payments": check_payments}
+                "retired": check_retired, "payments": check_payments, "chatgpt_door": check_chatgpt_door}
 
 
 def main(argv: list) -> int:
@@ -743,7 +894,9 @@ def main(argv: list) -> int:
     ap.add_argument("--site", default="https://hatchloop.dev")
     ap.add_argument("--env-file", default="")
     ap.add_argument("--out", default="")
-    ap.add_argument("--only", default=",".join(CHECKS))
+    # chatgpt_door is asked for by name: it verifies a door that exists only from the release that adds it, and a
+    # default run against an older build must not fail on a door that build never had.
+    ap.add_argument("--only", default=",".join(n for n in CHECKS if n != "chatgpt_door"))
     ap.add_argument("--skip-email", action="store_true", help="oauth: discovery and the challenge only; send nothing")
     ap.add_argument("--pace", type=float, default=0.0, help="find_business: seconds to wait before each call")
     ap.add_argument("--expect-rails", default=None,

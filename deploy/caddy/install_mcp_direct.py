@@ -98,8 +98,14 @@ def connect(args) -> Conn:
 
 
 def _doors() -> list:
+    """The doors the Caddy block routes on hatchloop.dev: the LISTED ones (profiles.listed_profiles()).
+
+    Not every profile. The ChatGPT door (`listed: False`) is submitted on api.hatchloop.dev, which reaches the origin
+    with no Caddy change. And the block is already applied on the box (marker `mcp_direct 2026-10-01`), where
+    mcp_direct.apply() returns the file untouched, so a longer list here would not route the door; it would only
+    make `verify` probe https://hatchloop.dev/mcp/chatgpt and report a failure for a URL nobody serves."""
     from agent_interface import profiles
-    return sorted(profiles.PROFILES)
+    return sorted(profiles.listed_profiles())
 
 
 def _sha(b: bytes) -> str:

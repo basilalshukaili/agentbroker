@@ -257,6 +257,14 @@ jobs:
       - name: Third-party text is fenced, not printed as ours
         run: python scripts/check_untrusted_content_is_labelled.py
 
+      # OpenAI does not let a listed plugin sell, price or link to credits, and it RE-SCANS a listed plugin daily:
+      # a tool description changed later to carry a price is held, and can get an approved plugin removed
+      # (docs/directory-kit-2026-10/ISSUES-BEFORE-SUBMITTING.md section 13). Pricing text is fine on the Claude-facing
+      # doors, so this gates ONE door, /mcp/chatgpt, and proves on every run that its scan can fail by running it
+      # over a door that does carry prices.
+      - name: The ChatGPT door sells, prices and links to nothing
+        run: python scripts/check_no_commerce_door.py
+
       # THE GATE FOR THE BUG CLASS THAT HIT NINE TIMES IN ONE DAY: code that is
       # complete, tested, and never invoked. The ninth was found by an external
       # reviewer INSIDE the guard written that morning to catch the class - so

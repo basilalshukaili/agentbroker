@@ -138,6 +138,32 @@ PROFILES: dict[str, dict] = {
             "lookup_us_contracts",
         ),
     },
+    # THE CHATGPT DOOR (added 2026-10-04; docs/CHATGPT_DOOR.md). OpenAI does not let a listed plugin sell, price or
+    # link to credits, directly or through a freemium upsell (docs/directory-kit-2026-10/ISSUES-BEFORE-SUBMITTING.md
+    # section 13), and pricing text is legitimate in Claude's directory, so ChatGPT gets its own door instead of an
+    # edit to the three above. The flags are the whole difference:
+    #   no_commerce  every surface of the door is built by agent_interface/no_commerce.py (no pricing, no x402, no
+    #                purchase link, trimmed results, an outputSchema, noauth) and the engine's billing rails, data
+    #                quota and key warnings are never entered;
+    #   orientation  False: no get_status / get_outcome / preview_cost / self_test (preview_cost is a price list, and
+    #                the other three have nothing to do on three synchronous read-only tools);
+    #   listed       False: not in llms.txt or the MCP descriptor and not a registry entry. It is a door for one
+    #                directory; listing it elsewhere would publish a second server under a second name;
+    #   oauth        False: no protected-resource metadata, because the door has no sign-in to offer.
+    # THE PATH IS PART OF THE SUBMISSION: OpenAI treats a changed path as a new version. Do not rename it.
+    "chatgpt": {
+        "title": "Sanctions and company checks",
+        "description": "Screen names against OFAC, EU and UK sanctions lists, verify companies, check trade restrictions.",
+        "tools": (
+            "screen_sanctions",
+            "verify_company_record",
+            "map_trade_restriction",
+        ),
+        "no_commerce": True,
+        "orientation": False,
+        "listed": False,
+        "oauth": False,
+    },
 }
 
 
@@ -148,6 +174,25 @@ class ProfileError(ValueError):
 def exists(profile: Optional[str]) -> bool:
     return (profile is None or profile in PROFILES
             or profile in FULL_SERVER_ALIASES)
+
+
+def is_no_commerce(profile: Optional[str]) -> bool:
+    """Whether this door is the ChatGPT-style one: nothing on it sells, prices or links to credits.
+
+    Asked by the dispatcher before it enters any billing rail, so it must be False for every name that is not in
+    PROFILES (the full server, an alias, a typo)."""
+    return bool(profile in PROFILES and PROFILES[profile].get("no_commerce"))
+
+
+def listed_profiles() -> dict:
+    """The doors advertised in public discovery (llms.txt, the MCP descriptor): every door unless it says
+    `listed: False`. Sorted by name."""
+    return {k: v for k, v in sorted(PROFILES.items()) if v.get("listed", True)}
+
+
+def oauth_profiles() -> tuple:
+    """The doors that are OAuth protected resources: every door unless it says `oauth: False`."""
+    return tuple(k for k, v in sorted(PROFILES.items()) if v.get("oauth", True))
 
 
 def tools_for(profile: Optional[str]) -> Optional[frozenset]:
@@ -162,7 +207,9 @@ def tools_for(profile: Optional[str]) -> Optional[frozenset]:
         raise ProfileError(
             f"unknown profile {profile!r}; known: "
             f"{', '.join(sorted(set(PROFILES) | FULL_SERVER_ALIASES))}")
-    return frozenset(PROFILES[profile]["tools"]) | frozenset(_ORIENTATION)
+    own = frozenset(PROFILES[profile]["tools"])
+    # A door may opt out of the orientation tools (`orientation: False`); the default is every door carries them.
+    return own | frozenset(_ORIENTATION) if PROFILES[profile].get("orientation", True) else own
 
 
 def allows(profile: Optional[str], tool: str) -> bool:
