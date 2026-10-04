@@ -173,7 +173,8 @@ embargo/export-control mapping). Anonymous callers get 100 calls/day; email-veri
 get 500/day. **As of 2026-10-04 metering and credits are off, so these three tools run free and
 unmetered and nothing is charged;** `preview_cost` and `payments` in
 `https://api.hatchloop.dev/.well-known/mcp.json` (`status`, `rails`, `premium_data_quota_enforced`)
-report the live state. Once metering is on, beyond the quota: top up credits by card at
+report the live state. Once metering is on, a call beyond the quota is refused until the quota resets
+(`free_quota_exceeded`, nothing charged) unless you can pay: top up credits by card at
 https://hatchloop.dev/pricing (only while credits are on; they are off today), or, while the x402
 rail is on (it is off today), pay per call in USDC on Base by attaching an x402 payment in
 `params._meta["x402/payment"]` (no account needed).

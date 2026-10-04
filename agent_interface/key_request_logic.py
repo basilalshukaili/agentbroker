@@ -122,7 +122,7 @@ async def send_verification_email(email: str, verify_url: str) -> bool:
     whether the email was actually accepted for delivery. Every path that
     does not end in a 2xx from Resend returns False:
 
-      * RESEND_API_KEY unset (the production default today)
+      * RESEND_API_KEY unset (the live state of the provider is GET /healthz/external, services.resend)
       * Resend rejects the send (bad key, suspended account, invalid payload)
       * the request to Resend itself fails (network, timeout, DNS, ...)
 

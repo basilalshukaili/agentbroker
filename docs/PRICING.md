@@ -78,7 +78,11 @@ back; a truly anonymous booking or call can no longer be polled by
 | Anonymous (no key) | 100 | $0.02/call |
 
 Past the quota the tool returns an honest failure
-(`reason_code: free_quota_exceeded`, `cost: $0`) — never a silent charge.
+(`reason_code: free_quota_exceeded`, `cost: $0`) — never a silent charge. With
+metering on and no rail on (credits and x402 off), that refusal is the whole
+story: the call is not dispatched and not charged, and the quota resets daily.
+Tool descriptions and `llms.txt` say so ("free in quota, then refused until the
+quota resets"); they quote "then $0.02/call" only while a rail can charge it.
 
 While `DATA_METERING_ENABLED` is off (as of 2026-10-04) there is no quota: these
 three tools run free and unmetered for everyone, and `preview_cost` reports

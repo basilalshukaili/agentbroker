@@ -191,8 +191,8 @@ async def request_free_key(body: KeyRequestBody):
         # Honest refusal: no email left this process, so no caller should be
         # told to go check an inbox. NOT gated on any env var beyond the ones
         # send_verification_email already checked - this must be correct with
-        # today's production configuration (RESEND_API_KEY unset), not some
-        # future one.
+        # whatever the provider's state is (unset key, refused address, outage),
+        # which GET /healthz/external reports live.
         logger.warning("onboarding_unavailable email_domain=%s reason=verification_email_not_sent",
                         email.split("@")[-1])
         return JSONResponse(
