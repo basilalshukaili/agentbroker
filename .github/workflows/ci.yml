@@ -133,6 +133,15 @@ jobs:
       - name: Tests
         run: python -m pytest tests/ -q --timeout=120 --timeout-method=thread
 
+      - name: Durable fulfillment on PostgreSQL 17
+        env:
+          SPINE_PG_TESTS: "1"
+          SPINE_PG_IMAGE: postgres:17-bookworm
+        run: |
+          docker pull "$SPINE_PG_IMAGE"
+          python -m pytest tests/integration/test_polar_fulfillment_pg.py -q --timeout=120 --junitxml=fulfillment-pg.xml
+          python -c "import xml.etree.ElementTree as E; r=E.parse('fulfillment-pg.xml'); assert r.findall('.//testcase') and not r.findall('.//skipped'), 'fulfillment database proof must run without skips'"
+
       # 17 release gates - the manifest/pricing/compliance invariants.
       - name: Release gates
         run: python check_gates.py
