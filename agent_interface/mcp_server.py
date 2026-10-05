@@ -1211,6 +1211,9 @@ async def _h_initialize(params: dict) -> dict:
             "instructions": _nc.instructions(spec, names),
         }
 
+    # No logging capability: this stateless server does not implement
+    # logging/setLevel or stream log notifications. Advertising it makes
+    # Inspector set a level, then abort discovery on our -32601 response.
     if profile:
         return {
             "protocolVersion": negotiate_protocol_version(params),
@@ -1219,7 +1222,6 @@ async def _h_initialize(params: dict) -> dict:
                 "tools": {"listChanged": False},
                 "resources": {"listChanged": False, "subscribe": False},
                 "prompts": {"listChanged": False},
-                "logging": {},
             },
             "instructions": (
                 f"{spec['description']} This endpoint serves {len(names)} tools; "
@@ -1246,7 +1248,6 @@ async def _h_initialize(params: dict) -> dict:
             "tools": {"listChanged": False},
             "resources": {"listChanged": False, "subscribe": False},
             "prompts": {"listChanged": False},
-            "logging": {},
         },
         "instructions": (
             f"SMB Transaction & Communication Broker. Use tools/list to see all {op_count} operations. "
