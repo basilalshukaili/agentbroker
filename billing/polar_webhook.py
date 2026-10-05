@@ -508,17 +508,20 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
     event_type = event.get("type") or event.get("event_type") or ""
     data = event.get("data")
     data = data if isinstance(data, dict) else {}
+    durable = bool(switches.credits_enabled() or os.getenv("POLAR_FULFILLMENT_KEY")
+                   or os.getenv("SUPABASE_URL"))
     if event_type in _REVOKE_EVENTS:
         if not _terminal_revocation(event_type, data):
             return
-        if switches.credits_enabled() or os.getenv("POLAR_FULFILLMENT_KEY"):
+        if durable:
             await _scoped_refund(event_type, data)
         else:
             await _handle_revoke_event(event_type, data)
         return
     # A signed historical paid order still needs fulfillment when offers and
-    # metering are disabled. Provisioning the scoped rail opts into durability.
-    if switches.credits_enabled() or os.getenv("POLAR_FULFILLMENT_KEY"):
+    # metering are disabled. A configured backend must fail closed if its
+    # private scoped credential is missing; legacy fallback is offline only.
+    if durable:
         if event_type in _GRANT_EVENTS:
             await _handle_credit_event(event_type, data)
         return

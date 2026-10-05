@@ -1,10 +1,11 @@
 """The paid store uses its scoped key exclusively and refuses uncertain transport."""
 import asyncio
 import json
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 from billing import polar_fulfillment as store
+from billing import polar_webhook as webhook
 
 PAYLOAD = dict(order_id="offline-order", customer_id="offline-customer", account_id="sub_offline-customer",
                product_id="offline-product", credits=1000, plan="developer", email_hash="a" * 64, owner="b" * 32)
@@ -44,6 +45,34 @@ def test_missing_scoped_key_never_falls_back_or_connects(monkeypatch):
     monkeypatch.setattr(store.httpx, "AsyncClient", client)
     with pytest.raises(store.FulfillmentUnavailable):
         asyncio.run(store.claim(**PAYLOAD))
+    client.assert_not_called()
+
+
+@pytest.mark.parametrize("key", [None, ""])
+@pytest.mark.parametrize("kind", ["order.paid", "order.refunded"])
+def test_configured_backend_with_offers_off_never_falls_back_when_key_missing(monkeypatch, key, kind):
+    install(monkeypatch)
+    monkeypatch.setenv("CREDITS_ENABLED", "false")
+    if key is None:
+        monkeypatch.delenv("POLAR_FULFILLMENT_KEY")
+    else:
+        monkeypatch.setenv("POLAR_FULFILLMENT_KEY", key)
+    client = Mock(side_effect=AssertionError("must not open transport"))
+    monkeypatch.setattr(store.httpx, "AsyncClient", client)
+    legacy, marker, welcome, key_email, legacy_refund = (AsyncMock() for _ in range(5))
+    monkeypatch.setattr(webhook, "_handle_legacy_event", legacy)
+    monkeypatch.setattr(webhook, "_mark_processed", marker)
+    monkeypatch.setattr(webhook, "_handle_revoke_event", legacy_refund)
+    monkeypatch.setattr("billing.emails.send_welcome_email", welcome)
+    monkeypatch.setattr("billing.telegram_revenue_alerts.send_api_key_email", key_email)
+    event = {"type":kind,"data":{"id":"offline-order",
+        "status":"refunded" if kind == "order.refunded" else "paid",
+        "customer":{"id":"offline-customer","email":"buyer@example.invalid"},
+        "product":{"id":"offline-product","name":"Growth"}}}
+    with pytest.raises(webhook.PaidOrderFulfillmentError):
+        asyncio.run(webhook.handle_polar_event(event))
+    for action in (legacy, marker, welcome, key_email, legacy_refund):
+        action.assert_not_awaited()
     client.assert_not_called()
 
 
