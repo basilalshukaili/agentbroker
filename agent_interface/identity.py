@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import time
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional
@@ -99,11 +100,25 @@ class TokenResponse:
     issued_at: float
 
 
-def issue_token(req: TokenRequest) -> TokenResponse:
+def issue_token(req: TokenRequest, *, issued_at: float | None = None,
+                token_id: str | None = None) -> TokenResponse:
     """Issue a signed Agent-Identity token."""
-    now = time.time()
+    if (issued_at is None) != (token_id is None):
+        raise ValueError("Stable issuance requires both timestamp and token id")
+    if issued_at is None:
+        now = time.time()
+        jti = uuid.uuid4().hex
+    else:
+        if (isinstance(issued_at, bool) or not isinstance(issued_at, (int, float))
+                or not math.isfinite(issued_at) or issued_at <= 0):
+            raise ValueError("Invalid stable issuance timestamp")
+        now = float(issued_at)
+        try:
+            jti = uuid.UUID(token_id).hex
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError("Invalid stable issuance token id") from None
     claims = {
-        "jti": uuid.uuid4().hex,
+        "jti": jti,
         "iss": _ISSUER,
         "agent_id": req.agent_id,
         "principal": {
@@ -162,6 +177,9 @@ def issue_subscription_token(
     customer_id: str,
     plan: str,
     customer_email: str,
+    *,
+    issued_at: float | None = None,
+    token_id: str | None = None,
 ) -> TokenResponse:
     """
     Mint a long-lived Agent-Identity token for a paying subscriber.
@@ -179,7 +197,7 @@ def issue_subscription_token(
     _ = customer_email  # delivery-layer concern; intentionally unused here
     plan_key = (plan or "").strip().lower()
     ops, cap, verticals, ttl = _PLAN_SCOPES.get(plan_key, _PLAN_SCOPES["developer"])
-    return issue_token(TokenRequest(
+    request = TokenRequest(
         agent_id=f"sub_{customer_id}",
         principal_id=customer_id,
         principal_type="human",
@@ -187,7 +205,12 @@ def issue_subscription_token(
         budget_cap_usd=cap,
         allowed_verticals=verticals,
         ttl_seconds=ttl,
-    ))
+    )
+    if issued_at is None and token_id is None:
+        return issue_token(request)
+    # The fulfillment store supplies the immutable timestamp/id for this order.
+    # Signing is pure: another worker or restart reproduces the same identity.
+    return issue_token(request, issued_at=issued_at, token_id=token_id)
 
 
 # ---------------------------------------------------------------------------
