@@ -31,6 +31,14 @@ def test_default_issuance_remains_fresh(monkeypatch):
     assert claims(first.token)["jti"] != claims(second.token)["jti"]
 
 
+def test_fulfillment_entitlements_survive_plan_default_changes(monkeypatch):
+    kwargs = dict(customer_id="offline-customer", plan="developer", customer_email="",
+                  issued_at=1791000000.0, token_id="a" * 32, issuance_version=1)
+    first = identity.issue_subscription_token(**kwargs)
+    monkeypatch.setitem(identity._PLAN_SCOPES, "developer", (["other"], 1.0, ["other"], 60))
+    assert identity.issue_subscription_token(**kwargs) == first
+
+
 def test_stable_identity_uses_existing_validation_and_revocation(monkeypatch):
     monkeypatch.setattr(identity, "_SIGNING_SECRET", "synthetic-test-signing-secret")
     monkeypatch.setattr(identity.time, "time", lambda: 1791000001.0)

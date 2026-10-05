@@ -129,8 +129,8 @@ async def resolve_subject(store, email_digest: str) -> Optional[Subject]:
     if row:
         subject = _paid_subject(row)
         if subject is not None:
-            from agent_interface.identity import is_customer_revoked
-            if is_customer_revoked(subject.principal_id):
+            from agent_interface.identity import paid_customer_revoked
+            if paid_customer_revoked(subject.principal_id):
                 return None
             return subject
     free = free_account_id(email_digest)

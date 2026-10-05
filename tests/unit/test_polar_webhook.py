@@ -198,6 +198,7 @@ class TestPolarWebhookRefundRevokes:
             "type": "order.refunded",
             "data": {
                 "id": "order_refund_test_1",
+                "status": "refunded",
                 "customer": {"id": "cust_refund_test_1", "email": "buyer@example.com"},
             },
         }
@@ -215,6 +216,8 @@ class TestPolarWebhookRefundRevokes:
             "type": "refund.created",
             "data": {
                 "id": "refund_xyz_1",
+                "status": "succeeded",
+                "revoke_benefits": True,
                 "order": {"id": "order_refund_test_2"},
                 "customer": {"id": "cust_refund_test_2", "email": "buyer2@example.com"},
             },
@@ -241,7 +244,7 @@ class TestPolarWebhookRefundRevokes:
 
         event = {
             "type": "order.refunded",
-            "data": {"id": "order_refund_test_3", "customer": {"id": "cust_refund_test_3"}},
+            "data": {"id": "order_refund_test_3", "status": "refunded", "customer": {"id": "cust_refund_test_3"}},
         }
         with patch("storage.supabase_client.insert_row", new_callable=AsyncMock, return_value=None):
             run(handle_polar_event(event))

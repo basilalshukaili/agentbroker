@@ -172,6 +172,14 @@ _PLAN_SCOPES: dict[str, tuple[list[str], float, list[str], int]] = {
     "enterprise": (["*"],  25000.0, ["*"], _ONE_YEAR),
 }
 
+# Immutable fulfillment format 1. Never change this mapping when ordinary plan
+# defaults evolve; a persisted order must recreate the same token after release.
+_FULFILLMENT_V1_SCOPES = {
+    "developer": (["*"], 500.0, ["*"], 7776000),
+    "business": (["*"], 5000.0, ["*"], 7776000),
+    "enterprise": (["*"], 25000.0, ["*"], 31536000),
+}
+
 
 def issue_subscription_token(
     customer_id: str,
@@ -180,6 +188,7 @@ def issue_subscription_token(
     *,
     issued_at: float | None = None,
     token_id: str | None = None,
+    issuance_version: int | None = None,
 ) -> TokenResponse:
     """
     Mint a long-lived Agent-Identity token for a paying subscriber.
@@ -196,7 +205,13 @@ def issue_subscription_token(
     """
     _ = customer_email  # delivery-layer concern; intentionally unused here
     plan_key = (plan or "").strip().lower()
-    ops, cap, verticals, ttl = _PLAN_SCOPES.get(plan_key, _PLAN_SCOPES["developer"])
+    if issuance_version is not None:
+        if (type(issuance_version) is not int or issuance_version != 1
+                or issued_at is None or token_id is None or plan_key not in _FULFILLMENT_V1_SCOPES):
+            raise ValueError("Unsupported stable fulfillment entitlement")
+        ops, cap, verticals, ttl = _FULFILLMENT_V1_SCOPES[plan_key]
+    else:
+        ops, cap, verticals, ttl = _PLAN_SCOPES.get(plan_key, _PLAN_SCOPES["developer"])
     request = TokenRequest(
         agent_id=f"sub_{customer_id}",
         principal_id=customer_id,
@@ -249,7 +264,7 @@ _REVOKED_JTIS_TABLE = "revoked_jtis"
 _revoked_customer_ids: set[str] = set()
 _revocation_hydrated = False
 _revocation_next_try = 0.0
-_REVOCATION_RETRY_S = 60.0
+_REVOCATION_RETRY_S = 30.0
 
 # AUDIT-2026-09-29: both hydration loops below used to read their table
 # directly via storage.supabase_client.select_rows_sync_strict(). In
@@ -424,16 +439,16 @@ def is_jti_revoked(jti: str) -> bool:
 
 
 def _hydrate_revocations() -> None:
-    """One-time, best-effort load of durably-revoked customer ids from
+    """Refresh durably-revoked customer ids at least every 30 seconds.
     Supabase so a revocation survives a process restart (e.g. a Render
     redeploy between the refund event and the next validate_token call).
     Reads via the polar_order_events_revoked_customer_ids SECURITY DEFINER
     RPC (AUDIT-2026-09-29; see the constants above for why a raw table read
     cannot work with only the anon key). No-ops safely when Supabase isn't
-    configured (local/dev/tests) -- same "durable is a bonus, in-memory
-    always works" pattern as durable_meter.py and supply/smb_directory.py."""
+    configured (local/dev/tests). With a configured backend, paid identities
+    deny access if this refresh cannot establish a current revocation view."""
     global _revocation_hydrated, _revocation_next_try
-    if _revocation_hydrated:
+    if _revocation_hydrated and time.time() < _revocation_next_try:
         return
 
     # THE LATCH USED TO BE SET BEFORE THE LOAD, AND THE LOAD COULD NOT FAIL
@@ -447,6 +462,7 @@ def _hydrate_revocations() -> None:
     now = time.time()
     if now < _revocation_next_try:
         return
+    _revocation_hydrated = False  # An expired cache is not proof of current authorization.
     _revocation_next_try = now + _REVOCATION_RETRY_S
 
     log = logging.getLogger("smb_broker.identity")
@@ -516,14 +532,11 @@ def _hydrate_revocations() -> None:
                 "its grants); never read this as 'no customers are revoked'",
                 _REVOKED_CUSTOMERS_RPC, exc)
         else:
-            # DELIBERATELY FAIL OPEN, and say so. Denying every paying customer
-            # during a database blip is a worse outcome than briefly honouring a
-            # refunded token, and the retry above bounds how long "briefly" is.
-            # What must not happen is the previous behaviour: failing open FOR
-            # EVER while reporting success.
+            # Leave hydration incomplete: paid identities with a configured
+            # backend fail closed until the retry succeeds. Free identities
+            # retain their existing authorization behavior.
             log.warning(
-                "revocation_hydrate_failed err=%s -- refunded customers may still "
-                "validate until this succeeds; retrying in %ss",
+                "revocation_hydrate_failed err=%s -- paid revocation view unavailable; retrying in %ss",
                 exc, _REVOCATION_RETRY_S)
         return
 
@@ -576,11 +589,23 @@ async def revoke_customer(
         return False
 
 
+def remember_customer_revocation(customer_id: str) -> None:
+    """Honor a customer revocation already committed by the scoped fulfillment RPC."""
+    if customer_id:
+        _revoked_customer_ids.add(str(customer_id))
+
+
 def is_customer_revoked(customer_id: str) -> bool:
     """True if `customer_id` has been revoked (this process, or durably
     before this process started)."""
     _hydrate_revocations()
     return str(customer_id) in _revoked_customer_ids
+
+
+def paid_customer_revoked(customer_id: str) -> bool:
+    """Configured paid identities deny access if the revocation view is stale."""
+    revoked = is_customer_revoked(customer_id)
+    return revoked or bool(os.getenv("SUPABASE_URL") and not _revocation_hydrated)
 
 
 def validate_token(token: str) -> ValidationResult:
@@ -610,7 +635,9 @@ def validate_token(token: str) -> ValidationResult:
     # token was refunded). Keyed on principal.id, which issue_subscription_
     # token() sets to the Polar customer_id.
     principal_id = (claims.get("principal") or {}).get("id")
-    if principal_id and is_customer_revoked(principal_id):
+    revoked = (paid_customer_revoked(principal_id) if str(claims.get("agent_id", "")).startswith("sub_")
+               else is_customer_revoked(principal_id)) if principal_id else False
+    if revoked:
         return ValidationResult(
             valid=False, error="Token has been revoked (order refunded).",
         )

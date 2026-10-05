@@ -401,125 +401,62 @@ def _make_polar_event(event_type: str = "order.paid", order_id: str = "order_abc
 
 
 class TestPolarCreditGrant:
-    """Credit grant fires on order.paid when CREDITS_ENABLED=true."""
+    """Paid orders use the scoped atomic fulfillment API; no direct credit RPC."""
 
-    def _patch_polar_env(self):
-        return patch.dict(os.environ, {"CREDITS_ENABLED": "true"})
+    @pytest.fixture
+    def paid(self, monkeypatch):
+        monkeypatch.setenv("CREDITS_ENABLED", "true")
+        receipt = dict(ok=True, status="claimed", issued_at=1791000000.0, token_id="a"*32,
+                       fence=1, issuance_version=1, entitlements={})
+        claim, complete = AsyncMock(return_value=receipt), AsyncMock(return_value={**receipt,"status":"complete"})
+        monkeypatch.setattr("billing.polar_fulfillment.claim", claim)
+        monkeypatch.setattr("billing.polar_fulfillment.complete", complete)
+        monkeypatch.setattr("billing.polar_fulfillment.release", AsyncMock())
+        monkeypatch.setattr("agent_interface.identity.issue_subscription_token",
+                            MagicMock(return_value=type("Token",(),dict(token="synthetic.token",expires_at=1900000000))()))
+        monkeypatch.setattr("billing.emails.send_welcome_email", AsyncMock(return_value=True))
+        monkeypatch.setattr("billing.telegram_revenue_alerts.send_api_key_email", AsyncMock(return_value=True))
+        monkeypatch.setattr("billing.telegram_revenue_alerts.send_telegram_alert", AsyncMock())
+        return claim, complete
 
-    def _mock_identity(self):
-        """Mock identity token issuance so handle_polar_event doesn't fail on missing JWT key."""
-        token_resp = MagicMock()
-        token_resp.token = "eyJ.fake.token"
-        token_resp.expires_at = 9999999999
-        return patch(
-            "agent_interface.identity.issue_subscription_token",
-            return_value=token_resp,
-        )
+    def test_credit_grant_on_order_paid_metadata_credits(self, paid):
+        from billing.polar_webhook import handle_polar_event
+        run(handle_polar_event(_make_polar_event()))
+        claim, complete = paid
+        assert claim.await_args.kwargs["credits"] == 1000
+        assert claim.await_args.kwargs["account_id"] == "sub_cust_123"
+        assert claim.await_args.kwargs["order_id"] == "order_abc"
+        complete.assert_awaited_once()
 
-    def _mock_already_processed(self, result: bool = False):
-        return patch(
-            "billing.polar_webhook._already_processed",
-            new=AsyncMock(return_value=result),
-        )
-
-    def _mock_mark_processed(self):
-        return patch(
-            "billing.polar_webhook._mark_processed",
-            new=AsyncMock(),
-        )
-
-    def test_credit_grant_on_order_paid_metadata_credits(self):
-        """order.paid with product.metadata.credits -> credit grant called once."""
-        with self._patch_polar_env():
-            with self._mock_already_processed(False):
-                with self._mock_mark_processed():
-                    with self._mock_identity():
-                        with patch("billing.credits.rpc", new=AsyncMock(return_value={"ok": True, "balance_after": 1000})) as mock_rpc:
-                            from billing.polar_webhook import handle_polar_event
-                            run(handle_polar_event(_make_polar_event()))
-
-                        # credit_grant RPC should have been called
-                        grant_calls = [
-                            c for c in mock_rpc.call_args_list
-                            if c[0][0] == "credit_grant"
-                        ]
-                        assert len(grant_calls) == 1
-                        grant_payload = grant_calls[0][0][1]
-                        assert grant_payload["p_amount"] == 1000
-                        assert grant_payload["p_account"] == "sub_cust_123"
-                        assert grant_payload["p_idempotency_key"] == "order_abc"
-                        assert grant_payload["p_source"] == "polar"
-
-    def test_credit_grant_uses_name_map_fallback(self):
-        """product.metadata has no credits -> PACKAGE_CREDITS name map used."""
+    def test_credit_grant_uses_name_map_fallback(self, paid):
         event = _make_polar_event()
-        event["data"]["product"]["metadata"] = {}  # no credits in metadata
+        event["data"]["product"]["metadata"] = {}
+        from billing.polar_webhook import handle_polar_event
+        run(handle_polar_event(event))
+        assert paid[0].await_args.kwargs["credits"] == 1000
 
-        with self._patch_polar_env():
-            with self._mock_already_processed(False):
-                with self._mock_mark_processed():
-                    with self._mock_identity():
-                        with patch("billing.credits.rpc", new=AsyncMock(return_value={"ok": True, "balance_after": 1000})) as mock_rpc:
-                            from billing.polar_webhook import handle_polar_event
-                            run(handle_polar_event(event))
+    def test_credit_grant_idempotent_on_duplicate_order(self, paid):
+        paid[0].return_value = {**paid[0].return_value, "status":"complete"}
+        from billing.polar_webhook import handle_polar_event
+        run(handle_polar_event(_make_polar_event()))
+        paid[1].assert_not_awaited()
 
-                        grant_calls = [
-                            c for c in mock_rpc.call_args_list
-                            if c[0][0] == "credit_grant"
-                        ]
-                        assert len(grant_calls) == 1
-                        # "Starter" -> 1000 from PACKAGE_CREDITS
-                        assert grant_calls[0][0][1]["p_amount"] == 1000
+    def test_credit_grant_skipped_when_disabled(self, paid, monkeypatch):
+        monkeypatch.setenv("CREDITS_ENABLED","false")
+        monkeypatch.setattr("billing.polar_webhook._already_processed", AsyncMock(return_value=True))
+        from billing.polar_webhook import handle_polar_event
+        run(handle_polar_event(_make_polar_event()))
+        paid[0].assert_not_awaited()
+        paid[1].assert_not_awaited()
 
-    def test_credit_grant_idempotent_on_duplicate_order(self):
-        """Re-delivered order_id -> _already_processed=True -> grant NOT called."""
-        with self._patch_polar_env():
-            with self._mock_already_processed(True):  # already processed
-                with patch("billing.credits.rpc", new=AsyncMock()) as mock_rpc:
-                    from billing.polar_webhook import handle_polar_event
-                    run(handle_polar_event(_make_polar_event()))
-
-                grant_calls = [
-                    c for c in mock_rpc.call_args_list
-                    if c[0][0] == "credit_grant"
-                ]
-                assert len(grant_calls) == 0
-
-    def test_credit_grant_skipped_when_disabled(self):
-        """CREDITS_ENABLED=false -> credit_grant RPC never called."""
-        with patch.dict(os.environ, {"CREDITS_ENABLED": "false"}):
-            with self._mock_already_processed(False):
-                with self._mock_mark_processed():
-                    with self._mock_identity():
-                        with patch("billing.credits.rpc", new=AsyncMock(return_value={"ok": True, "balance_after": 0})) as mock_rpc:
-                            from billing.polar_webhook import handle_polar_event
-                            run(handle_polar_event(_make_polar_event()))
-
-                        grant_calls = [
-                            c for c in mock_rpc.call_args_list
-                            if c[0][0] == "credit_grant"
-                        ]
-                        assert len(grant_calls) == 0
-
-    def test_revoke_event_no_credit_grant(self):
-        """Revoke events (refund/subscription.revoked) must never grant credits."""
-        with self._patch_polar_env():
-            with patch("billing.credits.rpc", new=AsyncMock()) as mock_rpc:
-                with patch(
-                    "agent_interface.identity.revoke_customer",
-                    new=AsyncMock(),
-                ):
-                    from billing.polar_webhook import handle_polar_event
-                    run(handle_polar_event({
-                        "type": "order.refunded",
-                        "data": {"id": "order_abc", "customer": {"id": "cust_123"}},
-                    }))
-
-                grant_calls = [
-                    c for c in mock_rpc.call_args_list
-                    if c[0][0] == "credit_grant"
-                ]
-                assert len(grant_calls) == 0
+    def test_revoke_event_no_credit_grant(self, paid, monkeypatch):
+        refund = AsyncMock()
+        monkeypatch.setattr("billing.polar_fulfillment.refund", refund)
+        from billing.polar_webhook import handle_polar_event
+        run(handle_polar_event({"type":"order.refunded","data":{"id":"order_abc","status":"refunded","customer":{"id":"cust_123"}}}))
+        refund.assert_awaited_once_with(order_id="order_abc", customer_id="cust_123")
+        paid[0].assert_not_awaited()
+        paid[1].assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

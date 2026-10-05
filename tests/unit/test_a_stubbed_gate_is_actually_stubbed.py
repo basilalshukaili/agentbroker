@@ -729,6 +729,12 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "function body (polar_webhook.py:370) -- not main.py's eager import.",
     ("tests/unit/test_polar_webhook.py", "agent_interface.identity.issue_subscription_token"):
         "targets billing.polar_webhook.handle_polar_event (deferred import, see above).",
+    ("tests/unit/test_paid_order_always_delivers.py", "agent_interface.identity.issue_subscription_token"):
+        "drives handle_polar_event's scoped _handle_credit_event, which imports the signer "
+        "inside the function; the transaction-redelivery assertions exercise this signer, never main's eager binding.",
+    ("tests/unit/test_polar_fulfillment_recovery.py", "agent_interface.identity.issue_subscription_token"):
+        "drives _handle_credit_event's deferred signer; Services.mint records the real call "
+        "and the immutable issuance fields across completion/replay, never main's eager binding.",
     ("tests/unit/test_typed_errors.py", "agent_interface.identity.validate_token"):
         "targets agent_interface.mcp_server's tool-dispatch auth check, which "
         "re-imports validate_token INSIDE the function body at each of its call sites "

@@ -8,24 +8,24 @@ Oman), and on payment we mint a long-lived Agent-Identity token their agent then
 sends as `X-Agent-Identity`. Reads stay free; with a valid token, writes are
 pre-paid (skip the x402 402).
 
-Signature verification follows the **Standard Webhooks** spec
-(https://www.standardwebhooks.com) — which Polar implements. We verify it
-ourselves (no SDK dependency, to avoid forcing an httpx upgrade) and prove the
-implementation against the spec's published test vector in the unit test.
+Signature verification supports Polar's legacy HMAC and Standard Webhooks
+schemes without an SDK dependency. Polar secrets generated before 2026-09-08
+use the UTF-8 bytes of the full secret (including whsec_); newer secrets use
+the base64-decoded bytes after that prefix. Try both interpretations, as the
+secret itself does not identify its generation date:
+https://polar.sh/docs/integrate/webhooks/delivery
 
-Headers (case-insensitive): `webhook-id`, `webhook-timestamp`, `webhook-signature`.
-Secret is `whsec_<base64>`; the HMAC key is the base64-decoded bytes after the
-prefix. Signed content is `{id}.{timestamp}.{body}`; expected signature is
-`base64(HMAC_SHA256(key, signed_content))`. The signature header is a
-space-separated list of `v1,<sig>` entries (key rotation) — we accept a match
-against any. Returns 401 on bad signature so Polar surfaces the failure.
+Headers (case-insensitive): webhook-id, webhook-timestamp, webhook-signature.
+Signed content is {id}.{timestamp}.{body}; expected signature is
+base64(HMAC_SHA256(key, signed_content)). The signature header is a
+space-separated list of v1,<sig> entries (key rotation) -- we accept a match
+against any supported entry. Returns 401 on bad signature.
 """
 from __future__ import annotations
 
 import base64
 import hashlib
 import hmac
-import asyncio
 import logging
 import os
 import time
@@ -52,16 +52,20 @@ def _header(headers: Mapping[str, str], name: str) -> str:
     return ""
 
 
-def _key_bytes(secret: str) -> bytes:
-    """Standard Webhooks secret → raw HMAC key. `whsec_<base64>` → decode base64."""
+def _key_candidates(secret: str) -> tuple[bytes, ...]:
+    """Legacy Polar uses the full UTF-8 secret; Standard Webhooks decodes it."""
+    keys = [secret.encode("utf-8")]
     s = secret.strip()
     if s.startswith("whsec_"):
         s = s[len("whsec_"):]
     try:
-        return base64.b64decode(s)
-    except Exception:
-        # Some setups pass a raw (non-base64) secret; fall back to its bytes.
-        return secret.encode("utf-8")
+        decoded = base64.b64decode(s, validate=True)
+    except ValueError:
+        pass
+    else:
+        if decoded and decoded != keys[0]:
+            keys.append(decoded)
+    return tuple(keys)
 
 
 def verify_polar_signature(
@@ -71,9 +75,9 @@ def verify_polar_signature(
     *,
     enforce_timestamp: bool = True,
 ) -> bool:
-    """Verify a Standard Webhooks signature. Returns False on any problem
+    """Verify either supported Polar signature scheme. Returns False on any problem
     (missing headers/secret, stale timestamp, no signature match)."""
-    if not secret:
+    if not secret or not secret.strip():
         return False
     msg_id = _header(headers, "webhook-id")
     ts = _header(headers, "webhook-timestamp")
@@ -97,15 +101,20 @@ def verify_polar_signature(
         return False
 
     signed_content = f"{msg_id}.{ts}.{body_str}".encode("utf-8")
-    expected = base64.b64encode(
-        hmac.new(_key_bytes(secret), signed_content, hashlib.sha256).digest()
-    ).decode("ascii")
+    expected_signatures = [
+        base64.b64encode(
+            hmac.new(key, signed_content, hashlib.sha256).digest()
+        ).decode("ascii")
+        for key in _key_candidates(secret)
+    ]
 
-    # Header is space-separated "v1,<sig>" tokens; accept a constant-time match
-    # against any (supports secret rotation).
+    # Header is space-separated "v1,<sig>" tokens; compare only supported
+    # versions, using constant-time comparison for each candidate key.
     for token in sig_header.split(" "):
-        _, _, sig = token.partition(",")
-        if sig and hmac.compare_digest(sig, expected):
+        version, _, sig = token.partition(",")
+        if version != "v1" or not sig or not sig.isascii():
+            continue
+        if any(hmac.compare_digest(sig, expected) for expected in expected_signatures):
             return True
     return False
 
@@ -151,6 +160,13 @@ def _extract_customer_id(data: dict[str, Any]) -> str:
     customer = data.get("customer")
     if isinstance(customer, dict) and customer.get("id"):
         return str(customer["id"])
+    order = data.get("order")
+    if isinstance(order, dict):
+        nested_customer = order.get("customer")
+        if isinstance(nested_customer, dict) and nested_customer.get("id"):
+            return str(nested_customer["id"])
+        if order.get("customer_id"):
+            return str(order["customer_id"])
     return str(data.get("customer_id") or data.get("id") or "polar_customer")
 
 
@@ -175,23 +191,49 @@ def _extract_order_id(data: dict[str, Any]) -> str:
 # Events that mean "money cleared, grant access".
 _GRANT_EVENTS = {"order.paid", "order.created", "subscription.active", "subscription.created"}
 
-# Events that mean "money came back, revoke access". Per Polar's webhook docs
-# (https://polar.sh/docs/integrate/webhooks/events): `order.refunded` fires on
-# the Order resource, `refund.created` fires on the Refund resource (belt and
-# suspenders -- handle whichever Polar actually sends), `subscription.revoked`
-# fires when a subscription's access is pulled (immediately, or at the end of
-# a `subscription.canceled` period -- we only act on the terminal `.revoked`).
-_REVOKE_EVENTS = {"order.refunded", "refund.created", "subscription.revoked"}
+# Refund events require the settlement/benefit gate below; subscription.revoked
+# is terminal. A cancellation alone does not revoke an active paid period.
+_REVOKE_EVENTS = {"order.refunded", "refund.created", "refund.updated", "subscription.revoked"}
 
-# Durable dedup/revocation ledger. Same Supabase project + REST wrapper
-# (storage/supabase_client.py) that billing/durable_meter.py already writes
-# `billing_events` to -- this is a second table in that project, not new
-# infra. Expected columns: order_id, event_type, customer_id, status
-# ("processed" | "revoked"), ts. Like every other durable write in this
-# codebase, both read and write are best-effort: if the table doesn't exist
-# yet or Supabase is unreachable, checks fail OPEN (never block a real grant)
-# and writes are logged-and-swallowed -- identical fallback behavior to
-# today's code, just durable when the store is available.
+
+def _paid_order(event_type: str, data: dict[str, Any]) -> bool:
+    status = str(data.get("status") or "").lower()
+    if data.get("paid") is False:
+        return False
+    if event_type == "order.created":
+        return status in {"paid", "succeeded", "completed"}
+    # Older signed order.paid payloads omit status. Explicit contradictory
+    # status never authorizes fulfillment even when the event type says paid.
+    return not status or status in {"paid", "succeeded", "completed"}
+
+
+def _terminal_revocation(event_type: str, data: dict[str, Any]) -> bool:
+    """Do not turn pending/partial refunds into permanent customer revocation.
+
+    Official schemas: https://github.com/polarsource/polar/blob/main/server/polar/refund/schemas.py
+    and https://github.com/polarsource/polar/blob/main/server/polar/order/schemas.py.
+    Refund creation is not settlement; order.refunded includes partial refunds.
+    """
+    if event_type == "subscription.revoked":
+        return True
+    status = str(data.get("status") or "").lower()
+    if event_type in {"refund.created", "refund.updated"}:
+        if status in {"pending", "failed", "canceled"} or data.get("revoke_benefits") is False:
+            return False
+        if status != "succeeded" or data.get("revoke_benefits") is not True:
+            raise PaidOrderFulfillmentError()
+        return True
+    if status == "refunded":
+        return True
+    amounts = [data.get(key) for key in ("total_amount", "refunded_amount", "refunded_tax_amount")]
+    if all(type(value) is int and value >= 0 for value in amounts) and amounts[0] > 0:
+        return amounts[1] + amounts[2] >= amounts[0]
+    if status == "partially_refunded":
+        return False
+    raise PaidOrderFulfillmentError()
+
+# Legacy ledger for unprovisioned compatibility only. The scoped fulfillment
+# receipt replaces these best-effort reads/writes for all provisioned paid orders.
 _POLAR_EVENTS_TABLE = "polar_order_events"
 
 
@@ -212,22 +254,27 @@ async def _already_processed(order_id: str) -> bool:
         return False
 
 
+class PaidOrderFulfillmentError(RuntimeError):
+    """Retryable fulfillment failure; never expose provider/storage details."""
+
+    def __init__(self) -> None:
+        super().__init__("Paid order fulfillment incomplete; retry later.")
+
+
 async def _mark_processed(order_id: str, event_type: str, customer_id: str) -> None:
-    """Durably record that `order_id` has been granted, so a re-delivered
-    event (retry, or the duplicate-webhook-endpoint scenario) no-ops next
-    time. Best-effort -- never raises, matches durable_meter's fire-and-forget
-    write pattern."""
+    """Legacy best-effort marker; the scoped path never calls this helper."""
     if not order_id:
         return
     try:
         from storage.supabase_client import insert_row
-        await insert_row(_POLAR_EVENTS_TABLE, {
+        row = {
             "order_id": order_id,
             "event_type": event_type,
             "customer_id": customer_id,
             "status": "processed",
             "ts": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        await insert_row(_POLAR_EVENTS_TABLE, row)
     except Exception as exc:  # noqa: BLE001
         logger.warning("polar_mark_processed_failed order_id=%s err=%s", order_id, exc)
 
@@ -270,99 +317,36 @@ async def _handle_revoke_event(event_type: str, data: dict[str, Any]) -> None:
         logger.exception("polar_revoke_failed customer=%s err=%s", customer_id, e)
 
 
-async def _record_ungranted_order(order_id: str, account_id: str, credits: int,
-                                  email: str, error: str) -> None:
-    """A paid order whose credits did not land. Make it recoverable and loud.
-
-    Three places, because the reason the grant failed is usually that one of
-    them is the thing that is down:
-      * the durable table, so a human or a sweeper can replay it;
-      * the log, at ERROR;
-      * Telegram, because a customer who paid and got nothing will not wait
-        for someone to read a log.
-
-    The order id is included everywhere: it is the idempotency key, so
-    replaying the grant with it cannot double-credit.
-    """
-    try:
-        # STRICT. insert_row is documented "never raises" - it returns None on
-        # any failure - so the handler below was dead code, and the ERROR line
-        # it guards could not fire. That matters more here than almost
-        # anywhere: the usual reason a grant fails is that Supabase is down,
-        # which is exactly when this recovery write fails too. A paid order
-        # would vanish with no durable record AND no log saying so.
-        from storage.supabase_client import insert_row_strict
-        await insert_row_strict("ungranted_orders", {
-            "order_id": order_id,
-            "account_id": account_id,
-            "credits": credits,
-            "email": email,
-            "error": error,
-        })
-    except Exception as exc:                    # noqa: BLE001
-        logger.error(
-            "ungranted_order_not_recorded order=%s account=%s credits=%d "
-            "email=%s err=%s -- THIS ORDER IS NOW ONLY IN THIS LOG LINE AND "
-            "THE TELEGRAM ALERT BELOW. Replay with idempotency_key=%s",
-            order_id, account_id, credits, email, exc, order_id)
-    try:
-        from billing.telegram_revenue_alerts import send_telegram_alert
-        await send_telegram_alert(
-            f"PAID ORDER DID NOT DELIVER\n\n"
-            f"order: {order_id}\n"
-            f"account: {account_id}\n"
-            f"credits owed: {credits}\n"
-            f"error: {error[:160]}\n\n"
-            f"The customer has been charged and has an API key with NO "
-            f"credits. Replay with idempotency_key={order_id} - it cannot "
-            f"double-credit.")
-    except Exception:                           # noqa: BLE001
-        pass
 
 
-async def handle_polar_event(event: dict[str, Any]) -> None:
-    """Dispatch a verified Polar event. On a paid order/subscription, mint an
-    Agent-Identity token, email it, and fire the Telegram revenue alert. Never
-    raises — the caller always returns 200 after a valid signature."""
+async def _handle_legacy_event(event: dict[str, Any]) -> None:
+    """Preserve unprovisioned identity delivery; never grants credits."""
     event_type = event.get("type") or event.get("event_type") or ""
     data = event.get("data") or {}
     if not isinstance(data, dict):
         data = {}
 
     logger.info("polar_event_received type=%s", event_type)
-
     if event_type in _REVOKE_EVENTS:
         await _handle_revoke_event(event_type, data)
         return
-
     if event_type not in _GRANT_EVENTS:
         logger.info("polar_event_unhandled type=%s", event_type)
         return
 
-    # An order for a $0 / unpaid status shouldn't grant. Polar order.paid implies
-    # paid; guard order.created on a paid flag if present.
     status = str(data.get("status") or "").lower()
-    if event_type == "order.created" and status and status not in ("paid", "succeeded", "completed"):
+    if event_type in {"order.created", "order.paid"} and not _paid_order(event_type, data):
         logger.info("polar_order_not_paid status=%s — skipping grant", status)
         return
 
-    # Idempotency guard: re-delivery of an already-granted order (Polar retry,
-    # or the two-webhook-endpoints-pointing-at-us scenario) must no-op rather
-    # than double-mint a token and double-send the welcome email. Keyed on
-    # order id (not the webhook delivery id) because that's what's actually
-    # invariant across duplicate deliveries/endpoints for the same purchase.
     order_id = _extract_order_id(data)
     if order_id and await _already_processed(order_id):
-        logger.info(
-            "polar_event_duplicate_skipped type=%s order_id=%s — already processed, no-op",
-            event_type, order_id,
-        )
+        logger.info("polar_event_duplicate_skipped type=%s order_id=%s", event_type, order_id)
         return
 
     email = _extract_email(data)
     plan = _extract_plan(data)
     customer_id = _extract_customer_id(data)
-
     token_value: str | None = None
     token_suffix = "????????????"
     expires_iso = "?"
@@ -373,131 +357,20 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
         )
         token_value = token_resp.token
         token_suffix = token_value[-12:] if len(token_value) >= 12 else token_value
-        expires_iso = datetime.fromtimestamp(
-            token_resp.expires_at, tz=timezone.utc,
-        ).isoformat(timespec="seconds")
+        expires_iso = datetime.fromtimestamp(token_resp.expires_at, tz=timezone.utc).isoformat(timespec="seconds")
         logger.info("polar_token_issued customer=%s plan=%s exp=%s", customer_id, plan, expires_iso)
-        # Mark processed only on a *successful* mint -- a failed issuance must
-        # stay eligible for the next retry/redelivery to actually grant access.
+        # Grant and mint must both complete before suppressing further delivery.
         await _mark_processed(order_id, event_type, customer_id)
-    except Exception as e:  # noqa: BLE001
-        logger.exception("polar_token_issue_failed err=%s", e)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("polar_token_or_completion_failed err=%s", exc)
 
-    # --- Tell the OAuth "Connect" sign-in which account this email bought ---
-    # The webhook is the only place that sees the buyer's email next to the customer id the credits go to
-    # (sub_{customer_id}). Writing the link lets an assistant the buyer connected with that email spend what
-    # they bought, from its next token refresh. Best-effort and first-writer-wins in the database: a failure
-    # here can never fail a paid order, and a redelivered webhook is harmless.
+    # Preserve the OAuth Connect account link introduced after the original repair.
     if email:
         try:
             from agent_interface.oauth.link import link_purchase
             await link_purchase(email, f"sub_{customer_id}", customer_id, plan)
-        except Exception as _le:  # noqa: BLE001
-            logger.warning("oauth_account_link_failed customer=%s err=%s", customer_id, _le)
-
-    # --- SLICE 4: Credit grant on purchase ---
-    # Maps the purchased Polar product -> credits and grants them to the
-    # sub_{customer_id} credit account. Idempotent: keyed on order_id so a
-    # re-delivered webhook never double-grants. Reuses the same
-    # polar_order_events idempotency already checked above.
-    # The account_id convention matches resolve_account (agent_id from JWT):
-    # issue_subscription_token sets agent_id = f"sub_{customer_id}".
-    try:
-        from billing import switches as _switches
-        if _switches.credits_enabled():
-            from billing.packages import credits_for_product
-            from billing.credits import grant as _credit_grant
-
-            product_obj = data.get("product") or {}
-            product_name = (product_obj.get("name") if isinstance(product_obj, dict) else "") or ""
-            product_id = (product_obj.get("id") if isinstance(product_obj, dict) else "") or ""
-            product_meta = (product_obj.get("metadata") if isinstance(product_obj, dict) else None) or {}
-
-            pkg_credits = credits_for_product(
-                product_name=product_name,
-                product_id=product_id,
-                product_metadata=product_meta,
-            )
-            if pkg_credits > 0 and order_id:
-                credit_account = f"sub_{customer_id}"
-                # A FAILED GRANT USED TO BE A LOG LINE AND NOTHING ELSE.
-                #
-                # The outer `except` caught it, execution carried on to email
-                # the customer their API key and fire the revenue alert, and
-                # the route returned 200 - which this webhook does on purpose
-                # so Polar does not retry. Net effect: the customer paid, got
-                # a key, got a welcome email, and had ZERO credits for ever.
-                # Nothing retried it and nothing surfaced it.
-                #
-                # The grant is idempotent on order_id, so retrying is safe.
-                # After the retries, an unfixed grant is escalated rather than
-                # logged: a paid order that did not deliver is not an
-                # operational detail, it is somebody's money.
-                _granted, _last_err = False, None
-                for _attempt in range(3):
-                    try:
-                        await _credit_grant(
-                            account_id=credit_account,
-                            amount=pkg_credits,
-                            source="polar",
-                            idempotency_key=order_id,
-                            order_id=order_id,
-                        )
-                        _granted = True
-                        break
-                    except Exception as _ge:    # noqa: BLE001
-                        _last_err = _ge
-                        logger.warning(
-                            "polar_credit_grant_attempt_failed attempt=%d "
-                            "order=%s err=%s", _attempt + 1, order_id, _ge)
-                        if _attempt < 2:
-                            await asyncio.sleep(1.5 * (_attempt + 1))
-
-                if _granted:
-                    logger.info(
-                        "polar_credit_grant_applied account=%s credits=%d order_id=%s",
-                        credit_account, pkg_credits, order_id,
-                    )
-                else:
-                    logger.error(
-                        "POLAR_CREDIT_GRANT_UNRECOVERED account=%s credits=%d "
-                        "order_id=%s err=%s -- CUSTOMER PAID AND HAS NO CREDITS",
-                        credit_account, pkg_credits, order_id, _last_err)
-                    await _record_ungranted_order(
-                        order_id=order_id, account_id=credit_account,
-                        credits=pkg_credits, email=email or "",
-                        error=str(_last_err)[:300])
-            elif pkg_credits <= 0:
-                logger.warning(
-                    "polar_credit_grant_skipped: no credits resolved for "
-                    "product_name=%r product_id=%r order_id=%s",
-                    product_name, product_id, order_id,
-                )
-
-            # SLICE 6: Send WELCOME email with credits, API key, and quickstart.
-            # Only sent when we have an email and a token was successfully issued.
-            if email and token_value and pkg_credits > 0:
-                try:
-                    from billing.emails import send_welcome_email as _welcome
-                    # Derive USD amount from the order's amount field (cents -> USD).
-                    raw_amount = data.get("amount") or data.get("total_amount")
-                    amount_usd_val: float | None = None
-                    if isinstance(raw_amount, (int, float)):
-                        amount_usd_val = float(raw_amount) / 100
-                    import asyncio as _asyncio
-                    _asyncio.create_task(_welcome(
-                        email=email,
-                        credits=pkg_credits,
-                        api_key=token_value,
-                        order_id=order_id or None,
-                        amount_usd=amount_usd_val,
-                    ))
-                except Exception as _we:  # noqa: BLE001
-                    logger.warning("polar_welcome_email_failed customer=%s err=%s", customer_id, _we)
-
-    except Exception as e:  # noqa: BLE001
-        logger.warning("polar_credit_grant_failed customer=%s order=%s err=%s", customer_id, order_id, e)
-    # --- END SLICE 4 ---
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("oauth_account_link_failed customer=%s err=%s", customer_id, type(exc).__name__)
 
     # Email the key (best-effort, reuses the Resend path).
     if token_value and email:
@@ -524,3 +397,129 @@ async def handle_polar_event(event: dict[str, Any]) -> None:
         ]))
     except Exception as e:  # noqa: BLE001
         logger.warning("polar_telegram_alert_failed err=%s", e)
+
+def _explicit_customer_id(data: dict[str, Any]) -> str:
+    customer = data.get("customer")
+    value = customer.get("id") if isinstance(customer, dict) else None
+    value = value or data.get("customer_id")
+    order = data.get("order")
+    if not value and isinstance(order, dict):
+        customer = order.get("customer")
+        value = (customer.get("id") if isinstance(customer, dict) else None) or order.get("customer_id")
+    return value.strip() if isinstance(value, str) else ""
+
+
+async def _scoped_refund(event_type: str, data: dict[str, Any]) -> None:
+    from billing import polar_fulfillment as store
+    from agent_interface.identity import remember_customer_revocation
+    order_id, customer_id = _extract_order_id(data), _explicit_customer_id(data)
+    if event_type in {"refund.created", "refund.updated"}:
+        order = data.get("order")
+        order_id = (order.get("id") if isinstance(order, dict) else None) or data.get("order_id") or ""
+    if not order_id or not customer_id:
+        raise PaidOrderFulfillmentError()
+    try:
+        await store.refund(order_id=order_id, customer_id=customer_id)
+    except Exception:
+        raise PaidOrderFulfillmentError() from None
+    remember_customer_revocation(customer_id)
+
+
+async def _handle_credit_event(event_type: str, data: dict[str, Any]) -> None:
+    from billing import polar_fulfillment as store
+    from billing.packages import credits_for_product
+    from agent_interface.identity import issue_subscription_token
+    from agent_interface.oauth.tokens import email_hash
+    import uuid
+
+    # Credit packages are fulfilled from paid Order events, never subscription ids.
+    if event_type not in {"order.paid", "order.created"}:
+        return
+    if not _paid_order(event_type, data):
+        return
+    order_id, customer_id = _extract_order_id(data), _explicit_customer_id(data)
+    email, plan = _extract_email(data), _extract_plan(data)
+    product = data.get("product")
+    if (not order_id or not customer_id or not email or "@" not in email
+            or not isinstance(product, dict) or not isinstance(product.get("id"), str)
+            or not product["id"].strip()):
+        raise PaidOrderFulfillmentError()
+    try:
+        metadata = product.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            raise ValueError()
+        credits = credits_for_product(product_name=product.get("name") or "",
+                                      product_id=product["id"], product_metadata=metadata)
+        if type(credits) is not int or credits <= 0:
+            raise ValueError()
+    except Exception:
+        raise PaidOrderFulfillmentError() from None
+
+    owner = str(uuid.uuid4())
+    claim = None
+    try:
+        claim = await store.claim(order_id=order_id, customer_id=customer_id,
+                                  account_id=f"sub_{customer_id}", product_id=product["id"],
+                                  credits=credits, plan=plan, email_hash=email_hash(email), owner=owner)
+        if claim["status"] == "refunded":
+            return
+        if claim["status"] not in {"claimed", "complete"}:
+            raise PaidOrderFulfillmentError()
+        token = issue_subscription_token(customer_id, plan, email,
+                                         issued_at=claim["issued_at"], token_id=claim["token_id"],
+                                         issuance_version=claim["issuance_version"])
+        if not isinstance(token.token, str) or not token.token.strip():
+            raise PaidOrderFulfillmentError()
+        if claim["status"] == "claimed":
+            completion = await store.complete(order_id=order_id, owner=owner, fence=claim["fence"])
+            if completion["status"] == "refunded":
+                return
+            if (completion["status"] != "complete" or completion["issued_at"] != claim["issued_at"]
+                    or completion["token_id"] != claim["token_id"]
+                    or completion["issuance_version"] != claim["issuance_version"]
+                    or completion.get("entitlements") != claim.get("entitlements")):
+                raise PaidOrderFulfillmentError()
+    except Exception:
+        if claim and claim.get("status") == "claimed":
+            try:
+                await store.release(order_id=order_id, owner=owner, fence=claim["fence"])
+            except Exception:
+                pass  # A durable lease/tombstone governs the next delivery; never guess it was released.
+        raise PaidOrderFulfillmentError() from None
+
+    # Entitlement and OAuth linkage are committed before delivery. A failed send
+    # remains retryable and replays use the SAME identity. Provider retries are
+    # bounded; there is no durable mail queue or guaranteed email delivery.
+    from billing.telegram_revenue_alerts import send_api_key_email
+    from billing.emails import send_welcome_email
+    try:
+        if await send_welcome_email(email=email, credits=credits, api_key=token.token, order_id=order_id) is not True:
+            raise PaidOrderFulfillmentError()
+        if await send_api_key_email(email, plan, token.token, token.expires_at) is not True:
+            raise PaidOrderFulfillmentError()
+    except Exception:
+        raise PaidOrderFulfillmentError() from None
+    logger.info("polar_fulfillment_complete order=%s", order_id)
+
+
+async def handle_polar_event(event: dict[str, Any]) -> None:
+    """Acknowledge paid fulfillment only after its durable transaction completes."""
+    from billing import switches
+    event_type = event.get("type") or event.get("event_type") or ""
+    data = event.get("data")
+    data = data if isinstance(data, dict) else {}
+    if event_type in _REVOKE_EVENTS:
+        if not _terminal_revocation(event_type, data):
+            return
+        if switches.credits_enabled() or os.getenv("POLAR_FULFILLMENT_KEY"):
+            await _scoped_refund(event_type, data)
+        else:
+            await _handle_revoke_event(event_type, data)
+        return
+    # A signed historical paid order still needs fulfillment when offers and
+    # metering are disabled. Provisioning the scoped rail opts into durability.
+    if switches.credits_enabled() or os.getenv("POLAR_FULFILLMENT_KEY"):
+        if event_type in _GRANT_EVENTS:
+            await _handle_credit_event(event_type, data)
+        return
+    await _handle_legacy_event(event)
