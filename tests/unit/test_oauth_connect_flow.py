@@ -207,7 +207,12 @@ def full_signin(c, mailbox, client_id=None, redirect_uri=DCR_REDIRECT, email=Non
 # the happy paths
 # ---------------------------------------------------------------------------
 
-def test_a_registered_client_signs_in_and_gets_a_one_hour_key_bound_to_the_resource(env, browser, mailbox):
+def test_a_registered_client_signs_in_and_gets_a_one_hour_key_bound_to_the_resource(env, browser, mailbox, monkeypatch):
+    # datetime.fromtimestamp rounds to microseconds; a fractional wall clock can
+    # make an exactly one-hour token appear 0.238 microseconds longer. Fix the
+    # clock at a whole second and test the signed lifetime exactly below.
+    now = int(time.time())
+    monkeypatch.setattr(time, "time", lambda: now)
     tok, ctx = full_signin(browser, mailbox, state="state-abc")
     q = query_of(ctx["location"])
     assert q["state"] == "state-abc" and q["iss"] == HTTPS_BASE      # RFC 9207: the issuer rides every response
@@ -223,6 +228,7 @@ def test_a_registered_client_signs_in_and_gets_a_one_hour_key_bound_to_the_resou
     claims = tokens.__dict__  # noqa: F841 - keep the module imported for the audience assertion below
     from agent_interface.identity import _verify
     c = _verify(tok["access_token"])
+    assert c["iat"] == now and c["exp"] - c["iat"] == 3600
     assert c["aud"] == RESOURCE and c["scp"] == "agentbroker.tools"
     assert c["principal"]["type"] == "human"
     assert ctx["email"] not in str(c) and tokens.email_hash(ctx["email"]) not in str(c)    # the key carries no email
