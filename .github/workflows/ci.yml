@@ -39,6 +39,7 @@ on:
     branches: [main, "node-b/**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # ─── THE TWO SETTINGS BELOW EXIST BECAUSE THEIR ABSENCE WEDGED THE PIPELINE ───
 #
