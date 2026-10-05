@@ -1728,7 +1728,8 @@ async def polar_webhook(request: Request):
 
     Auth: Standard Webhooks signature (webhook-id/-timestamp/-signature headers),
     secret in POLAR_WEBHOOK_SECRET. Bad signature → 401, no grant.
-    Always returns 200 after a valid signature so Polar does not retry.
+    Returns 200 after handling or safely ignoring the event. Fulfillment and
+    delivery failures propagate a server error so Polar can retry the event.
     """
     import json
     import logging

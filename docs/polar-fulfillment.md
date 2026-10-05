@@ -23,6 +23,11 @@ and never issue a second grant. A mismatch in an existing account link or histor
 grant rolls the transaction back. Plan upgrades require a separate policy; this
 path does not overwrite a conflicting link.
 
+Customer reactivation after a terminal refund also needs a separate policy.
+A different new paid order for a revoked customer is retryable conflict, never
+acknowledged as if that new payment had already been refunded. These recovery
+policies are prerequisites to enabling purchases.
+
 Refund revocation is durable and dominates later paid-event retries. It preserves
 the accounting ledger and revokes customer access; it does not create a monetary
 refund or reverse spent credits. Both identity headers and OAuth bearer tokens
@@ -30,6 +35,9 @@ observe revocation within the 30-second refresh bound. Paid authorization denies
 access when configured storage cannot refresh revocations. Refund event status
 and partial refunds must be distinguished before requesting irreversible access
 revocation; the provider's successful benefits-revocation instruction is authoritative.
+Polar documents [refund.created](https://polar.sh/docs/api-reference/2026-04/refund_created)
+as independent of refund status and [order.refunded](https://polar.sh/docs/api-reference/2026-04/order_refunded)
+as covering partial refunds too. The handler checks these facts explicitly.
 
 Email runs after financial completion. Failed sends return a retryable server
 error; the provider can redeliver using the same identity. Provider retries are
