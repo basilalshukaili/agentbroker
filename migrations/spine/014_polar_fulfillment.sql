@@ -74,6 +74,13 @@ begin
   -- The same customer lock is taken by claim, commit and refund. Customer-wide
   -- revocation therefore cannot pass between the final check and a grant.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('polar/customer/' || p_customer_id, 0));
+  -- Customer reactivation is deliberately unresolved. A new paid purchase is
+  -- a fulfillment conflict, not evidence that this new order was refunded.
+  -- Do not create a false refund receipt or acknowledge unfulfilled payment.
+  if exists(select 1 from public.polar_order_events where customer_id=p_customer_id and status='revoked')
+    and not exists(select 1 from public.polar_fulfillment_orders where order_id=p_order_id) then
+    return jsonb_build_object('ok',true,'status','conflict');
+  end if;
   v_ent := jsonb_build_object('operations',jsonb_build_array('*'),'verticals',jsonb_build_array('*'),
     'budget_cap_usd',case p_plan when 'business' then 5000 when 'enterprise' then 25000 else 500 end,
     'ttl_seconds',case p_plan when 'enterprise' then 31536000 else 7776000 end);

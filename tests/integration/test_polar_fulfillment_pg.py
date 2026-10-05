@@ -252,7 +252,8 @@ def test_refund_after_claim_blocks_commit_and_future_customer_orders(cluster):
     args=binding(); receipt=claim(cluster,args); refund(cluster,args)
     assert finish(cluster,args,receipt)["status"]=="refunded"
     other={**args,"p_order_id":"second-"+uuid.uuid4().hex,"p_owner":str(uuid.uuid4())}
-    assert claim(cluster,other)["status"]=="refunded"
+    assert claim(cluster,other)["status"]=="conflict"
+    assert query(cluster,"select order_id from public.polar_fulfillment_orders where order_id=$1",other["p_order_id"])==[]
     assert balance(cluster,args)==0
 
 
@@ -341,7 +342,8 @@ def http_rpc_gateway(cluster):
     ("business","Growth",3500,5000,7776000),
     ("enterprise","Growth",3500,25000,31536000),
 ])
-def test_real_handler_http_payload_and_sql_fulfillment_then_refund(cluster,monkeypatch,plan,product,credits,budget,ttl):
+@pytest.mark.parametrize("refund_credits_enabled",[True,False])
+def test_real_handler_http_payload_and_sql_fulfillment_then_refund(cluster,monkeypatch,plan,product,credits,budget,ttl,refund_credits_enabled):
     from agent_interface import identity
     from billing import polar_webhook,emails,telegram_revenue_alerts
     suffix=uuid.uuid4().hex
@@ -382,9 +384,22 @@ def test_real_handler_http_payload_and_sql_fulfillment_then_refund(cluster,monke
         # Nested Refund resource, no email or product: the persisted receipt and
         # explicit customer binding are sufficient, and the previously sent key fails.
         refunded={"type":"refund.created","data":{"id":"refund-"+suffix,
+            "status":"succeeded","revoke_benefits":True,
             "order":{"id":args["p_order_id"],"customer_id":args["p_customer_id"]}}}
+        monkeypatch.setenv("CREDITS_ENABLED","true" if refund_credits_enabled else "false")
         asyncio.run(polar_webhook.handle_polar_event(refunded))
+        assert query(cluster,"select status from public.polar_fulfillment_orders where order_id=$1",args["p_order_id"])[0]["status"]=="refunded"
+        assert query(cluster,"select count(*) as n from public.polar_order_events where customer_id=$1 and status='revoked'",args["p_customer_id"])[0]["n"]==1
         assert identity.validate_token(delivered[0]).valid is False
+        monkeypatch.setenv("CREDITS_ENABLED","true")
         asyncio.run(polar_webhook.handle_polar_event(event))
         assert len(delivered)==4 and balance(cluster,args)==credits
         assert [action for action,_ in observed][-2:]==["refund","claim"]
+        # A fresh payment after customer-wide revocation needs explicit
+        # reactivation policy. Never acknowledge it as an already refunded order.
+        new_order="new-"+suffix
+        later={**event,"data":{**event["data"],"id":new_order}}
+        with pytest.raises(polar_webhook.PaidOrderFulfillmentError):
+            asyncio.run(polar_webhook.handle_polar_event(later))
+        assert query(cluster,"select order_id from public.polar_fulfillment_orders where order_id=$1",new_order)==[]
+        assert balance(cluster,args)==credits and len(delivered)==4
