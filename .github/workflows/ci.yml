@@ -100,9 +100,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # pytest-timeout is a CI-only diagnostic, deliberately not in
-          # requirements.txt - it must not ship in the production image.
-          pip install pytest-timeout
+          # Diagnostics and the official SDK are test clients, not production
+          # dependencies. Pin the SDK used by the OAuth compatibility checks.
+          pip install pytest-timeout mcp==1.26.0
 
       # Fails rather than skips when a gating dependency is absent, so CI can
       # never quietly run a smaller suite than it reports.
