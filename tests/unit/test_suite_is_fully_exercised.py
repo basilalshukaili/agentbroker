@@ -35,10 +35,20 @@ from __future__ import annotations
 
 import importlib
 import os
+import subprocess
 
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def test_the_official_sdk_client_is_installed_in_its_selected_interpreter():
+    from tests.oauth_sdk_bridge import CLIENT, client_env, sdk_python
+    result = subprocess.run([sdk_python(), str(CLIENT), "--check"], capture_output=True,
+                            text=True, timeout=30, env=client_env())
+    assert result.returncode == 0, (
+        "The official OAuth client tests are mandatory. Install mcp==1.26.0 in a separate venv "
+        "and set MCP_SDK_PYTHON to that venv's Python. " + result.stderr)
 
 # Packages whose absence SILENTLY DISABLES tests rather than breaking them.
 # Map: import name -> the requirements.txt name, since they differ often enough

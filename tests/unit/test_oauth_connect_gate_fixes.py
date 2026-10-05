@@ -405,8 +405,7 @@ def test_a_client_that_sent_a_bearer_token_is_oauth_capable_whatever_it_calls_it
 def test_the_official_sdk_without_an_auth_provider_still_receives_the_account_guidance():
     """The reviewer's repro: with the feature on, the SDK raised HTTPStatusError and never read the body that
     tells an agent how to get a key, buy credits or pay per call."""
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from tests.oauth_sdk_bridge import run_sdk
     import uvicorn
     import threading
     import socket
@@ -424,18 +423,13 @@ def test_the_official_sdk_without_an_auth_provider_still_receives_the_account_gu
         time.sleep(0.05)
     assert server.started
 
-    async def go():
-        async with streamablehttp_client(f"http://127.0.0.1:{port}/mcp") as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await session.call_tool("send_message", {})
     try:
-        result = asyncio.run(go())
+        result = run_sdk(f"http://127.0.0.1:{port}", "guidance")
     finally:
         server.should_exit = True
         thread.join(timeout=10)
-    assert result.isError is True
-    assert "auth_required" in result.content[0].text
+    assert result["isError"] is True
+    assert "auth_required" in result["text"]
 
 
 # ---------------------------------------------------------------------------

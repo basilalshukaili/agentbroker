@@ -17,10 +17,13 @@ What the SDK does that these tests make it do:
 
 The "browser" is an httpx client that does what a person does: open the page, type an address, open the
 mailed link, press Confirm. The mailbox is a fake; nothing leaves the machine.
+
+The SDK's shared dependency versions conflict with requirements.txt. Install mcp==1.26.0 in a separate
+venv and set MCP_SDK_PYTHON to its Python. Only the client runs there; the real server and its fixtures
+stay in the production environment. Missing or broken clients fail, never skip, these tests.
 """
 from __future__ import annotations
 
-import asyncio
 import socket
 import threading
 import time
@@ -29,14 +32,8 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 
-uvicorn = pytest.importorskip("uvicorn")
-pytest.importorskip("mcp.client.auth")
-
-from mcp import ClientSession  # noqa: E402
-from mcp.client.auth import OAuthClientProvider  # noqa: E402
-from mcp.client.streamable_http import streamablehttp_client  # noqa: E402
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken  # noqa: E402
-from pydantic import AnyUrl  # noqa: E402
+import uvicorn
+from tests.oauth_sdk_bridge import run_sdk
 
 import config  # noqa: E402
 import main  # noqa: E402
@@ -46,29 +43,6 @@ from agent_interface.oauth.store import MemoryStore, set_store  # noqa: E402
 from tests.oauth_support import (  # noqa: E402
     CLAUDE_CALLBACK, CLAUDE_CIMD, claude_document, install_cimd, install_mailbox, magic_of, poll_secret_of, rid_of,
 )
-
-
-# The 401 that starts sign-in goes to callers known to act on it (see OAUTH_CHALLENGE_401_CLIENTS); this stands in for
-# Claude Code, the SDK-based client that does.
-CONNECTOR_HEADERS = {"User-Agent": "claude-code/1.0"}
-
-
-class Storage:
-    def __init__(self):
-        self.tokens: OAuthToken | None = None
-        self.client: OAuthClientInformationFull | None = None
-
-    async def get_tokens(self):
-        return self.tokens
-
-    async def set_tokens(self, tokens):
-        self.tokens = tokens
-
-    async def get_client_info(self):
-        return self.client
-
-    async def set_client_info(self, info):
-        self.client = info
 
 
 @pytest.fixture
@@ -91,10 +65,12 @@ def server(monkeypatch):
             break
         time.sleep(0.05)
     assert srv.started, "the test server did not start"
-    yield base
-    srv.should_exit = True
-    t.join(timeout=10)
-    set_store(None)
+    try:
+        yield base
+    finally:
+        srv.should_exit = True
+        t.join(timeout=10)
+        set_store(None)
 
 
 class Person:
@@ -126,92 +102,47 @@ class Person:
         return q["code"][0], q.get("state", [None])[0]
 
 
-def _metadata(redirect="http://localhost:8765/callback"):
-    return OAuthClientMetadata(client_name="SDK conformance", redirect_uris=[AnyUrl(redirect)],
-                               grant_types=["authorization_code", "refresh_token"], response_types=["code"],
-                               token_endpoint_auth_method="none")
-
-
 def test_the_official_sdk_discovers_registers_signs_in_and_retries_the_same_call(server, monkeypatch):
     mailbox = install_mailbox(monkeypatch)
-    person, storage = Person(server, mailbox), Storage()
-    provider = OAuthClientProvider(f"{server}/mcp", _metadata(), storage, person.redirect_handler, person.callback_handler)
-
-    async def scenario():
-        async with streamablehttp_client(f"{server}/mcp", auth=provider, headers=CONNECTOR_HEADERS) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                tools = (await session.list_tools()).tools
-                names = {t.name for t in tools}
-                assert "get_conversation" in names and "screen_sanctions" in names
-                assert person.visits == [], "listing tools must not require sign-in"
-                free = await session.call_tool("check_quota", {})
-                assert not free.isError and person.visits == [], "a keyless tool must not require sign-in"
-
-                # the protected call: 401 -> discovery -> registration -> sign-in -> exchange -> SAME call retried
-                result = await session.call_tool("get_conversation", {"reference": "1234", "business_number": "+15550001111"})
-                assert len(person.visits) == 1 and len(mailbox.sent) == 1
-                text = result.content[0].text
-                assert "identity_required" not in text and "auth_required" not in text, text[:300]
-    asyncio.run(scenario())
-
-    assert storage.client is not None and storage.client.client_id.startswith("dcr_")
-    assert storage.tokens and storage.tokens.token_type.lower() == "bearer" and storage.tokens.refresh_token
-    v = validate_token(storage.tokens.access_token)
+    person = Person(server, mailbox)
+    result = run_sdk(server, "register", person)
+    tokens = result["tokens"]
+    assert len(person.visits) == 1 and len(mailbox.sent) == 1
+    assert result["client"]["client_id"].startswith("dcr_")
+    assert tokens["token_type"].lower() == "bearer" and tokens["refresh_token"]
+    v = validate_token(tokens["access_token"])
     assert v.valid and v.identity.agent_id.startswith("free_")
-    assert 3000 < storage.tokens.expires_in <= 3600
+    assert 3000 < tokens["expires_in"] <= 3600
     visit = parse_qs(urlsplit(person.visits[0]).query)
     assert visit["code_challenge_method"] == ["S256"] and visit["resource"] == [f"{server}/mcp"]   # RFC 8707, sent by the SDK
 
 
 def test_the_sdk_refreshes_an_expired_token_and_the_spent_refresh_token_is_dead(server, monkeypatch):
     mailbox = install_mailbox(monkeypatch)
-    person, storage = Person(server, mailbox), Storage()
-    provider = OAuthClientProvider(f"{server}/mcp", _metadata(), storage, person.redirect_handler, person.callback_handler)
-    args = {"reference": "1234", "business_number": "+15550001111"}
-    first = {}
-
-    async def scenario():
-        async with streamablehttp_client(f"{server}/mcp", auth=provider, headers=CONNECTOR_HEADERS) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                await session.call_tool("get_conversation", args)
-                first["refresh"] = storage.tokens.refresh_token
-                first["access"] = storage.tokens.access_token
-                provider.context.token_expiry_time = time.time() - 60          # the access token "expired"
-                again = await session.call_tool("get_conversation", args)
-                assert "identity_required" not in again.content[0].text
-    asyncio.run(scenario())
+    person = Person(server, mailbox)
+    result = run_sdk(server, "refresh", person)
+    tokens, first = result["tokens"], result["first"]
 
     assert len(person.visits) == 1, "refreshing must not send the person through sign-in again"
-    assert storage.tokens.refresh_token != first["refresh"] and storage.tokens.access_token != first["access"]
-    assert validate_token(storage.tokens.access_token).valid
+    assert tokens["refresh_token"] != first["refresh"] and tokens["access_token"] != first["access"]
+    assert validate_token(tokens["access_token"]).valid
 
     # the refresh token the SDK spent is dead - and presenting it kills the chain the SDK now holds
     replay = httpx.post(f"{server}/oauth/token", data={"grant_type": "refresh_token", "refresh_token": first["refresh"],
-                                                       "client_id": storage.client.client_id})
+                                                       "client_id": result["client"]["client_id"]})
     assert replay.status_code == 400 and replay.json()["error"] == "invalid_grant"
-    after = httpx.post(f"{server}/oauth/token", data={"grant_type": "refresh_token", "refresh_token": storage.tokens.refresh_token,
-                                                      "client_id": storage.client.client_id})
+    after = httpx.post(f"{server}/oauth/token", data={"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"],
+                                                      "client_id": result["client"]["client_id"]})
     assert after.json()["error"] == "invalid_grant"
 
 
 def test_the_sdk_identifies_itself_by_metadata_document_when_the_server_advertises_support(server, monkeypatch):
     mailbox = install_mailbox(monkeypatch)
     _, calls = install_cimd(monkeypatch, {CLAUDE_CIMD: claude_document()})
-    person, storage = Person(server, mailbox), Storage()
-    provider = OAuthClientProvider(f"{server}/mcp", _metadata(CLAUDE_CALLBACK), storage, person.redirect_handler,
-                                   person.callback_handler, client_metadata_url=CLAUDE_CIMD)
+    person = Person(server, mailbox)
+    result = run_sdk(server, "cimd", person, redirect_uri=CLAUDE_CALLBACK, cimd=CLAUDE_CIMD)
 
-    async def scenario():
-        async with streamablehttp_client(f"{server}/mcp", auth=provider, headers=CONNECTOR_HEADERS) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("get_conversation", {"reference": "1234", "business_number": "+15550001111"})
-                assert "identity_required" not in result.content[0].text
-    asyncio.run(scenario())
-
-    assert storage.client.client_id == CLAUDE_CIMD              # no registration happened: the URL IS the client id
+    assert result["client"]["client_id"] == CLAUDE_CIMD        # no registration happened: the URL IS the client id
     assert len(calls) >= 1 and calls[0].headers["host"] == "claude.ai"
-    assert validate_token(storage.tokens.access_token).valid
+    assert validate_token(result["tokens"]["access_token"]).valid
     assert mailbox.sent[0]["app"] == "claude.ai"
