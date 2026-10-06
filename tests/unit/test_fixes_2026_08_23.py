@@ -235,8 +235,8 @@ class TestClassifierKeyOverride:
         )
         assert result == "verified_human_key"
 
-    def test_keyless_curl_is_still_crawler(self):
-        """Without a key, curl UA should still be classified as crawler."""
+    def test_keyless_curl_tool_call_is_unattributed(self):
+        """A generic HTTP client alone does not identify a registry crawler."""
         from billing.usage_logger import classify_session_kind
         result = classify_session_kind(
             method="tools/call",
@@ -244,7 +244,7 @@ class TestClassifierKeyOverride:
             user_agent="curl/7.88.1",
             key_id=None,
         )
-        assert result == "crawler"
+        assert result == "anon_agent"
 
     def test_keyless_tools_call_is_anon_agent(self):
         from billing.usage_logger import classify_session_kind
