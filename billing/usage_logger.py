@@ -144,8 +144,9 @@ def _on_log_task_done(task: "asyncio.Task") -> None:
 
 # ---------------------------------------------------------------------------
 # Known crawler / registry bot User-Agent substrings (case-insensitive).
-# These are the bots that enumerate MCP registries — they hit initialize +
-# tools/list but never tools/call with meaningful args.
+# These user agents identify registry bots. A generic HTTP library identifies
+# transport only: people and agents also call useful tools through curl,
+# requests, httpx and Go. Discovery methods are classified separately below.
 # ---------------------------------------------------------------------------
 _CRAWLER_UA_FRAGMENTS: frozenset[str] = frozenset({
     "glama",
@@ -155,10 +156,6 @@ _CRAWLER_UA_FRAGMENTS: frozenset[str] = frozenset({
     "mcp-crawler",
     "mcp-bot",
     "registry-bot",
-    "python-httpx",       # Smithery validator uses httpx with no custom UA
-    "python-requests",    # common registry enumerators
-    "go-http-client",     # several MCP indexers use Go
-    "curl/",              # curl probes (almost always bots)
     # Add more as new registries appear
 })
 
@@ -184,8 +181,8 @@ def classify_session_kind(
 ) -> str:
     """
     Classify the caller into one of four buckets:
-      'crawler'             — registry bot, no meaningful work
-      'anon_agent'          — tools/call with no key
+      'crawler'             — named registry bot, discovery, or retired door
+      'anon_agent'          — unattributed request with no key
       'verified_agent_key'  — tools/call with a minted key for a system/AI principal
       'verified_human_key'  — tools/call with a minted key for a human/consumer principal
 
@@ -194,6 +191,11 @@ def classify_session_kind(
     CI tooling sometimes use curl/python-httpx UAs while sending a real key;
     labelling those as 'crawler' poisoned the session_kind metric.
     Crawler classification is reserved for keyless traffic only.
+
+    These are request classes, not proof of organic demand or successful work.
+    Generic HTTP-library user agents carry no evidence of whether a caller is
+    a bot. In particular, a keyless tools/call through curl/httpx/requests/Go
+    remains anonymous; use the recorded method and outcome to measure work.
 
     HUMAN vs AGENT (FIX, 2026-09-01): `principal_type` from the validated JWT
     distinguishes a human/consumer subscriber from an autonomous AI agent running

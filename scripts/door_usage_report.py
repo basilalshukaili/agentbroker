@@ -9,14 +9,16 @@ when: the first Muse, Dots or Grok call is visible within the same hour." This i
 migration 013 and the door instrumentation write. Five questions, each a single read-only query:
 
   door_by_day              Rows per day, door and protocol version, with how many callers and how many were ours.
-  organic_callers_by_day   THE DAILY FIGURE: distinct callers (address hash + user agent) that sent an MCP request
+  organic_callers_by_day   Legacy key: distinct observed callers (address hash + user agent) that sent an MCP request
                            to a LIVE door, excluding our own infrastructure's user agents. `callers_that_worked` is
-                           the subset that did more than discover (session_kind is not 'crawler').
+                           the subset not classified as crawler. Neither count proves organic demand or success;
+                           named probes and unlisted internal callers may remain, and older library calls can be
+                           misclassified as crawler. Compare method and outcome before claiming useful work.
   new_clients_in_window    Clients (client name from the handshake, else the user agent) that called a live door in
                            the last --hours and had not been seen in the --lookback-days before that. This is the
                            "first Muse call, within the hour" view.
   result_counts_by_tool    For tools/call: calls, how many carry a result_count, how many returned zero results, how
-                           many did not succeed. External callers only.
+                           many did not succeed. Excludes configured own user agents, not all probes.
   instrumentation_gaps     Rows in the last --hours that SHOULD carry a door and do not: a non-zero count means a
                            door is not instrumented (or the old image is still the one writing).
 
@@ -28,7 +30,7 @@ DEFINITIONS, so the number can be argued with:
   own            user agents in OWN_INFRA_UAS. Keep it in step with OWN_INFRA_UA_EXACT in scripts/mcp_traffic_audit.py
                  (the health checks, the keepalive, the Door Reliability Run, the MCP probe, the live verification).
   caller         one (ip_hash, user_agent) pair. A person behind two networks is two callers; two people behind one
-                 NAT with one client are one. It is a floor on distinct sources, not a head count.
+                 NAT with one client are one. It is an approximate source count, not a head count or buyer count.
 
 The connection MUST be a read-only session; `report()` refuses any other, and `connect()` makes one.
 No secret is printed: the DSN is read from the environment or the env file and never echoed.
@@ -142,9 +144,10 @@ def _env(name: str, env_file: str) -> str:
 
 
 def _print(rep: dict, a) -> None:
-    print("== organic callers per day (live doors, excluding our own infrastructure) ==")
+    print("== observed callers per day (live doors, excluding configured own user agents) ==")
+    print("  Counts include probes; neither caller count nor non-crawler classification proves successful work.")
     for r in rep["organic_callers_by_day"]:
-        print(f"  {r['day']}  callers={r['callers']}  that_worked={r['callers_that_worked']}")
+        print(f"  {r['day']}  callers={r['callers']}  classified_non_crawler={r['callers_that_worked']}")
     print(f"\n== new clients in the last {a.hours}h (not seen in the {a.lookback_days}d before) ==")
     for r in rep["new_clients_in_window"] or [{"client": "(none)", "door": "", "first_seen": "", "rows": 0}]:
         print(f"  {r['client']}  door={r['door']}  first_seen={r['first_seen']}  rows={r['rows']}")
@@ -152,7 +155,7 @@ def _print(rep: dict, a) -> None:
     for r in rep["door_by_day"]:
         print(f"  {r['day']}  {str(r['door']):<28} pv={str(r['protocol_version']):<11} rows={r['rows']:<6} "
               f"callers={r['callers']:<4} own={r['own_infra_rows']}")
-    print(f"\n== tools/call, external callers (last {a.days}d) ==")
+    print(f"\n== tools/call, excluding configured own user agents (last {a.days}d; probes may remain) ==")
     for r in rep["result_counts_by_tool"]:
         print(f"  {r['tool']:<28} calls={r['calls']:<5} with_count={r['with_count']:<5} zero={r['zero_results']:<4} "
               f"avg={r['avg_results']}  not_ok={r['not_ok']}")

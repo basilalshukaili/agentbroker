@@ -72,14 +72,17 @@ never calls v3); the migration needs none (an unused column and an unused functi
 
 Read-only (it refuses any session that is not read-only), five queries:
 
-- **organic callers per day**: distinct (address hash, user agent) pairs that sent an MCP request to a *live* door,
+- **observed callers per day**: distinct (address hash, user agent) pairs that sent an MCP request to a *live* door,
   excluding our own infrastructure's user agents (`OWN_INFRA_UAS`; keep it in step with `OWN_INFRA_UA_EXACT` in the
-  operations repo's `mcp_traffic_audit.py`; `--own-ua` extends it); and the subset that did more than discover. This is
-  the verdict's "one daily organic caller figure". It is a floor on distinct sources, not a head count.
+  operations repo's `mcp_traffic_audit.py`; `--own-ua` replaces the configured list); and the subset classified as
+  non-crawler. These are approximate source counts, not people, buyers, or proof of successful work. Third-party
+  probes and unlisted internal callers remain. JSON retains the legacy names `organic_callers_by_day` and
+  `callers_that_worked` for compatibility. Older rows can classify anonymous curl/httpx/requests/Go tool calls as
+  crawler; new writers no longer infer a bot from the HTTP library alone. Read method and outcome for work evidence.
 - **new clients in the window**: clients not seen in the previous 30 days that called a live door in the last hour, which
   is the "first Muse, Dots or Grok call, visible within the same hour" view.
-- **rows by day, door and protocol version**, **result counts by tool** (external callers only; the success rate of a
-  tool is read here once its upstream is healthy), and **instrumentation gaps**: rows in the window that should carry a
+- **rows by day, door and protocol version**, **result counts by tool** (configured own user agents excluded, probes
+  may remain), and **instrumentation gaps**: rows in the window that should carry a
   door and do not.
 
 "Live door" means a capability door or `agent-broker`, or NULL on an MCP row (every row written before the migration has

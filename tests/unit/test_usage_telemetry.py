@@ -51,9 +51,33 @@ class TestClassifySessionKind:
         result = self.classify("tools/call", "send_message", "Claude/1.0", "sub_abc123")
         assert result == "verified_human_key"
 
-    def test_curl_is_crawler(self):
-        result = self.classify("tools/call", "find_business", "curl/7.88.0", None)
-        assert result == "crawler"
+    @pytest.mark.parametrize("user_agent", [
+        "curl/7.88.0", "python-requests/2.28.0", "python-httpx/0.28.1", "Go-http-client/1.1",
+    ])
+    def test_http_library_does_not_make_an_anonymous_tool_call_a_crawler(self, user_agent):
+        assert self.classify("tools/call", "find_business", user_agent, None) == "anon_agent"
+
+    @pytest.mark.parametrize("user_agent", [
+        "curl/7.88.0", "python-requests/2.28.0", "python-httpx/0.28.1", "Go-http-client/1.1",
+    ])
+    @pytest.mark.parametrize("method", ["initialize", "server/discover", "tools/list", "ping"])
+    def test_http_library_discovery_remains_discovery(self, user_agent, method):
+        assert self.classify(method, None, user_agent, None) == "crawler"
+
+    @pytest.mark.parametrize("user_agent", [
+        "curl/7.88.0 Glama-Bot/1.0", "python-httpx/0.28.1 Smithery", "Go-http-client/1.1 MCP-Crawler",
+    ])
+    def test_named_crawler_evidence_still_wins_for_keyless_tools(self, user_agent):
+        assert self.classify("tools/call", "find_business", user_agent, None) == "crawler"
+
+    @pytest.mark.parametrize("user_agent", ["curl/7.88.0", "python-httpx/0.28.1 Glama-Bot/1.0"])
+    def test_valid_identity_still_wins_for_library_tool_calls(self, user_agent):
+        assert self.classify("tools/call", "find_business", user_agent, "key_a",
+                             principal_type="system") == "verified_agent_key"
+
+    def test_library_tool_call_to_retired_door_still_does_no_work(self):
+        assert self.classify("tools/call", "find_business", "curl/7.88.0", None,
+                             door="retired:data-enrichment") == "crawler"
 
     def test_python_requests_is_crawler(self):
         result = self.classify("tools/list", None, "python-requests/2.28.0", None)
