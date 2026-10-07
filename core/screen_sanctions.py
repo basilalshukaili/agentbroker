@@ -78,12 +78,17 @@ from typing import Optional
 
 from core import arabic_names as _ar
 from core import input_limits as _limits
+from core import untrusted as _untrusted
 from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 from core.untrusted import fence as _fence_untrusted
-from core.untrusted import label as _label_untrusted
 
 _log = logging.getLogger("smb_broker.screen_sanctions")
+
+
+def _label_untrusted(tool: str, receipt: Any) -> Any:
+    """Resolve the labeler at call time so tests can replace either seam."""
+    return _untrusted.label(tool, receipt)
 
 # ---------------------------------------------------------------------------
 # Constants
