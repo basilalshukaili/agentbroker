@@ -260,12 +260,17 @@ async def _screen_party(party_name: str) -> dict:
     """
     Screen a single party name against sanctions lists.
     Returns a dict: {party, matched, matches, sources_queried, error}.
-    Fail-open: errors are captured and returned, never raised.
+    Errors are captured, returned as incomplete screens, and never raised.
     """
     try:
         from core.screen_sanctions import handle_screen_sanctions
         receipt = await handle_screen_sanctions(name=party_name)
-        res = receipt.result or {}
+        # A failed/null answer is not an empty successful screen. In particular,
+        # a fencing failure returns no result and must propagate as a trade gap.
+        if (getattr(receipt, "status", None) != OperationStatus.SUCCESS
+                or not isinstance(receipt.result, dict) or not receipt.result):
+            raise RuntimeError("screen_sanctions did not return a successful result")
+        res = receipt.result
         # CARRY THE UNAVAILABILITY FORWARD. screen_sanctions spends real care
         # building sources_unavailable and reason_code="partial_screening" -
         # it is how a caller tells "we screened and found nothing" from "we

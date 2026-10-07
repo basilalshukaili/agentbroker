@@ -132,6 +132,13 @@ def test_hostile_wire_preserves_fences_and_contact_warning(monkeypatch, tags):
     assert row["program"].startswith(untrusted.MARKER_OPEN)
     assert envelope["untrusted_content"]["contains_contact_details"] is True
     assert envelope["untrusted_content"]["contact_warning"]
+    field = next(f for f in envelope["untrusted_content"]["fields"]
+                 if f["path"] == "result.possible_matches_unverified[].name")
+    assert {"marker_lookalike_removed", "format_or_control_chars_removed"} <= set(field["neutralised"])
+    untrusted.label("screen_sanctions", envelope)
+    repeated = next(f for f in envelope["untrusted_content"]["fields"]
+                    if f["path"] == field["path"])
+    assert set(field["neutralised"]) <= set(repeated["neutralised"])
     assert verify(envelope["result"])["response_match"] is True
 
 
@@ -210,3 +217,44 @@ def test_chatgpt_door_deliberately_omits_receipt(monkeypatch):
     _, chatgpt = wire_call(name, profile="chatgpt")
     assert cr.RECEIPT_FIELD not in chatgpt["result"]
     assert chatgpt["result"]["possible_matches_unverified"][0]["name"].startswith(untrusted.MARKER_OPEN)
+
+
+def test_trade_never_reports_completed_party_screen_when_labeling_failed(monkeypatch):
+    install_sources(monkeypatch, "hit")
+    def broken(tool, envelope):
+        raise RuntimeError("synthetic label failure")
+    monkeypatch.setattr(ss, "_label_untrusted", broken)
+    from core import map_trade_restriction as mt
+    party = asyncio.run(mt._screen_party("Example Export"))
+    assert party["screening_complete"] is False
+    assert party["screening_status"] == "not_screened"
+    assert party["error"]
+    trade = asyncio.run(mt.handle_map_trade_restriction(
+        product="pumps", destination_country="GB", parties=["Example Export"]))
+    assert trade.result["parties_fully_screened"] is False
+    assert trade.result["parties_screened"][0]["error"]
+    assert "WARNING" in trade.human_message
+
+
+@pytest.mark.parametrize("status,result", [("failure", None), ("partial", {"screening_status": "clean"}),
+                                          ("success", None), ("success", {})])
+def test_trade_rejects_failed_or_missing_screening_results(monkeypatch, status, result):
+    async def failed(name):
+        return SimpleNamespace(status=status, result=result, reason_code="synthetic_failure")
+    monkeypatch.setattr(ss, "handle_screen_sanctions", failed)
+    from core import map_trade_restriction as mt
+    party = asyncio.run(mt._screen_party("Example Export"))
+    assert party["screening_complete"] is False
+    assert party["screening_status"] == "not_screened"
+    assert party["error"]
+
+
+def test_label_replay_preserves_truncation_history():
+    envelope = {"result": {"matches": [{"name": "A" * (untrusted.MAX_FIELD_CHARS + 1)}]}}
+    untrusted.label("screen_sanctions", envelope)
+    original_result = copy.deepcopy(envelope["result"])
+    untrusted.label("screen_sanctions", envelope)
+    assert envelope["result"] == original_result
+    field = next(f for f in envelope["untrusted_content"]["fields"]
+                 if f["path"] == "result.matches[].name")
+    assert "truncated" in field["neutralised"]
