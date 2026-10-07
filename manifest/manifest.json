@@ -2732,7 +2732,25 @@
         "properties": {
           "matched": {
             "type": "boolean",
-            "description": "True only when a CONFIRMED match was found. False does NOT by itself mean clean - it is also false when no list could be screened. Branch on screening_status, not on this."
+            "description": "True only when a CONFIRMED match was found. False does NOT by itself mean clean - it is also false when no list could be screened. Branch on screening_status and review_guidance for independent coverage/review tasks, not on this."
+          },
+          "review_guidance": {
+            "type": "object",
+            "description": "Additive deterministic review hints, bound by compliance_receipt. Coverage means supported OFAC/EU/UK paths only; hit/candidates may coexist with missing coverage. Does not assert identity, KYC/AML clearance or permission to transact. Action identifiers describe review tasks and confer no authorization.",
+            "properties": {
+              "version": { "type": "string", "const": "agentbroker-screening-review/1" },
+              "coverage_scope": { "type": "string", "const": "supported_lists_only" },
+              "coverage_status": { "type": "string", "enum": ["complete", "partial", "none"] },
+              "lists_screened": { "type": "array", "items": { "type": "string" } },
+              "lists_not_screened": { "type": "array", "items": { "type": "string" } },
+              "lists_outside_scope": { "type": "array", "items": { "type": "string" } },
+              "review_required": { "type": "boolean", "description": "True when name/candidate, coverage, freshness or matching limitations require review. False is not clearance." },
+              "review_reasons": { "type": "array", "items": { "type": "string", "enum": ["confirmed_name_match", "unverified_candidates", "incomplete_coverage", "unknown_list_freshness", "stale_list_copy", "name_not_fully_screenable", "lossy_transliteration"] } },
+              "next_actions": { "type": "array", "items": { "type": "string", "enum": ["verify_identity_against_official_source", "review_candidates_against_official_source", "retry_unavailable_lists", "verify_list_freshness", "provide_screenable_name", "review_original_script_and_aliases"] } },
+              "freshness_unknown_lists": { "type": "array", "items": { "type": "string" } },
+              "stale_copy_lists": { "type": "array", "items": { "type": "string" } },
+              "does_not_assert": { "type": "string" }
+            }
           },
           "screening_status": {
             "type": "string",

@@ -2295,6 +2295,77 @@ async def _data_provenance(ofac_ok: bool, eu_ok: bool, uk_ok: bool) -> list[dict
     return entries
 
 
+def _review_guidance(provenance: list[dict], *, confirmed: bool,
+                     candidates: bool, unscreenable: bool,
+                     arabic_script: bool) -> dict:
+    """Branching hints from the same evidence used by the portable receipt.
+
+    Coverage means completed supported list paths, never identity or legal
+    clearance. Keep candidate review independent from source availability.
+    No text from publishers or error messages becomes an action identifier.
+    """
+    supported = {"OFAC-SDN", "EU-CONSOLIDATED", "UK-SANCTIONS"}
+    rows = {row["list"]: row for row in provenance if row.get("list") in supported}
+    covered = [name for name in sorted(supported)
+               if rows.get(name, {}).get("screened_on_this_call") is True]
+    missing = sorted(supported - set(covered))
+    excluded = [row["list"] for row in provenance
+                if row.get("reason_not_screened") and row.get("list") not in supported]
+    unknown, stale = [], []
+    for name in sorted(supported):
+        row = rows.get(name, {})
+        if name == "OFAC-SDN":
+            freshness = row.get("refresh_state", "unknown")
+            if freshness == "unknown":
+                unknown.append(name)
+            elif freshness == "stale_copy_after_failed_refresh":
+                stale.append(name)
+        elif row.get("within_freshness_limit") is None:
+            unknown.append(name)
+        elif row.get("within_freshness_limit") is False:
+            stale.append(name)
+
+    reasons, actions = [], []
+    if confirmed:
+        reasons.append("confirmed_name_match")
+        actions.append("verify_identity_against_official_source")
+    if candidates:
+        reasons.append("unverified_candidates")
+        actions.append("review_candidates_against_official_source")
+    if missing:
+        reasons.append("incomplete_coverage")
+        # A weak name requires a better input, not another identical fetch.
+        if not unscreenable:
+            actions.append("retry_unavailable_lists")
+    if unknown:
+        reasons.append("unknown_list_freshness")
+    if stale:
+        reasons.append("stale_list_copy")
+    if unknown or stale:
+        actions.append("verify_list_freshness")
+    if unscreenable:
+        reasons.append("name_not_fully_screenable")
+        actions.append("provide_screenable_name")
+    elif arabic_script:
+        reasons.append("lossy_transliteration")
+        actions.append("review_original_script_and_aliases")
+    return {
+        "version": "agentbroker-screening-review/1",
+        "coverage_scope": "supported_lists_only",
+        "coverage_status": "complete" if not missing else "partial" if covered else "none",
+        "lists_screened": covered,
+        "lists_not_screened": missing,
+        "lists_outside_scope": excluded,
+        "review_required": bool(reasons),
+        "review_reasons": reasons,
+        "next_actions": actions,
+        "freshness_unknown_lists": unknown,
+        "stale_copy_lists": stale,
+        "does_not_assert": "Identity, KYC/AML clearance or permission to transact. "
+                           "No confirmed name hit is not a clearance.",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
@@ -2873,6 +2944,11 @@ async def handle_screen_sanctions(
     _ofac_ok = screened_ok and not ofac_unavail
     _eu_ok = screened_ok and not eu_unavail
     _uk_ok = screened_ok and not uk_unavail
+    provenance = await _data_provenance(_ofac_ok, _eu_ok, _uk_ok)
+    result_payload["review_guidance"] = _review_guidance(
+        provenance, confirmed=bool(merged), candidates=bool(unverified),
+        unscreenable=bool(_unscreenable), arabic_script=_arabic_script,
+    )
     attach_receipt(
         result_payload,
         tool="screen_sanctions",
@@ -2888,7 +2964,7 @@ async def handle_screen_sanctions(
         inputs={"name": name_clean, "country": country, "type": entity_type},
         evidence={
             "screened_at": screened_at,
-            "data_provenance": await _data_provenance(_ofac_ok, _eu_ok, _uk_ok),
+            "data_provenance": provenance,
             "lists_screened": screened_lists,
             "sources_queried": all_sources_queried,
             "sources_unavailable": all_sources_unavailable,

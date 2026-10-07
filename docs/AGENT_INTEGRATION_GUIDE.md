@@ -4,6 +4,25 @@ This guide is for the agent developer. **Goal: get from `pip install` to a succe
 
 Every example below is copy-paste runnable.
 
+## Branching on sanctions review results
+
+`screen_sanctions` adds `result.review_guidance` alongside its existing status,
+matches and portable `compliance_receipt`. Use the guidance when the next step
+depends on both candidate review and source coverage: `screening_status` can be
+`candidates` or `hit` even when a supported list did not complete.
+
+`coverage_status` is `complete`, `partial` or `none` for the supported OFAC SDN,
+EU and UK list paths only. `lists_outside_scope` identifies excluded coverage,
+including UN. Freshness warnings and lossy Arabic transliteration are separate
+review reasons; they can require review even when coverage is `complete`.
+
+`review_required`, `review_reasons` and `next_actions` are deterministic hints.
+The action identifiers describe review tasks; they do not authorize another
+tool call, contact, transaction or disclosure. Even a complete result with no
+review reasons asserts neither identity nor KYC/AML clearance. Keep the receipt
+for detailed list provenance; its response hash binds the guidance as well.
+Invalid input retains the existing failure result without guidance.
+
 ---
 
 ## Step 0: Get an Agent-Identity token
