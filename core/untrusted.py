@@ -524,6 +524,8 @@ def label(tool: str, receipt: Any) -> Any:
                     return None
                 if v.startswith(MARKER_OPEN) and v.endswith(MARKER_CLOSE):
                     _edits.append("already_fenced")
+                    if _CONTACT_RE.search(v):
+                        _edits.append("contains_contact_details")
                     return None
                 if _relaxed and is_round_trippable(v, _relaxed):
                     _tally["exempt"] += 1
@@ -557,7 +559,8 @@ def label(tool: str, receipt: Any) -> Any:
         if not tally["seen"] and "already_fenced" not in edits:
             entry["present"] = False
         if tally["seen"] and not n:
-            fenced_any = fenced_any or bool(tally["exempt"] or tally["non_string"])
+            fenced_any = fenced_any or bool(tally["exempt"] or tally["non_string"]
+                                           or "already_fenced" in edits)
         outcomes.append(entry)
 
     if not fenced_any and not any("error" in o for o in outcomes):

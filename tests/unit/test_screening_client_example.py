@@ -99,7 +99,8 @@ def test_synthetic_handler_and_saved_fixture_contract(case, monkeypatch):
         result = body(call)["result"]
         binding_ok = verify_compliance_receipt(
             result["compliance_receipt"], response_payload=result)["response_match"]
-        assert bool(output["issues"]) is (not binding_ok)
+        assert binding_ok is True
+        assert output["issues"] == []
         if status:
             assert output["screening_status"] == status
         assert output["review_guidance"]["coverage_status"] == coverage
@@ -133,9 +134,8 @@ def test_dispatch_fencing_preserves_review_and_checks_binding(case, field, monke
     assert result[field][0]["name"].startswith("[UNTRUSTED]")
     verification = verify_compliance_receipt(result["compliance_receipt"], response_payload=result)
     assert verification["hash_ok"] is True  # receipt payload was not modified
-    # The released seam currently leaves a mismatch. A future server repair
-    # may bind the delivered result; either way candidates/hits require review.
     binding_ok = verification["response_match"]
+    assert binding_ok is True  # fresh server output binds the fenced MCP result
     output = consume_screening(call)
     assert output["decision"] == "hold_for_review"
     assert output["guidance_response_bound"] is binding_ok

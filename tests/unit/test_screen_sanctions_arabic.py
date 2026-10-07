@@ -123,6 +123,14 @@ def _names(result, key):
     return [m.get("name") for m in result.get(key) or []]
 
 
+def _evaluated_name(match):
+    """Compare identity text only in this recall test, after checking its fence."""
+    from core.untrusted import MARKER_OPEN, MARKER_CLOSE
+    name = match["name"]
+    assert name.startswith(MARKER_OPEN) and name.endswith(MARKER_CLOSE)
+    return name[len(MARKER_OPEN):-len(MARKER_CLOSE)].lower()
+
+
 def _all_hits(result):
     return (result.get("matches") or []) + (result.get("possible_matches_unverified") or [])
 
@@ -447,7 +455,7 @@ def test_recall_through_the_whole_pipeline_over_the_fixture(world):
         r = world.screen(e["arabic"][0])
         ok = False
         for m in _all_hits(r):
-            nm = (m.get("name") or "").lower()
+            nm = _evaluated_name(m)
             toks = set(nm.replace("-", " ").replace(",", " ").split())
             if nm in own or (len(toks) >= 2 and toks <= own_tokens):
                 ok = True
@@ -495,7 +503,7 @@ def _hits_for(world, result, entity):
     """The listed names in `result` that are one of the party's own Latin names."""
     own = {n.lower() for n in entity["latin"]}
     return [m for m in _all_hits(result)
-            if (m.get("name") or "").lower() in own and m.get("list", "").startswith(entity["list"])]
+            if _evaluated_name(m) in own and m.get("list", "").startswith(entity["list"])]
 
 
 @pytest.mark.parametrize("lst,eid", [

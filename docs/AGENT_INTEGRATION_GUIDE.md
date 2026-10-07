@@ -39,16 +39,22 @@ Complete, partial, candidate with partial coverage, stale/unknown, Arabic and
 confirmed-name-hit cases show the branches. Keep the original input JSON as
 the evidence record; the printed output is a review handoff.
 
-Current standard MCP dispatch fences third-party candidate/hit names after
-the handler builds its receipt. For those responses the receipt's own
-`hash_ok` remains true but `response_match` is false. The example retains
-review hints with `guidance_response_bound: false`, reports the binding issue
-and holds; it never removes fences or rewrites evidence to force a match.
-The synthetic candidate/hit fixtures preserve this limitation. Reproduce it
-offline; a server-side receipt/labelling fix is separate work:
+The repaired source fences third-party candidate/hit result text before
+attaching its receipt, so both `hash_ok` and `response_match` are true in the
+synthetic fixtures. A later MCP labeling pass leaves the bound result unchanged.
+Candidates and hits still require review even when the receipt binds their
+guidance. Direct handler callers now receive fenced third-party result text too.
+This is an offline source guarantee, not evidence that a repaired release is live.
+
+Historical release `b3c7906` fenced names after receipt issuance, leaving
+`hash_ok: true` but `response_match: false` for candidate/hit responses. The
+disabled-presigning-label control reproduces that defect. A mismatched saved
+response still yields `guidance_response_bound: false` and a hold; the consumer
+never removes fences or rewrites evidence to force a match. Verify the repair
+and its negative control offline:
 
 ```bash
-python -m pytest tests/unit/test_screening_client_example.py -k dispatch_fencing -q
+python -m pytest tests/unit/test_screening_client_example.py tests/unit/test_screening_receipt_postlabel.py -q
 ```
 
 To use an already initialized MCP SDK session on the standard `/mcp` endpoint:

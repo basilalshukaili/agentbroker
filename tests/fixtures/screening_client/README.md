@@ -1,13 +1,14 @@
 # Offline screening client fixtures
 
 These six files are synthetic `tools/call` results generated on 2026-10-07
-from the real `handle_screen_sanctions` handler and `_dispatch_and_label` seam
-at release `b3c7906`, with local fake list adapters in
-`tests/unit/test_screening_client_example.py`.
+through the real `handle_screen_sanctions` handler and `_dispatch_and_label`
+seam in the repaired source based on `d757aca` (itself based on `b3c7906`).
+Local fake list adapters live in `tests/unit/test_screening_client_example.py`.
 They contain no production calls, customer records or issuer signing key.
-Their receipts are explicitly unsigned. Candidate/hit responses preserve the
-current dispatch limitation: names are fenced after receipt issuance, leaving
-`hash_ok: true` but `response_match: false`.
+Their receipts are explicitly unsigned. All six responses, including
+candidates and hits, have `hash_ok: true` and `response_match: true`: third-party
+result text is fenced before the receipt is attached. This is source-level
+fixture evidence, not a claim that a repaired release has been deployed.
 The timestamps and operation identifiers belong to fixture generation only.
 
 | File | Evidence | Consumer branch |
@@ -25,7 +26,7 @@ JSON-RPC envelopes, structured answers, conflicting answers and the ChatGPT
 door's deliberate receipt omission. Fresh synthetic handler outputs are
 compared with the saved review guidance to detect contract drift.
 
-Focused reproduction:
+Focused verification:
 
 ```bash
 python -m pytest tests/unit/test_screening_client_example.py -k dispatch_fencing -q
@@ -34,9 +35,15 @@ python -m pytest tests/unit/test_screening_client_example.py -k dispatch_fencing
 The changed result fields are
 `possible_matches_unverified[0].name` (candidate) and `matches[0].name` (hit);
 both gain `[UNTRUSTED]` fences. Their screening statuses remain `candidates`
-and `hit`; candidate coverage remains `partial`. This example holds and
-preserves independent review hints as unverified. It does not repair server
-hashing or normalize saved evidence.
+and `hit`; candidate coverage remains `partial`. Both still require review,
+even though their receipts bind the delivered result. Unsigned receipts do not
+prove origin, and the consumer never normalizes saved evidence.
+
+Historical `b3c7906` fenced these names after issuing the receipt, so the
+delivered candidate/hit response had `hash_ok: true` and `response_match: false`.
+The disabled-presigning-label control in
+`tests/unit/test_screening_receipt_postlabel.py` reproduces that defect offline;
+the current fixtures record the repaired behavior.
 
 Run `python examples/screening_client.py tests/fixtures/screening_client/arabic.json`
 from the repository root. Retain the input file as evidence; never interpret
