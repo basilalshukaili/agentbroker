@@ -68,7 +68,7 @@ class TestRevokeTokenReturnValueIsHonest:
         token_resp = _issue()
         with patch(
             "storage.supabase_client.insert_row_strict",
-            new_callable=AsyncMock, return_value={"jti": "whatever"},
+            new_callable=AsyncMock, return_value={"jti": I._verify(token_resp.token)["jti"]},
         ):
             durable = run(I.revoke_token(token_resp.token))
         assert durable is True

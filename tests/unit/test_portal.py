@@ -455,9 +455,9 @@ class TestPortalKeyGenerate:
     Tests for POST /portal/key/generate.
 
     Invariants verified:
-    - Mints a free key when no key exists on the account.
+    - Fails closed when no key exists on the account.
     - Idempotent: returns already=true when a key already exists.
-    - Creates a new account row when no account exists.
+    - Fails closed when no account exists.
     - Raw key NEVER appears in the response (only /key/reveal returns it).
     - Unauthenticated calls (no/invalid session) raise HTTPException 401.
     """
@@ -466,8 +466,8 @@ class TestPortalKeyGenerate:
         """Produce a valid-looking cookie string (session check is mocked)."""
         return "dummy-session-cookie"
 
-    def test_generate_mints_key_when_no_key(self):
-        """When account exists but has no key, generate mints one and returns generated=true."""
+    def test_generate_unavailable_when_no_key(self):
+        """No key is minted while atomic storage/peer proof is unavailable."""
         from agent_interface.portal import portal_key_generate
         import json
 
@@ -481,13 +481,13 @@ class TestPortalKeyGenerate:
         with (
             patch("agent_interface.portal._require_session", return_value="user@example.com"),
             patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=mock_account),
-            patch("agent_interface.portal._update_account", new_callable=AsyncMock, return_value=True),
         ):
             result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
 
         body = json.loads(result.body)
-        assert body["ok"] is True
-        assert body.get("generated") is True
+        assert result.status_code == 503
+        assert body["ok"] is False
+        assert body["reason"] == "key_mutation_unavailable"
         assert "key" not in body
         assert "token" not in body
 
@@ -515,21 +515,23 @@ class TestPortalKeyGenerate:
         assert "key" not in body
         assert "token" not in body
 
-    def test_generate_creates_account_when_none_exists(self):
-        """When no account row exists, generate creates one via upsert_row and returns generated=true."""
+    def test_generate_unavailable_when_no_account_exists(self):
+        """No account row is created by the disabled mutation path."""
         from agent_interface.portal import portal_key_generate
         import json
 
         with (
             patch("agent_interface.portal._require_session", return_value="new@example.com"),
             patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=None),
-            patch("storage.supabase_client.upsert_row", new_callable=AsyncMock, return_value={"account_id": "free_xyz"}),
+            patch("storage.supabase_client.upsert_row", new_callable=AsyncMock) as upsert,
         ):
             result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
 
         body = json.loads(result.body)
-        assert body["ok"] is True
-        assert body.get("generated") is True
+        upsert.assert_not_called()
+        assert result.status_code == 503
+        assert body["ok"] is False
+        assert body["reason"] == "key_mutation_unavailable"
         assert "key" not in body
         assert "token" not in body
 
@@ -538,7 +540,7 @@ class TestPortalKeyGenerate:
         from agent_interface.portal import portal_key_generate
         import json
 
-        # Path 1: new key minted for existing account
+        # Path 1: creation unavailable for an existing account
         mock_account_no_key = {
             "account_id": "free_abc",
             "email": "user@example.com",
@@ -547,7 +549,6 @@ class TestPortalKeyGenerate:
         with (
             patch("agent_interface.portal._require_session", return_value="user@example.com"),
             patch("agent_interface.portal._get_account", new_callable=AsyncMock, return_value=mock_account_no_key),
-            patch("agent_interface.portal._update_account", new_callable=AsyncMock, return_value=True),
         ):
             result = run(portal_key_generate(hl_portal=self._dummy_cookie()))
         body_text = result.body.decode()
