@@ -757,9 +757,16 @@ _EDGE_MARKER_HEADER, _EDGE_MARKER_VALUE = "x-edge-source", "cloudflare-workers"
 def _event_detail(profile: Optional[str], obs: "_Observed") -> Optional[str]:
     """usage_events.detail: which door, which protocol version a modern request was served under, and - new on
     2026-10-09 - why a modern envelope was refused (`why=`), which declared arguments a refused call got wrong
-    (`f=`), and whether the request came through the edge worker (`via=edge`). All of it OUR vocabulary: the
+    (`f=`), and whether the request SAYS it came through the edge worker (`via=edge`). All of it OUR vocabulary: the
     version is one of our supported strings, `why` a closed list in agent_interface/mcp_2026.py, `f` names the
     tool's own declared properties, `via` is set only for the one exact marker value the edge worker sends.
+
+    `via=edge` IS THE CALLER'S OWN CLAIM, NOT A FACT ABOUT THE PATH. The marker is a fixed header value
+    (edge/src/proxy.ts sets `x-edge-source: cloudflare-workers`), and anything that can send a header can send it, so
+    a direct caller can label itself "edge" and an edge request is never proven to be one. Read it as "the request
+    carried the label", an upper bound on what the worker relayed. What would make it evidence is an authenticated
+    marker (a secret the worker sends and the origin verifies); that, and not trusting Cloudflare's address ranges,
+    is the attribution fix (docs/reviews/2026-10-09-agentbroker-request-analysis.md, section 8 item 8).
 
     At most 64 characters, cut on a token boundary in priority order (a token that does not fit is dropped whole,
     never cut in half). A row with none of the new facts has exactly the text it always had, so nothing that reads
@@ -2196,8 +2203,8 @@ def _mcp_gate_identity(name: str, headers: dict) -> None:
         checkout = _os.getenv("POLAR_CHECKOUT_URL", "").strip()
         # Use PUBLIC_BASE_URL (the Render origin) for /keys/* routes — MCP_PUBLIC_URL
         # points at the edge worker which doesn't serve /keys/ endpoints.
-        base_url = _os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
-        free_key_url = f"{base_url}/keys/request"
+        from agent_interface.key_state import free_key_url as _free_key_url
+        free_key_url = _free_key_url()
         # THE CRYPTO RAIL BELONGS HERE WHEN IT IS LIVE, AND ONLY THEN.
         #
         # This is what a live agent is told at the exact moment it hits a quota

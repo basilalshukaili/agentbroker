@@ -12,7 +12,9 @@ said which half a row belonged to.
 THE CHANGE (usage_events.detail only, still at most 64 characters, still our own vocabulary, never caller text):
   f=<declared argument names>   only names the tool's own inputSchema declares, at most six
   why=<closed vocabulary>       only for a refused 2026-07-28 envelope: hdr-meth-miss, hdr-meth-diff, ...
-  via=edge                      when the request carries the edge worker's marker header
+  via=edge                      when the request carries the edge worker's marker header - the caller's own claim:
+                                the header is a fixed value any client can send, so this is a label, not proof of
+                                the path (the attribution fix needs an authenticated marker; see the analysis)
 
 The legacy rows keep exactly their old text (tests/unit/test_door_instrumentation.py,
 test_mcp_2026_07_28.py pin those).
@@ -119,6 +121,8 @@ def test_the_detail_stays_within_64_characters_and_never_cuts_a_token():
 # --------------------------------------------------------------------------- the edge marker
 
 def test_the_edge_workers_marker_is_recorded_and_nothing_else_is(events):
+    """Recorded as a label. It is unauthenticated (any client may send this header), which is why the row says only
+    that the request carried the marker and nothing downstream may treat `via=edge` as a verified path."""
     _call("check_quota", {}, headers={**HEADERS, "x-edge-source": "cloudflare-workers"})
     assert "via=edge" in _tokens(events[-1])
     _call("check_quota", {}, headers={**HEADERS, "x-edge-source": "somebody-else"})

@@ -172,10 +172,14 @@ class TestWellKnownEndpoints:
         a = get_agents_json()
         assert "skills" in a
         assert len(a["skills"]) >= 13
-        assert a["capabilities"]["streaming"] is True
-        assert a["capabilities"]["push_notifications"] is True
+        # These two were asserted True here for as long as the document claimed them, which is how a false claim stayed
+        # pinned by a test: this is an MCP server with no A2A streaming and no push notifications
+        # (tests/unit/test_method_not_found_guidance.py pins the whole honest shape of both A2A documents).
+        assert a["capabilities"]["streaming"] is False
+        assert a["capabilities"]["push_notifications"] is False
         assert "mcp" in a["supported_protocols"]
         assert "openai-tools" in a["supported_protocols"]
+        assert "a2a" not in a["supported_protocols"]
 
     def test_mcp_descriptor_points_to_mcp_endpoint(self):
         d = get_mcp_descriptor()

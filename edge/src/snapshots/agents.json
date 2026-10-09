@@ -1,9 +1,9 @@
 {
   "name": "SMB Transaction & Communication Broker",
   "description": "Agent-callable service for the long tail of small businesses. Discover, verify, communicate, schedule, transact — all with built-in TCPA/GDPR/CASL compliance and idempotent semantics.",
-  "version": "0.2.13",
-  "protocol_version": "a2a-v0.2",
-  "url": "https://api.hatchloop.dev",
+  "version": "0.2.15",
+  "protocol_version": null,
+  "url": "https://api.hatchloop.dev/mcp",
   "documentation_url": "https://api.hatchloop.dev/docs",
   "default_input_modes": [
     "application/json"
@@ -12,9 +12,14 @@
     "application/json"
   ],
   "capabilities": {
-    "streaming": true,
-    "push_notifications": true,
-    "state_transition_history": true
+    "streaming": false,
+    "push_notifications": false,
+    "state_transition_history": false
+  },
+  "a2a": {
+    "implemented": false,
+    "use": "mcp",
+    "mcpEndpoint": "https://api.hatchloop.dev/mcp"
   },
   "authentication": {
     "schemes": [
@@ -29,7 +34,7 @@
     {
       "id": "find_business",
       "name": "Find Business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
+      "description": "Find real businesses near a place, sorted by distance (nearest of those examined; see result.search). Data: OpenStreetMap (ODbL, (c) OSM contributors); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Answers within about 5 s: status partial (search_in_progress) means repeat the call. If OSM is down: retriable 'temporarily unavailable', never invented rows. [beta]",
       "tags": [
         "sync",
         "read_only"
@@ -48,7 +53,7 @@
     {
       "id": "verify_business",
       "name": "Verify Business",
-      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
+      "description": "Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids. [limited]",
       "tags": [
         "sync",
         "read_only"
@@ -66,7 +71,7 @@
     {
       "id": "send_message",
       "name": "Send Message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules.",
       "tags": [
         "sync_fast",
         "write",
@@ -86,7 +91,7 @@
     {
       "id": "capture_lead",
       "name": "Capture Lead",
-      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
+      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified. [beta]",
       "tags": [
         "sync_fast",
         "write",
@@ -105,7 +110,7 @@
     {
       "id": "schedule_appointment",
       "name": "Schedule Appointment",
-      "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation.",
+      "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [limited]",
       "tags": [
         "async_by_default",
         "write",
@@ -144,7 +149,7 @@
     {
       "id": "handle_inbound",
       "name": "Handle Inbound",
-      "description": "Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.",
+      "description": "Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed. [beta]",
       "tags": [
         "async_by_default",
         "compliance_gated"
@@ -162,7 +167,7 @@
     {
       "id": "escalate_to_human",
       "name": "Escalate To Human",
-      "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.",
+      "description": "Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time. [beta]",
       "tags": [
         "async_by_default",
         "compliance_gated"
@@ -285,7 +290,7 @@
     {
       "id": "import_booking_url",
       "name": "Import Booking Url",
-      "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id.",
+      "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id. [limited]",
       "tags": [
         "sync"
       ],
@@ -358,7 +363,7 @@
     {
       "id": "screen_sanctions",
       "name": "Screen Sanctions",
-      "description": "Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
+      "description": "Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
       "tags": [
         "sync"
       ],
@@ -412,7 +417,7 @@
     {
       "id": "mint_key",
       "name": "Mint Key",
-      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.",
+      "description": "Mint a free-tier API key without email by signing agent_id + timestamp + nonce with the MACHINE_MINT_SECRET (HMAC-SHA256). Refused without that secret (invalid_request); not_configured if the operator has none set. No secret: use POST /keys/request. [limited]",
       "tags": [
         "sync"
       ],
@@ -448,8 +453,7 @@
     "mcp",
     "openai-tools",
     "anthropic-tools",
-    "rest",
-    "a2a"
+    "rest"
   ],
   "discovery_urls": {
     "mcp": "https://api.hatchloop.dev/mcp",

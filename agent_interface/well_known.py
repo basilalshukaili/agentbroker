@@ -6,7 +6,7 @@ We expose ourselves through every standard agents currently use:
   /.well-known/ai-plugin.json   → ChatGPT / OpenAI plugin manifest
   /.well-known/openai-tools.json → OpenAI function-calling tools array
   /.well-known/anthropic-tools.json → Claude tool_use array
-  /.well-known/agents.json      → A2A (Agent-to-Agent) protocol descriptor
+  /.well-known/agents.json      → A2A-shaped descriptor (MCP only: a2a.implemented is false)
   /.well-known/mcp.json         → MCP server descriptor pointing at /mcp
   /llms.txt                     → LLM-readable site map (emerging standard)
   /llms-full.txt                → Full content for LLM training crawlers
@@ -340,15 +340,24 @@ def get_anthropic_tools() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# /.well-known/agents.json — A2A (Agent-to-Agent) protocol descriptor
+# /.well-known/agents.json — A2A-shaped descriptor (this service speaks MCP, not A2A)
 # ---------------------------------------------------------------------------
 
 def get_agents_json() -> dict:
     """
-    A2A protocol descriptor. The emerging standard for agents to discover
-    other agents/services. https://github.com/google/A2A
+    A2A-shaped descriptor (the format agent registries crawl: https://github.com/google/A2A), NOT an A2A endpoint.
+
+    THIS SERVICE SPEAKS MCP AND NOTHING ELSE: no A2A method exists (message/send, tasks/send and SendMessage all answer
+    "method not found" with guidance). This document used to declare protocol_version "a2a-v0.2", streaming, push
+    notifications and state-transition history all True and "a2a" among its supported protocols, and told A2A callers
+    the service root was its URL; the agent card (get_agent_card) had the same three flags and was corrected first.
+    411 outside calls in the 14 days to 2026-10-09 sent A2A method names to the MCP endpoint, 379 of them from declared
+    scanners that probe these documents; both documents invited it (docs/reviews/2026-10-09-agentbroker-request-analysis.md).
+    Both now say the same thing, in the same words (`a2a.implemented` false, `use` mcp), and point `url` at the MCP
+    endpoint.
     """
     manifest = get_full_manifest()
+    mcp_url = f"{BASE_URL}/mcp"
     skills = []
     for op in manifest.get("operations", []):
         skills.append({
@@ -370,16 +379,21 @@ def get_agents_json() -> dict:
             "TCPA/GDPR/CASL compliance and idempotent semantics."
         ),
         "version": SERVICE_VERSION,
-        "protocol_version": "a2a-v0.2",
-        "url": BASE_URL,
+        # null, not a version: no A2A protocol version is spoken here (see the docstring).
+        "protocol_version": None,
+        "url": mcp_url,
         "documentation_url": f"{BASE_URL}/docs",
         "default_input_modes": ["application/json"],
         "default_output_modes": ["application/json"],
+        # These are A2A capabilities and this service has none of them: no SSE message streaming, no push-notification
+        # callbacks, no task state history (async operations are polled with get_status over MCP).
         "capabilities": {
-            "streaming": True,                # for async ops
-            "push_notifications": True,        # webhooks
-            "state_transition_history": True,  # via get_status
+            "streaming": False,
+            "push_notifications": False,
+            "state_transition_history": False,
         },
+        # Where an A2A client reads it before it calls anything; the same block as the agent card's _meta.a2a.
+        "a2a": {"implemented": False, "use": "mcp", "mcpEndpoint": mcp_url},
         "authentication": {
             "schemes": ["bearer", "agent-identity-jwt"],
             "header": "X-Agent-Identity",
@@ -394,9 +408,9 @@ def get_agents_json() -> dict:
             "free_key_method": "POST {\"email\": \"you@example.com\"}",
         },
         "skills": skills,
-        "supported_protocols": ["mcp", "openai-tools", "anthropic-tools", "rest", "a2a"],
+        "supported_protocols": ["mcp", "openai-tools", "anthropic-tools", "rest"],
         "discovery_urls": {
-            "mcp": f"{BASE_URL}/mcp",
+            "mcp": mcp_url,
             "openapi": f"{BASE_URL}/openapi.yaml",
             "manifest": f"{BASE_URL}/manifest",
             "ai_plugin": f"{BASE_URL}/.well-known/ai-plugin.json",
@@ -811,7 +825,14 @@ def get_llms_full_txt() -> str:
         parts.append("### Failure Modes")
         for fm in op.get("failure_modes", []):
             if isinstance(fm, dict):
-                parts.append(f"- **{fm.get('code', '')}**: {fm.get('description', '')}")
+                # get_conversation's entries are {reason_code, retriable, meaning, agent_action}; this printed
+                # "- ****: " for all five because it read keys they do not have, so the remedy a caller needs
+                # (and the one the gate found pointing at mint_key) appeared nowhere in the readable file.
+                code = fm.get("reason_code") or fm.get("code", "")
+                text = fm.get("meaning") or fm.get("description", "")
+                if fm.get("agent_action"):
+                    text = f"{text} What to do: {fm['agent_action']}".strip()
+                parts.append(f"- **{code}**: {text}")
             else:
                 parts.append(f"- {fm}")
         parts.append("")

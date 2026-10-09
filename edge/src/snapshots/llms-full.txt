@@ -25,10 +25,12 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ### find_business
 
-Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.
+Find real businesses near a place, sorted by distance (nearest of those examined; see result.search). Data: OpenStreetMap (ODbL, (c) OSM contributors); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Answers within about 5 s: status partial (search_in_progress) means repeat the call. If OSM is down: retriable 'temporarily unavailable', never invented rows. [beta]
 
-- **When to use**: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.
-- **When NOT to use**: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.
+- **Readiness: beta** - Community-mapped OpenStreetMap data, unverified. A place the public servers are slow for answers partial/search_in_progress at 5 s; repeat the same call and it is usually served from cache.
+
+- **When to use**: Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.
+- **When NOT to use**: Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.
 - **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~ms
@@ -36,7 +38,9 @@ Given criteria (vertical, location, capability, price band, availability window)
 
 ### verify_business
 
-Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.
+Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids. [limited]
+
+- **Readiness: limited** - Directory lookup of supply-network records only (ids from import_booking_url). An unknown id, or an osm:... id returned by find_business, answers out_of_supply_network (not retriable). It never contacts the business.
 
 - **When to use**: Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').
 - **When NOT to use**: Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.
@@ -47,33 +51,37 @@ Look up what we know about a business in our supply network: its contact channel
 
 ### send_message
 
-Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.
+Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules.
 
-- **When to use**: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.
-- **When NOT to use**: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.
-- **Cost: from $0.02 per call, up to $0.22 (call preview_cost for the exact price).**
+- **When to use**: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in. Where opt-in is required (everything except US marketing email, which follows CAN-SPAM opt-out rules) the gate verifies it on every send.
+- **When NOT to use**: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send SMS, voice, WhatsApp or non-US email marketing without a recorded opt-in — the gate will reject the send and log a compliance_violation (US marketing email follows CAN-SPAM opt-out rules instead). Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.
+- **Cost: from $0.02 per call, up to $0.22 (call preview_cost for the exact price; not charged while no payment rail is on).**
 - **Execution**: sync_fast
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/send_message`
 
 ### capture_lead
 
-Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.
+Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified. [beta]
+
+- **Readiness: beta** - Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an unknown id or an osm:... id is refused with out_of_supply_network.
 
 - **When to use**: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.
 - **When NOT to use**: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.
-- **Cost: $0.05 per call.**
+- **Cost: $0.05 per call (not charged while no payment rail is on).**
 - **Execution**: sync_fast
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/capture_lead`
 
 ### schedule_appointment
 
-Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation.
+Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [limited]
+
+- **Readiness: limited** - Completes only for a business whose booking link is bound to this deployment's one connected Cal.com account. Any other business fails with booking_destination_unmapped, uncharged.
 
 - **When to use**: Use to book, check availability, or cancel a Cal.com appointment once the SMB is verified and its booking link is bound to our connected Cal.com account. Requires a verified smb_id.
 - **When NOT to use**: Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Do not pass action=reschedule — it is not implemented; cancel the existing appointment and book a new time instead. Do not expect this to book on the SMB's own Calendly/Doctolib/Booksy/Fresha/etc. account, or on a Cal.com account other than the one this deployment holds credentials for — those calls fail honestly with no charge.
-- **Cost: from $0.15 per call, up to $0.5 (call preview_cost for the exact price).**
+- **Cost: from $0.15 per call, up to $0.5 (call preview_cost for the exact price; not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/schedule_appointment`
@@ -84,29 +92,33 @@ Idempotent transactional messages: OTPs, booking confirmations, payment receipts
 
 - **When to use**: Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing.
 - **When NOT to use**: Do not use for marketing or promotional messages. Do not use for conversational messages.
-- **Cost: $0.02 per call.**
+- **Cost: $0.02 per call (not charged while no payment rail is on).**
 - **Execution**: sync_fast
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/send_transactional_confirmation`
 
 ### handle_inbound
 
-Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.
+Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed. [beta]
+
+- **Readiness: beta** - Substring keyword rules on English text, not a language model: 'stop' or 'cancel' anywhere in a message sets the intent. A hint for your agent to check, never a decision.
 
 - **When to use**: Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.
 - **When NOT to use**: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.
-- **Cost: $0.03 per call.**
+- **Cost: $0.03 per call (not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/handle_inbound`
 
 ### escalate_to_human
 
-Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.
+Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time. [beta]
+
+- **Readiness: beta** - Writes a ticket to the operator queue and returns its id. This tool sends no notification and makes no response-time commitment.
 
 - **When to use**: Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact.
 - **When NOT to use**: Do not use as a first resort. Escalate only after automated resolution attempts.
-- **Cost: $0.2 per call.**
+- **Cost: $0.2 per call (not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/escalate_to_human`
@@ -179,7 +191,9 @@ Free, instant pre-flight check for a booking URL. Classifies which booking platf
 
 ### import_booking_url
 
-Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id.
+Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id. [limited]
+
+- **Readiness: limited** - Detects 12 booking platforms, but only a Cal.com link bound to our one connected account can be booked afterwards; the other 11 fail schedule_appointment honestly, uncharged. Needs a key.
 
 - **When to use**: Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id works immediately with send_message and capture_lead. It only completes a booking via schedule_appointment if the URL was a Cal.com link bound to this deployment's one connected account — every other platform gets an honest, uncharged refusal there, not a booking.
 - **When NOT to use**: Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).
@@ -194,7 +208,7 @@ Place a conversational voice-AI phone call to a business on a consumer's behalf;
 
 - **When to use**: Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).
 - **When NOT to use**: Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.
-- **Cost: $0.2 per call.**
+- **Cost: $0.2 per call (not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/call_business`
@@ -216,18 +230,18 @@ Free, live lookup of a company official registry record. Queries the GLEIF globa
 
 - **When to use**: Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup.
 - **When NOT to use**: Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen.
-- **Cost: free within the daily quota, then $0.02 per call.**
+- **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/verify_company_record`
 
 ### screen_sanctions
 
-Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.
+Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.
 
 - **When to use**: Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.
-- **When NOT to use**: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.
-- **Cost: free within the daily quota, then $0.02 per call.**
+- **When NOT to use**: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query. Arabic names are matched by transliteration, which is lossy: sound-alikes come back as graded candidates (match_confidence, token_alignment), never as findings; the one exception is an Arabic-script name equal to an Arabic alias a list prints. An Arabic query with no hits is 'partial', never 'clean'.
+- **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~12000ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/screen_sanctions`
@@ -238,7 +252,7 @@ Free cross-border screening of destination and parties: DOES NOT CLASSIFY THE PR
 
 - **When to use**: Use before any cross-border trade to flag embargoed destinations, screen exporters/importers/freight forwarders against sanctions lists, and get authoritative links to the applicable tariff databases. Call this as a pre-flight check before quoting, invoicing, or shipping internationally. Covers OFAC comprehensively-embargoed countries (Iran, North Korea, Cuba, Syria) and significant advisory countries (Russia, Belarus, Ukraine Crimea/DNR/LNR regions).
 - **When NOT to use**: Do NOT use as a substitute for a licensed export compliance review. Do NOT use to obtain authoritative tariff rates (this tool returns guidance links, never fabricated rates). Do NOT use for purely domestic shipments where no cross-border movement is involved.
-- **Cost: free within the daily quota, then $0.02 per call.**
+- **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~15000ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/map_trade_restriction`
@@ -256,7 +270,9 @@ Read a two-way conversation thread you started: its state, every message exchang
 
 ### mint_key
 
-Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.
+Mint a free-tier API key without email by signing agent_id + timestamp + nonce with the MACHINE_MINT_SECRET (HMAC-SHA256). Refused without that secret (invalid_request); not_configured if the operator has none set. No secret: use POST /keys/request. [limited]
+
+- **Readiness: limited** - Refused unless the caller signs with the machine-mint secret (HMAC-SHA256). Without it, get a free key from POST /keys/request (an emailed link).
 
 - **When to use**: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).
 - **When NOT to use**: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.
@@ -278,7 +294,13 @@ Search US federal contract awards by company (recipient) name using the free USA
 
 ## Authentication
 
-All state-changing operations require an `X-Agent-Identity` JWT header. Get a free key by emailing yourself a verification link: `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`, then open the link it sends you. This currently requires a human to click that link - there is no machine-mintable path in production today (`POST https://api.hatchloop.dev/keys/mint` returns `503 not_configured` and is not something to build against). 14 of the 23 tools work with no key (11 always free, 3 free within a daily quota), so check whether you need a key at all before requesting one. (Note: `https://api.hatchloop.dev/auth/token` is an internal admin route, not a public endpoint - it 401s for every outside caller.) Scopes include allowed operations, budget cap, and verticals.
+All state-changing operations require an `X-Agent-Identity` JWT header. Get a free key by emailing yourself a verification link: `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`, then open the link it sends you. This currently requires a human to click that link - there is no machine-mintable path in production today (`POST https://api.hatchloop.dev/keys/mint` is refused without the operator's machine-mint secret, which is not published, and is not something to build against). 14 of the 23 tools work with no key (11 always free, 3 free and unmetered at this time), so check whether you need a key at all before requesting one. (Note: `https://api.hatchloop.dev/auth/token` is an internal admin route, not a public endpoint - it 401s for every outside caller.) Scopes include allowed operations, budget cap, and verticals.
+
+### Sign in with OAuth (MCP authorization)
+
+A client that supports MCP authorization can get a key without anyone handling one. It discovers `https://api.hatchloop.dev/.well-known/oauth-protected-resource/mcp` (RFC 9728), reads the authorization server from it (`https://api.hatchloop.dev/.well-known/oauth-authorization-server`, RFC 8414), registers with a Client ID Metadata Document or by dynamic registration, and runs the authorization-code flow with PKCE (`S256`). The person is asked for an email address and presses Confirm on a one-time link we send there; there is no password. The access token is an Agent-Identity key, so it also works as `Authorization: Bearer <token>` at `https://api.hatchloop.dev/mcp`.
+
+Tools that need an account: `call_business`, `capture_lead`, `escalate_to_human`, `get_conversation`, `handle_inbound`, `import_booking_url`, `schedule_appointment`, `send_message`, `send_transactional_confirmation`. Every other tool works without a key or a sign-in (the premium data tools free and unmetered at this time). Sign-in and the key-by-email path above give the same kind of key.
 
 ## Compliance
 
@@ -287,6 +309,8 @@ See [compliance docs](https://api.hatchloop.dev/docs/compliance) for full jurisd
 ## Connecting from an agent harness
 
 Any client that speaks MCP over streamable HTTP can attach this server directly; there is nothing to install and no key is needed for the free tools.
+
+**Protocol versions.** This endpoint speaks MCP `2026-07-28`, which has no handshake: call `server/discover` to learn the supported versions and capabilities, or send any request with its version in `_meta`. It also answers the older `initialize` handshake for `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`.
 
 **DeepSeek Harness (`dsh`)** - add one entry to your config:
 
@@ -306,7 +330,7 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/company-verification` - Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free premium data. (7 tools)
 - `https://api.hatchloop.dev/mcp/compliance-check` - TCPA/GDPR/CASL compliance + sanctions & registry screening. No key; premium data quota-free. (8 tools)
-- `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) + company verification. No key; free within a daily quota. (8 tools)
+- `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) + company verification. No key needed. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
 - `https://api.hatchloop.dev/mcp/agent-broker` - everything (23 tools)
 
@@ -325,7 +349,7 @@ hello@hatchloop.dev
   "service": {
     "name": "AgentBroker",
     "id": "agent-broker",
-    "version": "0.2.13",
+    "version": "0.2.15",
     "description": "A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.",
     "base_url": "https://api.hatchloop.dev",
     "discovery_url": "https://api.hatchloop.dev/.well-known/mcp.json",
@@ -334,15 +358,18 @@ hello@hatchloop.dev
   "operations": [
     {
       "name": "find_business",
-      "description": "Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.",
-      "when_to_use": "Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.",
-      "when_not_to_use": "Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.",
+      "description": "Find real businesses near a place, sorted by distance (nearest of those examined; see result.search). Data: OpenStreetMap (ODbL, (c) OSM contributors); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Answers within about 5 s: status partial (search_in_progress) means repeat the call. If OSM is down: retriable 'temporarily unavailable', never invented rows.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Community-mapped OpenStreetMap data, unverified. A place the public servers are slow for answers partial/search_in_progress at 5 s; repeat the same call and it is usually served from cache."
+      },
+      "when_to_use": "Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.",
+      "when_not_to_use": "Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
         "type": "object",
         "required": [
-          "vertical",
           "location"
         ],
         "properties": {
@@ -361,19 +388,20 @@ hello@hatchloop.dev
             ],
             "properties": {
               "zip_or_city": {
-                "type": "string"
+                "type": "string",
+                "description": "Town, city, address or postal code, with the country if not US: 'Nizwa, Oman'. A bare 5-digit ZIP is a US ZIP; add the country for any other postal code."
               },
               "radius_miles": {
                 "type": "number",
                 "minimum": 0,
-                "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
+                "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."
               }
             },
-            "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
+            "description": "City/town or ZIP, optionally with country ('Nizwa, Oman'). Geocoded by OSM."
           },
           "capability": {
             "type": "string",
-            "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"
+            "description": "Kind of business: 'dentist', 'cafe', 'plumber'. Use it or vertical."
           },
           "price_band": {
             "type": "object",
@@ -381,7 +409,8 @@ hello@hatchloop.dev
               "max_usd": {
                 "type": "number"
               }
-            }
+            },
+            "description": "Supply-network rows only (OpenStreetMap has no prices)."
           },
           "availability_window": {
             "type": "object",
@@ -395,7 +424,7 @@ hello@hatchloop.dev
                 "format": "date-time"
               }
             },
-            "description": "Accepted but NOT APPLIED - it does not narrow results. We do not hold live calendars for the supply network. The response carries availability_window_applied: false when you send one. To book a specific slot use schedule_appointment with requested_time, which checks real availability."
+            "description": "Accepted but NOT APPLIED: it does not narrow results (no live calendars). The result says availability_window_applied: false. To book a slot use schedule_appointment requested_time."
           },
           "max_results": {
             "type": "integer",
@@ -405,11 +434,11 @@ hello@hatchloop.dev
           },
           "city": {
             "type": "string",
-            "description": "Alternative to location: a top-level city, normalised into location.zip_or_city. The receipt reports location_normalized_from."
+            "description": "Instead of location: a city, e.g. 'Muscat, Oman'."
           },
           "region": {
             "type": "string",
-            "description": "Alternative to location: a top-level state/region, normalised into location.zip_or_city with city."
+            "description": "With city: a state or region."
           }
         }
       },
@@ -454,12 +483,169 @@ hello@hatchloop.dev
                 },
                 "rank_score": {
                   "type": "number"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "openstreetmap",
+                    "supply_network"
+                  ]
+                },
+                "category": {
+                  "type": "string",
+                  "description": "OpenStreetMap tag that matched, e.g. shop=hairdresser (OSM rows only)"
+                },
+                "address_parts": {
+                  "type": "object",
+                  "description": "housenumber, street, suburb, city, state, postcode, country - only those the map holds"
+                },
+                "phone": {
+                  "type": "string"
+                },
+                "website": {
+                  "type": "string"
+                },
+                "opening_hours": {
+                  "type": "string",
+                  "description": "OpenStreetMap opening_hours syntax, as mapped"
+                },
+                "latitude": {
+                  "type": "number"
+                },
+                "longitude": {
+                  "type": "number"
+                },
+                "distance_m": {
+                  "type": "integer",
+                  "description": "Metres from the geocoded search point"
+                },
+                "osm": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "integer"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
           },
+          "result_count": {
+            "type": "integer",
+            "description": "How many rows are in businesses. 0 with search.status ok means a search that ran to the end and found none; 0 with status pending means it has not finished."
+          },
           "total_in_supply_network": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Real (non-sample) supply-network rows overall"
+          },
+          "attribution": {
+            "type": "string",
+            "description": "Always present. (c) OpenStreetMap contributors - required by the ODbL"
+          },
+          "attribution_url": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "input_notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Present when the request was read more loosely than the schema says: a string location, a kind of business sent as vertical, a top-level city, a clamped max_results"
+          },
+          "ignored_arguments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Argument names that were sent and not used"
+          },
+          "location_normalized_from": {
+            "type": "object",
+            "description": "The top-level city / region / country that were assembled into location.zip_or_city"
+          },
+          "search": {
+            "type": "object",
+            "description": "What was actually searched: status (ok, pending, location_not_found, unavailable, rate_limited), geocoded_place, radius_m (the radius really used; smaller than radius_requested_m when a dense area was narrowed), category_match {basis, osm_tags}, candidates_considered, candidates_capped, distance_order, cached, budget_s, within_budget",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "pending",
+                  "location_not_found",
+                  "unavailable",
+                  "rate_limited",
+                  "not_requested"
+                ],
+                "description": "pending = the time budget ran out before the search came back; it is still running and an identical repeat is usually answered from cache. Not an outage and not 'no businesses'."
+              },
+              "reason": {
+                "type": "string"
+              },
+              "retry_after_s": {
+                "type": "integer"
+              },
+              "budget_s": {
+                "type": "number",
+                "description": "The time budget for this call, in seconds"
+              },
+              "within_budget": {
+                "type": "boolean",
+                "description": "False when status is pending"
+              },
+              "continues_in_background": {
+                "type": "boolean",
+                "description": "Present (true) when status is pending"
+              },
+              "repeat_this_call": {
+                "type": "string"
+              },
+              "radius_m": {
+                "type": "integer",
+                "description": "Radius actually searched, in metres"
+              },
+              "radius_requested_m": {
+                "type": "integer"
+              },
+              "radius_narrowed": {
+                "type": "boolean",
+                "description": "True when the requested area held more than 150 matches and a smaller circle was searched so the nearest ones are not missed"
+              },
+              "candidates_capped": {
+                "type": "boolean",
+                "description": "True when more matches exist than the 150 candidates examined; rows are then the nearest among those examined, not guaranteed nearest overall"
+              },
+              "distance_order": {
+                "type": "string",
+                "enum": [
+                  "exact",
+                  "nearest_of_examined"
+                ],
+                "description": "exact = every match within radius_m was examined"
+              },
+              "country_restriction": {
+                "type": "string",
+                "description": "Present (us) when a bare 5-digit ZIP was read as a US ZIP"
+              },
+              "narrowing_stopped_because": {
+                "type": "string"
+              }
+            }
+          },
+          "osm_notice": {
+            "type": "string"
           },
           "supply_coverage_note": {
             "type": "string"
@@ -472,8 +658,8 @@ hello@hatchloop.dev
         "notes": "No key required, unmetered."
       },
       "slo": {
-        "p50_ms": 200,
-        "p95_ms": 800,
+        "p50_ms": 5000,
+        "p95_ms": 5500,
         "success_rate_30d": null,
         "availability_30d": null,
         "supply_network_coverage_by_vertical": null
@@ -483,55 +669,61 @@ hello@hatchloop.dev
         "bad_input",
         "missing_capability",
         "rate_limited",
+        "search_in_progress",
+        "osm_temporarily_unavailable",
         "out_of_supply_network",
         "transient",
         "internal"
       ],
       "examples": [
         {
-          "label": "Happy path \u2014 find hair salon near Atlanta",
+          "label": "Happy path - find hair salons near Atlanta (illustrative output)",
           "input": {
             "vertical": "personal_services",
             "location": {
-              "zip_or_city": "30309"
+              "zip_or_city": "Atlanta, GA"
             },
             "capability": "haircut",
-            "price_band": {
-              "max_usd": 50
-            },
-            "availability_window": {
-              "start_iso": "2026-04-29T09:00:00Z",
-              "end_iso": "2026-04-29T12:00:00Z"
-            }
+            "max_results": 3
           },
           "output": {
             "status": "success",
             "businesses": [
               {
-                "smb_id": "smb_001",
-                "name": "Cuts & Co.",
-                "vertical": "personal_services",
-                "address": "123 Main St, Atlanta, GA 30309",
-                "capabilities": [
-                  "haircut",
-                  "blowdry"
-                ],
-                "channels_available": [
-                  "direct_api:square",
-                  "sms"
-                ],
-                "price_range": {
-                  "min_usd": 35,
-                  "max_usd": 55
+                "smb_id": "osm:node/1001",
+                "name": "Example Cuts",
+                "source": "openstreetmap",
+                "category": "shop=hairdresser",
+                "address": "12 Peachtree St, Atlanta, GA 30303",
+                "address_parts": {
+                  "housenumber": "12",
+                  "street": "Peachtree St",
+                  "city": "Atlanta",
+                  "state": "GA",
+                  "postcode": "30303"
                 },
-                "verified_at": "2026-04-20T00:00:00Z",
-                "rank_score": 0.92
+                "phone": "+1 404 555 0100",
+                "opening_hours": "Mo-Sa 09:00-18:00",
+                "latitude": 33.7495,
+                "longitude": -84.3885,
+                "distance_m": 60,
+                "osm": {
+                  "type": "node",
+                  "id": 1001,
+                  "url": "https://www.openstreetmap.org/node/1001"
+                }
               }
-            ]
+            ],
+            "attribution": "(c) OpenStreetMap contributors",
+            "search": {
+              "provider": "openstreetmap",
+              "status": "ok",
+              "radius_m": 5000
+            }
           }
         },
         {
-          "label": "No results in supply network",
+          "label": "No results - say so, do not read it as 'none exist'",
           "input": {
             "vertical": "professional_services",
             "location": {
@@ -542,36 +734,35 @@ hello@hatchloop.dev
           "output": {
             "status": "success",
             "businesses": [],
-            "total_in_supply_network": 0,
-            "supply_coverage_note": "No verified businesses in this area for this capability. Try a broader location, an adjacent vertical, or import_booking_url."
+            "attribution": "(c) OpenStreetMap contributors",
+            "search": {
+              "provider": "openstreetmap",
+              "status": "location_not_found"
+            },
+            "supply_coverage_note": "OpenStreetMap could not resolve the location to a place. Try a city or town name, optionally with the country."
           }
         },
         {
-          "label": "Channel fallback note in result",
+          "label": "OpenStreetMap unreachable - retriable, no invented rows",
           "input": {
             "vertical": "home_services",
             "location": {
-              "zip_or_city": "02139"
+              "zip_or_city": "Muscat, Oman"
             },
-            "capability": "plumbing"
+            "capability": "plumber"
           },
           "output": {
-            "status": "success",
-            "businesses": [
-              {
-                "smb_id": "smb_044",
-                "name": "FastFix Plumbing",
-                "channels_available": [
-                  "voice_ai",
-                  "sms"
-                ],
-                "capabilities": [
-                  "plumbing",
-                  "emergency_plumbing"
-                ]
-              }
-            ],
-            "supply_coverage_note": "This business is reachable via voice AI or SMS only \u2014 no direct scheduling API."
+            "status": "failure",
+            "reason_code": "osm_temporarily_unavailable",
+            "retriable": true,
+            "businesses": [],
+            "attribution": "(c) OpenStreetMap contributors",
+            "search": {
+              "provider": "openstreetmap",
+              "status": "unavailable",
+              "reason": "upstream_timeout",
+              "retry_after_s": 30
+            }
           }
         }
       ],
@@ -619,7 +810,11 @@ hello@hatchloop.dev
     },
     {
       "name": "verify_business",
-      "description": "Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.",
+      "description": "Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An unknown id, or an osm:... id returned by find_business, answers out_of_supply_network (not retriable). It never contacts the business."
+      },
       "when_to_use": "Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').",
       "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours \u2014 those results are already verified.",
       "execution_profile": "sync",
@@ -677,7 +872,7 @@ hello@hatchloop.dev
       "idempotency": "read-only \u2014 idempotency key not required",
       "failure_modes": [
         "bad_input",
-        "supply_unreachable",
+        "out_of_supply_network",
         "supply_unverified",
         "transient"
       ],
@@ -719,19 +914,19 @@ hello@hatchloop.dev
     },
     {
       "name": "send_message",
-      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.",
-      "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.",
-      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations \u2014 use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in \u2014 the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach \u2014 those are out of scope and the rate limiter will throttle abuse.",
+      "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules.",
+      "when_to_use": "Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in. Where opt-in is required (everything except US marketing email, which follows CAN-SPAM opt-out rules) the gate verifies it on every send.",
+      "when_not_to_use": "Do NOT use for OTPs or critical transactional confirmations \u2014 use send_transactional_confirmation. Do NOT attempt to send SMS, voice, WhatsApp or non-US email marketing without a recorded opt-in \u2014 the gate will reject the send and log a compliance_violation (US marketing email follows CAN-SPAM opt-out rules instead). Do NOT attempt bulk / list-based / drip / cold outreach \u2014 those are out of scope and the rate limiter will throttle abuse.",
       "execution_profile": "sync_fast",
       "compliance_constraints": [
         "Permitted message types: transactional, marketing, reminder, follow_up, notification.",
-        "Marketing messages require a valid consent_record_id at send time \u2014 the gate looks it up in the consent_store and rejects if missing, expired, or revoked.",
+        "Marketing on SMS, voice, WhatsApp and non-US email requires a recorded opt-in at send time \u2014 the gate looks it up in the consent_store and rejects if missing, expired, or revoked. US marketing email follows CAN-SPAM opt-out rules: no prior opt-in is required, and a recorded opt-out is honored.",
         "US SMS marketing requires TCPA prior express written consent + 10DLC campaign registration.",
         "EU/UK recipients require explicit GDPR lawful basis (contract or freely-given consent) for marketing messages.",
         "Canadian recipients require CASL express consent for commercial electronic messages.",
         "Voice channel to US recipients requires prior express consent for autodialed/prerecorded calls (TCPA).",
         "All commercial email contains a functional unsubscribe link (CAN-SPAM).",
-        "GCC recipients (UAE, SA, OM, QA, KW, BH) covered by PDPL-style rules per jurisdiction; the gate routes by country_code."
+        "Gulf recipients (UAE, SA, OM, QA, KW, BH): no Gulf statute is modeled, so the gate applies the service's own opt-in default (recorded opt-in for marketing, an 08:00-21:00 local solicitation window) and its answer says so. The country is read from the recipient's number; a marketing or follow-up message whose country_code contradicts the number is refused as jurisdiction_conflict."
       ],
       "input_schema": {
         "type": "object",
@@ -768,7 +963,7 @@ hello@hatchloop.dev
           },
           "message_type": {
             "type": "string",
-            "description": "Intent tag for the message. Five permitted types. 'marketing' is allowed only when paired with a valid consent_record_id; the compliance gate verifies the consent at send time and rejects (compliance_violation receipt) if it's missing, expired, or revoked.",
+            "description": "'marketing' needs recorded opt-in, except US email (CAN-SPAM opt-out rules). Five types. The gate checks the opt-in at send time and rejects the send (compliance_violation receipt) if it is missing, expired, or revoked.",
             "enum": [
               "transactional",
               "marketing",
@@ -998,7 +1193,11 @@ hello@hatchloop.dev
     },
     {
       "name": "capture_lead",
-      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel \u2014 this is AgentBroker's own lead store, NOT a write into the business's own CRM.",
+      "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an unknown id or an osm:... id is refused with out_of_supply_network."
+      },
       "when_to_use": "Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.",
       "when_not_to_use": "Do not use for confirmed bookings \u2014 use schedule_appointment. Do not use for bulk list imports.",
       "execution_profile": "sync_fast",
@@ -1066,6 +1265,7 @@ hello@hatchloop.dev
       "idempotency": "required \u2014 dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
       "failure_modes": [
         "bad_input",
+        "out_of_supply_network",
         "idempotency_conflict",
         "upstream_failure",
         "compliance_violation"
@@ -1113,6 +1313,10 @@ hello@hatchloop.dev
     {
       "name": "schedule_appointment",
       "description": "Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) \u2014 those SMBs fail honestly instead of a fabricated confirmation.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Completes only for a business whose booking link is bound to this deployment's one connected Cal.com account. Any other business fails with booking_destination_unmapped, uncharged."
+      },
       "when_to_use": "Use to book, check availability, or cancel a Cal.com appointment once the SMB is verified and its booking link is bound to our connected Cal.com account. Requires a verified smb_id.",
       "when_not_to_use": "Do not use for bulk scheduling. Do not use without a verified SMB \u2014 call find_business and verify_business first if needed. Do not pass action=reschedule \u2014 it is not implemented; cancel the existing appointment and book a new time instead. Do not expect this to book on the SMB's own Calendly/Doctolib/Booksy/Fresha/etc. account, or on a Cal.com account other than the one this deployment holds credentials for \u2014 those calls fail honestly with no charge.",
       "execution_profile": "async_by_default",
@@ -1204,6 +1408,7 @@ hello@hatchloop.dev
       "failure_modes": [
         "bad_input",
         "action_not_supported",
+        "out_of_supply_network",
         "supply_unreachable",
         "upstream_failure",
         "compliance_violation",
@@ -1428,7 +1633,11 @@ hello@hatchloop.dev
     },
     {
       "name": "handle_inbound",
-      "description": "Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.",
+      "description": "Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Substring keyword rules on English text, not a language model: 'stop' or 'cancel' anywhere in a message sets the intent. A hint for your agent to check, never a decision."
+      },
       "when_to_use": "Use when an SMB needs inbound message triage \u2014 classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.",
       "when_not_to_use": "Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.",
       "execution_profile": "async_by_default",
@@ -1544,7 +1753,11 @@ hello@hatchloop.dev
     },
     {
       "name": "escalate_to_human",
-      "description": "Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.",
+      "description": "Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time.",
+      "readiness": {
+        "state": "beta",
+        "summary": "Writes a ticket to the operator queue and returns its id. This tool sends no notification and makes no response-time commitment."
+      },
       "when_to_use": "Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact.",
       "when_not_to_use": "Do not use as a first resort. Escalate only after automated resolution attempts.",
       "execution_profile": "async_by_default",
@@ -2295,6 +2508,10 @@ hello@hatchloop.dev
     {
       "name": "import_booking_url",
       "description": "Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account \u2014 the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent \u2014 calling twice returns the same smb_id.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Detects 12 booking platforms, but only a Cal.com link bound to our one connected account can be booked afterwards; the other 11 fail schedule_appointment honestly, uncharged. Needs a key."
+      },
       "when_to_use": "Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id works immediately with send_message and capture_lead. It only completes a booking via schedule_appointment if the URL was a Cal.com link bound to this deployment's one connected account \u2014 every other platform gets an honest, uncharged refusal there, not a booking.",
       "when_not_to_use": "Do not use if the user only describes a business by name without a URL \u2014 call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).",
       "execution_profile": "sync",
@@ -2610,7 +2827,7 @@ hello@hatchloop.dev
           },
           "message_type": {
             "type": "string",
-            "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+            "description": "One of transactional, marketing, reminder, follow_up, notification (any case). Any other value is refused. 'marketing' triggers the consent checks. Defaults to transactional.",
             "default": "transactional"
           },
           "country_code": {
@@ -2638,6 +2855,48 @@ hello@hatchloop.dev
           },
           "jurisdiction": {
             "type": "string"
+          },
+          "jurisdiction_source": {
+            "type": "string",
+            "enum": [
+              "caller",
+              "recipient_number",
+              "unknown"
+            ],
+            "description": "How the jurisdiction was decided: the caller's country_code, the recipient number's country calling code (which wins over a contradicting country_code for a message that is not a solicitation), or unknown (which includes a marketing or follow-up message whose country_code contradicts the number)."
+          },
+          "jurisdiction_conflict": {
+            "type": "string",
+            "description": "Present only when country_code contradicted the recipient number or could not be used. For a message that is not a solicitation it says which jurisdiction was applied instead; for a marketing or follow-up message none was, and the answer is rule jurisdiction_conflict."
+          },
+          "rule_set": {
+            "type": "object",
+            "description": "What the rules applied are based on. basis is 'statute' where a named statute is modeled (US, EU/UK states modeled, Canada) and 'conservative_default' everywhere else, which means no statute of that country was applied - the service's own opt-in policy was. It is 'undecided' (code null) when a marketing or follow-up message's country_code contradicts the recipient number: the gate refused to choose and applied no rule set.",
+            "properties": {
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "basis": {
+                "type": "string",
+                "enum": [
+                  "statute",
+                  "conservative_default",
+                  "undecided"
+                ]
+              },
+              "statutes_modeled": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "note": {
+                "type": "string"
+              }
+            }
           },
           "rule": {
             "type": "string",
@@ -2831,7 +3090,7 @@ hello@hatchloop.dev
       "cost_model": {
         "basis": "freemium_daily_quota",
         "unit_price_usd": 0.02,
-        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits."
+        "free_quota_note": "The daily free quota (500/day with a free email-verified key, 100/day anonymous) exists only while DATA_METERING_ENABLED is on; payments.premium_data_quota_enforced in /.well-known/mcp.json says whether it is. Beyond it a call is billed via credits only while a payment rail is on."
       },
       "slo": {
         "p50_ms": 800,
@@ -2923,9 +3182,9 @@ hello@hatchloop.dev
     },
     {
       "name": "screen_sanctions",
-      "description": "Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
+      "description": "Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.",
       "when_to_use": "Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.",
-      "when_not_to_use": "Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.",
+      "when_not_to_use": "Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query. Arabic names are matched by transliteration, which is lossy: sound-alikes come back as graded candidates (match_confidence, token_alignment), never as findings; the one exception is an Arabic-script name equal to an Arabic alias a list prints. An Arabic query with no hits is 'partial', never 'clean'.",
       "execution_profile": "sync",
       "compliance_constraints": [],
       "input_schema": {
@@ -2936,7 +3195,7 @@ hello@hatchloop.dev
         "properties": {
           "name": {
             "type": "string",
-            "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available for best accuracy."
+            "description": "Name of the person or entity to screen, in Latin or Arabic script, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available. Arabic names are also matched by sound across spellings."
           },
           "country": {
             "type": "string",
@@ -2957,7 +3216,95 @@ hello@hatchloop.dev
         "properties": {
           "matched": {
             "type": "boolean",
-            "description": "True only when a CONFIRMED match was found. False does NOT by itself mean clean - it is also false when no list could be screened. Branch on screening_status, not on this."
+            "description": "True only when a CONFIRMED match was found. False does NOT by itself mean clean - it is also false when no list could be screened. Branch on screening_status and review_guidance for independent coverage/review tasks, not on this."
+          },
+          "review_guidance": {
+            "type": "object",
+            "description": "Additive deterministic review hints, bound by compliance_receipt. Coverage means supported OFAC/EU/UK paths only; hit/candidates may coexist with missing coverage. Does not assert identity, KYC/AML clearance or permission to transact. Action identifiers describe review tasks and confer no authorization.",
+            "properties": {
+              "version": {
+                "type": "string",
+                "const": "agentbroker-screening-review/1"
+              },
+              "coverage_scope": {
+                "type": "string",
+                "const": "supported_lists_only"
+              },
+              "coverage_status": {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "partial",
+                  "none"
+                ]
+              },
+              "lists_screened": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lists_not_screened": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lists_outside_scope": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "review_required": {
+                "type": "boolean",
+                "description": "True when name/candidate, coverage, freshness or matching limitations require review. False is not clearance."
+              },
+              "review_reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "confirmed_name_match",
+                    "unverified_candidates",
+                    "incomplete_coverage",
+                    "unknown_list_freshness",
+                    "stale_list_copy",
+                    "name_not_fully_screenable",
+                    "lossy_transliteration"
+                  ]
+                }
+              },
+              "next_actions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "verify_identity_against_official_source",
+                    "review_candidates_against_official_source",
+                    "retry_unavailable_lists",
+                    "verify_list_freshness",
+                    "provide_screenable_name",
+                    "review_original_script_and_aliases"
+                  ]
+                }
+              },
+              "freshness_unknown_lists": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "stale_copy_lists": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "does_not_assert": {
+                "type": "string"
+              }
+            }
           },
           "screening_status": {
             "type": "string",
@@ -3031,13 +3378,17 @@ hello@hatchloop.dev
               "type": "string"
             },
             "description": "Sources that were attempted but unavailable (fail-open: partial results returned)."
+          },
+          "arabic_matching": {
+            "type": "object",
+            "description": "Present when the name was Arabic-script or showed Arabic-name structure. Says whether the sound-based layer ran (applied, not_applied_reason), what it searched on (query_elements), how many candidates it produced (sound_based_candidates) and how many low-confidence pairs it counted but did not list (low_confidence_not_listed). Each sound-based candidate in possible_matches_unverified also carries match_basis, match_confidence (high or medium), match_explanation and token_alignment."
           }
         }
       },
       "cost_model": {
         "basis": "freemium_daily_quota",
         "unit_price_usd": 0.02,
-        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits."
+        "free_quota_note": "The daily free quota (500/day with a free email-verified key, 100/day anonymous) exists only while DATA_METERING_ENABLED is on; payments.premium_data_quota_enforced in /.well-known/mcp.json says whether it is. Beyond it a call is billed via credits only while a payment rail is on."
       },
       "slo": {
         "p50_ms": 2000,
@@ -3303,7 +3654,7 @@ hello@hatchloop.dev
       "cost_model": {
         "basis": "freemium_daily_quota",
         "unit_price_usd": 0.02,
-        "free_quota_note": "Free up to the daily quota (500/day with a free email-verified key, 100/day anonymous). Beyond the quota, billed per call via credits."
+        "free_quota_note": "The daily free quota (500/day with a free email-verified key, 100/day anonymous) exists only while DATA_METERING_ENABLED is on; payments.premium_data_quota_enforced in /.well-known/mcp.json says whether it is. Beyond it a call is billed via credits only while a payment rail is on."
       },
       "slo": {
         "p50_ms": 3000,
@@ -3559,7 +3910,7 @@ hello@hatchloop.dev
           "reason_code": "identity_required",
           "retriable": false,
           "meaning": "No agent identity was presented. A thread is readable only by the identity that opened it, so this tool needs one even though it is free.",
-          "agent_action": "Send your key as X-Agent-Identity - the same key you send with send_message. Mint one with mint_key."
+          "agent_action": "Get a free key (email-verified, no payment) at /keys/request, then send it as the X-Agent-Identity header on this call. mint_key is not a route for outside callers: it needs the operator's machine-mint secret."
         },
         {
           "reason_code": "conversation_owner_unknown",
@@ -3617,7 +3968,11 @@ hello@hatchloop.dev
     },
     {
       "name": "mint_key",
-      "description": "Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.",
+      "description": "Mint a free-tier API key without email by signing agent_id + timestamp + nonce with the MACHINE_MINT_SECRET (HMAC-SHA256). Refused without that secret (invalid_request); not_configured if the operator has none set. No secret: use POST /keys/request.",
+      "readiness": {
+        "state": "limited",
+        "summary": "Refused unless the caller signs with the machine-mint secret (HMAC-SHA256). Without it, get a free key from POST /keys/request (an emailed link)."
+      },
       "when_to_use": "Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).",
       "when_not_to_use": "Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans \u2014 this endpoint issues free-tier keys (100 ops/day) only.",
       "execution_profile": "sync",
@@ -3987,7 +4342,6 @@ hello@hatchloop.dev
 {
   "type": "object",
   "required": [
-    "vertical",
     "location"
   ],
   "properties": {
@@ -4006,19 +4360,20 @@ hello@hatchloop.dev
       ],
       "properties": {
         "zip_or_city": {
-          "type": "string"
+          "type": "string",
+          "description": "Town, city, address or postal code, with the country if not US: 'Nizwa, Oman'. A bare 5-digit ZIP is a US ZIP; add the country for any other postal code."
         },
         "radius_miles": {
           "type": "number",
           "minimum": 0,
-          "description": "Accepted but NOT applied - no coordinates exist, so results are not restricted to this radius. Disclosed back as radius_miles_applied: false."
+          "description": "Radius in miles (default 3.1, max 25); applies to OpenStreetMap results only."
         }
       },
-      "description": "Where to search. Matched against the business's city, state and ZIP as text - we hold no coordinates, so radius_miles is accepted for compatibility and never applied."
+      "description": "City/town or ZIP, optionally with country ('Nizwa, Oman'). Geocoded by OSM."
     },
     "capability": {
       "type": "string",
-      "description": "Specific service capability required, e.g. 'haircut', 'plumbing', 'tax_consultation'"
+      "description": "Kind of business: 'dentist', 'cafe', 'plumber'. Use it or vertical."
     },
     "price_band": {
       "type": "object",
@@ -4026,7 +4381,8 @@ hello@hatchloop.dev
         "max_usd": {
           "type": "number"
         }
-      }
+      },
+      "description": "Supply-network rows only (OpenStreetMap has no prices)."
     },
     "availability_window": {
       "type": "object",
@@ -4040,7 +4396,7 @@ hello@hatchloop.dev
           "format": "date-time"
         }
       },
-      "description": "Accepted but NOT APPLIED - it does not narrow results. We do not hold live calendars for the supply network. The response carries availability_window_applied: false when you send one. To book a specific slot use schedule_appointment with requested_time, which checks real availability."
+      "description": "Accepted but NOT APPLIED: it does not narrow results (no live calendars). The result says availability_window_applied: false. To book a slot use schedule_appointment requested_time."
     },
     "max_results": {
       "type": "integer",
@@ -4050,11 +4406,11 @@ hello@hatchloop.dev
     },
     "city": {
       "type": "string",
-      "description": "Alternative to location: a top-level city, normalised into location.zip_or_city. The receipt reports location_normalized_from."
+      "description": "Instead of location: a city, e.g. 'Muscat, Oman'."
     },
     "region": {
       "type": "string",
-      "description": "Alternative to location: a top-level state/region, normalised into location.zip_or_city with city."
+      "description": "With city: a state or region."
     }
   }
 }
@@ -4103,12 +4459,169 @@ hello@hatchloop.dev
           },
           "rank_score": {
             "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "openstreetmap",
+              "supply_network"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "description": "OpenStreetMap tag that matched, e.g. shop=hairdresser (OSM rows only)"
+          },
+          "address_parts": {
+            "type": "object",
+            "description": "housenumber, street, suburb, city, state, postcode, country - only those the map holds"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "opening_hours": {
+            "type": "string",
+            "description": "OpenStreetMap opening_hours syntax, as mapped"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "distance_m": {
+            "type": "integer",
+            "description": "Metres from the geocoded search point"
+          },
+          "osm": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
           }
         }
       }
     },
+    "result_count": {
+      "type": "integer",
+      "description": "How many rows are in businesses. 0 with search.status ok means a search that ran to the end and found none; 0 with status pending means it has not finished."
+    },
     "total_in_supply_network": {
-      "type": "integer"
+      "type": "integer",
+      "description": "Real (non-sample) supply-network rows overall"
+    },
+    "attribution": {
+      "type": "string",
+      "description": "Always present. (c) OpenStreetMap contributors - required by the ODbL"
+    },
+    "attribution_url": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string"
+    },
+    "input_notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Present when the request was read more loosely than the schema says: a string location, a kind of business sent as vertical, a top-level city, a clamped max_results"
+    },
+    "ignored_arguments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Argument names that were sent and not used"
+    },
+    "location_normalized_from": {
+      "type": "object",
+      "description": "The top-level city / region / country that were assembled into location.zip_or_city"
+    },
+    "search": {
+      "type": "object",
+      "description": "What was actually searched: status (ok, pending, location_not_found, unavailable, rate_limited), geocoded_place, radius_m (the radius really used; smaller than radius_requested_m when a dense area was narrowed), category_match {basis, osm_tags}, candidates_considered, candidates_capped, distance_order, cached, budget_s, within_budget",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "pending",
+            "location_not_found",
+            "unavailable",
+            "rate_limited",
+            "not_requested"
+          ],
+          "description": "pending = the time budget ran out before the search came back; it is still running and an identical repeat is usually answered from cache. Not an outage and not 'no businesses'."
+        },
+        "reason": {
+          "type": "string"
+        },
+        "retry_after_s": {
+          "type": "integer"
+        },
+        "budget_s": {
+          "type": "number",
+          "description": "The time budget for this call, in seconds"
+        },
+        "within_budget": {
+          "type": "boolean",
+          "description": "False when status is pending"
+        },
+        "continues_in_background": {
+          "type": "boolean",
+          "description": "Present (true) when status is pending"
+        },
+        "repeat_this_call": {
+          "type": "string"
+        },
+        "radius_m": {
+          "type": "integer",
+          "description": "Radius actually searched, in metres"
+        },
+        "radius_requested_m": {
+          "type": "integer"
+        },
+        "radius_narrowed": {
+          "type": "boolean",
+          "description": "True when the requested area held more than 150 matches and a smaller circle was searched so the nearest ones are not missed"
+        },
+        "candidates_capped": {
+          "type": "boolean",
+          "description": "True when more matches exist than the 150 candidates examined; rows are then the nearest among those examined, not guaranteed nearest overall"
+        },
+        "distance_order": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "nearest_of_examined"
+          ],
+          "description": "exact = every match within radius_m was examined"
+        },
+        "country_restriction": {
+          "type": "string",
+          "description": "Present (us) when a bare 5-digit ZIP was read as a US ZIP"
+        },
+        "narrowing_stopped_because": {
+          "type": "string"
+        }
+      }
+    },
+    "osm_notice": {
+      "type": "string"
     },
     "supply_coverage_note": {
       "type": "string"
@@ -4121,45 +4634,49 @@ hello@hatchloop.dev
 #### Example 1: 
 ```json
 {
-  "label": "Happy path \u2014 find hair salon near Atlanta",
+  "label": "Happy path - find hair salons near Atlanta (illustrative output)",
   "input": {
     "vertical": "personal_services",
     "location": {
-      "zip_or_city": "30309"
+      "zip_or_city": "Atlanta, GA"
     },
     "capability": "haircut",
-    "price_band": {
-      "max_usd": 50
-    },
-    "availability_window": {
-      "start_iso": "2026-04-29T09:00:00Z",
-      "end_iso": "2026-04-29T12:00:00Z"
-    }
+    "max_results": 3
   },
   "output": {
     "status": "success",
     "businesses": [
       {
-        "smb_id": "smb_001",
-        "name": "Cuts & Co.",
-        "vertical": "personal_services",
-        "address": "123 Main St, Atlanta, GA 30309",
-        "capabilities": [
-          "haircut",
-          "blowdry"
-        ],
-        "channels_available": [
-          "direct_api:square",
-          "sms"
-        ],
-        "price_range": {
-          "min_usd": 35,
-          "max_usd": 55
+        "smb_id": "osm:node/1001",
+        "name": "Example Cuts",
+        "source": "openstreetmap",
+        "category": "shop=hairdresser",
+        "address": "12 Peachtree St, Atlanta, GA 30303",
+        "address_parts": {
+          "housenumber": "12",
+          "street": "Peachtree St",
+          "city": "Atlanta",
+          "state": "GA",
+          "postcode": "30303"
         },
-        "verified_at": "2026-04-20T00:00:00Z",
-        "rank_score": 0.92
+        "phone": "+1 404 555 0100",
+        "opening_hours": "Mo-Sa 09:00-18:00",
+        "latitude": 33.7495,
+        "longitude": -84.3885,
+        "distance_m": 60,
+        "osm": {
+          "type": "node",
+          "id": 1001,
+          "url": "https://www.openstreetmap.org/node/1001"
+        }
       }
-    ]
+    ],
+    "attribution": "(c) OpenStreetMap contributors",
+    "search": {
+      "provider": "openstreetmap",
+      "status": "ok",
+      "radius_m": 5000
+    }
   }
 }
 ```
@@ -4167,7 +4684,7 @@ hello@hatchloop.dev
 #### Example 2: 
 ```json
 {
-  "label": "No results in supply network",
+  "label": "No results - say so, do not read it as 'none exist'",
   "input": {
     "vertical": "professional_services",
     "location": {
@@ -4178,8 +4695,12 @@ hello@hatchloop.dev
   "output": {
     "status": "success",
     "businesses": [],
-    "total_in_supply_network": 0,
-    "supply_coverage_note": "No verified businesses in this area for this capability. Try a broader location, an adjacent vertical, or import_booking_url."
+    "attribution": "(c) OpenStreetMap contributors",
+    "search": {
+      "provider": "openstreetmap",
+      "status": "location_not_found"
+    },
+    "supply_coverage_note": "OpenStreetMap could not resolve the location to a place. Try a city or town name, optionally with the country."
   }
 }
 ```
@@ -4187,31 +4708,26 @@ hello@hatchloop.dev
 #### Example 3: 
 ```json
 {
-  "label": "Channel fallback note in result",
+  "label": "OpenStreetMap unreachable - retriable, no invented rows",
   "input": {
     "vertical": "home_services",
     "location": {
-      "zip_or_city": "02139"
+      "zip_or_city": "Muscat, Oman"
     },
-    "capability": "plumbing"
+    "capability": "plumber"
   },
   "output": {
-    "status": "success",
-    "businesses": [
-      {
-        "smb_id": "smb_044",
-        "name": "FastFix Plumbing",
-        "channels_available": [
-          "voice_ai",
-          "sms"
-        ],
-        "capabilities": [
-          "plumbing",
-          "emergency_plumbing"
-        ]
-      }
-    ],
-    "supply_coverage_note": "This business is reachable via voice AI or SMS only \u2014 no direct scheduling API."
+    "status": "failure",
+    "reason_code": "osm_temporarily_unavailable",
+    "retriable": true,
+    "businesses": [],
+    "attribution": "(c) OpenStreetMap contributors",
+    "search": {
+      "provider": "openstreetmap",
+      "status": "unavailable",
+      "reason": "upstream_timeout",
+      "retry_after_s": 30
+    }
   }
 }
 ```
@@ -4220,6 +4736,8 @@ hello@hatchloop.dev
 - bad_input
 - missing_capability
 - rate_limited
+- search_in_progress
+- osm_temporarily_unavailable
 - out_of_supply_network
 - transient
 - internal
@@ -4303,7 +4821,7 @@ hello@hatchloop.dev
 
 ### Failure Modes
 - bad_input
-- supply_unreachable
+- out_of_supply_network
 - supply_unverified
 - transient
 
@@ -4346,7 +4864,7 @@ hello@hatchloop.dev
     },
     "message_type": {
       "type": "string",
-      "description": "Intent tag for the message. Five permitted types. 'marketing' is allowed only when paired with a valid consent_record_id; the compliance gate verifies the consent at send time and rejects (compliance_violation receipt) if it's missing, expired, or revoked.",
+      "description": "'marketing' needs recorded opt-in, except US email (CAN-SPAM opt-out rules). Five types. The gate checks the opt-in at send time and rejects the send (compliance_violation receipt) if it is missing, expired, or revoked.",
       "enum": [
         "transactional",
         "marketing",
@@ -4577,6 +5095,7 @@ hello@hatchloop.dev
 
 ### Failure Modes
 - bad_input
+- out_of_supply_network
 - idempotency_conflict
 - upstream_failure
 - compliance_violation
@@ -4736,6 +5255,7 @@ hello@hatchloop.dev
 ### Failure Modes
 - bad_input
 - action_not_supported
+- out_of_supply_network
 - supply_unreachable
 - upstream_failure
 - compliance_violation
@@ -5676,9 +6196,9 @@ hello@hatchloop.dev
 ```
 
 ### Failure Modes
-- ****: Host did not match any of the 12 supported booking platforms.
-- ****: The page returned 404 / 403 / timeout. Retry after fixing the URL.
-- ****: Page exists but we could not extract a usable business name. Pass `business_name` explicitly.
+- **platform_not_supported**: Host did not match any of the 12 supported booking platforms.
+- **url_not_reachable**: The page returned 404 / 403 / timeout. Retry after fixing the URL.
+- **page_metadata_extraction_failed**: Page exists but we could not extract a usable business name. Pass `business_name` explicitly.
 
 ## Operation: call_business
 
@@ -5796,7 +6316,7 @@ hello@hatchloop.dev
     },
     "message_type": {
       "type": "string",
-      "description": "Intent tag: transactional, marketing, reminder, follow_up, notification. 'marketing' triggers the consent checks. Defaults to transactional.",
+      "description": "One of transactional, marketing, reminder, follow_up, notification (any case). Any other value is refused. 'marketing' triggers the consent checks. Defaults to transactional.",
       "default": "transactional"
     },
     "country_code": {
@@ -5828,6 +6348,48 @@ hello@hatchloop.dev
     },
     "jurisdiction": {
       "type": "string"
+    },
+    "jurisdiction_source": {
+      "type": "string",
+      "enum": [
+        "caller",
+        "recipient_number",
+        "unknown"
+      ],
+      "description": "How the jurisdiction was decided: the caller's country_code, the recipient number's country calling code (which wins over a contradicting country_code for a message that is not a solicitation), or unknown (which includes a marketing or follow-up message whose country_code contradicts the number)."
+    },
+    "jurisdiction_conflict": {
+      "type": "string",
+      "description": "Present only when country_code contradicted the recipient number or could not be used. For a message that is not a solicitation it says which jurisdiction was applied instead; for a marketing or follow-up message none was, and the answer is rule jurisdiction_conflict."
+    },
+    "rule_set": {
+      "type": "object",
+      "description": "What the rules applied are based on. basis is 'statute' where a named statute is modeled (US, EU/UK states modeled, Canada) and 'conservative_default' everywhere else, which means no statute of that country was applied - the service's own opt-in policy was. It is 'undecided' (code null) when a marketing or follow-up message's country_code contradicts the recipient number: the gate refused to choose and applied no rule set.",
+      "properties": {
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "basis": {
+          "type": "string",
+          "enum": [
+            "statute",
+            "conservative_default",
+            "undecided"
+          ]
+        },
+        "statutes_modeled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     },
     "rule": {
       "type": "string",
@@ -6053,7 +6615,7 @@ hello@hatchloop.dev
   "properties": {
     "name": {
       "type": "string",
-      "description": "Full name of the person or entity to screen, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available for best accuracy."
+      "description": "Name of the person or entity to screen, in Latin or Arabic script, e.g. 'Kim Jong-un' or 'ACME Trading LLC'. Use the most complete name available. Arabic names are also matched by sound across spellings."
     },
     "country": {
       "type": "string",
@@ -6078,7 +6640,95 @@ hello@hatchloop.dev
   "properties": {
     "matched": {
       "type": "boolean",
-      "description": "True only when a CONFIRMED match was found. False does NOT by itself mean clean - it is also false when no list could be screened. Branch on screening_status, not on this."
+      "description": "True only when a CONFIRMED match was found. False does NOT by itself mean clean - it is also false when no list could be screened. Branch on screening_status and review_guidance for independent coverage/review tasks, not on this."
+    },
+    "review_guidance": {
+      "type": "object",
+      "description": "Additive deterministic review hints, bound by compliance_receipt. Coverage means supported OFAC/EU/UK paths only; hit/candidates may coexist with missing coverage. Does not assert identity, KYC/AML clearance or permission to transact. Action identifiers describe review tasks and confer no authorization.",
+      "properties": {
+        "version": {
+          "type": "string",
+          "const": "agentbroker-screening-review/1"
+        },
+        "coverage_scope": {
+          "type": "string",
+          "const": "supported_lists_only"
+        },
+        "coverage_status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "none"
+          ]
+        },
+        "lists_screened": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lists_not_screened": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lists_outside_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "review_required": {
+          "type": "boolean",
+          "description": "True when name/candidate, coverage, freshness or matching limitations require review. False is not clearance."
+        },
+        "review_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "confirmed_name_match",
+              "unverified_candidates",
+              "incomplete_coverage",
+              "unknown_list_freshness",
+              "stale_list_copy",
+              "name_not_fully_screenable",
+              "lossy_transliteration"
+            ]
+          }
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "verify_identity_against_official_source",
+              "review_candidates_against_official_source",
+              "retry_unavailable_lists",
+              "verify_list_freshness",
+              "provide_screenable_name",
+              "review_original_script_and_aliases"
+            ]
+          }
+        },
+        "freshness_unknown_lists": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stale_copy_lists": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "does_not_assert": {
+          "type": "string"
+        }
+      }
     },
     "screening_status": {
       "type": "string",
@@ -6152,6 +6802,10 @@ hello@hatchloop.dev
         "type": "string"
       },
       "description": "Sources that were attempted but unavailable (fail-open: partial results returned)."
+    },
+    "arabic_matching": {
+      "type": "object",
+      "description": "Present when the name was Arabic-script or showed Arabic-name structure. Says whether the sound-based layer ran (applied, not_applied_reason), what it searched on (query_elements), how many candidates it produced (sound_based_candidates) and how many low-confidence pairs it counted but did not list (low_confidence_not_listed). Each sound-based candidate in possible_matches_unverified also carries match_basis, match_confidence (high or medium), match_explanation and token_alignment."
     }
   }
 }
@@ -6540,11 +7194,11 @@ hello@hatchloop.dev
 ```
 
 ### Failure Modes
-- ****: 
-- ****: 
-- ****: 
-- ****: 
-- ****: 
+- **conversation_not_found**: No thread matched the id/reference given. What to do: Use the conversation_id returned by send_message, or a reference plus business_number.
+- **invalid_argument**: A reference was supplied without business_number. What to do: Add business_number - 4-digit references are reused across businesses.
+- **not_your_conversation**: The thread belongs to a different agent identity. What to do: Use the identity that created the conversation.
+- **identity_required**: No agent identity was presented. A thread is readable only by the identity that opened it, so this tool needs one even though it is free. What to do: Get a free key (email-verified, no payment) at /keys/request, then send it as the X-Agent-Identity header on this call. mint_key is not a route for outside callers: it needs the operator's machine-mint secret.
+- **conversation_owner_unknown**: The thread has no recorded owner, so it cannot be attributed to any caller and is released to none. Threads opened before caller identity was bound, and threads opened by a caller that sent no key, are in this state. What to do: Send X-Agent-Identity with send_message and read back the thread that call returns.
 
 ## Operation: mint_key
 
@@ -6634,8 +7288,8 @@ hello@hatchloop.dev
 ```
 
 ### Failure Modes
-- ****: 
-- ****: 
+- **invalid_request**: Signature verification failed or timestamp is outside the 60s window. What to do: Recompute the HMAC with the correct secret and a fresh timestamp+nonce.
+- **not_configured**: MACHINE_MINT_SECRET is not set on this server. What to do: Contact hello@hatchloop.dev — the endpoint is not yet enabled.
 
 ## Operation: lookup_us_contracts
 
@@ -6752,6 +7406,6 @@ hello@hatchloop.dev
 ```
 
 ### Failure Modes
-- ****: 
-- ****: 
+- **bad_input**: company_name is empty or missing. What to do: Supply a non-empty company_name.
+- **partial_lookup**: USASpending.gov was unreachable on this call. What to do: Retry; the upstream has SLA issues occasionally.
 

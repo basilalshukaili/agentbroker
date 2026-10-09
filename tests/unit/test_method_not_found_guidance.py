@@ -9,8 +9,8 @@ do not exist here.
 
 These tests pin: the refusal says this endpoint is MCP, names the methods it does answer and the next call to
 make; an A2A name is called what it is; the caller's method text is never echoed raw; the 2026-07-28 shape keeps
-its HTTP 404; the ChatGPT door keeps its fixed wording (it must not gain a new surface); and the agent card no
-longer claims A2A capabilities.
+its HTTP 404; the ChatGPT door keeps its fixed wording (it must not gain a new surface); and neither A2A document we
+serve (/.well-known/agent-card.json and /.well-known/agents.json) claims A2A capabilities.
 """
 from __future__ import annotations
 
@@ -113,3 +113,62 @@ def test_the_agent_card_does_not_claim_a2a_capabilities_this_server_lacks():
     assert card["_meta"]["a2a"]["implemented"] is False
     assert card["_meta"]["a2a"]["use"] == "mcp"
     assert card["_meta"]["a2a"]["mcpEndpoint"] == card["url"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The SECOND A2A document (gate finding P2 on d4f34c1)
+# ---------------------------------------------------------------------------------------------------------------------
+#
+# The fix above corrected /.well-known/agent-card.json only. /.well-known/agents.json (well_known.get_agents_json, served
+# by main.py) was untouched and went on declaring protocol_version "a2a-v0.2", streaming / push_notifications /
+# state_transition_history all True and "a2a" among its supported protocols, with the service root as its URL - so after
+# the release the two documents contradicted each other and the one the registries crawl still invited A2A callers.
+
+A2A_CAPABILITY_FLAGS = ("streaming", "push_notifications", "state_transition_history")
+
+
+def test_agents_json_does_not_claim_a2a_capabilities_this_server_lacks():
+    doc = well_known.get_agents_json()
+    assert doc["capabilities"] == {flag: False for flag in A2A_CAPABILITY_FLAGS}
+    assert doc["protocol_version"] is None, "no A2A protocol version is spoken here"
+    assert "a2a" not in doc["supported_protocols"]
+    assert doc["supported_protocols"][0] == "mcp"
+
+
+def test_agents_json_points_at_the_mcp_endpoint_and_says_a2a_is_not_implemented():
+    doc = well_known.get_agents_json()
+    card = well_known.get_agent_card()
+    assert doc["a2a"] == card["_meta"]["a2a"] == {"implemented": False, "use": "mcp", "mcpEndpoint": card["url"]}
+    assert doc["url"] == card["url"] == doc["discovery_urls"]["mcp"], "one endpoint, named the same way in both documents"
+
+
+def test_the_two_a2a_documents_cannot_disagree_about_a_capability():
+    doc, card = well_known.get_agents_json(), well_known.get_agent_card()
+    assert not any(doc["capabilities"].values()) and not any(card["capabilities"].values())
+    assert len(doc["capabilities"]) == len(card["capabilities"]) == 3
+
+
+def test_the_served_route_returns_the_corrected_document():
+    """main.py serves it; the dispatcher test above is not the wire."""
+    from fastapi.testclient import TestClient
+    import main
+    body = TestClient(main.app).get("/.well-known/agents.json").json()
+    assert body["capabilities"] == {flag: False for flag in A2A_CAPABILITY_FLAGS}
+    assert "a2a" not in body["supported_protocols"] and body["a2a"]["implemented"] is False
+
+
+def test_the_committed_edge_snapshot_of_agents_json_agrees():
+    """The edge worker serves /.well-known/agents.json from this snapshot (edge/src/discovery.ts)."""
+    import json
+    from pathlib import Path
+    snap = json.loads((Path(__file__).resolve().parents[2] / "edge" / "src" / "snapshots" / "agents.json")
+                      .read_text(encoding="utf-8"))
+    assert snap["capabilities"] == {flag: False for flag in A2A_CAPABILITY_FLAGS}
+    assert "a2a" not in snap["supported_protocols"] and snap["a2a"]["implemented"] is False
+
+
+def test_the_discovery_notes_no_longer_list_the_a2a_claim_as_open():
+    from pathlib import Path
+    text = (Path(__file__).resolve().parents[2] / "docs" / "DISCOVERY.md").read_text(encoding="utf-8")
+    assert "The A2A card still declares" not in text
+    assert "agents.json" in text and "a2a.implemented" in text

@@ -26,6 +26,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from agent_interface.key_state import free_key_url
 from agent_interface.key_request_logic import (
     make_verify_token,
     verify_token,
@@ -109,9 +110,9 @@ async def describe_free_key_flow():
         "what": "Free API key for HatchLoop AgentBroker write tools.",
         "how": {
             "method": "POST",
-            "url": f"{_public_base()}/keys/request",
+            "url": free_key_url(),
             "body": {"email": "you@example.com"},
-            "curl": (f"curl -X POST {_public_base()}/keys/request "
+            "curl": (f"curl -X POST {free_key_url()} "
                      f"-H 'Content-Type: application/json' "
                      f"-d '{{\"email\":\"you@example.com\"}}'"),
         },

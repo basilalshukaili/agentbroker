@@ -104,7 +104,7 @@
     "_meta": {
       "hatchloop/readiness": {
         "state": "limited",
-        "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An osm:... id returned by find_business answers supply_unreachable. It never contacts the business."
+        "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An unknown id, or an osm:... id returned by find_business, answers out_of_supply_network (not retriable). It never contacts the business."
       }
     }
   },
@@ -248,7 +248,7 @@
     "_meta": {
       "hatchloop/readiness": {
         "state": "beta",
-        "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an osm:... id is refused."
+        "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an unknown id or an osm:... id is refused with out_of_supply_network."
       }
     }
   },
