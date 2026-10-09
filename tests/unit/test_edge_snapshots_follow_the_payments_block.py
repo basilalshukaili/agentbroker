@@ -33,12 +33,9 @@ CREDITS_OFFER = re.compile(r"(?i)billed per call via credits|\(credits\)|buy cre
 # manifest.json and llms-full.txt left this list on feat/maturity-20261009: that branch had to re-capture them (with
 # agents.json and mcp-tools-list.json, `refresh_edge_snapshots.py --local-routes` / `--local-tools`) because the old
 # copies published the retired failure modes of three tools and the A2A capability flags it removed.
-KNOWN_STALE = {
-    "anthropic-tools.json": "tool JSON still says 'free within the daily quota, then $0.02 per call'",
-    "openai-tools.json": "tool JSON still says 'free within the daily quota, then $0.02 per call'",
-    "llms.txt": "per-tool Cost lines and the sanctions door still promise a quota",
-    "mcp-initialize.json": "the instructions sentence says '3 free within a daily quota'",
-}
+# anthropic-tools.json, openai-tools.json, llms.txt, mcp-initialize.json removed 2026-10-09: refreshed in the
+# 0.2.16 bundle deploy (5c67d75), all four snapshots now agree with the all-off payments block.
+KNOWN_STALE: dict[str, str] = {}
 
 _TEXT = (".json", ".txt", ".yaml")
 

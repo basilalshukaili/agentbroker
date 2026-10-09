@@ -93,12 +93,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "verify_business",
@@ -129,16 +124,11 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "send_message",
-        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules. [from $0.02/call, variable, not charged while no payment rail is on] [async→get_outcome] [Not available on this deployment: SMS, Voice.]",
+        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules. [from $0.02/call, variable, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -236,29 +226,7 @@
           "destructiveHint": true,
           "idempotentHint": false,
           "openWorldHint": true
-        },
-        "_meta": {
-          "hatchloop/availability": {
-            "available": true,
-            "unavailable_channels": [
-              "sms",
-              "voice"
-            ],
-            "reason": "SMS is not enabled on this deployment: no carrier account or sender number is configured, and US business SMS also needs a registered 10DLC campaign.; Voice calling is not enabled on this deployment yet: the outbound phone line has not been verified for placing calls."
-          },
-          "hatchloop/readiness": {
-            "state": "beta",
-            "summary": "Some delivery channels are not configured here: SMS is not enabled on this deployment: no carrier account or sender number is configured, and US business SMS also needs a registered 10DLC campaign.; Voice calling is not enabled on this deployment yet: the outbound phone line has not been verified for placing calls."
-          }
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "capture_lead",
@@ -324,15 +292,7 @@
           "destructiveHint": false,
           "idempotentHint": false,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "schedule_appointment",
@@ -418,19 +378,11 @@
           "destructiveHint": true,
           "idempotentHint": false,
           "openWorldHint": true
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "send_transactional_confirmation",
-        "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen. [$0.02/per_call, not charged while no payment rail is on] [async→get_outcome] [Not available on this deployment: SMS.]",
+        "description": "Idempotent transactional messages: OTPs, booking confirmations, payment receipts, cancellation notices. Falls back across configured channels; an unconfigured channel fails honestly rather than reporting a delivery that did not happen. [$0.02/per_call, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -489,28 +441,7 @@
           "destructiveHint": true,
           "idempotentHint": false,
           "openWorldHint": false
-        },
-        "_meta": {
-          "hatchloop/availability": {
-            "available": true,
-            "unavailable_channels": [
-              "sms"
-            ],
-            "reason": "SMS is not enabled on this deployment: no carrier account or sender number is configured, and US business SMS also needs a registered 10DLC campaign."
-          },
-          "hatchloop/readiness": {
-            "state": "beta",
-            "summary": "Some delivery channels are not configured here: SMS is not enabled on this deployment: no carrier account or sender number is configured, and US business SMS also needs a registered 10DLC campaign."
-          }
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "handle_inbound",
@@ -580,15 +511,7 @@
           "destructiveHint": false,
           "idempotentHint": false,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "escalate_to_human",
@@ -667,15 +590,7 @@
           "destructiveHint": true,
           "idempotentHint": false,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "get_status",
@@ -697,12 +612,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "get_outcome",
@@ -724,12 +634,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "preview_cost",
@@ -756,12 +661,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "self_test",
@@ -776,12 +676,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "check_quota",
@@ -797,12 +692,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "check_booking_link",
@@ -825,12 +715,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "import_booking_url",
@@ -900,19 +785,11 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "call_business",
-        "description": "[UNAVAILABLE on this deployment: Voice calling is not enabled on this deployment yet: the outbound phone line has not been verified for placing calls.] Place a conversational voice-AI phone call to a business on a consumer's behalf; give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. [$0.2/per_call, not charged while no payment rail is on] [async→get_outcome]",
+        "description": "Place a conversational voice-AI phone call to a business on a consumer's behalf; give a plain-language objective and it navigates the call, extracting the answer. Business-directed (B2B), far less restricted than calling consumers — but the compliance gate still enforces recording consent per jurisdiction. [$0.2/per_call, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -964,28 +841,7 @@
           "destructiveHint": true,
           "idempotentHint": false,
           "openWorldHint": true
-        },
-        "_meta": {
-          "hatchloop/availability": {
-            "available": false,
-            "reason": "Voice calling is not enabled on this deployment yet: the outbound phone line has not been verified for placing calls.",
-            "unavailable_channels": [
-              "voice"
-            ]
-          },
-          "hatchloop/readiness": {
-            "state": "unavailable",
-            "summary": "Voice calling is not enabled on this deployment yet: the outbound phone line has not been verified for placing calls."
-          }
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "check_compliance",
@@ -1035,12 +891,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "verify_company_record",
@@ -1071,18 +922,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          },
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "screen_sanctions",
@@ -1117,18 +957,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          },
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "map_trade_restriction",
@@ -1172,18 +1001,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          },
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "get_conversation",
@@ -1211,15 +1029,7 @@
           "destructiveHint": false,
           "idempotentHint": false,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "oauth2",
-            "scopes": [
-              "agentbroker.tools"
-            ]
-          }
-        ]
+        }
       },
       {
         "name": "mint_key",
@@ -1263,12 +1073,7 @@
           "destructiveHint": false,
           "idempotentHint": false,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       },
       {
         "name": "lookup_us_contracts",
@@ -1298,12 +1103,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
-        },
-        "securitySchemes": [
-          {
-            "type": "noauth"
-          }
-        ]
+        }
       }
     ]
   }
