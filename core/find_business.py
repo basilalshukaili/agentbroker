@@ -249,6 +249,7 @@ async def handle_find_business(
     *,
     include_osm: bool = True,
     input_notes: Optional[dict] = None,
+    budget_s: Optional[float] = None,
 ) -> OutcomeReceipt:
     """`include_osm=False` is for our own code (the /demo route) that only
     wants the supply-network half: it must not send a made-up location to the
@@ -256,7 +257,11 @@ async def handle_find_business(
 
     `input_notes` is what core/find_business_input.prepare() interpreted or ignored
     ({"notes": [...], "ignored": [...], "location_normalized_from": {...}}); it is
-    echoed in the result so a caller can see what the search actually used."""
+    echoed in the result so a caller can see what the search actually used.
+
+    `budget_s` can only SHORTEN the call budget (never widen it past CALL_BUDGET_S). It exists for our own
+    health check (agent_interface/self_test.py), which must answer quickly however slow the public map
+    servers are; a caller's request never sets it."""
     t0 = time.monotonic()
     directory = get_directory()
 
@@ -315,7 +320,7 @@ async def handle_find_business(
     place: Optional[dict] = None
     state: dict = {}
 
-    budget_s = CALL_BUDGET_S
+    budget_s = CALL_BUDGET_S if budget_s is None else min(CALL_BUDGET_S, max(0.1, float(budget_s)))
     if not include_osm:
         search["status"] = "not_requested"
     else:
