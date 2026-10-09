@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -370,7 +371,7 @@ class _Observed:
     a field here and ONE place, `_finish_request`, reads it."""
 
     __slots__ = ("outcome", "error_code", "requested_name", "headers", "log_method",
-                 "http_status", "client_info", "era_version")
+                 "http_status", "client_info", "era_version", "reason", "fields")
 
     def __init__(self) -> None:
         self.outcome = "ok"
@@ -387,6 +388,10 @@ class _Observed:
         self.http_status: Optional[int] = None
         self.client_info: Optional[dict] = None
         self.era_version: Optional[str] = None
+        # For usage_events.detail: WHY a modern envelope was refused (one of mcp_2026's REASON_* words) and WHICH
+        # declared arguments a refused call got wrong. Both are our own vocabulary, never caller text.
+        self.reason: Optional[str] = None
+        self.fields: list = []
 
 
 async def handle_mcp_request(payload: Any, headers: Optional[dict] = None,
@@ -610,6 +615,51 @@ def _finish_request(payload: Any, response: dict, obs: "_Observed", started: flo
         pass
 
 
+# Method names that belong to the A2A (agent-to-agent) protocol and to nothing in MCP. Callers that read our agent
+# card (it is shaped as an A2A card and names the MCP endpoint as its URL) send these here: 411 calls from outside
+# callers in the 14 days to 2026-10-09 (docs/reviews/2026-10-09-agentbroker-request-analysis.md). `tasks/get`,
+# `tasks/list` and `tasks/cancel` are NOT in this set: MCP's tasks extension uses the same names, so calling them
+# "A2A" would be wrong about the caller's intent.
+_A2A_ONLY_METHODS = frozenset({
+    "message/send", "message/stream", "tasks/send", "tasks/sendSubscribe", "tasks/resubscribe",
+    "tasks/pushNotificationConfig/set", "tasks/pushNotificationConfig/get",
+    "tasks/pushNotificationConfig/list", "tasks/pushNotificationConfig/delete",
+    "agent/getAuthenticatedExtendedCard",
+    "SendMessage", "SendStreamingMessage", "GetTask", "ListTasks", "CancelTask", "SubscribeToTask",
+    "GetExtendedAgentCard",
+})
+
+
+def _method_not_found_answer(method: Any, *, hide_removed: bool = False) -> tuple:
+    """(message, data) for a method this endpoint does not have.
+
+    A bare "Method 'x' not found" gave a caller nothing to act on. This says what the endpoint IS, which methods it
+    answers (read from the dispatcher's own table, so the list cannot drift from the code) and the next call to make.
+    The caller's method text is bounded and stripped of markup before it goes back (agent_interface/mcp_2026.safe_text)."""
+    shown = _m2026.safe_text(method, 64) if isinstance(method, str) else "?"
+    supported = sorted(m for m in _METHOD_HANDLERS if not (hide_removed and m in _m2026.REMOVED_METHODS))
+    a2a = isinstance(method, str) and method in _A2A_ONLY_METHODS
+    if a2a:
+        message = (f"Method '{shown}' not found. It is an A2A method and this endpoint speaks MCP only: "
+                   f"call tools/list, then tools/call.")
+    else:
+        message = f"Method '{shown}' not found. This endpoint speaks MCP: call tools/list, then tools/call."
+    data: dict = {
+        "error_code": "method_not_found",
+        "protocol": "mcp",
+        "supported_methods": supported,
+        "how_to_resolve": {
+            "call": "tools/list",
+            "hint": "this is an MCP (JSON-RPC 2.0, Streamable HTTP) endpoint: list the tools, then call one by name",
+        },
+    }
+    if a2a:
+        data["a2a"] = {"implemented": False,
+                       "note": "no A2A message or task methods are served here; the agent card names this URL "
+                               "only as the MCP endpoint"}
+    return message, data
+
+
 def _note_notification(obs: "_Observed", method: str) -> None:
     """Classify a message that carries no `id` for the outcome log. Shared by the dispatcher and by the retired
     doors' recorder, so a notification is labelled the same way at every door."""
@@ -669,16 +719,70 @@ def record_retired_request(slug: str, msg: Any, reply: Any, headers: Optional[di
         pass
 
 
+def _called_tool(method: Any, params: Any) -> Optional[str]:
+    """The tool a tools/call names, if it names one as text (the name is only ever LOOKED UP, never recorded)."""
+    if method != "tools/call" or not isinstance(params, dict):
+        return None
+    name = params.get("name")
+    return name if isinstance(name, str) else None
+
+
+def _safe_fields(tool: Optional[str], candidates: Any) -> list:
+    """The top-level argument names among `candidates` that `tool`'s own inputSchema declares - at most six.
+
+    usage_events recorded that a call was refused as missing_argument / invalid_argument, never WHICH argument, so
+    the failures could only be ranked by tool. A name goes into the log only if it is one of OUR declared property
+    names, so nothing a stranger typed (a key, a markup string, a 200-character name) can reach the row."""
+    if not isinstance(tool, str):
+        return []
+    try:
+        op = get_operation(tool)
+    except Exception:  # noqa: BLE001
+        return []
+    props = ((op or {}).get("input_schema") or {}).get("properties")
+    if not isinstance(props, dict):
+        return []
+    out: list = []
+    for candidate in candidates or ():
+        top = re.split(r"[.\[]", str(candidate), maxsplit=1)[0]
+        if top in props and top not in out:
+            out.append(top)
+    return out[:6]
+
+
+_DETAIL_MAX = 64
+_EDGE_MARKER_HEADER, _EDGE_MARKER_VALUE = "x-edge-source", "cloudflare-workers"
+
+
 def _event_detail(profile: Optional[str], obs: "_Observed") -> Optional[str]:
-    """usage_events.detail: which door, and (modern requests only) which protocol version it was served under.
-    Legacy rows keep exactly the old text, so nothing that reads `door=<name>` changes. The version is only
-    ever one of OUR supported strings, never caller text."""
+    """usage_events.detail: which door, which protocol version a modern request was served under, and - new on
+    2026-10-09 - why a modern envelope was refused (`why=`), which declared arguments a refused call got wrong
+    (`f=`), and whether the request came through the edge worker (`via=edge`). All of it OUR vocabulary: the
+    version is one of our supported strings, `why` a closed list in agent_interface/mcp_2026.py, `f` names the
+    tool's own declared properties, `via` is set only for the one exact marker value the edge worker sends.
+
+    At most 64 characters, cut on a token boundary in priority order (a token that does not fit is dropped whole,
+    never cut in half). A row with none of the new facts has exactly the text it always had, so nothing that reads
+    `door=<name>` or `pv=<version>` changes."""
     parts = []
     if profile:
         parts.append(f"door={profile}")
     if obs.era_version:
         parts.append(f"pv={obs.era_version}")
-    return " ".join(parts)[:64] or None
+    if obs.reason:
+        parts.append(f"why={obs.reason}")
+    if obs.fields:
+        parts.append("f=" + ",".join(obs.fields))
+    if (obs.headers or {}).get(_EDGE_MARKER_HEADER) == _EDGE_MARKER_VALUE:
+        parts.append("via=edge")
+    out: list = []
+    used = 0
+    for part in parts:
+        need = len(part) + (1 if out else 0)
+        if used + need <= _DETAIL_MAX:
+            out.append(part)
+            used += need
+    return " ".join(out) or None
 
 
 def _server_info(profile: Optional[str]) -> dict:
@@ -836,6 +940,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
     if isinstance(era, _m2026.Rejection):
         obs.outcome, obs.error_code = "rpc_error", era.error_code
         obs.http_status, obs.client_info = era.http_status, era.client_info
+        obs.reason = era.reason
         return _m2026.with_status(
             JsonRpcResponse(id=rpc_id, error=_error(era.code, era.message, era.data)).to_dict(),
             era.http_status)
@@ -853,12 +958,12 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
         from agent_interface import profiles as _pf_nf
         if _pf_nf.is_no_commerce(profile):
             from agent_interface import no_commerce as _nc_nf
-            _nf_text = _nc_nf.METHOD_NOT_FOUND
+            _nf_text, _nf_data = _nc_nf.METHOD_NOT_FOUND, None
         else:
-            _nf_text = f"Method '{method}' not found"
+            _nf_text, _nf_data = _method_not_found_answer(method, hide_removed=bool(era.modern and era.envelope))
         not_found = JsonRpcResponse(
             id=rpc_id,
-            error=_error(ERR_METHOD_NOT_FOUND, _nf_text),
+            error=_error(ERR_METHOD_NOT_FOUND, _nf_text, _nf_data),
         ).to_dict()
         if era.modern:
             # Streamable HTTP, 2026-07-28: an unimplemented method is 404 + -32601 (the JSON-RPC body is
@@ -890,6 +995,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
         # branch on error_code: authenticate / pay / back off / fix args).
         # For non-tools/call methods fall back to a typed protocol error.
         obs.outcome, obs.error_code = "tool_error", te.error_code
+        obs.fields = _safe_fields(_called_tool(method, params), getattr(te, "fields", ()))
         if method == "tools/call":
             tool_result = te.to_result()
             if era.modern:
@@ -919,6 +1025,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
                      "hint": "check the tool name and inputSchema; argument names are exact",
                  }}
         if isinstance(pe, _ArgumentTypeError):
+            obs.fields = _safe_fields(_called_tool(method, params), [p.path for p in pe.problems])
             # Name the argument and the type it must have, in a shape a program can read as well as a
             # model (same keys the ValidationError branch below uses for its own field list).
             _data["invalid_fields"], _data["expected_types"] = _argtypes.as_data(pe.problems)
@@ -937,6 +1044,7 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
         # marketplace. Name the argument and point at the schema instead.
         missing = str(ke).strip("'\"")
         obs.outcome, obs.error_code = "rpc_error", "missing_argument"
+        obs.fields = _safe_fields(_called_tool(method, params), [missing])
         return JsonRpcResponse(
             id=rpc_id,
             error=_error(
@@ -972,6 +1080,11 @@ async def _handle_mcp_request_core(payload: Any, headers: Optional[dict],
             fields = []
         detail = "; ".join(fields[:6]) or str(ve)[:200]
         obs.outcome, obs.error_code = "rpc_error", "invalid_argument"
+        try:
+            obs.fields = _safe_fields(_called_tool(method, params),
+                                      [e["loc"][0] for e in ve.errors() if e.get("loc")])
+        except Exception:  # noqa: BLE001 - recording which field must never cost the answer
+            pass
         return JsonRpcResponse(
             id=rpc_id,
             error=_error(
@@ -1095,12 +1208,16 @@ class _ToolError(Exception):
         retriable: bool,
         how_to_resolve: Optional[dict] = None,
         retry_after_ms: Optional[int] = None,
+        fields: tuple = (),
     ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.retriable = retriable
         self.how_to_resolve = how_to_resolve or {}
         self.retry_after_ms = retry_after_ms
+        # The top-level argument names this refusal is about (usage_events.detail `f=`); filtered against the tool's
+        # declared properties before they are recorded.
+        self.fields = tuple(fields)
 
     def to_result(self) -> dict:
         body = {
@@ -2389,11 +2506,11 @@ async def _dispatch_operation(
             req = FindBusinessRequest(**prepared.kwargs)
         except FindBusinessInputError as bad:
             raise _ToolError(str(bad), error_code=bad.error_code, retriable=False,
-                             how_to_resolve=bad.how_to_resolve)
+                             how_to_resolve=bad.how_to_resolve, fields=bad.fields)
         except _FBValidationError as ve:
             bad = explain_validation_error(ve, args)
             raise _ToolError(str(bad), error_code=bad.error_code, retriable=False,
-                             how_to_resolve=bad.how_to_resolve)
+                             how_to_resolve=bad.how_to_resolve, fields=bad.fields)
         receipt = await handle_find_business(req, input_notes={
             "notes": prepared.notes, "ignored": prepared.ignored,
             "location_normalized_from": prepared.location_normalized_from})

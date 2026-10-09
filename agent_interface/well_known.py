@@ -451,10 +451,14 @@ def get_agent_card() -> dict:
             "url": BASE_URL,
         },
         "documentationUrl": f"{BASE_URL}/llms.txt",
+        # THESE THREE WERE True AND NONE OF THEM EXISTS. They are A2A capabilities (SSE message streaming, push
+        # notification callbacks, task state history); this is an MCP server with no A2A methods at all. A2A callers
+        # that trusted them sent message/send, tasks/send and SendMessage to the MCP endpoint named as `url` below:
+        # 411 such calls from outside callers in the 14 days to 2026-10-09, every one answered "method not found".
         "capabilities": {
-            "streaming": True,
-            "pushNotifications": True,
-            "stateTransitionHistory": True,
+            "streaming": False,
+            "pushNotifications": False,
+            "stateTransitionHistory": False,
         },
         "defaultInputModes": ["application/json"],
         "defaultOutputModes": ["application/json"],
@@ -462,6 +466,8 @@ def get_agent_card() -> dict:
         "_meta": {
             "transport": "mcp",
             "mcpEndpoint": mcp_url,
+            # Said in the card itself, where an A2A client reads it before it calls anything.
+            "a2a": {"implemented": False, "use": "mcp", "mcpEndpoint": mcp_url},
             # DERIVED, not asserted. This block said status "coming_soon",
             # "Billing is in development", "all tools are callable at no cost"
             # and "Crypto payment is not offered" - FOUR claims, every one of

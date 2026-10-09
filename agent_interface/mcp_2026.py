@@ -111,6 +111,13 @@ def _show(value: Any) -> str:
     return _UNSAFE_FOR_MESSAGE.sub("?", str(value))[:40]
 
 
+def safe_text(value: Any, limit: int = 40) -> str:
+    """Caller text made safe to put in an error message: markup-free and at most `limit` characters. The
+    dispatcher's own refusals use it for an unknown method name (a method name of more than 64 characters is not
+    a method name)."""
+    return _UNSAFE_FOR_MESSAGE.sub("?", str(value))[:limit]
+
+
 # ---------------------------------------------------------------------------
 # What a response carries back to the HTTP layer
 # ---------------------------------------------------------------------------
@@ -165,6 +172,10 @@ class Rejection:
     data: Optional[dict]
     error_code: str            # the short label recorded in usage_events.error_code
     client_info: Optional[dict] = None
+    # WHY, in a closed vocabulary of OUR OWN words (the REASON_* constants below), for usage_events.detail. Never
+    # caller text. `header_mismatch` alone could not tell "the client omitted a header" from "the client sent one
+    # that disagrees with its body", which is what decides whether the server is too strict or the client is wrong.
+    reason: Optional[str] = None
 
 
 def decode_header_value(raw: str) -> Optional[str]:
@@ -180,9 +191,24 @@ def decode_header_value(raw: str) -> Optional[str]:
         return None
 
 
-def _invalid_meta(message: str, key: str, client_info: Optional[dict]) -> Rejection:
+# The closed vocabulary behind Rejection.reason (and `why=` in usage_events.detail). Short on purpose: the detail
+# column holds 64 characters and also carries the door and protocol version.
+REASON_VERSION_HEADER_MISSING = "hdr-ver-miss"
+REASON_VERSION_HEADER_DIFFERS = "hdr-ver-diff"
+REASON_VERSION_HEADER_VS_META = "hdr-ver-vs-meta"
+REASON_METHOD_HEADER_MISSING = "hdr-meth-miss"
+REASON_METHOD_HEADER_DIFFERS = "hdr-meth-diff"
+REASON_NAME_HEADER_MISSING = "hdr-name-miss"
+REASON_NAME_HEADER_DIFFERS = "hdr-name-diff"
+REASON_NAME_HEADER_INVALID = "hdr-name-bad"
+REASON_NAME_HEADER_NO_BODY = "hdr-name-nobody"
+REASON_META_VERSION_INVALID = "meta-ver-bad"
+REASON_META_CAPABILITIES_MISSING = "meta-caps-miss"
+
+
+def _invalid_meta(message: str, key: str, client_info: Optional[dict], reason: Optional[str] = None) -> Rejection:
     return Rejection(HTTP_BAD_REQUEST, ERR_INVALID_PARAMS, message, {"field": f"params._meta.{key}"},
-                     "invalid_meta", client_info)
+                     "invalid_meta", client_info, reason)
 
 
 def _unsupported(requested: Any, versions: Sequence[str], client_info: Optional[dict]) -> Rejection:
@@ -192,9 +218,9 @@ def _unsupported(requested: Any, versions: Sequence[str], client_info: Optional[
         "unsupported_protocol_version", client_info)
 
 
-def _header_mismatch(message: str, client_info: Optional[dict]) -> Rejection:
+def _header_mismatch(message: str, client_info: Optional[dict], reason: Optional[str] = None) -> Rejection:
     return Rejection(HTTP_BAD_REQUEST, ERR_HEADER_MISMATCH, f"Header mismatch: {message}", None,
-                     "header_mismatch", client_info)
+                     "header_mismatch", client_info, reason)
 
 
 def _check_headers(method: str, raw_params: Any, headers: dict, declared: str, *, strict: bool,
@@ -209,18 +235,21 @@ def _check_headers(method: str, raw_params: Any, headers: dict, declared: str, *
     version_header = headers.get("mcp-protocol-version")
     if strict:
         if not isinstance(version_header, str) or not version_header.strip():
-            return _header_mismatch("required header MCP-Protocol-Version is missing", client_info)
+            return _header_mismatch("required header MCP-Protocol-Version is missing", client_info,
+                                    REASON_VERSION_HEADER_MISSING)
         if version_header.strip() != declared:
             return _header_mismatch(
                 f"MCP-Protocol-Version header ({_show(version_header.strip())}) does not match "
-                f"_meta protocolVersion ({_show(declared)})", client_info)
+                f"_meta protocolVersion ({_show(declared)})", client_info, REASON_VERSION_HEADER_DIFFERS)
 
     method_header = headers.get("mcp-method")
     if method_header is None:
         if strict:
-            return _header_mismatch("required header Mcp-Method is missing", client_info)
+            return _header_mismatch("required header Mcp-Method is missing", client_info,
+                                    REASON_METHOD_HEADER_MISSING)
     elif str(method_header).strip() != method:
-        return _header_mismatch("Mcp-Method header does not match the request method", client_info)
+        return _header_mismatch("Mcp-Method header does not match the request method", client_info,
+                                REASON_METHOD_HEADER_DIFFERS)
 
     field = _NAME_FIELD.get(method)
     if field:
@@ -230,18 +259,22 @@ def _check_headers(method: str, raw_params: Any, headers: dict, declared: str, *
             # Only demand it when there is a body value to mirror; otherwise the handler's own
             # "missing name" error is the more useful one.
             if strict and isinstance(body_value, str):
-                return _header_mismatch("required header Mcp-Name is missing", client_info)
+                return _header_mismatch("required header Mcp-Name is missing", client_info,
+                                        REASON_NAME_HEADER_MISSING)
         else:
             decoded = decode_header_value(str(name_header))
             if decoded is None:
-                return _header_mismatch("Mcp-Name header is not a valid value", client_info)
+                return _header_mismatch("Mcp-Name header is not a valid value", client_info,
+                                        REASON_NAME_HEADER_INVALID)
             if isinstance(body_value, str):
                 if decoded != body_value:
-                    return _header_mismatch(f"Mcp-Name header does not match params.{field}", client_info)
+                    return _header_mismatch(f"Mcp-Name header does not match params.{field}", client_info,
+                                            REASON_NAME_HEADER_DIFFERS)
             elif strict:
                 # The header names something the body does not carry (no params.name, or one that is not a
                 # string): a header that does not mirror the body is a mismatch, not an invitation to guess.
-                return _header_mismatch(f"Mcp-Name header is present but params.{field} is not a string", client_info)
+                return _header_mismatch(f"Mcp-Name header is present but params.{field} is not a string",
+                                        client_info, REASON_NAME_HEADER_NO_BODY)
     return None
 
 
@@ -284,7 +317,7 @@ def resolve_era(method: Any, raw_params: Any, headers: dict, legacy_versions: Se
         declared = meta[META_PROTOCOL_VERSION]
         if not isinstance(declared, str) or not declared:
             return _invalid_meta(f"_meta {META_PROTOCOL_VERSION} must be a non-empty string",
-                                 META_PROTOCOL_VERSION, client_info)
+                                 META_PROTOCOL_VERSION, client_info, REASON_META_VERSION_INVALID)
         if declared not in versions:
             return _unsupported(declared, versions, client_info)
         if declared not in MODERN_PROTOCOL_VERSIONS:
@@ -293,12 +326,12 @@ def resolve_era(method: Any, raw_params: Any, headers: dict, legacy_versions: Se
             if check_headers and header_version in MODERN_PROTOCOL_VERSIONS:
                 return _header_mismatch(
                     f"MCP-Protocol-Version header ({_show(header_version)}) does not match "
-                    f"_meta protocolVersion ({_show(declared)})", client_info)
+                    f"_meta protocolVersion ({_show(declared)})", client_info, REASON_VERSION_HEADER_VS_META)
             return Era(modern=False, envelope=True, version=declared, client_info=client_info)
         if method != "server/discover" and not isinstance(meta.get(META_CLIENT_CAPABILITIES), dict):
             return _invalid_meta(
                 f"_meta {META_CLIENT_CAPABILITIES} is required on every request (an object; {{}} if the "
-                f"client has none)", META_CLIENT_CAPABILITIES, client_info)
+                f"client has none)", META_CLIENT_CAPABILITIES, client_info, REASON_META_CAPABILITIES_MISSING)
         if check_headers:
             rejected = _check_headers(method, raw_params, headers, declared, strict=True, client_info=client_info)
             if rejected:
