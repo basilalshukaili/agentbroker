@@ -1,1 +1,184 @@
-{"supported":["AE","AU","BH","BR","CA","DE","ES","EU","FR","GB","ID","IN","INTERNATIONAL","IT","JP","KR","KW","MX","NL","NZ","OM","PK","QA","SA","SG","US"],"fallback":"international","note":"Unknown jurisdictions fall back to a conservative INTERNATIONAL rule set."}
+{
+  "supported": [
+    "AE",
+    "AU",
+    "BH",
+    "BR",
+    "CA",
+    "DE",
+    "ES",
+    "EU",
+    "FR",
+    "GB",
+    "ID",
+    "IN",
+    "INTERNATIONAL",
+    "IT",
+    "JP",
+    "KR",
+    "KW",
+    "MX",
+    "NL",
+    "NZ",
+    "OM",
+    "PK",
+    "QA",
+    "SA",
+    "SG",
+    "US"
+  ],
+  "rule_sets": [
+    {
+      "code": "AE",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "AU",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "BH",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "BR",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "CA",
+      "basis": "statute",
+      "statutes_modeled": [
+        "CASL"
+      ]
+    },
+    {
+      "code": "DE",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "ES",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "EU",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "FR",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "GB",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "ID",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "IN",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "INTERNATIONAL",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "IT",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "JP",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "KR",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "KW",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "MX",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "NL",
+      "basis": "statute",
+      "statutes_modeled": [
+        "GDPR"
+      ]
+    },
+    {
+      "code": "NZ",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "OM",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "PK",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "QA",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "SA",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "SG",
+      "basis": "conservative_default",
+      "statutes_modeled": []
+    },
+    {
+      "code": "US",
+      "basis": "statute",
+      "statutes_modeled": [
+        "TCPA",
+        "CAN-SPAM",
+        "10DLC"
+      ]
+    }
+  ],
+  "fallback": "international",
+  "note": "Only the entries whose basis is \"statute\" implement a named statute. Every other code in `supported`, and any country not listed, is judged by the service's conservative default (recorded opt-in consent for marketing, a 08:00-21:00 local solicitation window), and the answer says so instead of naming a country's law."
+}

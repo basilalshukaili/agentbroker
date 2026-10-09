@@ -25,10 +25,12 @@ An agent-callable service that lets autonomous AI agents discover, verify, commu
 
 ### find_business
 
-Given criteria (vertical, location, capability, price band, availability window), return ranked candidate businesses from our supply network. THE NETWORK IS SMALL AND STILL MOSTLY SAMPLE DATA: entries that are not real are named [DEMO] and flagged is_demo - check that field before acting on a result.
+Find real businesses near a place, sorted by distance (nearest of those examined; see result.search). Data: OpenStreetMap (ODbL, (c) OSM contributors); phone, website, hours only when mapped. Coverage varies; community-mapped, NOT verified by us; source=openstreetmap rows cannot be booked. Answers within about 5 s: status partial (search_in_progress) means repeat the call. If OSM is down: retriable 'temporarily unavailable', never invented rows. [beta]
 
-- **When to use**: Use when an agent needs to identify which SMBs can fulfill a business task (booking, service, consultation) in a given location and vertical. Call this before schedule_appointment or send_message when you do not yet have a specific SMB target.
-- **When NOT to use**: Do not use as a general directory or browsing surface. Do not use when you already have a specific verified SMB identifier. Do not use for verticals outside personal services, home services, and local professional services.
+- **Readiness: beta** - Community-mapped OpenStreetMap data, unverified. A place the public servers are slow for answers partial/search_in_progress at 5 s; repeat the same call and it is usually served from cache.
+
+- **When to use**: Use when an agent needs real businesses of a given kind near a place: to show options, get contact details, or pick a target. Rows with source=supply_network (added through booking URLs) can then be booked with schedule_appointment; rows with source=openstreetmap are for contact details, not booking.
+- **When NOT to use**: Do not use as a bulk directory or scraping surface: results are capped at 20, fresh lookups are rate limited per caller, and the public OpenStreetMap servers behind this are a shared free service. Do not use when you already have a specific SMB identifier. Do not assume an OpenStreetMap result is verified, open right now, or bookable.
 - **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~ms
@@ -36,7 +38,9 @@ Given criteria (vertical, location, capability, price band, availability window)
 
 ### verify_business
 
-Look up what we know about a business in our supply network: its contact channels, capabilities, and when the record was last verified. This is a DIRECTORY LOOKUP - it does not contact the business.
+Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids. [limited]
+
+- **Readiness: limited** - Directory lookup of supply-network records only (ids from import_booking_url). An unknown id, or an osm:... id returned by find_business, answers out_of_supply_network (not retriable). It never contacts the business.
 
 - **When to use**: Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').
 - **When NOT to use**: Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.
@@ -47,33 +51,37 @@ Look up what we know about a business in our supply network: its contact channel
 
 ### send_message
 
-Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt.
+Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules.
 
-- **When to use**: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in (with consent_record_id). The gate verifies consent on every send.
-- **When NOT to use**: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send marketing without a consent_record_id pointing at a real opt-in — the gate will reject the send and log a compliance_violation. Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.
-- **Cost: from $0.02 per call, up to $0.22 (call preview_cost for the exact price).**
+- **When to use**: Use to: (a) confirm a booking the agent just made, (b) reply to a customer who messaged the SMB first, (c) follow up on a quote the user requested, (d) send appointment reminders the SMB owes its customer, (e) send marketing messages to recipients who have opted in. Where opt-in is required (everything except US marketing email, which follows CAN-SPAM opt-out rules) the gate verifies it on every send.
+- **When NOT to use**: Do NOT use for OTPs or critical transactional confirmations — use send_transactional_confirmation. Do NOT attempt to send SMS, voice, WhatsApp or non-US email marketing without a recorded opt-in — the gate will reject the send and log a compliance_violation (US marketing email follows CAN-SPAM opt-out rules instead). Do NOT attempt bulk / list-based / drip / cold outreach — those are out of scope and the rate limiter will throttle abuse.
+- **Cost: from $0.02 per call, up to $0.22 (call preview_cost for the exact price; not charged while no payment rail is on).**
 - **Execution**: sync_fast
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/send_message`
 
 ### capture_lead
 
-Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stores the prospect in the SMB's AgentBroker lead funnel — this is AgentBroker's own lead store, NOT a write into the business's own CRM.
+Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified. [beta]
+
+- **Readiness: beta** - Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an unknown id or an osm:... id is refused with out_of_supply_network.
 
 - **When to use**: Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.
 - **When NOT to use**: Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.
-- **Cost: $0.05 per call.**
+- **Cost: $0.05 per call (not charged while no payment rail is on).**
 - **Execution**: sync_fast
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/capture_lead`
 
 ### schedule_appointment
 
-Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation.
+Check availability, book, or cancel via Cal.com. Only completes when the SMB's imported booking link is bound to this deployment's ONE connected Cal.com account; otherwise fails honestly (booking_destination_unmapped) with no charge. No working booking path exists yet for non-Cal.com platforms (voice AI, web form) — those SMBs fail honestly instead of a fabricated confirmation. [limited]
+
+- **Readiness: limited** - Completes only for a business whose booking link is bound to this deployment's one connected Cal.com account. Any other business fails with booking_destination_unmapped, uncharged.
 
 - **When to use**: Use to book, check availability, or cancel a Cal.com appointment once the SMB is verified and its booking link is bound to our connected Cal.com account. Requires a verified smb_id.
 - **When NOT to use**: Do not use for bulk scheduling. Do not use without a verified SMB — call find_business and verify_business first if needed. Do not pass action=reschedule — it is not implemented; cancel the existing appointment and book a new time instead. Do not expect this to book on the SMB's own Calendly/Doctolib/Booksy/Fresha/etc. account, or on a Cal.com account other than the one this deployment holds credentials for — those calls fail honestly with no charge.
-- **Cost: from $0.15 per call, up to $0.5 (call preview_cost for the exact price).**
+- **Cost: from $0.15 per call, up to $0.5 (call preview_cost for the exact price; not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/schedule_appointment`
@@ -84,29 +92,33 @@ Idempotent transactional messages: OTPs, booking confirmations, payment receipts
 
 - **When to use**: Use for any message that MUST be delivered reliably — OTPs, booking confirmations, receipts. Do not use for marketing.
 - **When NOT to use**: Do not use for marketing or promotional messages. Do not use for conversational messages.
-- **Cost: $0.02 per call.**
+- **Cost: $0.02 per call (not charged while no payment rail is on).**
 - **Execution**: sync_fast
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/send_transactional_confirmation`
 
 ### handle_inbound
 
-Classify an inbound message on behalf of an SMB and get a recommended next action. Classifies intent (booking request, cancellation, opt-out, inquiry, complaint) and returns a suggested_action for YOUR agent to act on - opt-outs are recorded durably; nothing else is auto-routed or auto-executed by this tool.
+Classify an inbound message for an SMB and get a suggested_action for YOUR agent to act on. English keyword rules (booking request, cancellation, opt-out, inquiry, complaint): treat the intent as a hint. Opt-outs are recorded durably; nothing else is auto-routed or executed. [beta]
+
+- **Readiness: beta** - Substring keyword rules on English text, not a language model: 'stop' or 'cancel' anywhere in a message sets the intent. A hint for your agent to check, never a decision.
 
 - **When to use**: Use when an SMB needs inbound message triage — classifying incoming contact-form submissions, SMS replies, voicemails, or email inquiries.
 - **When NOT to use**: Do not use for outbound communications. Do not use for compliance-flagged recipient lists without verified opt-in records.
-- **Cost: $0.03 per call.**
+- **Cost: $0.03 per call (not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/handle_inbound`
 
 ### escalate_to_human
 
-Hand off an in-flight task to a human operator with a full context bundle: transcript, prior actions, identifiers, and a recommended next step.
+Hand off an in-flight task to a human operator with a context bundle (transcript, prior actions, identifiers, recommended next step). Writes a ticket to the operator queue; sends no notification, promises no response time. [beta]
+
+- **Readiness: beta** - Writes a ticket to the operator queue and returns its id. This tool sends no notification and makes no response-time commitment.
 
 - **When to use**: Use when automated resolution has failed after channel-fallback exhaustion, when the task requires human judgment, or when the customer has explicitly requested human contact.
 - **When NOT to use**: Do not use as a first resort. Escalate only after automated resolution attempts.
-- **Cost: $0.2 per call.**
+- **Cost: $0.2 per call (not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/escalate_to_human`
@@ -179,7 +191,9 @@ Free, instant pre-flight check for a booking URL. Classifies which booking platf
 
 ### import_booking_url
 
-Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id.
+Turn a public booking URL into a callable smb_id for send_message and capture_lead. But schedule_appointment only completes on Cal.com bound to our one connected account — the other 11 always fail schedule_appointment honestly, uncharged. Detects 12 platforms (Cal.com, Calendly, Doctolib, Booksy, Fresha, OpenTable, Setmore, Square, Acuity, Schedulista, Squarespace, BookMyCity). Idempotent — calling twice returns the same smb_id. [limited]
+
+- **Readiness: limited** - Detects 12 booking platforms, but only a Cal.com link bound to our one connected account can be booked afterwards; the other 11 fail schedule_appointment honestly, uncharged. Needs a key.
 
 - **When to use**: Call this FIRST whenever the user provides a specific booking URL (cal.com/handle, calendly.com/handle/event, doctolib.fr/..., booksy.com/..., opentable.com/r/..., etc.). User patterns that match: 'book me at https://cal.com/...', 'schedule with calendly.com/jane/intro', 'reserve a table at opentable.com/r/...', 'I want to book this dentist: https://www.doctolib.fr/...'. After importing, the returned smb_id works immediately with send_message and capture_lead. It only completes a booking via schedule_appointment if the URL was a Cal.com link bound to this deployment's one connected account — every other platform gets an honest, uncharged refusal there, not a booking.
 - **When NOT to use**: Do not use if the user only describes a business by name without a URL — call find_business instead. Do not use for arbitrary websites that are not on the supported booking-platform list (use /supply/platforms to see all 12).
@@ -194,7 +208,7 @@ Place a conversational voice-AI phone call to a business on a consumer's behalf;
 
 - **When to use**: Use when the target business has NO booking URL and NO API — only a phone number — and the consumer asked the agent to reach them (e.g. 'call this plumber and ask if they can come Tuesday', 'ask the salon if they take walk-ins this afternoon'). Also use to confirm details a booking page doesn't expose (real-time availability, custom quotes).
 - **When NOT to use**: Do NOT use when the business has a booking URL — use import_booking_url + schedule_appointment (cheaper, faster, deterministic). Do NOT use for calls to consumers/individuals (this tool is for reaching businesses). Do NOT use for marketing or telemarketing — the compliance gate and the B2B-only framing reject that.
-- **Cost: $0.2 per call.**
+- **Cost: $0.2 per call (not charged while no payment rail is on).**
 - **Execution**: async_by_default
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/call_business`
@@ -216,18 +230,18 @@ Free, live lookup of a company official registry record. Queries the GLEIF globa
 
 - **When to use**: Use when you need to verify that a company exists as a registered legal entity and retrieve its official registry details -- before signing a contract, qualifying a vendor, validating a counterparty, or populating a due-diligence record. Accepts a legal name plus optional country filter or a direct LEI for a precise lookup.
 - **When NOT to use**: Do not use to verify private companies not registered with GLEIF or SEC. Do not use as an exhaustive fraud-detection tool; this is a first-pass existence check against free public registries, not a full KYC screen.
-- **Cost: free within the daily quota, then $0.02 per call.**
+- **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/verify_company_record`
 
 ### screen_sanctions
 
-Free screening of a name/entity against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.
+Free screening of a name/entity (Latin or Arabic script) against sanctions lists: OFAC SDN (US Treasury), EU consolidated list (European Commission), UK Sanctions List (FCDO). THE UN CONSOLIDATED LIST IS NOT SCREENED -- no licence permits redistribution. Never fabricates a match or clear: check lists_screened; reason_code 'partial_screening' (never 'clear') if any source failed.
 
 - **When to use**: Use before onboarding a counterparty, processing a payment, engaging a vendor, or doing any due-diligence step that requires knowing whether a person or entity appears on official sanctions lists. Essential for agents doing business formation, vendor qualification, payments onboarding, trade compliance, or any workflow where a sanctioned counterparty is a legal or reputational risk.
-- **When NOT to use**: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query.
-- **Cost: free within the daily quota, then $0.02 per call.**
+- **When NOT to use**: Do not use as a substitute for full KYC/AML screening -- this covers sanctions lists only, not PEP (Politically Exposed Person) databases, adverse media, or credit risk. Do not treat a negative result as a compliance clearance; it is informational only. Do not use for bulk screening of large lists -- each call is a live API query. Arabic names are matched by transliteration, which is lossy: sound-alikes come back as graded candidates (match_confidence, token_alignment), never as findings; the one exception is an Arabic-script name equal to an Arabic alias a list prints. An Arabic query with no hits is 'partial', never 'clean'.
+- **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~12000ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/screen_sanctions`
@@ -238,7 +252,7 @@ Free cross-border screening of destination and parties: DOES NOT CLASSIFY THE PR
 
 - **When to use**: Use before any cross-border trade to flag embargoed destinations, screen exporters/importers/freight forwarders against sanctions lists, and get authoritative links to the applicable tariff databases. Call this as a pre-flight check before quoting, invoicing, or shipping internationally. Covers OFAC comprehensively-embargoed countries (Iran, North Korea, Cuba, Syria) and significant advisory countries (Russia, Belarus, Ukraine Crimea/DNR/LNR regions).
 - **When NOT to use**: Do NOT use as a substitute for a licensed export compliance review. Do NOT use to obtain authoritative tariff rates (this tool returns guidance links, never fabricated rates). Do NOT use for purely domestic shipments where no cross-border movement is involved.
-- **Cost: free within the daily quota, then $0.02 per call.**
+- **Cost: free (no key required).**
 - **Execution**: sync
 - **Latency**: ~15000ms
 - **Endpoint**: `POST https://api.hatchloop.dev/ops/map_trade_restriction`
@@ -256,7 +270,9 @@ Read a two-way conversation thread you started: its state, every message exchang
 
 ### mint_key
 
-Agent self-serve API key issuance. An autonomous agent that has no email inbox can obtain a free-tier API key by proving it holds the MACHINE_MINT_SECRET via HMAC-SHA256. Returns a usable key immediately with no human action required. If the operator has not activated a mint secret on the server, this returns an honest not_configured failure rather than a key - call it once and branch on that before planning around it.
+Mint a free-tier API key without email by signing agent_id + timestamp + nonce with the MACHINE_MINT_SECRET (HMAC-SHA256). Refused without that secret (invalid_request); not_configured if the operator has none set. No secret: use POST /keys/request. [limited]
+
+- **Readiness: limited** - Refused unless the caller signs with the machine-mint secret (HMAC-SHA256). Without it, get a free key from POST /keys/request (an emailed link).
 
 - **When to use**: Use when an AI agent needs to self-provision a write-capable API key without a human email address. The caller must know the MACHINE_MINT_SECRET (available from hatchloop.dev/docs/#machine-mint).
 - **When NOT to use**: Do not use if the agent has a human operator who can complete the email flow at /keys/request. Do not use for paid plans — this endpoint issues free-tier keys (100 ops/day) only.
@@ -278,7 +294,13 @@ Search US federal contract awards by company (recipient) name using the free USA
 
 ## Authentication
 
-All state-changing operations require an `X-Agent-Identity` JWT header. Get a free key by emailing yourself a verification link: `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`, then open the link it sends you. This currently requires a human to click that link - there is no machine-mintable path in production today (`POST https://api.hatchloop.dev/keys/mint` returns `503 not_configured` and is not something to build against). 14 of the 23 tools work with no key (11 always free, 3 free within a daily quota), so check whether you need a key at all before requesting one. (Note: `https://api.hatchloop.dev/auth/token` is an internal admin route, not a public endpoint - it 401s for every outside caller.) Scopes include allowed operations, budget cap, and verticals.
+All state-changing operations require an `X-Agent-Identity` JWT header. Get a free key by emailing yourself a verification link: `POST https://api.hatchloop.dev/keys/request` with `{"email": "you@example.com"}`, then open the link it sends you. This currently requires a human to click that link - there is no machine-mintable path in production today (`POST https://api.hatchloop.dev/keys/mint` is refused without the operator's machine-mint secret, which is not published, and is not something to build against). 14 of the 23 tools work with no key (11 always free, 3 free and unmetered at this time), so check whether you need a key at all before requesting one. (Note: `https://api.hatchloop.dev/auth/token` is an internal admin route, not a public endpoint - it 401s for every outside caller.) Scopes include allowed operations, budget cap, and verticals.
+
+### Sign in with OAuth (MCP authorization)
+
+A client that supports MCP authorization can get a key without anyone handling one. It discovers `https://api.hatchloop.dev/.well-known/oauth-protected-resource/mcp` (RFC 9728), reads the authorization server from it (`https://api.hatchloop.dev/.well-known/oauth-authorization-server`, RFC 8414), registers with a Client ID Metadata Document or by dynamic registration, and runs the authorization-code flow with PKCE (`S256`). The person is asked for an email address and presses Confirm on a one-time link we send there; there is no password. The access token is an Agent-Identity key, so it also works as `Authorization: Bearer <token>` at `https://api.hatchloop.dev/mcp`.
+
+Tools that need an account: `call_business`, `capture_lead`, `escalate_to_human`, `get_conversation`, `handle_inbound`, `import_booking_url`, `schedule_appointment`, `send_message`, `send_transactional_confirmation`. Every other tool works without a key or a sign-in (the premium data tools free and unmetered at this time). Sign-in and the key-by-email path above give the same kind of key.
 
 ## Compliance
 
@@ -287,6 +309,8 @@ See [compliance docs](https://api.hatchloop.dev/docs/compliance) for full jurisd
 ## Connecting from an agent harness
 
 Any client that speaks MCP over streamable HTTP can attach this server directly; there is nothing to install and no key is needed for the free tools.
+
+**Protocol versions.** This endpoint speaks MCP `2026-07-28`, which has no handshake: call `server/discover` to learn the supported versions and capabilities, or send any request with its version in `_meta`. It also answers the older `initialize` handshake for `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`.
 
 **DeepSeek Harness (`dsh`)** - add one entry to your config:
 
@@ -306,7 +330,7 @@ Tools then appear to the model as `mcp__hatchloop__screen_sanctions` and so on.
 - `https://api.hatchloop.dev/mcp/appointment-booking` - Find real businesses and book appointments. Books via Cal.com; imports 12 platforms. (9 tools)
 - `https://api.hatchloop.dev/mcp/company-verification` - Verify a company on GLEIF LEI and SEC EDGAR, screen sanctions. No key; quota-free premium data. (7 tools)
 - `https://api.hatchloop.dev/mcp/compliance-check` - TCPA/GDPR/CASL compliance + sanctions & registry screening. No key; premium data quota-free. (8 tools)
-- `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) + company verification. No key; free within a daily quota. (8 tools)
+- `https://api.hatchloop.dev/mcp/sanctions-screening` - Sanctions screening (OFAC, EU, UK) + company verification. No key needed. (8 tools)
 - `https://api.hatchloop.dev/mcp/sms-whatsapp-messaging` - Send WhatsApp, SMS, email or voice to real businesses. TCPA/GDPR/CASL gate built in. (10 tools)
 - `https://api.hatchloop.dev/mcp/agent-broker` - everything (23 tools)
 

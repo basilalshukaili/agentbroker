@@ -1,14 +1,47 @@
 {
   "service_type": "smb_broker",
   "service_id": "smb-broker-v1",
-  "version": "0.2.13",
+  "version": "0.2.16",
   "description": "SMB Transaction & Communication Broker — enables AI agents to discover, verify, communicate with, and schedule appointments with long-tail small and mid-sized businesses through a single, compliance-aware tool surface.",
   "auth": {
     "scheme": "AgentIdentity",
     "header": "X-Agent-Identity",
     "free_key_url": "/keys/request",
     "free_key_method": "POST {\"email\": \"you@example.com\"}",
-    "token_format": "HS256 signed claims"
+    "token_format": "HS256 signed claims",
+    "oauth2": {
+      "authorization_server": "https://api.hatchloop.dev",
+      "protected_resource_metadata_url": "https://api.hatchloop.dev/.well-known/oauth-protected-resource/mcp",
+      "authorization_server_metadata_url": "https://api.hatchloop.dev/.well-known/oauth-authorization-server",
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "code_challenge_methods": [
+        "S256"
+      ],
+      "client_registration": [
+        "client_id_metadata_document",
+        "dynamic_client_registration"
+      ],
+      "scopes": [
+        "agentbroker.tools",
+        "offline_access"
+      ],
+      "sign_in": "An email address and a one-time link we send to it. No password.",
+      "token": "The access token is an Agent-Identity key: send it as 'Authorization: Bearer <token>'.",
+      "tools_that_need_an_account": [
+        "call_business",
+        "capture_lead",
+        "escalate_to_human",
+        "get_conversation",
+        "handle_inbound",
+        "import_booking_url",
+        "schedule_appointment",
+        "send_message",
+        "send_transactional_confirmation"
+      ]
+    }
   },
   "manifest_url": "/manifest",
   "operations_url": "/manifest/ops",
