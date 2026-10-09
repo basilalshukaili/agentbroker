@@ -24,11 +24,11 @@ Security invariants:
 - Magic link is single-use + short TTL + constant-time HMAC compare.
 - Session cookie is signed (forged sessions fail verify).
 - API key revealed only on explicit POST /key/reveal (never in /me or /balance).
-- No secrets appear in any client response.
+- Provider and session signing secrets never appear in client responses.
+- Portal key creation/rotation is disabled until atomic storage and peer proof.
 """
 from __future__ import annotations
 
-import hashlib as _hashlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -167,30 +167,6 @@ async def _get_transactions(account_id: str, limit: int = 50) -> list[dict]:
     return []
 
 
-async def _update_account(account_id: str, updates: dict[str, Any]) -> bool:
-    url, key = _sb_config()
-    if not url or not key:
-        return False
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.patch(
-                f"{url}/rest/v1/credit_accounts",
-                headers={
-                    "apikey": key,
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal",
-                },
-                params={"account_id": f"eq.{account_id}"},
-                json=updates,
-            )
-        return resp.status_code in (200, 204)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("portal._update_account failed account=%s err=%s", account_id, exc)
-        return False
-
-
 # ---------------------------------------------------------------------------
 # Resend magic-link email
 # ---------------------------------------------------------------------------
@@ -314,20 +290,25 @@ async def _polar_invoices_url(email: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Key helpers
+# Key mutation safety boundary
 # ---------------------------------------------------------------------------
 
-async def _issue_key_for_account(account: dict) -> Optional[dict]:
-    try:
-        from agent_interface.identity import issue_subscription_token
-        customer_id = account.get("customer_id") or account.get("account_id", "").replace("sub_", "", 1)
-        plan = account.get("plan", "developer")
-        email = account.get("email", "")
-        resp = issue_subscription_token(customer_id=customer_id, plan=plan, customer_email=email)
-        return {"token": resp.token, "agent_id": resp.agent_id, "expires_at": resp.expires_at}
-    except Exception as exc:  # noqa: BLE001
-        logger.error("_issue_key_for_account failed: %s", exc)
-        return None
+def _key_mutation_unavailable() -> JSONResponse:
+    """No runtime switch: re-enabling requires reviewed transactional storage.
+
+    Independent PATCH/revoke calls cannot guarantee that concurrent workers
+    replace the same current key, that a revoke is durable, or that a peer
+    rejects the replaced key. In particular, historical key_jti rows contain
+    agent_id rather than the signed UUID jti. Never use that metadata to revoke.
+    No key may be minted, promoted from free to paid, or disclosed by a failed
+    mutation. Keep this gate until atomic compare-and-swap/revocation and peer
+    visibility have isolated fixture proof and an approved release.
+    """
+    return JSONResponse({
+        "ok": False,
+        "reason": "key_mutation_unavailable",
+        "message": "Portal key generation and rotation are temporarily unavailable.",
+    }, status_code=503)
 
 
 # ---------------------------------------------------------------------------
@@ -483,134 +464,25 @@ async def portal_key_reveal(hl_portal: Optional[str] = Cookie(None)) -> JSONResp
         return JSONResponse({"ok": False, "reason": "no_account"})
     key_token = account.get("key_token")
     if not key_token:
-        issued = await _issue_key_for_account(account)
-        if issued:
-            await _update_account(
-                account.get("account_id", ""),
-                {"key_token": issued["token"], "key_jti": issued.get("agent_id", ""),
-                 "updated_at": datetime.now(timezone.utc).isoformat()},
-            )
-            return JSONResponse({"ok": True, "key": issued["token"]})
-        return JSONResponse({"ok": False, "reason": "key_issue_failed"})
+        return _key_mutation_unavailable()
     return JSONResponse({"ok": True, "key": key_token})
 
 
 @router.post("/key/generate")
 async def portal_key_generate(hl_portal: Optional[str] = Cookie(None)) -> JSONResponse:
-    """
-    Mint a free-tier API key for the logged-in user (email-verified, no purchase required).
-
-    If a key already exists on the account, returns {ok: true, already: true}.
-    If no key: mints a free key using the same customer_id derivation as /keys/verify
-    (free_<sha256(email)[:16]>, budget_cap_usd=0.0, 90-day TTL), stores it on the
-    credit_accounts row, and returns {ok: true, generated: true}.
-
-    The raw key is NEVER returned here — call POST /key/reveal to retrieve it once.
-    """
+    """Report an existing key; creation is disabled pending atomic storage proof."""
     email = _require_session(hl_portal)
     account = await _get_account(email)
-
-    # Key already exists — idempotent no-op
     if account and account.get("key_token"):
         return JSONResponse({"ok": True, "already": True})
-
-    # Mint a free-tier JWT using the same deterministic customer_id as /keys/verify
-    customer_id = f"free_{_hashlib.sha256(email.encode()).hexdigest()[:16]}"
-    _FREE_KEY_TTL_S = 90 * 86400  # 90 days, same as key_requests.py
-
-    from agent_interface.identity import issue_token, TokenRequest
-    token_resp = issue_token(TokenRequest(
-        agent_id=customer_id,
-        principal_id=customer_id,
-        principal_type="human",
-        allowed_operations=["*"],
-        budget_cap_usd=0.0,   # free tier — no credit spend
-        allowed_verticals=["*"],
-        ttl_seconds=_FREE_KEY_TTL_S,
-    ))
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    if account:
-        # Account exists but has no key — update in place
-        ok = await _update_account(
-            account.get("account_id", ""),
-            {
-                "key_token": token_resp.token,
-                "key_jti": token_resp.agent_id,
-                "updated_at": now_iso,
-            },
-        )
-        if not ok:
-            logger.error("portal.key_generate update_account failed email=%s", email)
-            return JSONResponse({"ok": False, "reason": "key_store_failed"})
-    else:
-        # No account yet — create one with the free key attached
-        try:
-            from storage.supabase_client import upsert_row
-            written = await upsert_row(
-                "credit_accounts",
-                {
-                    "account_id": customer_id,
-                    "email": email,
-                    "balance_credits": 0,
-                    "plan": "free",
-                    "key_token": token_resp.token,
-                    "key_jti": token_resp.agent_id,
-                    "created_at": now_iso,
-                    "updated_at": now_iso,
-                },
-                on_conflict="email",
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("portal.key_generate upsert_account failed email=%s err=%s", email, exc)
-            return JSONResponse({"ok": False, "reason": "key_store_failed"})
-        # upsert_row returns None on EVERY failure and cannot raise, so the
-        # except above was dead code for the common failure shapes (409 on a
-        # concurrent create for the same email, RLS, outage) - and the user was
-        # told their key was generated when nothing was stored, making the
-        # later /key/reveal come back empty. Same class as the outcome-store
-        # persist check: a write you did not confirm is not a write.
-        if written is None:
-            logger.error("portal.key_generate upsert_account returned None email=%s", email)
-            return JSONResponse({"ok": False, "reason": "key_store_failed"})
-
-    logger.info("portal.free_key_generated customer_id=%s", customer_id)
-    # Raw key intentionally NOT returned — call /key/reveal to retrieve it.
-    return JSONResponse({"ok": True, "generated": True})
+    return _key_mutation_unavailable()
 
 
 @router.post("/key/regenerate")
 async def portal_key_regenerate(hl_portal: Optional[str] = Cookie(None)) -> JSONResponse:
-    email = _require_session(hl_portal)
-    account = await _get_account(email)
-    if not account:
-        return JSONResponse({"ok": False, "reason": "no_account"})
-    old_jti = account.get("key_jti")
-    if old_jti:
-        try:
-            from agent_interface import identity as _id
-            # revoke_jti() takes effect in-memory immediately regardless of
-            # what it returns; the return value only says whether that also
-            # landed durably (survives a restart). Previously this reached
-            # into _id._revoked_jtis directly, which had no durable half at
-            # all -- see AUDIT-2026-09-28 in identity.py.
-            durable = await _id.revoke_jti(old_jti, reason="key_regenerate")
-            if not durable:
-                logger.warning(
-                    "key_regen: old jti revoked in-memory only (durable "
-                    "write failed) jti=%s", old_jti)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("key_regen: old jti revoke failed jti=%s err=%s", old_jti, exc)
-    issued = await _issue_key_for_account(account)
-    if not issued:
-        return JSONResponse({"ok": False, "reason": "key_issue_failed"})
-    await _update_account(
-        account.get("account_id", ""),
-        {"key_token": issued["token"], "key_jti": issued.get("agent_id", ""),
-         "updated_at": datetime.now(timezone.utc).isoformat()},
-    )
-    return JSONResponse({"ok": True, "key": issued["token"]})
+    """Fail closed before any account read, issuance, revocation, or write."""
+    _require_session(hl_portal)
+    return _key_mutation_unavailable()
 
 
 @router.post("/logout")

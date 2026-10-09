@@ -785,7 +785,9 @@ async def revoke_jti(jti: str, reason: str = "manual") -> bool:
     revoke_customer()'s write pattern: the in-memory effect always applies
     even if the durable write fails -- never raises.
 
-    Returns True only when the durable write also lands. A caller that gets
+    Returns True only when the exact jti is confirmed by a durable write or
+    strict readback of an already-present row (duplicate/lost-ack retries).
+    A caller that gets
     False must treat the revocation as NOT yet safe against a restart --
     same honesty contract as revoke_customer()'s return value.
     """
@@ -800,16 +802,33 @@ async def revoke_jti(jti: str, reason: str = "manual") -> bool:
     try:
         from storage.supabase_client import insert_row_strict
         from datetime import datetime, timezone
-        await insert_row_strict(_REVOKED_JTIS_TABLE, {
+        written = await insert_row_strict(_REVOKED_JTIS_TABLE, {
             "jti": jti,
             "reason": reason,
             "revoked_at": datetime.now(timezone.utc).isoformat(),
         })
-        return True
+        if isinstance(written, dict) and written.get("jti") == jti:
+            return True
+        # A 2xx without the exact row is not confirmation of this revoke.
+        raise RuntimeError("revocation write did not confirm the requested jti")
     except Exception as exc:  # noqa: BLE001
+        # Duplicate primary key (retry or another worker), and a lost write
+        # acknowledgement, both require the same proof: the exact jti already
+        # exists durably. Do not overwrite its original reason/timestamp. Never
+        # infer success merely from a conflict code or our in-memory set.
+        try:
+            from storage.supabase_client import select_rows_strict
+            rows = await select_rows_strict(
+                _REVOKED_JTIS_TABLE, filters={"jti": jti}, limit=1,
+            )
+            if (isinstance(rows, list) and len(rows) == 1
+                    and isinstance(rows[0], dict) and rows[0].get("jti") == jti):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
         log.error(
             "jti_revocation_persist_failed jti=%s err=%s -- the revocation "
-            "is IN-MEMORY ONLY and will not survive a restart",
+            "has UNCONFIRMED durability; do not rely on restart safety",
             jti, exc,
         )
         return False
@@ -837,7 +856,7 @@ async def revoke_token(token: str, reason: str = "manual") -> bool:
     except ValueError:
         return False
     jti = claims.get("jti", "")
-    if not jti:
+    if not isinstance(jti, str) or not jti:
         return False
     return await revoke_jti(jti, reason=reason)
 
