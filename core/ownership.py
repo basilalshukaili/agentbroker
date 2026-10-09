@@ -40,7 +40,8 @@ THE THREE CALLER STATES, AND WHY `None` IS NOT "anonymous":
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from typing import Optional
 
 # What _agent_id_from_token (agent_interface/identity.py) returns for a caller
@@ -78,6 +79,20 @@ class Denial:
     """Why a read was refused. Callers turn this into their own error shape."""
     reason_code: str
     human_message: str
+    # What the caller can DO about it, in the receipt's own `next_actions` field. Empty unless the refusal has a
+    # remedy the caller can carry out (a keyless caller can get a key).
+    next_actions: tuple = field(default_factory=tuple)
+
+
+def free_key_next_actions() -> tuple:
+    """The step a caller with no key can take. The write tools' `auth_required` already names this address
+    (agent_interface/mcp_server.py: PUBLIC_BASE_URL + /keys/request); the read tool that needs a key said only
+    "send your key" - 101 calls in the 14 days to 2026-10-09 (59 from outside) met that wording and had nowhere
+    to go. Deliberately the free key only: credits and x402 are switched rails that the write tools' message
+    derives at call time, and a read refusal makes no claim about either."""
+    base = os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
+    return (f"Get a free key (email-verified, no payment) at {base}/keys/request, then send it as the "
+            f"X-Agent-Identity header on this call.",)
 
 
 def read_denial(
