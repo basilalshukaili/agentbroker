@@ -2,3 +2,16 @@
 # breaks the shebang and every later line.
 deploy/caddy/*.sh text eol=lf
 deploy/caddy/remote_scrub_logs.py text eol=lf
+
+# Canonical generated manifests are compared byte-for-byte with generator output.
+# Keep their checkout form LF even when a Windows Git installation enables
+# core.autocrlf, otherwise an unchanged checkout falsely fails the parity gate.
+glama.json text eol=lf
+registry/appointment-booking/server.json text eol=lf
+registry/company-verification/server.json text eol=lf
+registry/compliance-check/server.json text eol=lf
+registry/sanctions-screening/server.json text eol=lf
+registry/sms-whatsapp-messaging/server.json text eol=lf
+server.json text eol=lf
+smithery.yaml text eol=lf
+state/mcp_endpoints.json text eol=lf
