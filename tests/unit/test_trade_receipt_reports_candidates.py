@@ -31,6 +31,7 @@ def _run(coro):
 def _fake_screen(monkeypatch, **payload):
     """Stand in for screen_sanctions with a chosen result shape."""
     class _R:
+        status = "success"
         reason_code = payload.pop("_reason", "no_match")
         result = payload
 

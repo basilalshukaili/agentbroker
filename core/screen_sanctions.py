@@ -53,8 +53,9 @@ Design:
     hash-bound, optionally Ed25519-signed record of WHICH lists were screened,
     HOW OLD each copy was, WHEN, and WHAT came back. See core/compliance_receipt.
     The operator is the party who has to produce that record years later, so it
-    is handed to them and stored nowhere here. Purely additive: a caller that
-    ignores the field sees the identical answer it saw before.
+    is handed to them and stored nowhere here. Third-party result text is
+    finalized with the transport's fencing policy before the receipt is signed;
+    direct handler callers receive the same fenced representation as MCP.
 """
 from __future__ import annotations
 
@@ -77,11 +78,17 @@ from typing import Optional
 
 from core import arabic_names as _ar
 from core import input_limits as _limits
+from core import untrusted as _untrusted
 from core.compliance_receipt import attach_receipt, service_version
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
 from core.untrusted import fence as _fence_untrusted
 
 _log = logging.getLogger("smb_broker.screen_sanctions")
+
+
+def _label_untrusted(tool: str, receipt: Any) -> Any:
+    """Resolve the labeler at call time so tests can replace either seam."""
+    return _untrusted.label(tool, receipt)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -2949,6 +2956,27 @@ async def handle_screen_sanctions(
         provenance, confirmed=bool(merged), candidates=bool(unverified),
         unscreenable=bool(_unscreenable), arabic_script=_arabic_script,
     )
+    # Preserve semantic evidence before labeling mutates the shared match rows.
+    confirmed_match_names = [m.get("name") for m in merged]
+    # Bind the delivered representation. MCP labels this envelope again, so
+    # all third-party fields must already be fenced before the receipt is signed.
+    labeled = {"result": result_payload}
+    try:
+        _label_untrusted("screen_sanctions", labeled)
+        if any("error" in field for field in
+               (labeled.get("untrusted_content") or {}).get("fields", [])):
+            raise ValueError("incomplete third-party labeling")
+    except Exception:  # noqa: BLE001 - never sign or return a partially fenced screen
+        return OutcomeReceipt(
+            operation_id=op_id,
+            status=OperationStatus.FAILURE,
+            reason_code="untrusted_labelling_failed",
+            human_message="Could not safely label the screening result. Retry the screen.",
+            cost=CostRecord(amount=0.0, currency="USD", basis="free"),
+            latency_ms=lat,
+            retriable=True,
+            trace_id=trace_id,
+        )
     attach_receipt(
         result_payload,
         tool="screen_sanctions",
@@ -2983,7 +3011,7 @@ async def handle_screen_sanctions(
                 # found and not merely how many. Candidates are counted, not
                 # named: they are not findings, and copying them into an
                 # evidence file is how a coincidence becomes an allegation.
-                "confirmed_match_names": [m.get("name") for m in merged],
+                "confirmed_match_names": confirmed_match_names,
             },
         },
     )
@@ -2994,6 +3022,7 @@ async def handle_screen_sanctions(
         reason_code=reason_code,
         human_message=human_message,
         result=result_payload,
+        untrusted_content=labeled.get("untrusted_content"),
         cost=CostRecord(amount=0.0, currency="USD", basis="free"),
         latency_ms=lat,
         retriable=False,

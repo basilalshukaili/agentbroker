@@ -11,6 +11,7 @@ import asyncio
 import pytest
 
 import core.screen_sanctions as ss
+from core.untrusted import MARKER_CLOSE, MARKER_OPEN
 
 
 def _run(coro):
@@ -155,7 +156,12 @@ def test_an_ofac_exact_match_survives_regardless_of_word_order(monkeypatch):
         "an OFAC exact match at score 1.00 was dropped because the listed "
         "name is not in alphabetical order - this designation is invisible "
         "from every source we have")
-    assert cands[0]["name"].upper().startswith("RI")
+    delivered = cands[0]["name"]
+    assert delivered.startswith(MARKER_OPEN) and delivered.endswith(MARKER_CLOSE)
+    evaluated = delivered[len(MARKER_OPEN):-len(MARKER_CLOSE)]
+    assert evaluated.upper().startswith("RI")
+    assert any(field.get("path") == "result.possible_matches_unverified[].name"
+               for field in rc.untrusted_content["fields"])
     # Surfaced, never asserted: it is still a weak name.
     assert rc.result["matched"] is False
 

@@ -23,6 +23,72 @@ review reasons asserts neither identity nor KYC/AML clearance. Keep the receipt
 for detailed list provenance; its response hash binds the guidance as well.
 Invalid input retains the existing failure result without guidance.
 
+Run the offline client example from the repository root (project runtime: Python 3.11+):
+
+```bash
+python examples/screening_client.py tests/fixtures/screening_client/complete.json
+python examples/screening_client.py tests/fixtures/screening_client/candidate_partial.json
+python examples/screening_client.py tests/fixtures/screening_client/stale_unknown.json
+python -m pytest tests/unit/test_screening_client_example.py tests/unit/test_sanctions_review_guidance.py -q
+```
+
+The CLI reads saved MCP `tools/call` results or full JSON-RPC responses; `-`
+reads stdin. It never calls a model, server or another tool. The fixtures are
+synthetic offline handler outputs, not live captures or customer evidence.
+Complete, partial, candidate with partial coverage, stale/unknown, Arabic and
+confirmed-name-hit cases show the branches. Keep the original input JSON as
+the evidence record; the printed output is a review handoff.
+
+The repaired source fences third-party candidate/hit result text before
+attaching its receipt, so both `hash_ok` and `response_match` are true in the
+synthetic fixtures. A later MCP labeling pass leaves the bound result unchanged.
+Candidates and hits still require review even when the receipt binds their
+guidance. Direct handler callers now receive fenced third-party result text too.
+This is an offline source guarantee, not evidence that a repaired release is live.
+
+Historical release `b3c7906` fenced names after receipt issuance, leaving
+`hash_ok: true` but `response_match: false` for candidate/hit responses. The
+disabled-presigning-label control reproduces that defect. A mismatched saved
+response still yields `guidance_response_bound: false` and a hold; the consumer
+never removes fences or rewrites evidence to force a match. Verify the repair
+and its negative control offline:
+
+```bash
+python -m pytest tests/unit/test_screening_client_example.py tests/unit/test_screening_receipt_postlabel.py -q
+```
+
+To use an already initialized MCP SDK session on the standard `/mcp` endpoint:
+
+```python
+from examples.screening_client import consume_screening
+
+call_result = await session.call_tool("screen_sanctions", {"name": "Example Export"})
+handoff = consume_screening(call_result)
+# Inspect handoff; do not execute review_guidance.next_actions automatically.
+```
+
+The standard endpoint returns an OutcomeReceipt in `content[0].text`. The
+consumer also accepts `structuredContent`, checks for conflicting envelopes,
+and holds on failures, missing evidence or unknown guidance. The ChatGPT door
+currently omits `compliance_receipt`; it therefore yields a hold in this
+receipt-verifying example. Use the standard MCP endpoint when retaining and
+verifying a portable receipt is required.
+
+`record_supported_list_screen` means only that the supplied name produced no
+matches or review reasons on the completed supported list paths. It is never
+a transaction approval. `hold_for_review` preserves all coverage, candidate,
+freshness and Arabic transliteration reasons independently. Matching remains
+uncalibrated and spelling/name-token variants can miss; complete coverage is
+limited to OFAC SDN, EU and UK, with UN outside scope.
+
+The consumer requires both `hash_ok` and `response_match`. An unsigned hash
+can be recomputed and does not authenticate an issuer. Even a valid signature
+using an embedded key proves only internal consistency. For issuer validation,
+pass an Ed25519 public key obtained out of band via `--issuer-public-key HEX`
+or `consume_screening(..., expected_public_key_hex=HEX)`; this requires the
+existing optional `cryptography` verifier dependency. A failed or unavailable
+signature check, or an unsigned receipt with a pinned key, yields a hold.
+
 ---
 
 ## Step 0: Get an Agent-Identity token

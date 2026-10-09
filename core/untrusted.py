@@ -506,6 +506,13 @@ def label(tool: str, receipt: Any) -> Any:
     outcomes: list[dict] = []
     fenced_any = False
     contact_seen = False
+    policy_hash = policy_sha256()
+    previous = receipt.get("untrusted_content")
+    previous_fields = {}
+    if (isinstance(previous, dict) and previous.get("policy_sha256") == policy_hash
+            and isinstance(previous.get("fields"), list)):
+        previous_fields = {f["path"]: f for f in previous["fields"]
+                           if isinstance(f, dict) and isinstance(f.get("path"), str)}
 
     for path in paths:
         edits: list[str] = []
@@ -524,6 +531,8 @@ def label(tool: str, receipt: Any) -> Any:
                     return None
                 if v.startswith(MARKER_OPEN) and v.endswith(MARKER_CLOSE):
                     _edits.append("already_fenced")
+                    if _CONTACT_RE.search(v):
+                        _edits.append("contains_contact_details")
                     return None
                 if _relaxed and is_round_trippable(v, _relaxed):
                     _tally["exempt"] += 1
@@ -545,6 +554,14 @@ def label(tool: str, receipt: Any) -> Any:
             contact_seen = True
         entry: dict = {"path": path, "fenced": n}
         notes = sorted(set(e for e in edits if e != "contains_contact_details"))
+        if "already_fenced" in notes:
+            # A replay cannot recover what was removed from an upstream value.
+            # Keep the same policy's recorded neutralization history per path.
+            prior_notes = previous_fields.get(path, {}).get("neutralised", [])
+            if isinstance(prior_notes, list):
+                notes = sorted(set(notes) | {
+                    n for n in prior_notes if isinstance(n, str) and n in {
+                        "marker_lookalike_removed", "format_or_control_chars_removed", "truncated"}})
         if notes:
             entry["neutralised"] = notes
         # EVERY EXEMPTION IS COUNTED WHERE THE CALLER CAN SEE IT. A relaxation
@@ -557,7 +574,8 @@ def label(tool: str, receipt: Any) -> Any:
         if not tally["seen"] and "already_fenced" not in edits:
             entry["present"] = False
         if tally["seen"] and not n:
-            fenced_any = fenced_any or bool(tally["exempt"] or tally["non_string"])
+            fenced_any = fenced_any or bool(tally["exempt"] or tally["non_string"]
+                                           or "already_fenced" in edits)
         outcomes.append(entry)
 
     if not fenced_any and not any("error" in o for o in outcomes):
@@ -570,7 +588,7 @@ def label(tool: str, receipt: Any) -> Any:
         "marker": [MARKER_OPEN, MARKER_CLOSE],
         "fields": outcomes,
         "policy_version": POLICY_VERSION,
-        "policy_sha256": policy_sha256(),
+        "policy_sha256": policy_hash,
     }
     if contact_seen:
         notice["contains_contact_details"] = True
