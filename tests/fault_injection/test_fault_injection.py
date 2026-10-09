@@ -102,7 +102,7 @@ class TestUnreachableSMB:
         )
         receipt = run(handle_schedule_appointment(req))
         assert receipt.status == OperationStatus.FAILURE
-        assert receipt.reason_code == "supply_unreachable"
+        assert receipt.reason_code == "out_of_supply_network"
 
     def test_find_business_empty_location_returns_empty_not_error(self):
         req = FindBusinessRequest(

@@ -407,7 +407,8 @@ receipt = httpx.post("https://.../ops/send_transactional_confirmation", json={
 | `403 Forbidden` | Operation not in your scope | Update `allowed_operations` on token |
 | `422 compliance_violation` | Pre-check failed | Do **not** retry. Obtain consent. |
 | `429 rate_limited` | Too many requests in window | Back off; retry-after header included |
-| `503 supply_unreachable` | SMB cannot be contacted | Try a different smb_id from find_business |
+| `503 supply_unreachable` | SMB is known but cannot be contacted | Retry later; try a different smb_id from find_business |
+| `out_of_supply_network` | The `smb_id` is not in the supply network (unknown, inactive, or an `osm:` OpenStreetMap listing) | Not retriable. Use the `smb_id` of a find_business record whose `source` is `supply_network`; contact an OpenStreetMap listing by its phone or website |
 | `504 timeout` | Upstream channel timed out | Idempotent retry with same key is safe |
 
 Full catalog: [api/errors.md](../api/errors.md).

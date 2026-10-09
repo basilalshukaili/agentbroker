@@ -146,7 +146,7 @@ def test_unknown_smb_never_writes(leads):
                              prospect=ProspectData(name="Ghost"), source="t")
     r = run(handle_capture_lead(req))
     assert r.status == OperationStatus.FAILURE
-    assert r.reason_code == "supply_unreachable"
+    assert r.reason_code == "out_of_supply_network"
     assert r.cost.amount == 0.0
     assert leads.calls == []
 

@@ -227,12 +227,12 @@ def _call(name, args, headers=None):
 
 def test_verify_business_does_not_know_an_openstreetmap_id():
     body, is_error = _call("verify_business", {"smb_id": "osm:node/1001"})
-    assert is_error is True and body["reason_code"] == "supply_unreachable"
+    assert is_error is True and body["reason_code"] == "out_of_supply_network"
 
 
 def test_capture_lead_refuses_an_openstreetmap_id_and_writes_nothing_for_it():
     body, is_error = _call("capture_lead", {"smb_id": "osm:node/1001", "prospect": {"name": "A", "phone": "+15551230001"}})
-    assert is_error is True and body["reason_code"] == "supply_unreachable"
+    assert is_error is True and body["reason_code"] == "out_of_supply_network"
 
 
 def test_handle_inbound_is_substring_matching_not_understanding():

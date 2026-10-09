@@ -97,7 +97,8 @@ class TestVerifyBusiness:
         req = VerifyBusinessRequest(smb_id="smb_UNKNOWN")
         receipt = run(handle_verify_business(req))
         assert receipt.status == OperationStatus.FAILURE
-        assert receipt.reason_code == "supply_unreachable"
+        # An id the network does not hold is a caller mistake, not an outage (tests/unit/test_unknown_smb_is_not_an_outage.py).
+        assert receipt.reason_code == "out_of_supply_network"
 
 
 class TestCaptureLead:

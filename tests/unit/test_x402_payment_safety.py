@@ -161,6 +161,6 @@ class TestUnknownSMBNotCharged:
         req = CaptureLeadRequest(smb_id="smb_GHOST", prospect=ProspectData(name="Ghost"), source="test")
         r = run(handle_capture_lead(req))
         assert r.status == OperationStatus.FAILURE
-        assert r.reason_code == "supply_unreachable"
+        assert r.reason_code == "out_of_supply_network"
         assert r.cost.amount == 0.0
         assert _receipt_is_error(r.model_dump(mode="json")) is True

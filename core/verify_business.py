@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from core.models import VerifyBusinessRequest, OutcomeReceipt, OperationStatus, CostRecord
 from supply.smb_directory import get_directory
 from billing.pricing import receipt_usd as _receipt_usd
+from core import smb_lookup
 
 
 async def handle_verify_business(
@@ -23,13 +24,17 @@ async def handle_verify_business(
     smb = directory.get(request.smb_id)
 
     if not smb or not smb.active:
+        # NOT `supply_unreachable`: that is the outage code (retriable). An id the network does not hold is a caller
+        # mistake - see core/smb_lookup.py for the measured reason and the OpenStreetMap case.
+        message, actions = smb_lookup.not_in_network(request.smb_id, purpose="be verified", inactive=bool(smb))
         return OutcomeReceipt(
             operation_id=str(uuid.uuid4()),
             status=OperationStatus.FAILURE,
-            reason_code="supply_unreachable",
-            human_message=f"SMB {request.smb_id} not found in supply network.",
+            reason_code=smb_lookup.REASON_CODE,
+            human_message=message,
             cost=CostRecord(amount=_receipt_usd("verify_business"), currency="USD", basis="free"),
             latency_ms=int((time.monotonic() - t0) * 1000),
+            next_actions=actions,
             retriable=False,
             trace_id=trace_id,
         )
