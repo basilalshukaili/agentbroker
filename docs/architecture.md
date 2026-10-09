@@ -203,7 +203,7 @@ POST /v1/schedule_appointment
   │      └─ bad schema → 400 bad_input
   │
   ├─[5] supply/smb_directory.py: resolve target SMB, get channel capabilities
-  │      └─ not found → 404 supply_unreachable
+  │      └─ not found → out_of_supply_network (client error, not retriable)
   │
   ├─[6] compliance/pre_check.py: check consent, jurisdiction, content
   │      └─ fail → 422 compliance_violation (structured)

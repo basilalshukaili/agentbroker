@@ -44,6 +44,16 @@ class SelfTestReport:
 # Individual checks
 # ---------------------------------------------------------------------------
 
+# How long the self_test's own find_business check waits for the public OpenStreetMap servers. The check runs the
+# whole OpenStreetMap path on purpose (an internal fault in OUR code must still turn it red), but it used to wait the
+# full 5 s call budget whenever those volunteer-run servers were slow: 26 of 619 self_test calls took 5.0-5.9 s and
+# five took 10-16 s in the 14 days to 2026-10-09 (docs/reviews/2026-10-09-agentbroker-request-analysis.md), and this
+# is the free health tool that registries and directory testers poll to score reliability. A lookup still running
+# at this shorter budget is reported as "search_in_progress (upstream slow; contract intact)", which this check has
+# always passed, only sooner. Ordinary find_business calls keep the full budget.
+SELF_TEST_FIND_BUSINESS_BUDGET_S = 2.0
+
+
 async def _check_find_business() -> TestCheck:
     start = time.time()
     try:
@@ -54,7 +64,7 @@ async def _check_find_business() -> TestCheck:
             location=LocationFilter(zip_or_city="30309"),
             capability="haircut",
         )
-        receipt = await handle_find_business(req)
+        receipt = await handle_find_business(req, budget_s=SELF_TEST_FIND_BUSINESS_BUDGET_S)
         ok = receipt.status == OperationStatus.SUCCESS
         # find_business now depends on the public OpenStreetMap servers. When they
         # are down it answers, correctly, with a retriable

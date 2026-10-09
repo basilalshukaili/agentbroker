@@ -3,7 +3,7 @@
   "service": {
     "name": "AgentBroker",
     "id": "agent-broker",
-    "version": "0.2.15",
+    "version": "0.2.16",
     "description": "A horizontal, agent-callable broker that lets an autonomous agent discover, verify, communicate with, schedule with, and transact with the long tail of small and mid-size businesses through one clean tool surface. Routes internally through whatever channel actually reaches the SMB: direct API, voice AI, SMS, email, web form, or browser automation.",
     "base_url": "https://api.hatchloop.dev",
     "discovery_url": "https://api.hatchloop.dev/.well-known/mcp.json",
@@ -354,7 +354,7 @@
       "description": "Look up what we know about a business in our supply network: contact channels, capabilities, last verification. A DIRECTORY LOOKUP - it does not contact the business. Supply-network ids only, not osm:... ids.",
       "readiness": {
         "state": "limited",
-        "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An osm:... id returned by find_business answers supply_unreachable. It never contacts the business."
+        "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An unknown id, or an osm:... id returned by find_business, answers out_of_supply_network (not retriable). It never contacts the business."
       },
       "when_to_use": "Use before sending communications or scheduling if you have an unverified SMB identifier, or if the agent's task requires confirmed capability (e.g., 'I need to be sure they do emergency plumbing').",
       "when_not_to_use": "Do not use if the SMB was returned from find_business within the last 24 hours — those results are already verified.",
@@ -413,7 +413,7 @@
       "idempotency": "read-only — idempotency key not required",
       "failure_modes": [
         "bad_input",
-        "supply_unreachable",
+        "out_of_supply_network",
         "supply_unverified",
         "transient"
       ],
@@ -737,7 +737,7 @@
       "description": "Structured intake of a prospect into an SMB's funnel with validation and deduplication on (smb_id, phone or email). Stored in AgentBroker's own lead funnel, NOT the business's CRM; the business is not notified.",
       "readiness": {
         "state": "beta",
-        "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an osm:... id is refused."
+        "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an unknown id or an osm:... id is refused with out_of_supply_network."
       },
       "when_to_use": "Use when a potential customer has expressed interest in an SMB's service and you want to ensure they are registered in the SMB's pipeline for follow-up.",
       "when_not_to_use": "Do not use for confirmed bookings — use schedule_appointment. Do not use for bulk list imports.",
@@ -806,6 +806,7 @@
       "idempotency": "required — dedupe is keyed on (smb_id, prospect.phone or prospect.email)",
       "failure_modes": [
         "bad_input",
+        "out_of_supply_network",
         "idempotency_conflict",
         "upstream_failure",
         "compliance_violation"
@@ -948,6 +949,7 @@
       "failure_modes": [
         "bad_input",
         "action_not_supported",
+        "out_of_supply_network",
         "supply_unreachable",
         "upstream_failure",
         "compliance_violation",
@@ -3356,7 +3358,7 @@
           "reason_code": "identity_required",
           "retriable": false,
           "meaning": "No agent identity was presented. A thread is readable only by the identity that opened it, so this tool needs one even though it is free.",
-          "agent_action": "Send your key as X-Agent-Identity - the same key you send with send_message. Mint one with mint_key."
+          "agent_action": "Get a free key (email-verified, no payment) at /keys/request, then send it as the X-Agent-Identity header on this call. mint_key is not a route for outside callers: it needs the operator's machine-mint secret."
         },
         {
           "reason_code": "conversation_owner_unknown",

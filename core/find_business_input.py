@@ -88,10 +88,12 @@ class FindBusinessInputError(Exception):
     """The request cannot be searched as sent. `error_code` is `missing_argument` or
     `invalid_argument`; `how_to_resolve` carries a worked example and the accepted forms."""
 
-    def __init__(self, error_code: str, message: str, how_to_resolve: dict):
+    def __init__(self, error_code: str, message: str, how_to_resolve: dict, fields: tuple = ()):
         super().__init__(message)
         self.error_code = error_code
         self.how_to_resolve = how_to_resolve
+        # The top-level argument(s) the refusal is about, for usage_events.detail (`f=`). OUR names, never caller text.
+        self.fields = tuple(fields)
 
 
 @dataclass
@@ -164,11 +166,11 @@ def _inline(example: dict) -> str:
     return json.dumps(example, separators=(",", ":"))
 
 
-def _error(code: str, what: str, args: dict, *, place: Optional[str] = None, kind: Optional[str] = None
-           ) -> FindBusinessInputError:
+def _error(code: str, what: str, args: dict, *, place: Optional[str] = None, kind: Optional[str] = None,
+           field: Optional[str] = None) -> FindBusinessInputError:
     example = example_arguments(place, kind)
     msg = f"find_business did not run: {what} Example that works: {_inline(example)}"
-    return FindBusinessInputError(code, msg, _how(example))
+    return FindBusinessInputError(code, msg, _how(example), (field,) if field else ())
 
 
 # --------------------------------------------------------------------------- place
@@ -234,7 +236,7 @@ def _read_location(args: dict, prepared: Prepared) -> Optional[str]:
         if any(k in loc for k in _COORD_KEYS):
             raise _error("invalid_argument",
                          "`location` carried coordinates (latitude/longitude), which are not supported - "
-                         "the search needs a place NAME.", args)
+                         "the search needs a place NAME.", args, field="location")
         place, notes, normalized = _place_from(loc, inner=True)
         prepared.notes += notes
         prepared.location_normalized_from = normalized
@@ -262,7 +264,7 @@ def _read_location(args: dict, prepared: Prepared) -> Optional[str]:
     elif loc is not None:
         raise _error("invalid_argument",
                      f"`location` must be a place name (string) or an object with `zip_or_city`, "
-                     f"got {type(loc).__name__}.", args)
+                     f"got {type(loc).__name__}.", args, field="location")
 
     if not place:
         # Top-level parts, e.g. {"city": "Muscat", "country": "Oman"} - advertised by the schema. Tried
@@ -299,7 +301,7 @@ def _read_location(args: dict, prepared: Prepared) -> Optional[str]:
         what = ("`location` is missing: a search needs a town or city, not a country or region alone."
                 if only_broad else "`location` is missing, and no `city` was sent either. "
                 "(There is no default city: guessing one would answer for the wrong place.)")
-        raise _error("missing_argument", what, args, kind=_kind_hint(args))
+        raise _error("missing_argument", what, args, kind=_kind_hint(args), field="location")
     prepared.kwargs["location"] = {"zip_or_city": place}
     if radius_miles is not None:
         prepared.kwargs["location"]["radius_miles"] = radius_miles
@@ -308,13 +310,16 @@ def _read_location(args: dict, prepared: Prepared) -> Optional[str]:
 
 def _number(value: Any, name: str, args: dict, *, minimum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        raise _error("invalid_argument", f"`{name}` must be a number, got {type(value).__name__}.", args)
+        raise _error("invalid_argument", f"`{name}` must be a number, got {type(value).__name__}.", args,
+                     field=name.split(".")[0])
     try:
         v = float(value)
     except ValueError:
-        raise _error("invalid_argument", f"`{name}` must be a number, got '{_echo(value)}'.", args) from None
+        raise _error("invalid_argument", f"`{name}` must be a number, got '{_echo(value)}'.", args,
+                     field=name.split(".")[0]) from None
     if v != v or v in (float("inf"), float("-inf")) or v < minimum:
-        raise _error("invalid_argument", f"`{name}` must be a number of at least {minimum:g}.", args)
+        raise _error("invalid_argument", f"`{name}` must be a number of at least {minimum:g}.", args,
+                     field=name.split(".")[0])
     return v
 
 
@@ -343,7 +348,7 @@ def _read_kind(args: dict, prepared: Prepared, place: str) -> None:
     capability = args.get("capability")
     if capability is not None and not isinstance(capability, str):
         raise _error("invalid_argument", f"`capability` must be a string (the kind of business), "
-                     f"got {type(capability).__name__}.", args, place=place)
+                     f"got {type(capability).__name__}.", args, place=place, field="capability")
     capability = _text(capability)
 
     if not capability:
@@ -357,7 +362,7 @@ def _read_kind(args: dict, prepared: Prepared, place: str) -> None:
     vertical_raw = args.get("vertical")
     if vertical_raw is not None and not isinstance(vertical_raw, str):
         raise _error("invalid_argument", f"`vertical` must be a string, got {type(vertical_raw).__name__}.",
-                     args, place=place)
+                     args, place=place, field="vertical")
     vertical_text = _text(vertical_raw)
     if vertical_text:
         macro, _hint, recognised = interpret_vertical(vertical_text)
@@ -389,7 +394,7 @@ def _read_kind(args: dict, prepared: Prepared, place: str) -> None:
     if not capability and not vertical_text:
         raise _error("missing_argument",
                      "no kind of business was named: `capability` (or `vertical`) is missing.",
-                     args, place=place)
+                     args, place=place, field="capability")
     if capability:
         prepared.kwargs["capability"] = capability
 
@@ -410,7 +415,7 @@ def prepare(arguments: Any) -> Prepared:
     if mr is not None:
         if isinstance(mr, bool) or not isinstance(mr, (int, float, str)):
             raise _error("invalid_argument", f"`max_results` must be a whole number from 1 to 20, got "
-                         f"{type(mr).__name__}.", args, place=place, kind=_kind_hint(args))
+                         f"{type(mr).__name__}.", args, place=place, kind=_kind_hint(args), field="max_results")
         try:
             as_float = float(mr)
             # float() accepts "inf", "1e999" and "nan"; int() of the first two raises OverflowError, which
@@ -421,7 +426,8 @@ def prepare(arguments: Any) -> Prepared:
             n = int(as_float)
         except (ValueError, OverflowError):
             raise _error("invalid_argument", f"`max_results` must be a whole number from 1 to 20, got "
-                         f"'{_echo(mr)}'.", args, place=place, kind=_kind_hint(args)) from None
+                         f"'{_echo(mr)}'.", args, place=place, kind=_kind_hint(args),
+                         field="max_results") from None
         if as_float != n and abs(as_float) < 1e15:
             prepared.notes.append(f"max_results {_echo(mr)} is not a whole number; {n} was used")
         clamped = max(1, min(20, n))
@@ -453,4 +459,8 @@ def explain_validation_error(exc: Exception, arguments: Any) -> FindBusinessInpu
     place = _place_hint(args)
     err = _error("invalid_argument", f"{detail}.", args, place=place, kind=_kind_hint(args))
     err.how_to_resolve["invalid_fields"] = fields[:6]
+    try:
+        err.fields = tuple(str(e["loc"][0]) for e in exc.errors() if e.get("loc"))[:6]       # type: ignore[attr-defined]
+    except Exception:                                                                        # noqa: BLE001
+        pass
     return err

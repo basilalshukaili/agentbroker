@@ -25,6 +25,7 @@ import uuid
 from core.models import CaptureLeadRequest, OutcomeReceipt, OperationStatus, CostRecord
 from billing.pricing import receipt_usd as _receipt_usd
 from supply.smb_directory import get_directory
+from core import smb_lookup
 
 
 async def handle_capture_lead(
@@ -38,12 +39,14 @@ async def handle_capture_lead(
     smb = directory.get(request.smb_id)
 
     if not smb:
+        message, actions = smb_lookup.not_in_network(request.smb_id, purpose="receive a lead")
         return OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
-            reason_code="supply_unreachable",
-            human_message=f"SMB {request.smb_id} not found.",
+            reason_code=smb_lookup.REASON_CODE,
+            human_message=message,
             cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
+            next_actions=actions,
             retriable=False,
             trace_id=trace_id,
         )

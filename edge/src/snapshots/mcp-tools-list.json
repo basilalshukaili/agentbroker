@@ -115,7 +115,7 @@
         "_meta": {
           "hatchloop/readiness": {
             "state": "limited",
-            "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An osm:... id returned by find_business answers supply_unreachable. It never contacts the business."
+            "summary": "Directory lookup of supply-network records only (ids from import_booking_url). An unknown id, or an osm:... id returned by find_business, answers out_of_supply_network (not retriable). It never contacts the business."
           }
         },
         "annotations": {
@@ -128,7 +128,7 @@
       },
       {
         "name": "send_message",
-        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately with no scheduling. Every send routes through a non-bypassable gate (TCPA, GDPR, CASL, PDPL across 26 jurisdictions): marketing without recorded consent is rejected at runtime with a structured compliance_violation receipt. [from $0.02/call, variable, not charged while no payment rail is on] [async→get_outcome]",
+        "description": "Send a message on behalf of an agent's user or an SMB across WhatsApp (free during launch), SMS, email, or voice, sent immediately, no scheduling. Every send passes a non-bypassable gate: TCPA, GDPR, CASL where modeled, else the service's own opt-in default (the Gulf included). Marketing on SMS, voice, WhatsApp and non-US email without recorded opt-in is rejected (compliance_violation receipt). US marketing email follows CAN-SPAM opt-out rules. [from $0.02/call, variable, not charged while no payment rail is on] [async→get_outcome]",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -164,7 +164,7 @@
             },
             "message_type": {
               "type": "string",
-              "description": "Intent tag for the message. Five permitted types. 'marketing' is allowed only…",
+              "description": "'marketing' needs recorded opt-in, except US email (CAN-SPAM opt-out rules).…",
               "enum": [
                 "transactional",
                 "marketing",
@@ -283,7 +283,7 @@
         "_meta": {
           "hatchloop/readiness": {
             "state": "beta",
-            "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an osm:... id is refused."
+            "summary": "Writes to AgentBroker's own lead funnel and stops there: this tool does not notify the business or update its CRM. Needs a supply-network smb_id (from import_booking_url); an unknown id or an osm:... id is refused with out_of_supply_network."
           }
         },
         "annotations": {
@@ -872,7 +872,7 @@
             },
             "message_type": {
               "type": "string",
-              "description": "Intent tag: transactional, marketing, reminder, follow_up, notification.…",
+              "description": "One of transactional, marketing, reminder, follow_up, notification (any case).…",
               "default": "transactional"
             },
             "country_code": {

@@ -40,7 +40,7 @@ THE THREE CALLER STATES, AND WHY `None` IS NOT "anonymous":
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 # What _agent_id_from_token (agent_interface/identity.py) returns for a caller
@@ -78,6 +78,22 @@ class Denial:
     """Why a read was refused. Callers turn this into their own error shape."""
     reason_code: str
     human_message: str
+    # What the caller can DO about it, in the receipt's own `next_actions` field. Empty unless the refusal has a
+    # remedy the caller can carry out (a keyless caller can get a key).
+    next_actions: tuple = field(default_factory=tuple)
+
+
+def free_key_next_actions() -> tuple:
+    """The step a caller with no key can take. The write tools' `auth_required` already names this address
+    (agent_interface/key_state.free_key_url: PUBLIC_BASE_URL + /keys/request, the one definition both refusals use);
+    the read tool that needs a key said only "send your key" - in the 14 days to 2026-10-09, 98 get_conversation calls
+    met that wording (`identity_required`: 59 from outside callers, 39 from our own tooling) and had nowhere to go. (3
+    further get_conversation calls got `conversation_not_found`, a different answer that carries no key pointer.)
+    Deliberately the free key only: credits and x402 are switched rails that the write tools' message derives at call
+    time, and a read refusal makes no claim about either."""
+    from agent_interface.key_state import free_key_url  # the one definition of the address; lazy: core must not import it at load
+    return (f"Get a free key (email-verified, no payment) at {free_key_url()}, then send it as the "
+            f"X-Agent-Identity header on this call.",)
 
 
 def read_denial(

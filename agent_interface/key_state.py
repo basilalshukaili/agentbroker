@@ -93,7 +93,14 @@ def _looks_like_placeholder(value: str) -> Optional[str]:
     return None
 
 
-def _free_key_url() -> str:
+def free_key_url() -> str:
+    """THE address a caller with no usable key is sent to for a free one: PUBLIC_BASE_URL + /keys/request.
+
+    The one definition. The write tools' auth_required refusal (agent_interface/mcp_server.py), the read tool's
+    identity_required refusal (core/ownership.free_key_next_actions), the key-request page (key_requests.py) and every
+    key diagnostic below call this, so the address cannot drift between a read refusal and a write refusal. It reads
+    the environment at call time, as each of those callers did before it was shared.
+    """
     base = os.getenv("PUBLIC_BASE_URL", "https://api.hatchloop.dev").rstrip("/")
     return f"{base}/keys/request"
 
@@ -104,7 +111,7 @@ def classify_key(raw_token: Optional[str]) -> KeyStatus:
         return _classify_key(raw_token)
     except Exception:  # noqa: BLE001 - a diagnostic must never break the request it describes
         return KeyStatus(KEY_INVALID, "unclassifiable",
-                         "The key could not be read. Request a fresh one at " + _free_key_url() + ".")
+                         "The key could not be read. Request a fresh one at " + free_key_url() + ".")
 
 
 def _classify_key(raw_token: Optional[str]) -> KeyStatus:
@@ -127,7 +134,7 @@ def _classify_key(raw_token: Optional[str]) -> KeyStatus:
             "The key header holds a placeholder, not a key - a template such as env:NAME or ${NAME} "
             "that your client never expanded, or an empty variable. Check that the environment "
             "variable is set where your MCP client runs and that the client substitutes it. "
-            "Need a key? Free, email-verified: " + _free_key_url())
+            "Need a key? Free, email-verified: " + free_key_url())
 
     from agent_interface.identity import validate_token
 
@@ -148,28 +155,28 @@ def _classify_key(raw_token: Optional[str]) -> KeyStatus:
     if "expired" in error:
         return KeyStatus(
             KEY_EXPIRED, "expired",
-            "This key has expired. Free keys last 90 days: request a new one at " + _free_key_url()
+            "This key has expired. Free keys last 90 days: request a new one at " + free_key_url()
             + " (same email address).")
     if "revoked" in error:
         return KeyStatus(
             KEY_INVALID, "revoked",
             "This key has been revoked (for example after a refund). Contact support@hatchloop.dev "
-            "or request a new key at " + _free_key_url() + ".")
+            "or request a new key at " + free_key_url() + ".")
     if "malformed" in error:
         return KeyStatus(
             KEY_INVALID, "malformed",
             "This does not have the shape of a key (<payload>.<signature>). It may have been "
             "truncated, wrapped in quotes, or split across lines. Copy the key again from the email "
-            "or portal; or request one at " + _free_key_url() + ".")
+            "or portal; or request one at " + free_key_url() + ".")
     if "signature" in error:
         return KeyStatus(
             KEY_INVALID, "bad_signature",
             "The key's signature does not verify - it was altered, or it was issued by a different "
             "service. Copy the key again exactly as issued, or request a new one at "
-            + _free_key_url() + ".")
+            + free_key_url() + ".")
     return KeyStatus(
         KEY_INVALID, "rejected",
-        "The key was not accepted. Request a fresh one at " + _free_key_url() + ".")
+        "The key was not accepted. Request a fresh one at " + free_key_url() + ".")
 
 
 def auth_warning(status: KeyStatus) -> Optional[dict]:
@@ -191,7 +198,7 @@ def auth_warning(status: KeyStatus) -> Optional[dict]:
         ),
         "how_to_fix": {
             "header": "X-Agent-Identity",
-            "get_a_free_key": _free_key_url(),
+            "get_a_free_key": free_key_url(),
             "docs": "https://hatchloop.dev/agents.md",
         },
     }

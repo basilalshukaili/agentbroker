@@ -20,9 +20,9 @@ All errors follow the `APIError` schema defined in `/core/models.py`.
 | `idempotency_conflict` | client_error | false | An Idempotency-Key was reused with different parameters | Generate a new Idempotency-Key for the different request |
 | `transient` | server_error | true | Temporary internal error (DB timeout, network blip) | Retry after retry_after_ms; if persistent, call self_test |
 | `internal` | server_error | false | Unexpected internal error | Report to support with trace_id |
-| `supply_unreachable` | server_error | true | The target SMB could not be reached via any available channel | Try again after retry_after_ms; consider escalate_to_human |
+| `supply_unreachable` | server_error | true | The target SMB could not be reached via any available channel. An unknown or OpenStreetMap `smb_id` is NOT this: it is `out_of_supply_network` | Try again after retry_after_ms; consider escalate_to_human |
 | `supply_unverified` | client_error | false | The SMB exists in the directory but its capability/availability could not be confirmed | Call verify_business before proceeding |
-| `out_of_supply_network` | client_error | false | No SMBs in the supply network match the given criteria | Expand search radius or try a different vertical/capability |
+| `out_of_supply_network` | client_error | false | No SMBs in the supply network match the given criteria. Also the answer to an unknown, inactive or OpenStreetMap `smb_id` passed to verify_business, capture_lead or schedule_appointment | Expand search radius or try a different vertical/capability; take `smb_id` from a find_business record whose source is supply_network |
 | `compliance_violation` | compliance_error | false | The request was blocked by a compliance pre-check | See violation_detail field; obtain required consent or adjust the message/channel |
 | `out_of_scope` | policy_error | false | The operation is outside the authorized scope in the Agent-Identity JWT | Update scope in the Agent-Identity JWT; see required_scope field |
 | `consent_missing` | compliance_error | false | No valid consent record found for this recipient+channel+use_case | Obtain explicit consent and record it before sending |

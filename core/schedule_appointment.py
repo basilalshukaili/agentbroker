@@ -180,13 +180,16 @@ async def handle_schedule_appointment(
     smb = directory.get(request.smb_id)
 
     if not smb:
+        from core import smb_lookup
+        message, actions = smb_lookup.not_in_network(request.smb_id, purpose="be booked")
         return await _store_terminal(OutcomeReceipt(
             operation_id=operation_id,
             status=OperationStatus.FAILURE,
-            reason_code="supply_unreachable",
-            human_message=f"SMB {request.smb_id} not found in supply network.",
+            reason_code=smb_lookup.REASON_CODE,
+            human_message=message,
             cost=CostRecord(amount=0.0, currency="USD", basis="no_charge"),
             latency_ms=int((time.monotonic() - t0) * 1000),
+            next_actions=actions,
             retriable=False,
             trace_id=trace_id,
         ), agent_id=agent_id)

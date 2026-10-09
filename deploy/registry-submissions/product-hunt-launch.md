@@ -52,7 +52,7 @@ country), with channel fallback across WhatsApp/SMS/email/voice.
 • MIT licensed
 
 Discoverable day one through MCP (Claude Desktop / Cursor / Continue / Cline),
-OpenAI function calling, Anthropic tool_use, A2A, and llms.txt.
+OpenAI function calling, Anthropic tool_use, and llms.txt. The service speaks MCP only; there is no A2A endpoint.
 
 Honest caveat: the small-business directory itself is a small seed set today
 (demo data) — we're not claiming a live worldwide SMB network yet. The

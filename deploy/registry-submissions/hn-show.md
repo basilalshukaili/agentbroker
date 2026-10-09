@@ -37,8 +37,8 @@ What's there:
 - Business messaging + scheduling with a non-bypassable compliance gate (TCPA/GDPR/CASL
   where modeled, the service's own opt-in default for every other country), and
   channel fallback across WhatsApp/SMS/email/voice.
-- Discovery: MCP, OpenAI function calling, Anthropic tool_use, A2A, llms.txt,
-  OpenAPI.
+- Discovery: MCP, OpenAI function calling, Anthropic tool_use, llms.txt,
+  OpenAPI. The service speaks MCP only; there is no A2A endpoint.
 - Free tier by design: reads are free forever; write ops get 100/day free
   with an email-verified key; credits by card ($9/1,000 and up) or pay-per-call
   in USDC on Base via x402 (no signup) beyond that.

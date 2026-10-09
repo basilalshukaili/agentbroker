@@ -15,7 +15,7 @@ import time
 from typing import Any, Optional
 
 from core.models import CostRecord, OperationStatus, OutcomeReceipt
-from core.ownership import Denial, owner_for_storage, read_denial
+from core.ownership import Denial, free_key_next_actions, owner_for_storage, read_denial
 
 
 def _refuse(denial: Denial, operation_id: str, t0: float,
@@ -31,6 +31,7 @@ def _refuse(denial: Denial, operation_id: str, t0: float,
         latency_ms=int((time.monotonic() - t0) * 1000),
         retriable=False,
         trace_id=trace_id,
+        next_actions=list(denial.next_actions),
     )
 
 
@@ -61,7 +62,8 @@ async def handle_get_conversation(
                        "A conversation is readable only by the agent identity "
                        "that opened it, so this tool needs one. Send your key "
                        "as X-Agent-Identity - the same key you send with "
-                       "send_message.")),
+                       "send_message."),
+                   next_actions=free_key_next_actions()),
             operation_id, t0, trace_id)
 
     row: Optional[dict] = None

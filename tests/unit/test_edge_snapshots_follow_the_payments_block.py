@@ -30,12 +30,13 @@ CREDITS_OFFER = re.compile(r"(?i)billed per call via credits|\(credits\)|buy cre
 
 # Snapshots that predate the payment-claims fix and have not been refreshed. Origin-derived, so they need the
 # live origin to be at the release that carries this change first. Each name must still contradict (see below).
+# manifest.json and llms-full.txt left this list on feat/maturity-20261009: that branch had to re-capture them (with
+# agents.json and mcp-tools-list.json, `refresh_edge_snapshots.py --local-routes` / `--local-tools`) because the old
+# copies published the retired failure modes of three tools and the A2A capability flags it removed.
 KNOWN_STALE = {
     "anthropic-tools.json": "tool JSON still says 'free within the daily quota, then $0.02 per call'",
     "openai-tools.json": "tool JSON still says 'free within the daily quota, then $0.02 per call'",
     "llms.txt": "per-tool Cost lines and the sanctions door still promise a quota",
-    "llms-full.txt": "per-tool Cost lines promise a quota and the credit packages are described as for sale",
-    "manifest.json": "cost_model notes promise a quota and credits",
     "mcp-initialize.json": "the instructions sentence says '3 free within a daily quota'",
 }
 

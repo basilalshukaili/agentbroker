@@ -180,7 +180,7 @@ checks the file from outside. Until then 404 is correct and the 67-a-day checker
 * Path-inserted authorization-server metadata (`/.well-known/oauth-authorization-server/mcp/<door>`): RFC 8414 requires the
   `issuer` in the document to equal the URL it was inserted into, which ours does not, so a 404 is the correct answer; the
   protected-resource document is how a client finds the issuer.
-* The A2A card still declares `streaming` and `pushNotifications` that `message/send` does not honour (verdict item A6).
+* An A2A endpoint. None exists and none is built: the data did not ask for one (411 outside calls sent A2A method names to `/mcp`, 379 of them from declared scanners). Both A2A-shaped documents, `/.well-known/agent-card.json` and `/.well-known/agents.json`, now declare no A2A capability (`streaming`, `pushNotifications` / `push_notifications`, `stateTransitionHistory` / `state_transition_history` are false), carry `a2a.implemented: false` with `use: mcp`, and name the MCP endpoint as `url`; `agents.json` no longer lists `a2a` in `supported_protocols` or a `protocol_version`. An A2A method name sent to `/mcp` is answered with guidance (verdict item A6, closed on `feat/maturity-20261009`).
 * The site's own `/llms.txt` and `/llms-install.md` are Next.js routes in the site repository, not this origin.
 * An older sentence in this origin's `/llms.txt` install paragraph ("no key is needed for the free tools") predates this
   branch and carries the same free/keyless ambiguity; it is outside this item and was left as it is.
