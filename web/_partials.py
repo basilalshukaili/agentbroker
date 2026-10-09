@@ -70,11 +70,19 @@ PRIVACY_EMAIL = _os.environ.get("PRIVACY_EMAIL", "privacy@hatchloop.dev")
 #
 # Founder's ruling (2026-08-28): "we already registered techmate, we will treat
 # techmate as legal company and hatchloop as its one of the products." So the
-# seller is always Techmate; AgentBroker and HatchLoop are product names and are
+# seller is always TechMate; AgentBroker and HatchLoop are product names and are
 # never a party to anything.
+#
+# THE NAME, READ OFF THE CR CERTIFICATE (2026-10-09). The register holds the
+# name in Arabic only, «شركه رفيق التقنية تضامنية» (ه in the first word, no
+# article on رفيق, تضامنية without the article), legal form joint partnership
+# (شركة تضامنية). «الرفيق التقني» is the BRAND, and «شركة الرفيق التقني», which
+# this default used to carry, is no registered name. TechMate is the Latin
+# spelling. Copied from projects/profile/lib/site.ts (REGISTERED_NAME_AR), the
+# canonical transcription published at techmate.om/company - copy, never retype.
 LEGAL_ENTITY = _os.environ.get(
     "LEGAL_ENTITY",
-    "Techmate (شركة الرفيق التقني), "
+    "TechMate (registered as «شركه رفيق التقنية تضامنية», a joint partnership), "
     "CR 1661879, Muscat, Sultanate of Oman",
 )
 

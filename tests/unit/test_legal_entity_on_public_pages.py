@@ -28,17 +28,38 @@ and AgentBroker are product names. They are never a party to anything.
 The footer also credited a payment company that was never onboarded - no
 credentials for it exist anywhere and it is not a valid provider in
 .env.example - on the same page whose body correctly named Polar.
+
+THE NAME ITSELF (corrected 2026-10-09, read off the CR certificate). The
+register holds the company's name in Arabic only, «شركه رفيق التقنية تضامنية»,
+legal form joint partnership (شركة تضامنية); TechMate is the Latin spelling.
+Until then these pages named "Techmate (شركة الرفيق التقني)" - the BRAND
+«الرفيق التقني» with شركة in front - and the checks below asserted that brand
+as the correct legal name. The canonical transcription is
+projects/profile/lib/site.ts (REGISTERED_NAME_AR), published at
+techmate.om/company.
 """
 from __future__ import annotations
 
+import html as _html
 import sys
 import os
+import unicodedata
 
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+
+# The registered name, copied (never retyped) from projects/profile/lib/site.ts
+# REGISTERED_NAME_AR: ه in the first word, no article on رفيق, تضامنية without
+# the article.
+REGISTERED_NAME_AR = "شركه رفيق التقنية تضامنية"
+# Forms that must never stand as the legal name on these pages: the brand (and
+# with it «شركة الرفيق التقني»), the name retyped with ة or with the article on
+# the legal form, and the Latin name in the wrong case.
+NOT_THE_LEGAL_NAME = ("الرفيق التقني", "شركة رفيق التقنية", "التضامنية", "Techmate")
 
 
 PAGES = ["render_home", "render_pricing", "render_terms",
@@ -60,17 +81,27 @@ def page(request):
 # The seller
 # --------------------------------------------------------------------------
 
+def _normalize(html):
+    """Numeric character references and canonically equivalent Arabic compare
+    equal - the 2026-09-22 defect hid in decimal references (below)."""
+    return unicodedata.normalize("NFC", _html.unescape(html))
+
+
 def test_every_public_page_names_the_registered_seller(page):
     name, html = page
-    assert "Techmate" in html, f"{name} does not name the selling entity"
-    assert "1661879" in html, f"{name} does not carry the commercial registration"
+    text = _normalize(html)
+    assert "TechMate" in text, f"{name} does not name the selling entity"
+    assert REGISTERED_NAME_AR in text, (
+        f"{name} does not carry the registered name as the register holds it")
+    assert "joint partnership" in text, f"{name} does not state the legal form"
+    assert "1661879" in text, f"{name} does not carry the commercial registration"
 
 
 def test_no_page_names_an_unregistered_sole_proprietorship(page):
     """The specific defect: a legal form that holds no CR."""
     name, html = page
     assert "sole proprietor" not in html.lower(), (
-        f"{name} names a sole proprietorship - Techmate is the registered seller")
+        f"{name} names a sole proprietorship - TechMate is the registered seller")
 
 
 def test_no_page_puts_the_founder_personally_on_the_contract(page):
@@ -112,7 +143,7 @@ def test_the_indemnity_clause_names_the_company(page):
 
       1. no clause here, and none is expected - `assert not has_clause`,
          so a stray duplicate is a hard failure, not a silent pass;
-      2. a clause is present and correctly names Techmate - a pass;
+      2. a clause is present and correctly names TechMate - a pass;
       3. a clause is present and names the founder personally instead - the
          exact 2026-08-28 defect this file exists to catch, and it must FAIL
          LOUDLY on ANY page, not only the one page we expect to carry it.
@@ -137,10 +168,10 @@ def test_the_indemnity_clause_names_the_company(page):
     # Reached only for a page that is expected to, and does, carry the
     # clause - now check who it names.
     i = html.find("ndemnif")
-    window = html[i:i + 600]
-    assert "Techmate" in window, (
-        f"{name}'s indemnification clause does not name Techmate - the "
-        f"protection runs to whoever is named here")
+    window = _normalize(html[i:i + 600])
+    assert "TechMate" in window and REGISTERED_NAME_AR in window, (
+        f"{name}'s indemnification clause does not name TechMate by its "
+        f"registered name - the protection runs to whoever is named here")
     low_window = window.lower()
     for fragment in ("basil mubarak", "al shukaili", "alshukaili"):
         assert fragment not in low_window, (
@@ -194,53 +225,48 @@ def test_the_entity_is_overridable_without_a_code_change():
     finally:
         del os.environ["LEGAL_ENTITY"]
         importlib.reload(_partials)
-    assert "Techmate" in _partials.LEGAL_ENTITY
+    assert "TechMate" in _partials.LEGAL_ENTITY
+    assert REGISTERED_NAME_AR in _partials.LEGAL_ENTITY
 
 
 # --------------------------------------------------------------------------
-# The Arabic legal name (found 2026-09-22: the wrong Arabic form was LIVE on
-# /terms, /privacy, and /refund while `web/_partials.py` already read
-# correctly in the working tree - the fix had never been committed or
-# deployed. "Techmate" in LEGAL_ENTITY, above, is the Latin word: it was
-# never wrong and passes identically whichever Arabic form ships alongside
-# it, so it cannot detect this defect. These checks look at the actual
-# Arabic substrings instead, in both the constant AND the rendered output of
-# every public page, since a source fix that never reaches production is
-# exactly the failure mode this file needs to catch.
+# The Arabic legal name. History, kept because it is the lesson: on
+# 2026-09-22 the contract pages served «رفيق التقنية» as decimal numeric
+# character references (invisible to a literal grep), and this section then
+# asserted the BRAND «الرفيق التقني» as the correct legal name. Read off the
+# CR certificate on 2026-10-09, the register's name is «شركه رفيق التقنية
+# تضامنية» - so the form removed on 2026-09-22 was closer to the register than
+# the one put in its place. These checks look at the actual Arabic substrings,
+# in both the constant AND the rendered output of every public page, since a
+# source fix that never reaches production is exactly the failure mode this
+# file needs to catch.
 # --------------------------------------------------------------------------
 
-# Definite form - "al-Rafiq al-Taqni" ("the Companion, the Technical one").
-# The founder's standing rule: TechMate's Arabic name is always this definite
-# form, never a transliteration and never the indefinite form below.
-CORRECT_ARABIC_NAME = "الرفيق التقني"
-# Indefinite/mis-declined form ("Rafiq al-Taqniyah") that was live on the
-# contract pages on 2026-09-22. A plain grep on the live HTML found zero
-# occurrences of this because the page served it as decimal HTML numeric
-# character references, not literal UTF-8 - invisible to a literal search.
-WRONG_ARABIC_NAME = "رفيق التقنية"
 
-
-def test_legal_entity_constant_uses_the_correct_arabic_form():
+def test_legal_entity_constant_uses_the_registered_name():
     """Narrowest check: the source constant itself, independent of any page
     render or env override."""
     from web import _partials
-    assert CORRECT_ARABIC_NAME in _partials.LEGAL_ENTITY, (
-        "LEGAL_ENTITY default is missing the correct definite Arabic form "
-        "of the company name")
-    assert WRONG_ARABIC_NAME not in _partials.LEGAL_ENTITY, (
-        "LEGAL_ENTITY default contains the wrong (indefinite) Arabic form "
-        "of the company name")
+    entity = _partials.LEGAL_ENTITY
+    assert REGISTERED_NAME_AR in entity, (
+        "LEGAL_ENTITY default does not carry the registered name as the "
+        "register holds it")
+    assert "joint partnership" in entity, "LEGAL_ENTITY default omits the legal form"
+    for wrong in NOT_THE_LEGAL_NAME:
+        assert wrong not in entity, (
+            f"LEGAL_ENTITY default carries {wrong!r}, which is not the "
+            f"registered name")
 
 
-def test_every_public_page_carries_the_correct_arabic_name_only(page):
-    """The exact 2026-09-22 defect, checked on RENDERED page output (terms,
-    privacy, refund, and the footer shared by every page including
-    checkout) rather than only on the constant - because the constant can be
-    correct while an undeployed/uncommitted fix leaves production wrong."""
+def test_every_public_page_carries_the_registered_name_only(page):
+    """Checked on RENDERED page output (terms, privacy, refund, and the
+    footer shared by every page including checkout) rather than only on the
+    constant - because the constant can be correct while an
+    undeployed/uncommitted fix leaves production wrong."""
     name, html = page
-    assert CORRECT_ARABIC_NAME in html, (
-        f"{name} does not carry the correct Arabic company name "
-        f"({CORRECT_ARABIC_NAME!r}) - the definite form the founder requires")
-    assert WRONG_ARABIC_NAME not in html, (
-        f"{name} carries the wrong Arabic company name "
-        f"({WRONG_ARABIC_NAME!r}) - this is the 2026-09-22 defect")
+    text = _normalize(html)
+    assert REGISTERED_NAME_AR in text, (
+        f"{name} does not carry the registered name ({REGISTERED_NAME_AR!r})")
+    for wrong in NOT_THE_LEGAL_NAME:
+        assert wrong not in text, (
+            f"{name} carries {wrong!r}, which is not the registered name")
