@@ -34,7 +34,8 @@ This server is the missing middle layer. Agents call us; we route to the right S
 | MCP endpoint (streamable-http) | **Live**  -  `https://hatchloop.dev/mcp/agent-broker` |
 | 23 MCP tools | **Live** (callable today) |
 | Compliance gate (TCPA/GDPR/CASL) | **Live** |
-| REST + A2A + OpenAI/Anthropic tool surfaces | **Live** |
+| REST + OpenAI/Anthropic tool surfaces | **Live** |
+| A2A (Agent-to-Agent) protocol | **Not implemented**  -  this service speaks MCP only. `/.well-known/agent-card.json` and `/.well-known/agents.json` are A2A-shaped discovery documents for registries; both say `a2a.implemented: false`, declare no streaming, push notifications or state history, and name the MCP endpoint as their URL. An A2A method name (`message/send`, `tasks/send`, `SendMessage`) sent to `/mcp` is answered `method_not_found` with the methods the endpoint does speak |
 | SMB supply network + search | **Live for search, small for booking**  -  `find_business` searches OpenStreetMap (real, community-mapped, unverified by us) and returns nothing invented; the bookable network is the businesses added through `import_booking_url`. Sample rows (`demo_smb_no_live_booking`) are no longer returned by search |
 | Billing | **Switch-dependent. The live state is in `/.well-known/mcp.json` (`payments.status`, `rails`, `premium_data_quota_enforced`), which is derived from the switches and never typed.** 11 utility tools are free (no key, unmetered; `get_conversation` and `import_booking_url` are free too and need a free key). Premium data tools (company verification, sanctions, trade screening) carry a daily limit (500/day with a free key, 100/day anonymous) and then $0.02/call via credits **only while `DATA_METERING_ENABLED` and `CREDITS_ENABLED` are on**; with both off the three tools run free and unmetered; with metering on and credits off, a call past the daily limit is refused until the limit resets (never charged, never silently continued). Write tools: free email-verified key (100 ops/day), request via `POST /keys/request`; credit packages from $9/1,000 credits at hatchloop.dev/pricing, **on sale only while `CREDITS_ENABLED` is on**. **As of 2026-10-04 `CREDITS_ENABLED` and `DATA_METERING_ENABLED` are both off on the running service: no call is charged, the premium-data quota is not enforced, and credit packages are not on sale (`/billing/checkout` opens no checkout and `/checkout` says so).** |
 | Free-key email delivery | **Configured**  -  the verification email goes through Resend, which is set up with a verified sender domain; the live state of every provider is `GET /healthz/external` (`services.resend`; it read `ok` on 2026-10-04, while `services.twilio` read `not_configured`, which is why that endpoint's overall status is `fail` - SMS/WhatsApp, unrelated to key email). `POST /keys/request` answers `503 {"error": "onboarding_unavailable"}` only when a verification email cannot be sent (for example the provider refuses the address), instead of a false `verification_sent`; then get a key by emailing hello@hatchloop.dev. |
@@ -47,7 +48,7 @@ This server is the missing middle layer. Agents call us; we route to the right S
 
 ## 23 MCP Tools
 
-All tools are callable via MCP, REST, OpenAI function calling, Anthropic tool_use, or A2A protocol.
+All tools are callable via MCP, REST, OpenAI function calling or Anthropic tool_use. There is no A2A endpoint (see the status table above).
 
 | # | Tool | What it does | Auth |
 |---|---|---|---|
@@ -322,7 +323,8 @@ provisioning.
 | MCP descriptor | `https://hatchloop.dev/.well-known/mcp.json` |
 | OpenAI function tools | `https://hatchloop.dev/.well-known/openai-tools.json` |
 | Anthropic tool_use | `https://hatchloop.dev/.well-known/anthropic-tools.json` |
-| A2A (Agent-to-Agent) | `https://hatchloop.dev/.well-known/agents.json` |
+| A2A-shaped descriptor (not an A2A endpoint: `a2a.implemented` is `false`, MCP only) | `https://hatchloop.dev/.well-known/agents.json` |
+| A2A agent card (same statement, canonical path) | `https://hatchloop.dev/.well-known/agent-card.json` |
 | OpenAI ChatGPT plugin | `https://hatchloop.dev/.well-known/ai-plugin.json` |
 | llms.txt | `https://hatchloop.dev/llms.txt` |
 | OpenAPI 3.1 | `https://hatchloop.dev/openapi.yaml` |
@@ -337,7 +339,7 @@ provisioning.
 ```
 AI agent
    |
-   v  MCP / REST / A2A
+   v  MCP / REST
 Cloudflare Worker edge  (hatchloop.dev)
    |  300+ PoPs globally -- discovery served from edge bundle in 40-70 ms
    |
