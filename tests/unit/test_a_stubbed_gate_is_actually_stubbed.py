@@ -667,6 +667,22 @@ _KNOWN_SAFE_COLLISIONS: dict[tuple[str, str], str] = {
         "in this file (it DOES call billing.credits._maybe_low_balance_nudge, which "
         "has its own separate deferred re-import of select_rows at credits.py:222, "
         "distinct from the frozen module-level one get_balance uses at credits.py:269).",
+    # Added 2026-10-09 for the portal key-mutation hotfix (d89e18b, evidence 65b3e9a).
+    # test_real_account_lookup_uses_only_session_email calls
+    # agent_interface.portal._get_account directly, with `import storage.supabase_client
+    # as sb` and `monkeypatch.setattr(sb, "select_rows", read)`. _get_account does
+    # `from storage.supabase_client import select_rows` INSIDE its body (portal.py:139),
+    # so for it the definition site is exactly the name it reads on every call. The test
+    # also asserts the stub fired (`read.assert_awaited_once_with(...)`, and that the
+    # returned account is the stub's row), so a stub that ever went dead would fail that
+    # test instead of reaching a network. billing/credits.py:35, the only eager consumer
+    # of select_rows, is never imported or driven by this file.
+    ("tests/unit/test_portal_key_safety.py", "storage.supabase_client.select_rows"):
+        "targets agent_interface.portal._get_account, which does `from "
+        "storage.supabase_client import select_rows` INSIDE the function body "
+        "(portal.py:139) -- not billing.credits.get_balance, the only eager consumer; "
+        "the test asserts the stub was awaited and its row returned, and this file never "
+        "references billing.credits or get_balance.",
     # 2026-09-23: same move as test_data_metering.py above -- see that entry.
     ("tests/unit/test_quota_hang.py", "storage.supabase_client.rpc"):
         "targets billing.data_quota._consume_anon_data (deferred rpc import); no "
